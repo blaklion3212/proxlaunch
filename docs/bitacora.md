@@ -26,12 +26,12 @@ Nunca registres contraseñas, tokens ni datos personales.
 
 ## Estado actual (2026-11-11)
 
-- **Fase en curso:** F3, capa API y servicios del MVP 1 (`implementador`).
+- **Fase en curso:** F5c, pruebas de interfaz del MVP 1 (`probador`). F3, F4 y F5b terminadas.
 - **Bloqueo (⚠️):** el laboratorio Proxmox está **apagado**. Se perdió el permiso
   temporal (ACL) de `/dev/kvm`. El usuario se agregará al grupo `kvm` y
   reiniciará el equipo.
-- **Próximo paso:** documentar la arquitectura del MVP 1 y, tras el reinicio,
-  encender el laboratorio con `lab.sh iniciar` para verificar permisos y formatos.
+- **Próximo paso:** tras F5c y el reinicio del equipo, F6 en el laboratorio
+  (`lab.sh iniciar`): verificar permisos, formatos reales de 8.x/9.2 y elementos [LAB].
 
 ---
 
@@ -145,6 +145,22 @@ Nunca registres contraseñas, tokens ni datos personales.
   aclaraciones A-5 a A-9 de los requisitos.
 - **Siguientes pasos:** F3 con las especificaciones de la investigación.
 
+### 2026-11-11 · 10. F3 API y servicios, F4 interfaz, F5b pruebas
+- **Responsable:** 2 × `implementador` (F3, F4), `probador` (F5b), orquestador
+- **Qué se hizo:** transporte con huella SHA-256 y failover entre IPs; autenticación
+  por token y por usuario/contraseña con 2FA en dos pasos y renovación del ticket;
+  descubrimiento de nodos, storages y bridges; servicio de creación con seguimiento de
+  la tarea. Interfaz completa (formulario, tablas de discos y redes, resumen, progreso,
+  diálogos de conexión, huella, 2FA y guía de token).
+- **Resultado:** ✅ 1087 pruebas en verde, núcleo al 99 %. El probador detectó 3 defectos,
+  corregidos: un POST abortado podía hacer failover y duplicar la creación; errores de
+  sesión se mostraban como "nodo caído"; la cancelación no cortaba la espera tolerante.
+  Decisión técnica: un 403 en un solo nodo se registra como error de ese nodo y no
+  detiene el descubrimiento.
+- **Archivos:** `src/proxlaunch/nucleo/api/`, `src/proxlaunch/nucleo/servicios/`,
+  `src/proxlaunch/interfaz/`, `tests/nucleo/`; commits e66a6e9, 59cfb9a, d946095.
+- **Siguientes pasos:** F5c (pruebas de interfaz, cobertura global ≥ 75 %), F6 laboratorio.
+
 ---
 
 ## Pendientes y riesgos abiertos
@@ -156,5 +172,7 @@ Nunca registres contraseñas, tokens ni datos personales.
 | D-13 pospuesta | Origen del SO (ISO, OVA, VMware): algunas importaciones exigen `root@pam` o SSH y dependen de la versión (MVP 4). |
 | Política de sobreasignación | Bloquear o advertir en pools thin: se define en el MVP 2. |
 | Firma de código en Windows | Pospuesta al MVP 5 (D-06). |
-| Permisos de Proxmox | Lista mínima para el API Token por definir en los requisitos (D-09). |
+| Permisos de Proxmox | Rol `ProxLaunchCreador` definido (investigación F1 §5); falta verificarlo en laboratorio. |
+| Cobertura de interfaz | Global en 39 % antes de F5c; meta 75 %. |
+| Respuestas sintéticas | Los JSON de `tests/datos/respuestas` se reemplazan por capturas reales en F6. |
 | Sin Proxmox de pruebas en los sitios | Nunca crear ni borrar MVs contra producción (D-15). |
