@@ -1,0 +1,14 @@
+{
+  "data": {
+    "status": "stopped",
+    "exitstatus": "unable to create VM 100 - lvcreate 'pve/vm-100-disk-0' error:   Volume group \"pve\" has insufficient free space (1023 extents): 8192 required.",
+    "type": "qmcreate",
+    "id": "100",
+    "node": "pve1",
+    "pid": 241074,
+    "pstart": 16040403,
+    "starttime": 1698000000,
+    "upid": "UPID:pve1:0003A1B2:00F4C1D3:6535AB12:qmcreate:100:root@pam:",
+    "user": "root@pam"
+  }
+}

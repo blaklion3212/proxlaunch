@@ -1,0 +1,17 @@
+{
+  "data": [
+    {
+      "node": "pve1",
+      "status": "online",
+      "type": "node",
+      "id": "node/pve1",
+      "maxcpu": 8,
+      "maxmem": 17179869184,
+      "mem": 4294967296,
+      "cpu": 0.03,
+      "uptime": 86400,
+      "level": "",
+      "ssl_fingerprint": "AA:BB"
+    }
+  ]
+}

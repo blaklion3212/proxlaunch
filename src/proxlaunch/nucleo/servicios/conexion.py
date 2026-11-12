@@ -23,7 +23,12 @@ from proxlaunch.nucleo.api.transporte import (
     TIMEOUT_CONEXION,
     Transporte,
 )
-from proxlaunch.nucleo.capacidades import VERSION_MINIMA, Capacidades, capacidades_para
+from proxlaunch.nucleo.capacidades import (
+    ULTIMA_VERSION_CONOCIDA,
+    VERSION_MINIMA,
+    Capacidades,
+    capacidades_para,
+)
 from proxlaunch.nucleo.errores import CodigoError, ErrorProxLaunch
 from proxlaunch.nucleo.modelos.conexion import (
     CredencialContrasena,
@@ -42,19 +47,25 @@ _log = logging.getLogger("proxlaunch.servicios.conexion")
 FabricaTransporte = Callable[[PerfilConexion, Mapping[str, str]], Transporte]
 ObtenerHuella = Callable[[str, int, float], str]
 
-# Privilegios mínimos del rol ProxLaunchCreador (f1 §5) que se comprueban tras conectar.
-PRIVILEGIOS_REQUERIDOS = (
-    "VM.Allocate",
-    "VM.Audit",
-    "VM.Config.Options",
-    "VM.Config.HWType",
-    "VM.Config.CPU",
-    "VM.Config.Memory",
-    "VM.Config.Network",
-    "VM.Config.Disk",
-    "Datastore.AllocateSpace",
-    "SDN.Use",
-    "Sys.Audit",
+# Privilegios mínimos del rol ProxLaunchCreador (f1 §5) y la ruta donde se exige cada uno.
+# Datastore.Audit no es obligatorio: AllocateSpace basta para listar los storages.
+PERMISOS_POR_RUTA: dict[str, tuple[str, ...]] = {
+    "/vms": (
+        "VM.Allocate",
+        "VM.Audit",
+        "VM.Config.Options",
+        "VM.Config.HWType",
+        "VM.Config.CPU",
+        "VM.Config.Memory",
+        "VM.Config.Network",
+        "VM.Config.Disk",
+    ),
+    "/storage": ("Datastore.AllocateSpace",),
+    "/sdn/zones/localnetwork": ("SDN.Use",),
+    "/": ("Sys.Audit",),
+}
+PRIVILEGIOS_REQUERIDOS: tuple[str, ...] = tuple(
+    p for privs in PERMISOS_POR_RUTA.values() for p in privs
 )
 
 
@@ -73,6 +84,7 @@ class CodigoAviso(StrEnum):
     LLAVERO_NO_DISPONIBLE = "llavero_no_disponible"  # CA-08.4
     TOPOLOGIA_DEGRADADA = "topologia_degradada"  # A-6
     PERMISOS_INCOMPLETOS = "permisos_incompletos"  # RF-12
+    VERSION_NO_PROBADA = "version_no_probada"  # CA-09.3
 
 
 @dataclass(frozen=True)
@@ -324,6 +336,9 @@ class ServicioConexion:
             host_activo=transporte.host_activo,
             usuario_efectivo=usuario_efectivo,
         )
+        if (version.mayor, version.menor) > ULTIMA_VERSION_CONOCIDA:
+            # Se permite conectar, pero se avisa de que la versión no se ha probado (CA-09.3).
+            sesion.avisos.append(Aviso(CodigoAviso.VERSION_NO_PROBADA, {"version": version.texto}))
         if perfil.recordar_credenciales and secreto:
             try:
                 self._secretos.guardar(perfil.id, secreto)
@@ -334,21 +349,57 @@ class ServicioConexion:
         return sesion
 
 
-def permisos_faltantes(sesion: Sesion) -> list[str] | None:
-    """Privilegios del rol recomendado que el usuario no tiene en ninguna ruta (RF-12).
+def _tiene_privilegio(permisos: dict[str, dict[str, int]], ruta: str, privilegio: str) -> bool:
+    """Semántica de ``/access/permissions``: ``{ruta: {privilegio: propagate}}``.
 
-    Es una comprobación indulgente: un privilegio cuenta como presente si el usuario lo
-    tiene en cualquier ruta. Devuelve ``None`` si la consulta falla (CA-12.3), y añade el
-    aviso ``PERMISOS_INCOMPLETOS`` a la sesión si faltan.
+    ``1`` = concedido y heredado por las subrutas; ``0`` = solo en esa ruta exacta. Cuenta
+    el privilegio en la propia ruta o en un ancestro con propagate=1. En ``/storage`` también
+    se acepta en un ``/storage/<id>`` concreto (la lista de storages se filtra por id).
+    """
+    for p, privs in permisos.items():
+        if privilegio not in privs:
+            continue
+        propaga = bool(privs[privilegio])
+        if p == ruta:
+            return True
+        if propaga and (p == "/" or ruta.startswith(p.rstrip("/") + "/")):
+            return True
+        if ruta == "/storage" and p.startswith("/storage/"):
+            return True
+    return False
+
+
+def permisos_faltantes_detalle(sesion: Sesion) -> list[tuple[str, str]] | None:
+    """Pares ``(privilegio, ruta)`` que faltan según ``PERMISOS_POR_RUTA`` (RF-12).
+
+    Devuelve ``None`` si la consulta falla (CA-12.3). Añade el aviso
+    ``PERMISOS_INCOMPLETOS`` a la sesión si falta alguno, con ``params["privilegios"]``
+    (nombres separados por comas; la ruta de cada uno está en el valor devuelto).
     """
     try:
         permisos = sesion.cliente.permisos()
     except ErrorProxLaunch:
         return None
-    presentes = {p for privs in permisos.values() for p, v in privs.items() if v}
-    faltan = [p for p in PRIVILEGIOS_REQUERIDOS if p not in presentes]
+    faltan = [
+        (priv, ruta)
+        for ruta, privs in PERMISOS_POR_RUTA.items()
+        for priv in privs
+        if not _tiene_privilegio(permisos, ruta, priv)
+    ]
     if faltan:
         sesion.avisos.append(
-            Aviso(CodigoAviso.PERMISOS_INCOMPLETOS, {"privilegios": ",".join(faltan)})
+            Aviso(
+                CodigoAviso.PERMISOS_INCOMPLETOS,
+                {
+                    "privilegios": ",".join(p for p, _ in faltan),
+                    "rutas": ",".join(f"{p}@{r}" for p, r in faltan),
+                },
+            )
         )
     return faltan
+
+
+def permisos_faltantes(sesion: Sesion) -> list[str] | None:
+    """Privilegios que faltan (solo los nombres); ver ``permisos_faltantes_detalle``."""
+    detalle = permisos_faltantes_detalle(sesion)
+    return None if detalle is None else [p for p, _ in detalle]

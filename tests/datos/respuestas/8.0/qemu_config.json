@@ -1,0 +1,12 @@
+{
+  "data": {
+    "name": "srv-web-01",
+    "cores": 2,
+    "sockets": 1,
+    "memory": 2048,
+    "scsihw": "virtio-scsi-single",
+    "scsi0": "local-lvm:vm-100-disk-0,discard=on,iothread=1,size=32G,ssd=1",
+    "net0": "virtio=BC:24:11:AA:BB:CC,bridge=vmbr0",
+    "digest": "0123456789abcdef"
+  }
+}

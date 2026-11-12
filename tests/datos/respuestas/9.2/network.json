@@ -1,0 +1,49 @@
+{
+  "data": [
+    {
+      "iface": "eno1",
+      "type": "eth",
+      "active": 1,
+      "method": "manual",
+      "priority": 3
+    },
+    {
+      "iface": "vmbr0",
+      "type": "bridge",
+      "active": 1,
+      "method": "static",
+      "address": "10.0.0.11",
+      "bridge_ports": "eno1",
+      "bridge_vlan_aware": 1,
+      "priority": 4
+    },
+    {
+      "iface": "vmbr1",
+      "type": "OVSBridge",
+      "active": 1,
+      "method": "manual",
+      "priority": 5
+    },
+    {
+      "iface": "bond0",
+      "type": "bond",
+      "active": 1,
+      "method": "manual",
+      "priority": 6
+    },
+    {
+      "iface": "vlan10",
+      "type": "vlan",
+      "active": 1,
+      "method": "manual",
+      "priority": 7
+    },
+    {
+      "iface": "puerto1",
+      "type": "OVSPort",
+      "active": 1,
+      "method": "manual",
+      "priority": 8
+    }
+  ]
+}

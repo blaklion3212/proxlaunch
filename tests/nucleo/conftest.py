@@ -107,3 +107,85 @@ def con_codigo():
         return [p for p in problemas if p.codigo == codigo and (campo is None or p.campo == campo)]
 
     return _filtrar
+
+
+# --- Fixtures de la capa API y los servicios (F3) --------------------------------------
+
+
+@pytest.fixture
+def rsps():
+    """Simula HTTP con ``responses``; no exige que se usen todas las rutas registradas."""
+    import responses
+
+    with responses.RequestsMock(assert_all_requests_are_fired=False) as r:
+        yield r
+
+
+@pytest.fixture
+def reloj():
+    """Reloj simulado: ninguna prueba duerme de verdad."""
+    from proxlaunch.nucleo.reloj import RelojSimulado
+
+    return RelojSimulado()
+
+
+@pytest.fixture
+def respuesta():
+    """Carga una respuesta simulada: ``respuesta("9.2", "version.json")`` -> cuerpo completo."""
+    from .apoyo_api import cargar
+
+    return cargar
+
+
+@pytest.fixture
+def transporte_falso():
+    from .apoyo_api import TransporteFalso
+
+    return TransporteFalso()
+
+
+@pytest.fixture
+def ejecutar_creacion(inv, hacer_cfg, reloj):
+    """Ejecuta ``ServicioCreacion.crear`` sobre un transporte falso.
+
+    Devuelve ``(resultado, etapas, servicio_reloj)``; las etapas son las notificadas en orden.
+    """
+    import threading
+
+    from .apoyo_api import crear_sesion
+
+    def _ejecutar(transporte, *, cfg=None, cancelado=None, auth=None, **opciones):
+        from proxlaunch.nucleo.servicios.creacion import ServicioCreacion
+
+        sesion = crear_sesion(transporte, auth=auth, reloj=reloj)
+        etapas = []
+        servicio = ServicioCreacion(sesion, reloj, **opciones)
+        resultado = servicio.crear(
+            cfg or hacer_cfg(), inv, etapas.append, cancelado or threading.Event()
+        )
+        return resultado, etapas
+
+    return _ejecutar
+
+
+@pytest.fixture
+def registros():
+    """Registros emitidos por ``proxlaunch.*`` (sin depender de la propagación al logger raíz)."""
+    import logging
+
+    class _Lista(logging.Handler):
+        def __init__(self):
+            super().__init__(logging.DEBUG)
+            self.registros = []
+
+        def emit(self, record):
+            self.registros.append(record)
+
+    logger = logging.getLogger("proxlaunch")
+    manejador = _Lista()
+    nivel = logger.level
+    logger.addHandler(manejador)
+    logger.setLevel(logging.DEBUG)
+    yield manejador.registros
+    logger.removeHandler(manejador)
+    logger.setLevel(nivel)

@@ -1,0 +1,17 @@
+{
+  "total": 3,
+  "data": [
+    {
+      "n": 1,
+      "t": "TASK WARNINGS: 1"
+    },
+    {
+      "n": 2,
+      "t": "WARN: no se pudo aplicar el parametro X"
+    },
+    {
+      "n": 3,
+      "t": "TASK WARNINGS: 1"
+    }
+  ]
+}

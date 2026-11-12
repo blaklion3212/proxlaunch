@@ -11,6 +11,19 @@ from enum import StrEnum
 from proxlaunch.nucleo.modelos.inventario import Version
 
 VERSION_MINIMA: tuple[int, int] = (8, 0)
+# Última versión probada; una mayor se permite con aviso informativo (CA-09.3, S-4).
+ULTIMA_VERSION_CONOCIDA: tuple[int, int] = (9, 2)
+# Versiones conocidas, de la mínima a la última (selector de versión forzada, RF-26).
+VERSIONES_CONOCIDAS: tuple[tuple[int, int], ...] = (
+    (8, 0),
+    (8, 1),
+    (8, 2),
+    (8, 3),
+    (8, 4),
+    (9, 0),
+    (9, 1),
+    (9, 2),
+)
 
 _PATRON_VERSION = re.compile(r"^\s*(\d+)\.(\d+)(?:[.-](\d+))?")
 

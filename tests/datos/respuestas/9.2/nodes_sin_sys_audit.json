@@ -1,0 +1,11 @@
+{
+  "data": [
+    {
+      "node": "pve1",
+      "status": "online",
+      "type": "node",
+      "id": "node/pve1",
+      "level": ""
+    }
+  ]
+}

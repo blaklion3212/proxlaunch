@@ -13,6 +13,15 @@ from proxlaunch.nucleo.validacion import TIPOS_BRIDGE
 
 _log = logging.getLogger("proxlaunch.servicios.descubrimiento")
 
+# Solo estos errores marcan un nodo como sin conexión (CA-11.8).
+_CODIGOS_DE_NODO = frozenset(
+    {
+        CodigoError.NODO_NO_DISPONIBLE,
+        CodigoError.SERVIDOR_NO_RESPONDE,
+        CodigoError.PERMISO_INSUFICIENTE,  # solo se propaga si es global (ver más abajo)
+    }
+)
+
 MAX_HILOS = 8  # tope de nodos consultados a la vez
 
 
@@ -69,11 +78,20 @@ def descubrir(sesion: Sesion) -> Inventario:
                 try:
                     st, br = futuro.result()
                 except ErrorProxLaunch as e:
+                    if e.codigo not in _CODIGOS_DE_NODO:
+                        # Un error de sesión o de permisos no es un nodo caído: se propaga.
+                        raise
                     errores[nombre] = e
                     _log.warning("Nodo %s no disponible en el descubrimiento: %s", nombre, e.codigo)
                 else:
                     storages[nombre] = tuple(st)
                     bridges[nombre] = tuple(br)
+
+    if errores and len(errores) == len(consultables):
+        permiso = [e for e in errores.values() if e.codigo == CodigoError.PERMISO_INSUFICIENTE]
+        if len(permiso) == len(errores):
+            # Falta el permiso en todos los nodos: es un problema global, no nodos caídos.
+            raise permiso[0]
 
     if errores:
         # Un nodo que falla se marca fuera de línea: así tampoco lo elige el modo Automático.

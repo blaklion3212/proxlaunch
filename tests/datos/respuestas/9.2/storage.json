@@ -1,0 +1,70 @@
+{
+  "data": [
+    {
+      "storage": "local",
+      "type": "dir",
+      "content": "iso,backup,vztmpl",
+      "shared": 0,
+      "active": 1,
+      "enabled": 1,
+      "total": 107374182400,
+      "used": 53687091200,
+      "avail": 53687091200
+    },
+    {
+      "storage": "local-lvm",
+      "type": "lvmthin",
+      "content": "images,rootdir",
+      "shared": 0,
+      "active": 1,
+      "enabled": 1,
+      "total": 322122547200,
+      "used": 161061273600,
+      "avail": 161061273600
+    },
+    {
+      "storage": "nfs1",
+      "type": "nfs",
+      "content": "images",
+      "shared": 1,
+      "active": 1,
+      "enabled": 1,
+      "total": 1073741824000,
+      "used": 536870912000,
+      "avail": 536870912000
+    },
+    {
+      "storage": "apagado",
+      "type": "lvm",
+      "content": "images",
+      "shared": 0,
+      "active": 0,
+      "enabled": 1,
+      "total": 0,
+      "used": 0,
+      "avail": 0
+    },
+    {
+      "storage": "deshabilitado",
+      "type": "dir",
+      "content": "images",
+      "shared": 0,
+      "active": 1,
+      "enabled": 0,
+      "total": 10737418240,
+      "used": 0,
+      "avail": 10737418240
+    },
+    {
+      "storage": "fraccion",
+      "type": "dir",
+      "content": "images",
+      "shared": 0,
+      "active": 1,
+      "enabled": 1,
+      "total": 21474836480,
+      "used": 0,
+      "avail": 11800422645
+    }
+  ]
+}

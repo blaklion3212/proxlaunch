@@ -1,0 +1,14 @@
+{
+  "data": {
+    "status": "stopped",
+    "exitstatus": "OK",
+    "type": "qmcreate",
+    "id": "100",
+    "node": "pve1",
+    "pid": 241074,
+    "pstart": 16040403,
+    "starttime": 1698000000,
+    "upid": "UPID:pve1:0003A1B2:00F4C1D3:6535AB12:qmcreate:100:root@pam:",
+    "user": "root@pam"
+  }
+}

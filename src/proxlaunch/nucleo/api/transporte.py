@@ -81,6 +81,36 @@ class AdaptadorHuella(HTTPAdapter):
         return super().proxy_manager_for(proxy, **self._con_huella(proxy_kwargs))
 
 
+def _fallo_antes_de_enviar(exc: BaseException) -> bool:
+    """``True`` si hay certeza de que la petición no salió: falló al establecer la conexión.
+
+    Recorre la cadena de excepciones buscando ``NewConnectionError`` o un timeout de
+    conexión de urllib3. Cualquier otro fallo (p. ej. ``ProtocolError`` "Connection
+    aborted") se considera posterior al envío.
+    """
+    visto: set[int] = set()
+    pendientes: list[Any] = [exc]
+    while pendientes:
+        actual = pendientes.pop()
+        if id(actual) in visto:
+            continue
+        visto.add(id(actual))
+        if isinstance(
+            actual,
+            urllib3.exceptions.NewConnectionError
+            | urllib3.exceptions.ConnectTimeoutError
+            | requests.exceptions.ConnectTimeout,
+        ):
+            return True
+        if isinstance(actual, BaseException):
+            pendientes.extend(actual.args)
+            pendientes.extend(x for x in (actual.__cause__, actual.__context__) if x)
+            razon = getattr(actual, "reason", None)
+            if razon is not None:
+                pendientes.append(razon)
+    return False
+
+
 def _netloc(host: str, puerto: int) -> str:
     """``host:puerto`` con corchetes para IPv6."""
     h = host[1:-1] if host.startswith("[") and host.endswith("]") else host
@@ -184,7 +214,15 @@ class TransporteHttp:
             except requests.exceptions.Timeout:
                 motivos.append((host, "timeout"))
                 continue
-            except requests.exceptions.ConnectionError:
+            except requests.exceptions.ConnectionError as e:
+                if metodo not in _METODOS_SEGUROS and not _fallo_antes_de_enviar(e):
+                    # No hay certeza de que la petición no saliera (p. ej. conexión
+                    # abortada tras enviar): no se reenvía a otro host (riesgo de duplicar).
+                    raise ErrorProxLaunch(
+                        CodigoError.SERVIDOR_NO_RESPONDE,
+                        {"host": host, "motivos": f"{host}=conexion_abortada"},
+                        limpiar_detalle(f"{type(e).__name__}: {e}"),
+                    ) from None
                 motivos.append((host, "conexion"))
                 continue
             except requests.exceptions.RequestException as e:

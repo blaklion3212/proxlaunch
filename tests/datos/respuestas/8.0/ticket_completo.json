@@ -1,0 +1,13 @@
+{
+  "data": {
+    "ticket": "PVE:root@pam:6535AB12::c2ludGV0aWNv",
+    "CSRFPreventionToken": "6535AB12:Y3NyZnNpbnRldGljbw",
+    "username": "root@pam",
+    "clustername": "lab",
+    "cap": {
+      "vms": {
+        "VM.Allocate": 1
+      }
+    }
+  }
+}

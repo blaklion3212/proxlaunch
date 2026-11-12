@@ -1,0 +1,8 @@
+{
+  "data": {
+    "ticket": "PVE:!tfa!%7B%22totp%22%3Atrue%2C%22webauthn%22%3A%7B%22publicKey%22%3A%7B%22challenge%22%3A%22Y2hhbGxlbmdl%22%2C%22timeout%22%3A60000%2C%22rpId%22%3A%22pve.lab%22%7D%7D%7D:6535AB12::c2ludGV0aWNv",
+    "CSRFPreventionToken": "6535AB12:cGFyY2lhbA",
+    "username": "ana@pve",
+    "NeedTFA": 1
+  }
+}
