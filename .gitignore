@@ -1,0 +1,31 @@
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+*.egg-info/
+.pytest_cache/
+.coverage
+htmlcov/
+.mypy_cache/
+.ruff_cache/
+
+# Empaquetado
+build/
+dist/
+*.spec.bak
+
+# Configuración local y secretos
+.claude/settings.local.json
+.env
+*.env
+secretos/
+
+# Fuentes descargadas para el generador del logo (se obtienen de Google Fonts)
+recursos/marca/generador/*.ttf
+
+# Sistema operativo y editores
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
