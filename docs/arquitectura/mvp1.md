@@ -420,3 +420,44 @@ su propio intérprete, por eso Ubuntu 22.04 con Python 3.10 del sistema no es un
 | F8 Documentación | `documentador` + `formateador` | F7 | README, guía de usuario, bitácora |
 
 F0 y F1 corren en paralelo; F2a, F2b y F2c también.
+
+---
+
+## Anexo A · Firmas añadidas durante F2 (aprobadas por el orquestador, 2026-11-11)
+
+Firmas que la arquitectura no fijaba y que los implementadores definieron; son públicas
+y estables desde ahora.
+
+**Núcleo**
+- `capacidades.interpretar_version(texto) -> tuple[Version, bool]`: el `bool` indica
+  formato inesperado (CA-09.5). `Capacidades.es_soportada()` bloquea < 8.0 (CA-09.2).
+- `seleccion_nodo.elegir_nodo(inv, espacio_requerido_gib) -> tuple[str, MotivoNodo]`;
+  `MotivoNodo`: `UNICO_CANDIDATO`, `MAS_MEMORIA_LIBRE`, `DESEMPATE_ESPACIO_LIBRE`. Lanza
+  `NODO_NO_DISPONIBLE` o `SIN_ESPACIO`.
+- `modelos.tarea.EstadoTarea(estado, exitstatus)` con la propiedad `terminada`.
+- `validacion`: `OpcionesDisco`, `formatos_permitidos(tipo)`, `storage_efi_efectivo`,
+  `nombre_dns_valido`, `validar_codigo_totp`.
+- Constantes "por verificar en laboratorio": `EFIDISK_*` en `constructor_peticion.py` y
+  `BUSES_CON_DISCARD` (sin `ide`, criterio conservador) en `validacion.py`.
+- Con SeaBIOS no se envía `bios` (CA-14.1).
+
+**Persistencia**
+- `Rutas(base=None)`; `AlmacenJson(ruta).leer() -> ResultadoLectura(datos, hubo_corrupcion, copia_danada)`.
+- `RepositorioPerfiles`: `listar`, `obtener`, `guardar`, `duplicar(id, nombre)` (nombre
+  obligatorio: lo pone la interfaz con `tr()`), `eliminar`, `huellas_huerfanas`,
+  `eliminar_con_dependencias(id, secretos, huellas)`.
+- `RepositorioHuellas.guardar` lanza `HUELLA_CAMBIADA` si ya hay otra; `reemplazar` es la
+  vía de P-12.
+- `registro`: `configurar_registro`, `registrar_secreto`, `olvidar_secretos` (las pruebas
+  deben llamarla entre casos), `enmascarar`, `FiltroSecretos`.
+- `RelojReal.ahora()` usa `time.monotonic()` (solo para diferencias, no es hora de pared).
+
+**Interfaz / tema**
+- `GestorTema(app, modo=ModoTema.AUTOMATICO)`: `modo`, `tema_actual`,
+  `establecer_modo`, `aplicar`, señal `tema_cambiado(str)`.
+- `generar_qss(plantilla, tokens)` (lanza `KeyError` ante un token inexistente),
+  `leer_plantilla()`, `cargar_fuentes() -> (familia_interfaz, familia_mono)`.
+- Propiedades QSS: `mono`, `primario`, `secundario`, `enlace`, `error`, `aviso`, `exito`,
+  `invalido`; objeto `#BarraSuperior`. `app.py` debe llamar `QApplication.setFont` con la
+  familia de interfaz.
+- El texto deshabilitado queda fuera de la verificación de contraste (exención WCAG 1.4.3).

@@ -1,1 +1,55 @@
-"""Modelos de seguimiento de la creación: Etapa, Desenlace, EstadoTarea y ResultadoCreacion."""
+"""Modelos de seguimiento de la creación: etapas, desenlaces y resultado."""
+
+from dataclasses import dataclass, field
+from enum import StrEnum
+
+from proxlaunch.nucleo.errores import ErrorProxLaunch
+
+
+class Etapa(StrEnum):
+    """Etapas de la barra de progreso (CA-20.2)."""
+
+    VALIDANDO = "validando"
+    ENVIANDO = "enviando"
+    CREANDO = "creando"
+    COMPROBANDO = "comprobando"
+    LISTO = "listo"
+
+
+class Desenlace(StrEnum):
+    """Resultado final de una creación."""
+
+    OK = "ok"
+    CON_AVISOS = "con_avisos"
+    ERROR = "error"
+    TIEMPO_AGOTADO = "tiempo_agotado"
+    CONEXION_PERDIDA = "conexion_perdida"
+    PARCIAL = "parcial"
+
+
+@dataclass(frozen=True)
+class EstadoTarea:
+    """Estado de una tarea de Proxmox (``/tasks/{upid}/status``).
+
+    ``estado`` es ``running`` o ``stopped``; ``exitstatus`` solo existe al terminar
+    (``OK`` o el texto del error).
+    """
+
+    estado: str
+    exitstatus: str | None = None
+
+    @property
+    def terminada(self) -> bool:
+        return self.estado == "stopped"
+
+
+@dataclass
+class ResultadoCreacion:
+    """Resultado de ``ServicioCreacion.crear``."""
+
+    desenlace: Desenlace
+    vmid: int
+    nodo: str
+    upid: str | None
+    error: ErrorProxLaunch | None
+    log_tarea: list[str] = field(default_factory=list)
