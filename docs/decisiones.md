@@ -175,6 +175,15 @@ El usuario aprobó "por ahora" las 15 recomendaciones P-01 a P-15 de
   para ver el clúster, la app sigue con un aviso (no bloquea); el rol recomendado en la
   guía de tokens incluye `Sys.Audit`.
 
+## D-18 · Conexión directa, sin proxy del sistema ni `.netrc` — Aprobada (2026-11-11)
+- El usuario confirma que sus equipos no usan proxy para llegar a Proxmox.
+- La sesión HTTP usa `trust_env = False`: se ignoran `HTTPS_PROXY`/`HTTP_PROXY` y `.netrc`,
+  que podía sustituir la cabecera del token (auditoría F7, M4).
+- Si en el futuro hiciera falta un proxy, se añadirá como campo explícito por perfil,
+  aplicado también a la sonda de huella.
+- Decisión técnica asociada (orquestador, F7 B6): con "Ignorar verificación SSL" activo
+  y método de contraseña, se pide confirmación en cada conexión.
+
 ## Correcciones técnicas a `prompt.md`
 Errores o imprecisiones de la especificación original que los requisitos deben
 respetar:
