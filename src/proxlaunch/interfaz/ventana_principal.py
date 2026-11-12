@@ -590,10 +590,18 @@ class VentanaPrincipal(QMainWindow):
             inv,
             con_contexto=True,
             al_etapa=self._al_etapa,
+            al_upid=self._al_upid,
             al_terminar=self._al_terminar_creacion,
             al_fallar=self._fallo_creacion,
         )
         self._timer_validar.start()
+
+    def _al_upid(self, upid: str) -> None:
+        """Muestra el UPID en cuanto Proxmox acepta la petición."""
+        self.progreso.establecer_upid(upid)
+        cfg = self._cfg_creacion
+        if cfg is not None:
+            self.progreso.detalles.establecer(f"UPID: {upid}\nVMID: {cfg.vmid}\nNodo: {cfg.nodo}")
 
     def _al_etapa(self, etapa: Etapa) -> None:
         self.progreso.establecer_etapa(etapa)
@@ -674,7 +682,6 @@ class VentanaPrincipal(QMainWindow):
         self._lanzador.lanzar(
             reanudar_seguimiento,
             servicio,
-            sesion,
             cfg,
             res.upid,
             una_vez,

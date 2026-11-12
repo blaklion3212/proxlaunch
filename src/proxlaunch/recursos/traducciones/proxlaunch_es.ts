@@ -397,193 +397,193 @@
 <context>
     <name>DialogoConexion</name>
     <message>
-        <location filename="../../interfaz/dialogos/conexion.py" line="93"/>
+        <location filename="../../interfaz/dialogos/conexion.py" line="85"/>
         <source>Conectar con Proxmox</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../../interfaz/dialogos/conexion.py" line="128"/>
+        <location filename="../../interfaz/dialogos/conexion.py" line="120"/>
         <source>Duplicar</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../../interfaz/dialogos/conexion.py" line="129"/>
+        <location filename="../../interfaz/dialogos/conexion.py" line="121"/>
         <source>Eliminar</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../../interfaz/dialogos/conexion.py" line="131"/>
+        <location filename="../../interfaz/dialogos/conexion.py" line="123"/>
         <source>Perfil guardado:</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../../interfaz/dialogos/conexion.py" line="139"/>
+        <location filename="../../interfaz/dialogos/conexion.py" line="131"/>
         <source>Nombre del perfil</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../../interfaz/dialogos/conexion.py" line="143"/>
+        <location filename="../../interfaz/dialogos/conexion.py" line="135"/>
         <source>Un servidor por línea. Si el primero no responde se prueba el siguiente.</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../../interfaz/dialogos/conexion.py" line="145"/>
+        <location filename="../../interfaz/dialogos/conexion.py" line="137"/>
         <source>Servidores (IP o nombre)</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../../interfaz/dialogos/conexion.py" line="148"/>
+        <location filename="../../interfaz/dialogos/conexion.py" line="140"/>
         <source>Puerto</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../../interfaz/dialogos/conexion.py" line="153"/>
+        <location filename="../../interfaz/dialogos/conexion.py" line="145"/>
         <source>API Token (recomendado)</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../../interfaz/dialogos/conexion.py" line="154"/>
+        <location filename="../../interfaz/dialogos/conexion.py" line="146"/>
         <source>Usuario y contraseña</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../../interfaz/dialogos/conexion.py" line="166"/>
+        <location filename="../../interfaz/dialogos/conexion.py" line="158"/>
         <source>Método</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../../interfaz/dialogos/conexion.py" line="172"/>
+        <location filename="../../interfaz/dialogos/conexion.py" line="164"/>
         <source>Token</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../../interfaz/dialogos/conexion.py" line="173"/>
+        <location filename="../../interfaz/dialogos/conexion.py" line="165"/>
         <source>¿Cómo creo un API Token?</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../../interfaz/dialogos/conexion.py" line="180"/>
+        <location filename="../../interfaz/dialogos/conexion.py" line="172"/>
         <source>Realm</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../../interfaz/dialogos/conexion.py" line="182"/>
+        <location filename="../../interfaz/dialogos/conexion.py" line="174"/>
         <source>Usuario</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../../interfaz/dialogos/conexion.py" line="185"/>
+        <location filename="../../interfaz/dialogos/conexion.py" line="177"/>
         <source>Contraseña</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../../interfaz/dialogos/conexion.py" line="196"/>
+        <location filename="../../interfaz/dialogos/conexion.py" line="188"/>
         <source>Recordar credenciales</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../../interfaz/dialogos/conexion.py" line="199"/>
+        <location filename="../../interfaz/dialogos/conexion.py" line="191"/>
         <source>Ignorar verificación SSL</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../../interfaz/dialogos/conexion.py" line="203"/>
+        <location filename="../../interfaz/dialogos/conexion.py" line="195"/>
         <source>Detectada</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../../interfaz/dialogos/conexion.py" line="208"/>
+        <location filename="../../interfaz/dialogos/conexion.py" line="200"/>
         <source>Forzar compatibilidad con la versión...</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../../interfaz/dialogos/conexion.py" line="239"/>
+        <location filename="../../interfaz/dialogos/conexion.py" line="231"/>
         <source>Guardar perfil</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../../interfaz/dialogos/conexion.py" line="240"/>
+        <location filename="../../interfaz/dialogos/conexion.py" line="232"/>
         <source>Cancelar</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../../interfaz/dialogos/conexion.py" line="241"/>
+        <location filename="../../interfaz/dialogos/conexion.py" line="233"/>
         <source>Probar y conectar</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../../interfaz/dialogos/conexion.py" line="273"/>
-        <location filename="../../interfaz/dialogos/conexion.py" line="537"/>
+        <location filename="../../interfaz/dialogos/conexion.py" line="265"/>
+        <location filename="../../interfaz/dialogos/conexion.py" line="529"/>
         <source>(Perfil nuevo)</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../../interfaz/dialogos/conexion.py" line="335"/>
+        <location filename="../../interfaz/dialogos/conexion.py" line="327"/>
         <source>(guardado en el llavero)</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../../interfaz/dialogos/conexion.py" line="346"/>
+        <location filename="../../interfaz/dialogos/conexion.py" line="338"/>
         <source>{nombre} (copia)</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../../interfaz/dialogos/conexion.py" line="356"/>
+        <location filename="../../interfaz/dialogos/conexion.py" line="348"/>
         <source>Eliminar perfil</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../../interfaz/dialogos/conexion.py" line="358"/>
+        <location filename="../../interfaz/dialogos/conexion.py" line="350"/>
         <source>Se eliminará el perfil «{nombre}», sus credenciales guardadas en el llavero y las huellas de certificado que solo usaba él. ¿Continuar?</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../../interfaz/dialogos/conexion.py" line="378"/>
+        <location filename="../../interfaz/dialogos/conexion.py" line="370"/>
         <source>Ya existe otro perfil con este nombre. Puedes guardarlo igualmente, pero costará distinguirlos.</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../../interfaz/dialogos/conexion.py" line="448"/>
+        <location filename="../../interfaz/dialogos/conexion.py" line="440"/>
         <source>Escribe tu usuario.</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../../interfaz/dialogos/conexion.py" line="475"/>
+        <location filename="../../interfaz/dialogos/conexion.py" line="467"/>
         <source>Estás usando root@pam. Es más seguro usar un API Token con permisos mínimos.</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../../interfaz/dialogos/conexion.py" line="497"/>
+        <location filename="../../interfaz/dialogos/conexion.py" line="489"/>
         <source>La identidad del servidor no se comprobará: la conexión quedará sin verificar.</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../../interfaz/dialogos/conexion.py" line="514"/>
+        <location filename="../../interfaz/dialogos/conexion.py" line="506"/>
         <source>Perfil guardado.</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../../interfaz/dialogos/conexion.py" line="519"/>
+        <location filename="../../interfaz/dialogos/conexion.py" line="511"/>
         <source>Perfil</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../../interfaz/dialogos/conexion.py" line="586"/>
+        <location filename="../../interfaz/dialogos/conexion.py" line="578"/>
         <source>Escribe tu contraseña.</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../../interfaz/dialogos/conexion.py" line="598"/>
+        <location filename="../../interfaz/dialogos/conexion.py" line="590"/>
         <source>Comprobando el certificado del servidor...</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../../interfaz/dialogos/conexion.py" line="632"/>
+        <location filename="../../interfaz/dialogos/conexion.py" line="624"/>
         <source>Conectando...</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../../interfaz/dialogos/conexion.py" line="657"/>
+        <location filename="../../interfaz/dialogos/conexion.py" line="649"/>
         <source>Esperando el segundo factor...</source>
         <translation type="unfinished"></translation>
     </message>
@@ -726,162 +726,162 @@
 <context>
     <name>FormularioVM</name>
     <message>
-        <location filename="../../interfaz/vistas/formulario_vm.py" line="117"/>
+        <location filename="../../interfaz/vistas/formulario_vm.py" line="121"/>
         <source>General</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../../interfaz/vistas/formulario_vm.py" line="120"/>
+        <location filename="../../interfaz/vistas/formulario_vm.py" line="124"/>
         <source>Número de máquina (VMID)</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../../interfaz/vistas/formulario_vm.py" line="122"/>
+        <location filename="../../interfaz/vistas/formulario_vm.py" line="126"/>
         <source>por ejemplo srv-web-01</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../../interfaz/vistas/formulario_vm.py" line="123"/>
+        <location filename="../../interfaz/vistas/formulario_vm.py" line="127"/>
         <source>Nombre</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../../interfaz/vistas/formulario_vm.py" line="125"/>
+        <location filename="../../interfaz/vistas/formulario_vm.py" line="129"/>
         <source>Automático</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../../interfaz/vistas/formulario_vm.py" line="126"/>
+        <location filename="../../interfaz/vistas/formulario_vm.py" line="130"/>
         <source>Manual</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../../interfaz/vistas/formulario_vm.py" line="143"/>
+        <location filename="../../interfaz/vistas/formulario_vm.py" line="147"/>
         <source>Nodo destino</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../../interfaz/vistas/formulario_vm.py" line="156"/>
+        <location filename="../../interfaz/vistas/formulario_vm.py" line="160"/>
         <source>Firmware</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../../interfaz/vistas/formulario_vm.py" line="158"/>
+        <location filename="../../interfaz/vistas/formulario_vm.py" line="162"/>
         <source>SeaBIOS (clásico)</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../../interfaz/vistas/formulario_vm.py" line="159"/>
+        <location filename="../../interfaz/vistas/formulario_vm.py" line="163"/>
         <source>UEFI (OVMF)</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../../interfaz/vistas/formulario_vm.py" line="160"/>
+        <location filename="../../interfaz/vistas/formulario_vm.py" line="164"/>
         <source>Tipo de arranque</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../../interfaz/vistas/formulario_vm.py" line="163"/>
+        <location filename="../../interfaz/vistas/formulario_vm.py" line="167"/>
         <source>Almacenamiento de UEFI</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../../interfaz/vistas/formulario_vm.py" line="174"/>
+        <location filename="../../interfaz/vistas/formulario_vm.py" line="178"/>
         <source>Cómputo</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../../interfaz/vistas/formulario_vm.py" line="179"/>
+        <location filename="../../interfaz/vistas/formulario_vm.py" line="183"/>
         <source>Sockets</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../../interfaz/vistas/formulario_vm.py" line="182"/>
+        <location filename="../../interfaz/vistas/formulario_vm.py" line="186"/>
         <source>Núcleos por socket</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../../interfaz/vistas/formulario_vm.py" line="187"/>
+        <location filename="../../interfaz/vistas/formulario_vm.py" line="191"/>
         <source>Tipo de CPU</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../../interfaz/vistas/formulario_vm.py" line="192"/>
+        <location filename="../../interfaz/vistas/formulario_vm.py" line="196"/>
         <source>Memoria (GiB)</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../../interfaz/vistas/formulario_vm.py" line="194"/>
+        <location filename="../../interfaz/vistas/formulario_vm.py" line="198"/>
         <source>Predeterminado de Proxmox</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../../interfaz/vistas/formulario_vm.py" line="195"/>
+        <location filename="../../interfaz/vistas/formulario_vm.py" line="199"/>
         <source>Activado</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../../interfaz/vistas/formulario_vm.py" line="196"/>
+        <location filename="../../interfaz/vistas/formulario_vm.py" line="200"/>
         <source>Desactivado</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../../interfaz/vistas/formulario_vm.py" line="197"/>
+        <location filename="../../interfaz/vistas/formulario_vm.py" line="201"/>
         <source>Ballooning</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../../interfaz/vistas/formulario_vm.py" line="201"/>
+        <location filename="../../interfaz/vistas/formulario_vm.py" line="205"/>
         <source>Memoria mínima (GiB)</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../../interfaz/vistas/formulario_vm.py" line="231"/>
+        <location filename="../../interfaz/vistas/formulario_vm.py" line="235"/>
         <source>Discos</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../../interfaz/vistas/formulario_vm.py" line="232"/>
+        <location filename="../../interfaz/vistas/formulario_vm.py" line="236"/>
         <source>Sin disco</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../../interfaz/vistas/formulario_vm.py" line="238"/>
+        <location filename="../../interfaz/vistas/formulario_vm.py" line="242"/>
         <source>Controlador SCSI</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../../interfaz/vistas/formulario_vm.py" line="250"/>
+        <location filename="../../interfaz/vistas/formulario_vm.py" line="254"/>
         <source>Red</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../../interfaz/vistas/formulario_vm.py" line="446"/>
+        <location filename="../../interfaz/vistas/formulario_vm.py" line="450"/>
         <source>Nodo elegido: {nodo} ({motivo})</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../../interfaz/vistas/formulario_vm.py" line="484"/>
+        <location filename="../../interfaz/vistas/formulario_vm.py" line="488"/>
         <source>El almacenamiento «{recurso}» no existe en el nodo «{nodo}». Elige otro.</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../../interfaz/vistas/formulario_vm.py" line="491"/>
+        <location filename="../../interfaz/vistas/formulario_vm.py" line="495"/>
         <source>La red «{recurso}» no existe en el nodo «{nodo}». Elige otra.</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../../interfaz/vistas/formulario_vm.py" line="518"/>
+        <location filename="../../interfaz/vistas/formulario_vm.py" line="522"/>
         <source>Automático (el del primer disco)</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../../interfaz/vistas/formulario_vm.py" line="534"/>
+        <location filename="../../interfaz/vistas/formulario_vm.py" line="538"/>
         <source>Este servidor no tiene almacenamiento para discos de máquinas virtuales</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../../interfaz/vistas/formulario_vm.py" line="623"/>
+        <location filename="../../interfaz/vistas/formulario_vm.py" line="627"/>
         <source>{n} procesadores virtuales en total</source>
         <translation type="unfinished"></translation>
     </message>
@@ -1252,7 +1252,7 @@
     </message>
     <message>
         <location filename="../../interfaz/textos.py" line="90"/>
-        <location filename="../../interfaz/textos.py" line="262"/>
+        <location filename="../../interfaz/textos.py" line="263"/>
         <source>El nodo no está disponible.</source>
         <translation type="unfinished"></translation>
     </message>
@@ -1277,344 +1277,354 @@
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../../interfaz/textos.py" line="121"/>
+        <location filename="../../interfaz/textos.py" line="122"/>
         <source>No hay espacio suficiente en «{storage}» para crear el disco. Libera espacio o elige otro almacenamiento.</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../../interfaz/textos.py" line="130"/>
+        <location filename="../../interfaz/textos.py" line="131"/>
         <source>Ningún nodo tiene {requerido_gib} GiB libres en un almacenamiento para discos. Reduce el tamaño de los discos o libera espacio.</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../../interfaz/textos.py" line="137"/>
+        <location filename="../../interfaz/textos.py" line="138"/>
         <source>No hay espacio suficiente para crear el disco. Libera espacio o elige otro almacenamiento.</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../../interfaz/textos.py" line="143"/>
-        <location filename="../../interfaz/textos.py" line="418"/>
+        <location filename="../../interfaz/textos.py" line="144"/>
+        <location filename="../../interfaz/textos.py" line="449"/>
         <source>La tarea sigue en marcha en Proxmox, no sabemos si terminó</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../../interfaz/textos.py" line="147"/>
+        <location filename="../../interfaz/textos.py" line="148"/>
         <source>un campo</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../../interfaz/textos.py" line="149"/>
+        <location filename="../../interfaz/textos.py" line="150"/>
         <source>Proxmox no entendió el valor de {campo}.</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../../interfaz/textos.py" line="155"/>
+        <location filename="../../interfaz/textos.py" line="156"/>
         <source>Proxmox rechazó el valor de {campo}: {mensaje}</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../../interfaz/textos.py" line="161"/>
+        <location filename="../../interfaz/textos.py" line="162"/>
         <source>El formulario tiene datos que hay que corregir antes de crear la máquina.</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../../interfaz/textos.py" line="165"/>
+        <location filename="../../interfaz/textos.py" line="166"/>
         <source>Proxmox rechazó el valor de {campo}.</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../../interfaz/textos.py" line="168"/>
+        <location filename="../../interfaz/textos.py" line="169"/>
         <source>ProxLaunch requiere Proxmox VE {minima} o superior (el servidor tiene {version})</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../../interfaz/textos.py" line="178"/>
+        <location filename="../../interfaz/textos.py" line="179"/>
         <source>Proxmox dijo que la tarea terminó, pero la máquina {vmid} no aparece en el nodo {nodo}.</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../../interfaz/textos.py" line="188"/>
+        <location filename="../../interfaz/textos.py" line="189"/>
         <source>«{recurso}» ya no existe en el nodo. Actualiza y elige de nuevo.</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../../interfaz/textos.py" line="194"/>
+        <location filename="../../interfaz/textos.py" line="195"/>
         <source>Ese elemento ya no existe. Actualiza y elige de nuevo.</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../../interfaz/textos.py" line="198"/>
+        <location filename="../../interfaz/textos.py" line="199"/>
         <source>Proxmox no devolvió el identificador de la tarea</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../../interfaz/textos.py" line="202"/>
-        <location filename="../../interfaz/textos.py" line="368"/>
+        <location filename="../../interfaz/textos.py" line="203"/>
+        <location filename="../../interfaz/textos.py" line="388"/>
         <source>No hay un llavero disponible en este equipo; las credenciales no se guardarán</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../../interfaz/textos.py" line="215"/>
+        <location filename="../../interfaz/textos.py" line="216"/>
         <source>No se pudo contactar con ninguno de los servidores del perfil:</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../../interfaz/textos.py" line="226"/>
+        <location filename="../../interfaz/textos.py" line="227"/>
         <source>No se pudo contactar con el servidor ({destino})</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../../interfaz/textos.py" line="231"/>
+        <location filename="../../interfaz/textos.py" line="232"/>
         <source>El servidor no responde</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../../interfaz/textos.py" line="236"/>
+        <location filename="../../interfaz/textos.py" line="237"/>
         <source>no respondió a tiempo</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../../interfaz/textos.py" line="238"/>
+        <location filename="../../interfaz/textos.py" line="239"/>
         <source>conexión rechazada</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../../interfaz/textos.py" line="239"/>
+        <location filename="../../interfaz/textos.py" line="240"/>
         <source>no respondió</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../../interfaz/textos.py" line="250"/>
+        <location filename="../../interfaz/textos.py" line="251"/>
         <source>El nombre solo puede tener letras sin acentos, números y guiones, y no puede empezar ni terminar con guion.</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../../interfaz/textos.py" line="256"/>
+        <location filename="../../interfaz/textos.py" line="257"/>
         <source>El número de máquina debe estar entre 100 y 999999999.</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../../interfaz/textos.py" line="265"/>
+        <location filename="../../interfaz/textos.py" line="266"/>
         <source>Elige entre 1 y 4 sockets.</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../../interfaz/textos.py" line="266"/>
+        <location filename="../../interfaz/textos.py" line="267"/>
         <source>Elige entre 1 y 128 núcleos.</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../../interfaz/textos.py" line="269"/>
+        <location filename="../../interfaz/textos.py" line="270"/>
         <source>La memoria mínima no puede superar a la memoria total.</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../../interfaz/textos.py" line="272"/>
+        <location filename="../../interfaz/textos.py" line="273"/>
         <source>La memoria debe ser de al menos 16 MiB.</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../../interfaz/textos.py" line="276"/>
+        <location filename="../../interfaz/textos.py" line="277"/>
         <source>Ese tipo de conexión admite como máximo {maximo} discos.</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../../interfaz/textos.py" line="281"/>
+        <location filename="../../interfaz/textos.py" line="282"/>
         <source>Elige un tipo de conexión de disco válido.</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../../interfaz/textos.py" line="283"/>
+        <location filename="../../interfaz/textos.py" line="284"/>
         <source>El tamaño debe ser un número entero de GiB, mínimo 1.</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../../interfaz/textos.py" line="287"/>
+        <location filename="../../interfaz/textos.py" line="288"/>
         <source>Este almacenamiento solo admite formato raw.</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../../interfaz/textos.py" line="289"/>
+        <location filename="../../interfaz/textos.py" line="290"/>
         <source>El controlador de discos no es válido.</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../../interfaz/textos.py" line="291"/>
+        <location filename="../../interfaz/textos.py" line="292"/>
         <source>IO Thread necesita el bus VirtIO o SCSI con controlador virtio-scsi-single.</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../../interfaz/textos.py" line="295"/>
+        <location filename="../../interfaz/textos.py" line="296"/>
         <source>La emulación SSD no está disponible en el bus VirtIO.</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../../interfaz/textos.py" line="299"/>
+        <location filename="../../interfaz/textos.py" line="300"/>
         <source>Este tipo de conexión no admite liberar el espacio sin usar (discard).</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../../interfaz/textos.py" line="304"/>
+        <location filename="../../interfaz/textos.py" line="305"/>
         <source>El disco pide {pedido_gib} GiB y «{storage}» solo tiene {libre_gib} GiB libres.</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../../interfaz/textos.py" line="312"/>
+        <location filename="../../interfaz/textos.py" line="313"/>
         <source>Los discos piden {pedido_gib} GiB y «{storage}» tiene {libre_gib} GiB libres. Este almacenamiento solo ocupa el espacio a medida que se usa, así que puedes continuar, pero conviene vigilar el espacio.</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../../interfaz/textos.py" line="321"/>
+        <location filename="../../interfaz/textos.py" line="322"/>
         <source>La VLAN debe estar entre 1 y 4094.</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../../interfaz/textos.py" line="323"/>
+        <location filename="../../interfaz/textos.py" line="324"/>
         <source>El nodo no tiene redes (bridges) disponibles</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../../interfaz/textos.py" line="327"/>
+        <location filename="../../interfaz/textos.py" line="328"/>
         <source>La red «{bridge}» no existe en el nodo «{nodo}».</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../../interfaz/textos.py" line="332"/>
+        <location filename="../../interfaz/textos.py" line="333"/>
         <source>El modelo de tarjeta de red no es válido.</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../../interfaz/textos.py" line="335"/>
+        <location filename="../../interfaz/textos.py" line="336"/>
         <source>UEFI necesita un almacenamiento para guardar su configuración</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../../interfaz/textos.py" line="338"/>
+        <location filename="../../interfaz/textos.py" line="339"/>
         <source>Ese almacenamiento no está disponible en el nodo.</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../../interfaz/textos.py" line="342"/>
+        <location filename="../../interfaz/textos.py" line="343"/>
         <source>El token debe tener el formato usuario@realm!nombre=secreto.</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../../interfaz/textos.py" line="346"/>
+        <location filename="../../interfaz/textos.py" line="347"/>
         <source>Escribe solo el nombre o la IP del servidor.</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../../interfaz/textos.py" line="348"/>
+        <location filename="../../interfaz/textos.py" line="349"/>
         <source>El origen del sistema no es válido.</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../../interfaz/textos.py" line="350"/>
+        <location filename="../../interfaz/textos.py" line="351"/>
         <source>El código tiene 6 números.</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../../interfaz/textos.py" line="374"/>
+        <location filename="../../interfaz/textos.py" line="375"/>
+        <source>{privilegio} en {ruta}</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <location filename="../../interfaz/textos.py" line="394"/>
         <source>Topología desconocida ({nodos} nodos): a tu usuario le falta el permiso Sys.Audit en «/» para ver el clúster. Puedes seguir trabajando.</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../../interfaz/textos.py" line="383"/>
+        <location filename="../../interfaz/textos.py" line="403"/>
         <source>Con este usuario no podrás crear máquinas: falta el permiso VM.Allocate</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../../interfaz/textos.py" line="388"/>
+        <location filename="../../interfaz/textos.py" line="409"/>
         <source>A tu usuario le faltan permisos recomendados ({privilegios}). Algunas acciones podrían fallar.</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../../interfaz/textos.py" line="406"/>
+        <location filename="../../interfaz/textos.py" line="418"/>
+        <source>Este servidor tiene Proxmox VE {version}, más nuevo que la última versión que ProxLaunch ha probado. Puedes continuar, pero algo podría no funcionar como se espera.</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <location filename="../../interfaz/textos.py" line="437"/>
         <source>Máquina {nombre} ({vmid}) creada en {nodo}</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../../interfaz/textos.py" line="412"/>
+        <location filename="../../interfaz/textos.py" line="443"/>
         <source>Creada con avisos</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../../interfaz/textos.py" line="422"/>
+        <location filename="../../interfaz/textos.py" line="453"/>
         <source>Se perdió la conexión mientras se creaba la máquina; la tarea puede haber terminado</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../../interfaz/textos.py" line="427"/>
+        <location filename="../../interfaz/textos.py" line="458"/>
         <source>La máquina quedó parcialmente creada; elimínala desde Proxmox</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../../interfaz/textos.py" line="432"/>
-        <source>Dejaste de esperar. La tarea pudo seguir en Proxmox; revisa si la máquina existe.</source>
+        <location filename="../../interfaz/textos.py" line="463"/>
+        <source>Cancelado. La tarea pudo seguir en Proxmox; revisa si la máquina existe.</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../../interfaz/textos.py" line="436"/>
-        <source>Creación cancelada. No se creó nada.</source>
+        <location filename="../../interfaz/textos.py" line="467"/>
+        <source>Cancelado. No se creó nada.</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../../interfaz/textos.py" line="443"/>
+        <location filename="../../interfaz/textos.py" line="474"/>
         <source>Validando datos</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../../interfaz/textos.py" line="445"/>
+        <location filename="../../interfaz/textos.py" line="476"/>
         <source>Enviando a Proxmox</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../../interfaz/textos.py" line="447"/>
+        <location filename="../../interfaz/textos.py" line="478"/>
         <source>Creando la máquina</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../../interfaz/textos.py" line="449"/>
+        <location filename="../../interfaz/textos.py" line="480"/>
         <source>Comprobando el resultado</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../../interfaz/textos.py" line="451"/>
+        <location filename="../../interfaz/textos.py" line="482"/>
         <source>Listo</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../../interfaz/textos.py" line="458"/>
+        <location filename="../../interfaz/textos.py" line="489"/>
         <source>es el único con espacio suficiente</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../../interfaz/textos.py" line="460"/>
+        <location filename="../../interfaz/textos.py" line="491"/>
         <source>más memoria y espacio libres</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../../interfaz/textos.py" line="462"/>
+        <location filename="../../interfaz/textos.py" line="493"/>
         <source>misma memoria libre; se eligió el que tiene más espacio</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../../interfaz/textos.py" line="471"/>
+        <location filename="../../interfaz/textos.py" line="502"/>
         <source>Servidor nuevo</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../../interfaz/textos.py" line="473"/>
+        <location filename="../../interfaz/textos.py" line="504"/>
         <source>Certificado conocido</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../../interfaz/textos.py" line="475"/>
+        <location filename="../../interfaz/textos.py" line="506"/>
         <source>El certificado cambió</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../../interfaz/textos.py" line="476"/>
+        <location filename="../../interfaz/textos.py" line="507"/>
         <source>Sin verificar</source>
         <translation type="unfinished"></translation>
     </message>
@@ -1764,22 +1774,22 @@
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../../interfaz/ventana_principal.py" line="670"/>
+        <location filename="../../interfaz/ventana_principal.py" line="678"/>
         <source>Comprobando la tarea...</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../../interfaz/ventana_principal.py" line="672"/>
+        <location filename="../../interfaz/ventana_principal.py" line="680"/>
         <source>Esperando a que termine la tarea...</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../../interfaz/ventana_principal.py" line="709"/>
+        <location filename="../../interfaz/ventana_principal.py" line="716"/>
         <source>Hay una máquina en creación</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../../interfaz/ventana_principal.py" line="711"/>
+        <location filename="../../interfaz/ventana_principal.py" line="718"/>
         <source>Se está creando una máquina. Si cierras ProxLaunch, la tarea sigue ejecutándose en el servidor Proxmox, pero ya no verás su resultado. ¿Cerrar de todos modos?</source>
         <translation type="unfinished"></translation>
     </message>

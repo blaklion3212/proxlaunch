@@ -41,6 +41,7 @@ from proxlaunch.interfaz.vistas.campos import (
     poner_mensaje,
 )
 from proxlaunch.nucleo.api.autenticacion import DesafioTFA, TipoTFA
+from proxlaunch.nucleo.capacidades import VERSIONES_CONOCIDAS
 from proxlaunch.nucleo.errores import CodigoError, ErrorProxLaunch
 from proxlaunch.nucleo.modelos.conexion import (
     CredencialContrasena,
@@ -61,15 +62,6 @@ from proxlaunch.nucleo.servicios.conexion import (
 )
 from proxlaunch.nucleo.validacion import normalizar_host, validar_perfil, validar_token
 from proxlaunch.nucleo.valores_defecto import PUERTO, REALM
-
-VERSIONES_FORZABLES = ("8.0", "8.1", "8.2", "8.3", "8.4", "9.0", "9.1", "9.2")
-
-
-def version_a_tupla(texto: str) -> tuple[int, int] | None:
-    partes = texto.split(".")
-    if len(partes) == 2 and all(p.isdigit() for p in partes):
-        return int(partes[0]), int(partes[1])
-    return None
 
 
 class DialogoConexion(QDialog):
@@ -201,8 +193,8 @@ class DialogoConexion(QDialog):
         self._ayuda_ssl = boton_ayuda("huella_ssl")
         self.combo_version = QComboBox()
         self.combo_version.addItem(self.tr("Detectada"), None)
-        for v in VERSIONES_FORZABLES:
-            self.combo_version.addItem(v, version_a_tupla(v))
+        for mayor, menor in VERSIONES_CONOCIDAS:
+            self.combo_version.addItem(f"{mayor}.{menor}", (mayor, menor))
         self.combo_version.setToolTip(ayuda("version_forzada"))
         self.fila_version = FilaCampo(
             self.tr("Forzar compatibilidad con la versión..."),

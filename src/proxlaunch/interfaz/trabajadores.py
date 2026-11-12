@@ -31,6 +31,7 @@ class SenalesTrabajador(QObject):
     terminado = Signal(object)  # resultado de la función
     fallo = Signal(object)  # ErrorProxLaunch
     etapa = Signal(object)  # Etapa (solo trabajos con contexto)
+    upid = Signal(str)  # UPID en cuanto se envía la petición de creación
 
 
 class Trabajador(QRunnable):
@@ -68,6 +69,7 @@ class Trabajador(QRunnable):
                 resultado = self._funcion(
                     *self._args,
                     al_cambiar_etapa=self.senales.etapa.emit,
+                    al_enviar=self.senales.upid.emit,
                     cancelado=self.cancelado,
                     **self._kwargs,
                 )
@@ -102,6 +104,7 @@ class Lanzador(QObject):
         al_terminar: Callable[[Any], None] | None = None,
         al_fallar: Callable[[ErrorProxLaunch], None] | None = None,
         al_etapa: Callable[[Any], None] | None = None,
+        al_upid: Callable[[str], None] | None = None,
         con_contexto: bool = False,
         **kwargs: Any,
     ) -> Trabajador:
@@ -109,6 +112,8 @@ class Lanzador(QObject):
         trabajador = Trabajador(funcion, *args, con_contexto=con_contexto, **kwargs)
         cola = Qt.ConnectionType.QueuedConnection
         senales = trabajador.senales
+        if al_upid is not None:
+            senales.upid.connect(al_upid, cola)
         if al_etapa is not None:
             senales.etapa.connect(al_etapa, cola)
         senales.terminado.connect(lambda r: self._finalizar(trabajador, al_terminar, r), cola)
@@ -186,38 +191,24 @@ def comprobar_vmid(sesion: Sesion, vmid: int) -> tuple[int, str | None]:
 
 def reanudar_seguimiento(
     servicio: ServicioCreacion,
-    sesion: Sesion,
     cfg: ConfiguracionVM,
     upid: str,
     una_vez: bool,
     *,
     al_cambiar_etapa: Callable[[Etapa], None],
     cancelado: threading.Event,
+    al_enviar: Callable[[str], None] | None = None,
 ) -> ResultadoCreacion:
     """«Seguir esperando» (``una_vez=False``) y «Comprobar ahora» (``una_vez=True``).
 
-    Retoma el seguimiento de una tarea YA enviada, sin volver a crear nada (CA-20.6).
-    El núcleo no ofrece una API pública para esto, así que se usan ``_seguir`` y
-    ``_comprobar`` de ``ServicioCreacion`` (pendiente de pasar a públicas).
+    Retoma el seguimiento de una tarea YA enviada, sin volver a crear nada (CA-20.6),
+    con la API pública del servicio. ``al_enviar`` se ignora (solo lo usa ``crear``).
     """
+    del al_enviar
     al_cambiar_etapa(Etapa.CREANDO)
     if una_vez:
-        estado = sesion.cliente.estado_tarea(cfg.nodo, upid)
-        if not estado.terminada:
-            return ResultadoCreacion(
-                desenlace=Desenlace.TIEMPO_AGOTADO,
-                vmid=cfg.vmid,
-                nodo=cfg.nodo,
-                upid=upid,
-                error=ErrorProxLaunch(CodigoError.TAREA_TIEMPO_AGOTADO, {"upid": upid}),
-            )
-    else:
-        final = servicio._seguir(cfg, upid, cancelado)
-        if isinstance(final, ResultadoCreacion):
-            return final
-        estado = final
-    al_cambiar_etapa(Etapa.COMPROBANDO)
-    resultado = servicio._comprobar(cfg, upid, estado.exitstatus)
-    if resultado.desenlace in (Desenlace.OK, Desenlace.CON_AVISOS):
-        al_cambiar_etapa(Etapa.LISTO)
-    return resultado
+        resultado = servicio.comprobar_ahora(cfg, upid)
+        if resultado.desenlace in (Desenlace.OK, Desenlace.CON_AVISOS):
+            al_cambiar_etapa(Etapa.LISTO)
+        return resultado
+    return servicio.seguir(cfg, upid, cancelado, al_cambiar_etapa)

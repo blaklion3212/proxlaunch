@@ -69,6 +69,10 @@ def mib_a_texto_gib(mib: int) -> str:
     return f"{mib / 1024:g}"
 
 
+class _Transparente(QWidget):
+    """Contenedor que no pinta el fondo del QSS: se ve el del grupo, como las demás filas."""
+
+
 class FormularioVM(QWidget):
     """Formulario de creación de una MV con validación en vivo y modo básico/avanzado."""
 
@@ -131,7 +135,7 @@ class FormularioVM(QWidget):
         self.combo_nodo = QComboBox()
         self.combo_nodo.setEnabled(False)
         self._texto_motivo = etiqueta("", secundario=True)
-        contenedor = QWidget()
+        contenedor = _Transparente()
         cn = QVBoxLayout(contenedor)
         cn.setContentsMargins(0, 0, 0, 0)
         fila = QHBoxLayout()

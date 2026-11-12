@@ -117,13 +117,14 @@ def texto_error(error: ErrorProxLaunch) -> str:
         )
     if c == CodigoError.SIN_ESPACIO:
         if p.get("storage"):
+            ids = [x for x in p["storage"].split(",") if x]
             return _fmt(
                 QCoreApplication.translate(
                     "Textos",
                     "No hay espacio suficiente en «{storage}» para crear el disco. Libera "
                     "espacio o elige otro almacenamiento.",
                 ),
-                p,
+                storage="», «".join(ids),
             )
         if p.get("requerido_gib"):
             return _fmt(
@@ -361,6 +362,25 @@ def privilegio_faltante_critico(aviso: Aviso) -> bool:
     return "VM.Allocate" in aviso.params.get("privilegios", "").split(",")
 
 
+def _lista_privilegios(p: Mapping[str, str]) -> str:
+    """«VM.Allocate en /vms, Sys.Audit en /» a partir de ``rutas`` («Priv@/ruta,...»)."""
+    rutas = [r for r in p.get("rutas", "").split(",") if r]
+    if not rutas:
+        return p.get("privilegios", "").replace(",", ", ")
+    partes = []
+    for r in rutas:
+        priv, _, ruta = r.partition("@")
+        if ruta:
+            partes.append(
+                QCoreApplication.translate("Textos", "{privilegio} en {ruta}").format(
+                    privilegio=priv, ruta=ruta
+                )
+            )
+        else:
+            partes.append(priv)
+    return ", ".join(partes)
+
+
 def texto_aviso(aviso: Aviso) -> str:
     """Mensaje de un aviso no bloqueante."""
     p = aviso.params
@@ -384,13 +404,24 @@ def texto_aviso(aviso: Aviso) -> str:
                 "Textos",
                 "Con este usuario no podrás crear máquinas: falta el permiso VM.Allocate",
             )
+        faltan = _lista_privilegios(p)
         return _fmt(
             QCoreApplication.translate(
                 "Textos",
                 "A tu usuario le faltan permisos recomendados ({privilegios}). Algunas "
                 "acciones podrían fallar.",
             ),
-            privilegios=p.get("privilegios", "").replace(",", ", "),
+            privilegios=faltan,
+        )
+    if aviso.codigo == CodigoAviso.VERSION_NO_PROBADA:
+        return _fmt(
+            QCoreApplication.translate(
+                "Textos",
+                "Este servidor tiene Proxmox VE {version}, más nuevo que la última versión "
+                "que ProxLaunch ha probado. Puedes continuar, pero algo podría no funcionar "
+                "como se espera.",
+            ),
+            p,
         )
     return texto_generico()
 
@@ -431,9 +462,9 @@ def texto_desenlace(resultado: ResultadoCreacion, nombre: str = "") -> str:
         if resultado.upid:
             return QCoreApplication.translate(
                 "Textos",
-                "Dejaste de esperar. La tarea pudo seguir en Proxmox; revisa si la máquina existe.",
+                "Cancelado. La tarea pudo seguir en Proxmox; revisa si la máquina existe.",
             )
-        return QCoreApplication.translate("Textos", "Creación cancelada. No se creó nada.")
+        return QCoreApplication.translate("Textos", "Cancelado. No se creó nada.")
     return texto_generico()
 
 
