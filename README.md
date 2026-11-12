@@ -195,4 +195,6 @@ Detalles para usuarios en la [guía](docs/guia-usuario.md#privacidad-y-seguridad
 
 ## Licencia del proyecto
 
-Aún no se ha definido una licencia para el código de ProxLaunch.
+Uso interno, todos los derechos reservados (D-19). Ver [`LICENSE`](LICENSE).
+Las bibliotecas y fuentes de terceros conservan sus licencias (PySide6/Qt bajo LGPL-3.0;
+fuentes bajo OFL).

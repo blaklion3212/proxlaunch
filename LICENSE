@@ -1,0 +1,12 @@
+ProxLaunch
+Copyright (c) 2026 Los autores de ProxLaunch. Todos los derechos reservados.
+
+Este software es de uso interno. No se concede ninguna licencia para copiarlo,
+modificarlo, distribuirlo ni publicarlo fuera de la organización propietaria sin
+autorización previa y por escrito.
+
+Los componentes de terceros conservan sus propias licencias:
+- Fuentes Open Sans, JetBrains Mono y Montserrat: SIL Open Font License 1.1
+  (textos en src/proxlaunch/recursos/fuentes/ y recursos/marca/generador/).
+- PySide6 / Qt: LGPL-3.0 (se usa como biblioteca dinámica, sin modificar).
+- requests, urllib3, keyring y platformdirs: licencias de sus respectivos proyectos.

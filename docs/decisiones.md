@@ -184,6 +184,11 @@ El usuario aprobó "por ahora" las 15 recomendaciones P-01 a P-15 de
 - Decisión técnica asociada (orquestador, F7 B6): con "Ignorar verificación SSL" activo
   y método de contraseña, se pide confirmación en cada conexión.
 
+## D-19 · Licencia del proyecto — Aprobada (2026-11-12)
+- ProxLaunch es de uso interno, con todos los derechos reservados (`LICENSE`).
+- Se puede abrir más adelante; las dependencias (PySide6/Qt LGPL-3.0, fuentes OFL) se
+  usan sin modificar y sus licencias se incluyen.
+
 ## Correcciones técnicas a `prompt.md`
 Errores o imprecisiones de la especificación original que los requisitos deben
 respetar:
