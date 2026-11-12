@@ -462,3 +462,23 @@ y estables desde ahora.
   `invalido`; objeto `#BarraSuperior`. `app.py` debe llamar `QApplication.setFont` con la
   familia de interfaz.
 - El texto deshabilitado queda fuera de la verificación de contraste (exención WCAG 1.4.3).
+
+## Anexo B · Firmas añadidas durante F3 (aprobadas por el orquestador, 2026-11-11)
+
+- `Transporte.usar_autenticador(auth)`; `crear_transporte_http` (fábrica de producción);
+  `AdaptadorHuella`; `TransporteHttp.cerrar()`. Todas las peticiones usan `verify=False`
+  porque la verificación real la hace la huella (con `verify=True` requests anularía
+  `cert_reqs`). Un `ReadTimeout` en POST/PUT/DELETE **no** hace failover (evita duplicar).
+- `iniciar_sesion_ticket(..., *, reloj=None)`, `responder_tfa(..., *, reloj=None)`;
+  `DesafioTFA`, `TipoTFA` (`totp`, `recovery`); `normalizar_usuario`.
+- Un 401 se traduce según el contexto: login o token → `CREDENCIALES_INVALIDAS`; sesión con
+  ticket o renovación → `SESION_EXPIRADA`; paso 2 del 2FA → `TFA_CODIGO_INCORRECTO`.
+- `ServicioConexion(..., obtener_huella_fn)`; `FabricaTransporte`;
+  `conectar(..., *, version_forzada=None)`; `consultar_huellas(perfil) -> InformacionHuella`
+  por host; `reemplazar_huella` (P-12); `EstadoHuella.IGNORADA`.
+- `Sesion.avisos: list[Aviso]` con `CodigoAviso`: `LLAVERO_NO_DISPONIBLE`,
+  `TOPOLOGIA_DEGRADADA` (A-6) y `PERMISOS_INCOMPLETOS`; `permisos_faltantes(sesion)` (RF-12).
+- Durante el 2FA, la contraseña se conserva en memoria **solo** si el perfil tiene
+  "Recordar credenciales" marcado, y se descarta al terminar.
+- `Desenlace.CANCELADO` (añadido por el orquestador): cancelar no es un error y no borra nada.
+- VMID ocupado: `error.params["siguiente"]` lleva el próximo VMID libre.

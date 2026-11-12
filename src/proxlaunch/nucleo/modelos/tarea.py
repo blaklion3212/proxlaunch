@@ -25,6 +25,9 @@ class Desenlace(StrEnum):
     TIEMPO_AGOTADO = "tiempo_agotado"
     CONEXION_PERDIDA = "conexion_perdida"
     PARCIAL = "parcial"
+    # El usuario canceló: antes del envío no se creó nada; durante el seguimiento la
+    # tarea puede seguir en Proxmox (no se borra nada).
+    CANCELADO = "cancelado"
 
 
 @dataclass(frozen=True)

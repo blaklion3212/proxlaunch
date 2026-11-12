@@ -54,6 +54,7 @@ TIPOS_BRIDGE = frozenset({"bridge", "OVSBridge"})  # V-16 / D-08
 _RE_ETIQUETA_DNS = re.compile(r"^[A-Za-z0-9](?:[A-Za-z0-9-]{0,61}[A-Za-z0-9])?$")
 _RE_TOKEN = re.compile(r"^[^@!=\s]+@[^@!=\s]+![A-Za-z0-9._-]+=\S+$")
 _RE_TOTP = re.compile(r"^[0-9]{6}$")
+_RE_CUATRO_GRUPOS = re.compile(r"[0-9]+(?:\.[0-9]+){3}")
 _GIB = 1024**3
 
 
@@ -316,6 +317,13 @@ def normalizar_host(texto: str) -> tuple[str, int | None]:
 def _host_valido(host: str) -> bool:
     if not host:
         return False
+    # A-3: cuatro grupos numéricos separados por puntos se tratan como IPv4, no como nombre DNS.
+    if _RE_CUATRO_GRUPOS.fullmatch(host):
+        try:
+            ipaddress.IPv4Address(host)
+        except ValueError:
+            return False
+        return True
     try:
         ipaddress.ip_address(host)
     except ValueError:
