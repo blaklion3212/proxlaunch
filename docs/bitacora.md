@@ -26,13 +26,13 @@ Nunca registres contraseñas, tokens ni datos personales.
 
 ## Estado actual (2026-11-11)
 
-- **Fase en curso:** requisitos del MVP 1 (D-12), a cargo de `analista-requisitos`,
-  en `docs/requisitos/mvp1.md`.
+- **Fase en curso:** arquitectura e interfaces del MVP 1 (orquestador). Requisitos
+  aprobados en `docs/requisitos/mvp1.md`.
 - **Bloqueo (⚠️):** el laboratorio Proxmox está **apagado**. Se perdió el permiso
   temporal (ACL) de `/dev/kvm`. El usuario se agregará al grupo `kvm` y
   reiniciará el equipo.
-- **Próximo paso:** terminar los requisitos del MVP 1 y, tras el reinicio,
-  encender el laboratorio con `lab.sh iniciar` para validar contra él.
+- **Próximo paso:** documentar la arquitectura del MVP 1 y, tras el reinicio,
+  encender el laboratorio con `lab.sh iniciar` para verificar permisos y formatos.
 
 ---
 
@@ -97,7 +97,7 @@ Nunca registres contraseñas, tokens ni datos personales.
 - **Responsable:** orquestador
 - **Qué se hizo:** se inicializó el repositorio git (rama `main`, con `.gitignore`)
   y se creó el registro de decisiones.
-- **Resultado:** ⚠️ repositorio creado; el primer commit queda pendiente hasta definir la identidad de autor de git.
+- **Resultado:** ✅ repositorio creado y primer commit `ab133c0`. Autor configurado solo para este repositorio: `ozz-minia` con un correo de marcador (`ozz-minia@localhost`); cambiarlo si el repositorio se sube a una plataforma remota.
 - **Archivos:** `.gitignore`, `docs/decisiones.md`.
 - **Siguientes pasos:** mantener `decisiones.md` como fuente de verdad.
 
@@ -106,10 +106,12 @@ Nunca registres contraseñas, tokens ni datos personales.
 - **Qué se hizo:** redacción de requisitos y criterios de aceptación del MVP 1:
   conexión (token y usuario/contraseña con 2FA), descubrimiento de nodos,
   storages y redes, y crear una MV con disco vacío (D-12).
-- **Resultado:** ⏳ en curso.
-- **Archivos:** `docs/requisitos/mvp1.md` (en elaboración).
-- **Siguientes pasos:** revisar y aprobar los requisitos; luego arquitectura
-  (orquestador), implementación, pruebas y revisiones según el flujo de `CLAUDE.md`.
+- **Resultado:** ✅ 27 RF, 16 RNF, 21 reglas de validación, valores por defecto,
+  permisos mínimos (por verificar en laboratorio) y casos de error. El orquestador
+  lo revisó y corrigió una contradicción (CA-22.6). El usuario aprobó las 15
+  preguntas abiertas con la recomendación (D-16) y D-14 pasó a Aprobada.
+- **Archivos:** `docs/requisitos/mvp1.md`, `docs/decisiones.md`.
+- **Siguientes pasos:** arquitectura e interfaces del MVP 1 (orquestador).
 
 ---
 
@@ -119,7 +121,6 @@ Nunca registres contraseñas, tokens ni datos personales.
 |---|---|
 | Laboratorio apagado | Requiere grupo `kvm` y reinicio del equipo antes de seguir validando. |
 | Eliminación del laboratorio | Obligatoria al final de las pruebas, sin dejar rastro (D-15). |
-| D-14 sin confirmar | Usabilidad para usuarios sin experiencia sigue como propuesta. |
 | D-13 pospuesta | Origen del SO (ISO, OVA, VMware): algunas importaciones exigen `root@pam` o SSH y dependen de la versión (MVP 4). |
 | Política de sobreasignación | Bloquear o advertir en pools thin: se define en el MVP 2. |
 | Firma de código en Windows | Pospuesta al MVP 5 (D-06). |

@@ -131,7 +131,7 @@ existían, monitoreo, alta disponibilidad (HA).
 - A investigar en el MVP 4: algunas importaciones exigen `root@pam` o SSH y
   dependen de la versión de Proxmox.
 
-## D-14 · Usabilidad para usuarios sin experiencia — Propuesta (2026-11-11)
+## D-14 · Usabilidad para usuarios sin experiencia — Aprobada (2026-11-11)
 - **Valores seguros por defecto**: el usuario básico solo llena nombre, perfil y
   cantidad.
 - **Modo básico / avanzado**: en el básico se ocultan bus, formato, IO Thread,
@@ -139,6 +139,7 @@ existían, monitoreo, alta disponibilidad (HA).
 - **Textos de ayuda en lenguaje llano** en cada campo técnico.
 - Tipo de CPU por defecto `x86-64-v2-AES` (no `host`, que impide migrar entre
   nodos con CPUs distintas).
+- En modo básico se ocultan también `discard` y `ssd` (P-03 de los requisitos).
 
 ## D-15 · Pruebas — Aprobada (2026-11-11)
 - No existe un Proxmox de pruebas en los sitios. **Nunca** se ejecutan pruebas
@@ -148,6 +149,17 @@ existían, monitoreo, alta disponibilidad (HA).
   desarrollo (`~/aprovprox-lab/`, fuera del repositorio). El usuario pidió
   **eliminarlo sin dejar rastro** al terminar todas las pruebas: borrar la
   carpeta y quitar al usuario del grupo `kvm`.
+
+## D-16 · Detalles del MVP 1 — Aprobada (2026-11-11)
+El usuario aprobó "por ahora" las 15 recomendaciones P-01 a P-15 de
+`docs/requisitos/mvp1.md` (sección 9). Las más relevantes:
+- Espacio insuficiente: bloquear en storages normales, solo advertir en thin (P-01).
+- Valores por defecto: 2 núcleos, 2 GiB de RAM, disco de 32 GiB (P-02).
+- TPM, `ostype` y encendido automático quedan fuera del MVP 1 (P-04, P-09, P-15).
+- Espera máxima de tarea: 10 min, sin declarar fallo al vencer (P-05).
+- Nodo "Automático": el de mayor RAM libre con espacio suficiente (P-07).
+- Huella SSL por host:puerto; la contraseña no se conserva en memoria (P-12, P-13).
+- Tema de respaldo si falla la detección: oscuro (P-14).
 
 ## Correcciones técnicas a `prompt.md`
 Errores o imprecisiones de la especificación original que los requisitos deben
