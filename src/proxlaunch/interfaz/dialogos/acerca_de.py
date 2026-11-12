@@ -1,0 +1,1 @@
+"""Diálogo Acerca de."""

@@ -1,0 +1,66 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "proxlaunch"
+version = "0.1.0"
+description = "Asistente de escritorio para crear máquinas virtuales en Proxmox VE"
+requires-python = ">=3.11"
+dependencies = [
+    "PySide6-Essentials",
+    "requests",
+    "proxmoxer",
+    "keyring",
+    "platformdirs",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest",
+    "pytest-qt",
+    "pytest-cov",
+    "responses",
+    "pytest-socket",
+    "ruff",
+    "mypy",
+]
+
+[project.scripts]
+proxlaunch = "proxlaunch.interfaz.app:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.setuptools.package-data]
+proxlaunch = [
+    "recursos/marca/*.svg",
+    "recursos/fuentes/*",
+    "recursos/traducciones/*",
+    "interfaz/tema/plantilla.qss",
+]
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+src = ["src", "tests"]
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "B", "UP", "SIM"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["src"]
+qt_api = "pyside6"
+addopts = "--disable-socket --allow-unix-socket"
+markers = [
+    "integracion: requiere el laboratorio real (solo con PROXLAUNCH_LAB=1)",
+]
+
+[tool.mypy]
+python_version = "3.11"
+mypy_path = "src"
+warn_unused_ignores = true
+warn_redundant_casts = true
+check_untyped_defs = true
+ignore_missing_imports = true
