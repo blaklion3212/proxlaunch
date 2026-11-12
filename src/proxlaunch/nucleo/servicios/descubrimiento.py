@@ -60,6 +60,8 @@ def descubrir(sesion: Sesion) -> Inventario:
     ``errores_por_nodo``, se marca fuera de línea y el resto sigue siendo utilizable
     (CA-11.8).
     """
+    # Los avisos de topología se recalculan en cada descubrimiento (sin duplicados).
+    sesion.avisos[:] = [a for a in sesion.avisos if a.codigo != CodigoAviso.TOPOLOGIA_DEGRADADA]
     nodos = sesion.cliente.nodos()
     topologia = _topologia(sesion, nodos)
     proximo_vmid = sesion.cliente.proximo_vmid()

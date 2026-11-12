@@ -62,6 +62,16 @@ class ClienteProxmox:
         self._cerrojo_renovacion = threading.Lock()
         transporte.usar_autenticador(auth)
 
+    def cerrar(self) -> None:
+        """Cierra la conexión: suelta el autenticador (ticket o token) y cierra el transporte."""
+        olvidar = getattr(self._auth, "olvidar", None)
+        if callable(olvidar):
+            olvidar()
+        self._transporte.usar_autenticador(None)
+        cerrar = getattr(self._transporte, "cerrar", None)
+        if callable(cerrar):
+            cerrar()
+
     # --- Base -------------------------------------------------------------------------
 
     def _llamar(

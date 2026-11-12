@@ -48,12 +48,14 @@ class RepositorioPreferencias:
         self._almacen = AlmacenJson(ruta)
         self.hubo_corrupcion = False
         self.copia_danada: Path | None = None
+        self.error_lectura = False
 
     def cargar(self) -> Preferencias:
         r = self._almacen.leer()
         if r.hubo_corrupcion:
             self.hubo_corrupcion = True
             self.copia_danada = r.copia_danada
+            self.error_lectura = self.error_lectura or r.error_lectura
         d = r.datos
         pref = Preferencias()
         with contextlib.suppress(ValueError):

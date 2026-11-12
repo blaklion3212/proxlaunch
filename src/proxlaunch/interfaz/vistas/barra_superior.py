@@ -53,6 +53,9 @@ class BarraSuperior(QFrame):
         self._version = QLabel()
         self._topologia = QLabel()
         self._ssl = QLabel()
+        # Los textos con datos del servidor (perfil, versión, nombre del clúster) son texto plano.
+        for w in (self._perfil, self._version, self._topologia, self._ssl):
+            w.setTextFormat(Qt.TextFormat.PlainText)
         self._ssl.setToolTip(
             QCoreApplication.translate(
                 "BarraSuperior",

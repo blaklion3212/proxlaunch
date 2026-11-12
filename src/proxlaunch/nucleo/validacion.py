@@ -36,6 +36,8 @@ DISCO_MIN_GIB = 1
 DISCO_MAX_GIB = 65536  # tope de interfaz (supuesto, V-08)
 VLAN_MIN, VLAN_MAX = 1, 4094
 PUERTO_MIN, PUERTO_MAX = 1, 65535
+MAX_INTERFACES_RED = 32  # net0..net31 (V-23)
+CARACTERES_PROHIBIDOS_ID = (",", "=", ":")  # romperían el formato `storage:tam,opc=val`
 
 # V-07: máximo de dispositivos por bus.
 MAX_DISPOSITIVOS: dict[Bus, int] = {Bus.SCSI: 31, Bus.VIRTIO: 16, Bus.SATA: 6, Bus.IDE: 4}
@@ -53,6 +55,7 @@ TIPOS_BRIDGE = frozenset({"bridge", "OVSBridge"})  # V-16 / D-08
 
 _RE_ETIQUETA_DNS = re.compile(r"^[A-Za-z0-9](?:[A-Za-z0-9-]{0,61}[A-Za-z0-9])?$")
 _RE_TOKEN = re.compile(r"^[^@!=\s]+@[^@!=\s]+![A-Za-z0-9._-]+=\S+$")
+_RE_TIPO_CPU = re.compile(r"[A-Za-z0-9._-]+")
 _RE_TOTP = re.compile(r"^[0-9]{6}$")
 _RE_CUATRO_GRUPOS = re.compile(r"[0-9]+(?:\.[0-9]+){3}")
 _GIB = 1024**3
@@ -165,6 +168,9 @@ def validar_vm(cfg: ConfiguracionVM, inv: Inventario, caps: Capacidades) -> list
             or (memoria_ok and minimo > cfg.memoria_mib)
         ):
             err("ballooning.minimo_mib", "V-06")
+    # V-22 tipo de CPU (va dentro de un parámetro de la API)
+    if not isinstance(cfg.tipo_cpu, str) or not _RE_TIPO_CPU.fullmatch(cfg.tipo_cpu):
+        err("tipo_cpu", "V-22")
     # V-20 origen
     if cfg.origen != OrigenSO.DISCO_VACIO:
         err("origen", "V-20")
@@ -179,12 +185,19 @@ def validar_vm(cfg: ConfiguracionVM, inv: Inventario, caps: Capacidades) -> list
     return p
 
 
+def _id_con_caracteres_prohibidos(valor: object) -> bool:
+    """Defensa en profundidad: un id con ``, = :`` alteraría el parámetro de la API."""
+    return not isinstance(valor, str) or any(c in valor for c in CARACTERES_PROHIBIDOS_ID)
+
+
 def _validar_discos(
     cfg: ConfiguracionVM, inv: Inventario, discos: list[Disco], p: list[Problema]
 ) -> None:
     def err(campo: str, codigo: str, **params: str) -> None:
         p.append(Problema(campo, codigo, Severidad.ERROR, dict(params)))
 
+    if cfg.con_disco and not discos:
+        err("discos", "V-07.sindisco")  # con disco marcado debe haber al menos uno
     vistos: Counter[Bus] = Counter()
     for i, d in enumerate(discos):
         ruta = f"discos[{i}]"
@@ -201,7 +214,12 @@ def _validar_discos(
             err(f"{ruta}.tamano_gib", "V-08")
         # V-17 storage y V-09 formato
         st = _buscar_storage(inv, cfg.nodo, d.storage)
-        if st is None or not st.activo or "images" not in st.contenido:
+        if (
+            st is None
+            or not st.activo
+            or "images" not in st.contenido
+            or _id_con_caracteres_prohibidos(d.storage)
+        ):
             err(f"{ruta}.storage", "V-17", storage=str(d.storage), nodo=cfg.nodo)
         elif d.formato not in (FormatoDisco.AUTO, *formatos_permitidos(st.tipo)):
             err(f"{ruta}.formato", "V-09", storage=st.id, tipo=st.tipo, formato=str(d.formato))
@@ -243,7 +261,12 @@ def _validar_efi(
         return
     id_efi = storage_efi_efectivo(cfg, inv, discos)
     st = None if id_efi is None else _buscar_storage(inv, cfg.nodo, id_efi)
-    if st is None or not st.activo or "images" not in st.contenido:
+    if (
+        st is None
+        or not st.activo
+        or "images" not in st.contenido
+        or _id_con_caracteres_prohibidos(id_efi)
+    ):
         p.append(
             Problema(
                 "storage_efi",
@@ -271,13 +294,18 @@ def storage_efi_efectivo(
 
 def _validar_redes(cfg: ConfiguracionVM, inv: Inventario, p: list[Problema]) -> None:
     bridges = {b.nombre for b in inv.bridges.get(cfg.nodo, ()) if b.tipo in TIPOS_BRIDGE}
+    if not bridges:
+        # El nodo no tiene bridges (CA-17.1): no se puede crear una interfaz de red.
+        p.append(Problema("redes", "V-16.sinredes", Severidad.ERROR, {"nodo": cfg.nodo}))
+    if len(cfg.redes) > MAX_INTERFACES_RED:  # V-23: net0..net31
+        p.append(Problema("redes", "V-23", Severidad.ERROR, {"maximo": str(MAX_INTERFACES_RED)}))
     for i, r in enumerate(cfg.redes):
         ruta = f"redes[{i}]"
         # V-15 VLAN
         if r.vlan is not None and (not _es_entero(r.vlan) or not VLAN_MIN <= r.vlan <= VLAN_MAX):
             p.append(Problema(f"{ruta}.vlan", "V-15", Severidad.ERROR, {}))
         # V-16 bridge
-        if r.bridge not in bridges or "," in r.bridge or "=" in r.bridge:
+        if r.bridge not in bridges or _id_con_caracteres_prohibidos(r.bridge):
             p.append(
                 Problema(
                     f"{ruta}.bridge",
@@ -315,7 +343,7 @@ def normalizar_host(texto: str) -> tuple[str, int | None]:
 
 
 def _host_valido(host: str) -> bool:
-    if not host:
+    if not host or "%" in host:  # '%' = id de zona IPv6 (fe80::1%eth0): no se admite
         return False
     # A-3: cuatro grupos numéricos separados por puntos se tratan como IPv4, no como nombre DNS.
     if _RE_CUATRO_GRUPOS.fullmatch(host):

@@ -594,15 +594,19 @@ def test_sesion_expirada_al_crear_reabre_la_conexion(qtbot, entorno):
     v._dialogo_conexion.reject()
 
 
-def test_excepcion_del_servicio_se_trata_como_error_y_desbloquea(qtbot, entorno):
+def test_excepcion_del_servicio_al_crear_es_conexion_perdida_conserva_upid_y_no_desbloquea(
+    qtbot, entorno
+):
+    # F7 (punto 11): antes se trataba como ERROR y se desbloqueaba el formulario; ahora, como la
+    # orden pudo haber salido, es CONEXION_PERDIDA, conserva el UPID y deja el formulario bloqueado.
     v = entorno.ventana
     entorno.creacion.resultado = ErrorProxLaunch(CodigoError.SERVIDOR_NO_RESPONDE)
     conectar(qtbot, entorno)
     poner_nombre(qtbot, v)
     crear_y_esperar(qtbot, v)
-    assert v.formulario.isEnabled()
-    assert v.progreso.boton_volver.isVisible()
-    assert v._ultimo_resultado.desenlace == Desenlace.ERROR
+    assert not v.formulario.isEnabled()
+    assert v._ultimo_resultado.desenlace == Desenlace.CONEXION_PERDIDA
+    assert v._ultimo_resultado.upid == UPID
 
 
 def test_tiempo_agotado_no_es_fallo_y_ofrece_seguir_o_comprobar(qtbot, entorno):

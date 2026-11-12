@@ -81,6 +81,14 @@ class AdaptadorHuella(HTTPAdapter):
         return super().proxy_manager_for(proxy, **self._con_huella(proxy_kwargs))
 
 
+class AdaptadorBloqueado(HTTPAdapter):
+    """Adaptador de último recurso: cualquier destino sin adaptador de huella se rechaza
+    (falla en cerrado, Seg M1)."""
+
+    def send(self, request: Any, *args: Any, **kwargs: Any) -> Any:
+        raise requests.exceptions.InvalidURL("destino sin adaptador de huella: bloqueado")
+
+
 def _fallo_antes_de_enviar(exc: BaseException) -> bool:
     """``True`` si hay certeza de que la petición no salió: falló al establecer la conexión.
 
@@ -148,6 +156,11 @@ class TransporteHttp:
         self._auth: Autenticador | None = None
         self._activo = 0
         self._sesion = sesion if sesion is not None else requests.Session()
+        # D-18: conexión directa; sin proxy del entorno ni credenciales de ~/.netrc.
+        self._sesion.trust_env = False
+        # Falla en cerrado: lo que no tenga adaptador propio no puede salir.
+        self._sesion.mount("https://", AdaptadorBloqueado())
+        self._sesion.mount("http://", AdaptadorBloqueado())
         if ignorar_ssl:
             # El usuario eligió explícitamente no verificar: se silencia el aviso repetitivo.
             urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
@@ -198,6 +211,8 @@ class TransporteHttp:
                         {"host": host, "puerto": str(self._puerto)},
                         limpiar_detalle(f"{type(e).__name__}: {e}"),
                     ) from None
+                if metodo not in _METODOS_SEGUROS:
+                    raise self._envio_incierto(host, "ssl", e) from None
                 motivos.append((host, "ssl"))
                 continue
             except requests.exceptions.ReadTimeout:
@@ -233,6 +248,9 @@ class TransporteHttp:
                 ) from None
 
             if resp.status_code in ESTADOS_NODO_CAIDO:
+                if metodo not in _METODOS_SEGUROS:
+                    # El POST pudo llegar al nodo: no se reenvía a otro host.
+                    raise self._envio_incierto(host, str(resp.status_code), None)
                 motivos.append((host, str(resp.status_code)))
                 continue
             self._activo = indice
@@ -250,6 +268,12 @@ class TransporteHttp:
         datos: dict[str, Any] | None,
     ) -> requests.Response:
         url = f"https://{_netloc(host, self._puerto)}{PREFIJO_API}{ruta}"
+        if not isinstance(self._sesion.get_adapter(url), AdaptadorHuella):
+            raise ErrorProxLaunch(
+                CodigoError.DESCONOCIDO,
+                {"host": host},
+                "el destino no tiene el adaptador de huella esperado",
+            )
         cabeceras: dict[str, str] = {}
         cookies: dict[str, str] = {}
         if self._auth is not None:
@@ -294,6 +318,20 @@ class TransporteHttp:
             resp.text,
             nodo=nodo_de_ruta(ruta),
             sesion_ticket=isinstance(self._auth, AutenticadorTicket),
+        )
+
+    @staticmethod
+    def _envio_incierto(host: str, motivo: str, exc: BaseException | None) -> ErrorProxLaunch:
+        """Error de una petición no GET que pudo haber llegado al servidor (sin failover).
+
+        Usa ``SERVIDOR_NO_RESPONDE`` con ``incierto="1"``; la creación lo traduce a
+        ``CONEXION_PERDIDA``.
+        """
+        detalle = f"{type(exc).__name__}: {exc}" if exc is not None else f"HTTP {motivo}"
+        return ErrorProxLaunch(
+            CodigoError.SERVIDOR_NO_RESPONDE,
+            {"host": host, "motivos": f"{host}={motivo}", "incierto": "1"},
+            limpiar_detalle(detalle),
         )
 
     def _error_agotado(self, motivos: list[tuple[str, str]], ruta: str) -> ErrorProxLaunch:

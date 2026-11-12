@@ -152,6 +152,7 @@ class ServicioConexionFalso:
     resultado_conectar: Any = None  # Sesion, DesafioTFA o ErrorProxLaunch
     resultado_tfa: Any = None  # Sesion o ErrorProxLaunch (o lista para varios intentos)
     llamadas: list[tuple] = field(default_factory=list)
+    error_cerrar_sesion: Any = None  # excepción a lanzar en cerrar_sesion (opcional)
 
     def consultar_huellas(self, perfil_):
         self.llamadas.append(("consultar_huellas", perfil_))
@@ -176,6 +177,14 @@ class ServicioConexionFalso:
             pendiente = pendiente.pop(0)
         return self._devolver(pendiente)
 
+    def cancelar_tfa(self, desafio):
+        self.llamadas.append(("cancelar_tfa", desafio))
+
+    def cerrar_sesion(self, sesion):
+        self.llamadas.append(("cerrar_sesion", sesion))
+        if isinstance(self.error_cerrar_sesion, ErrorProxLaunch | RuntimeError):
+            raise self.error_cerrar_sesion
+
     @staticmethod
     def _devolver(valor):
         if isinstance(valor, ErrorProxLaunch):
@@ -198,13 +207,16 @@ def info_huella(estado=EstadoHuella.NUEVA, host="10.0.0.5", puerto=8006, guardad
 class CreacionFalsa:
     """Servicio de creación falso. ``crear`` avisa etapas y UPID y devuelve ``resultado``."""
 
-    def __init__(self, resultado: ResultadoCreacion | ErrorProxLaunch, enviar_upid=True):
+    def __init__(self, resultado: ResultadoCreacion | BaseException, enviar_upid=True):
         self.resultado = resultado
         self.enviar_upid = enviar_upid
         self.llamadas_crear = 0
         self.liberar = threading.Event()
         self.respuestas_reanudar: list[ResultadoCreacion] = []
         self.llamadas_reanudar: list[str] = []
+        self.inventarios_reanudar: list[Any] = []
+        self.llamadas_existe_vm: list[Any] = []
+        self.respuesta_existe_vm: bool | None = None
 
     def crear(self, cfg, inv, al_cambiar_etapa: Callable, cancelado, *, al_enviar=None):
         self.llamadas_crear += 1
@@ -213,17 +225,25 @@ class CreacionFalsa:
         if self.enviar_upid and al_enviar is not None:
             al_enviar(UPID)
         al_cambiar_etapa(Etapa.CREANDO)
-        if isinstance(self.resultado, ErrorProxLaunch):
+        if isinstance(self.resultado, BaseException):
             raise self.resultado
         return self.resultado
 
-    def seguir(self, cfg, upid, cancelado, al_cambiar_etapa):
+    def seguir(self, cfg, upid, cancelado, al_cambiar_etapa, *, inv=None):
         self.llamadas_reanudar.append("seguir")
+        self.inventarios_reanudar.append(inv)
         return self.respuestas_reanudar.pop(0)
 
-    def comprobar_ahora(self, cfg, upid):
+    def comprobar_ahora(self, cfg, upid, *, inv=None):
         self.llamadas_reanudar.append("comprobar")
+        self.inventarios_reanudar.append(inv)
         return self.respuestas_reanudar.pop(0)
+
+    def existe_vm(self, cfg):
+        self.llamadas_existe_vm.append(cfg)
+        if isinstance(self.respuesta_existe_vm, BaseException):
+            raise self.respuesta_existe_vm
+        return self.respuesta_existe_vm
 
 
 def resultado(desenlace=Desenlace.OK, error=None, upid=UPID, vmid=101, nodo="pve1", log=None):

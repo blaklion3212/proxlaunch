@@ -176,7 +176,12 @@ class TablaRedes(QWidget):
         errores: list[str] = []
         con_vlan: set[int] = set()
         for p in problemas:
-            if not p.campo.startswith("redes[") or p.severidad != Severidad.ERROR:
+            if p.severidad != Severidad.ERROR:
+                continue
+            if p.campo == "redes":  # reglas de la lista completa (V-23)
+                errores.append(texto_problema(p))
+                continue
+            if not p.campo.startswith("redes["):
                 continue
             try:
                 i = int(p.campo[len("redes[") : p.campo.index("]")])

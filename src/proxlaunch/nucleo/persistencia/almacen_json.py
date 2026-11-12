@@ -12,6 +12,8 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any
 
+from proxlaunch.nucleo.persistencia.rutas import crear_carpeta_privada
+
 
 @dataclass(frozen=True)
 class ResultadoLectura:
@@ -20,6 +22,9 @@ class ResultadoLectura:
     datos: dict[str, Any]
     hubo_corrupcion: bool = False
     copia_danada: Path | None = None  # ruta a la que se renombró el archivo dañado
+    # No se pudo leer (permisos, es una carpeta...) o renombrar el dañado: se parte de vacío
+    # y `hubo_corrupcion` también es True para que la interfaz avise.
+    error_lectura: bool = False
 
 
 class AlmacenJson:
@@ -39,6 +44,8 @@ class AlmacenJson:
             return ResultadoLectura({})
         except UnicodeDecodeError:
             return self._marcar_danado()
+        except OSError:  # PermissionError, IsADirectoryError, fallo de disco...
+            return ResultadoLectura({}, hubo_corrupcion=True, error_lectura=True)
         try:
             datos = json.loads(texto)
         except ValueError:
@@ -49,7 +56,7 @@ class AlmacenJson:
 
     def escribir(self, datos: dict[str, Any]) -> None:
         """Escribe de forma atómica: temporal en la misma carpeta y `os.replace`."""
-        self.ruta.parent.mkdir(parents=True, exist_ok=True)
+        crear_carpeta_privada(self.ruta.parent)
         fd, nombre_tmp = tempfile.mkstemp(
             dir=self.ruta.parent, prefix=self.ruta.name + ".", suffix=".tmp"
         )
@@ -71,5 +78,8 @@ class AlmacenJson:
         while destino.exists():  # evita pisar una copia previa del mismo segundo
             destino = self.ruta.with_name(f"{self.ruta.name}.danado-{sello}-{contador}")
             contador += 1
-        os.replace(self.ruta, destino)
+        try:
+            os.replace(self.ruta, destino)
+        except OSError:
+            return ResultadoLectura({}, hubo_corrupcion=True, error_lectura=True)
         return ResultadoLectura({}, hubo_corrupcion=True, copia_danada=destino)

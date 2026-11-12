@@ -2,12 +2,18 @@
 
 from __future__ import annotations
 
+import re
 from pathlib import Path
 
 from proxlaunch.nucleo.errores import CodigoError, ErrorProxLaunch
 from proxlaunch.nucleo.persistencia.almacen_json import AlmacenJson
 
 VERSION_ESQUEMA = 1
+
+# Entrada "host:puerto": "AA:BB:...(32 pares)" legible dentro de un archivo dañado.
+_RE_ENTRADA = re.compile(
+    r'"(?P<clave>[^"\s]+:\d{1,5})"\s*:\s*"(?P<huella>(?:[0-9A-Fa-f]{2}:){31}[0-9A-Fa-f]{2})"'
+)
 
 
 def clave_huella(host: str, puerto: int) -> str:
@@ -20,23 +26,52 @@ def clave_huella(host: str, puerto: int) -> str:
     return f"{h}:{int(puerto)}"
 
 
+def _recuperar_de_copia(copia: Path) -> dict[str, str]:
+    """Rescata las entradas ``host:puerto -> huella`` que aún se pueden leer de un archivo
+    dañado (búsqueda textual: el JSON ya no es válido)."""
+    try:
+        texto = copia.read_text(encoding="utf-8", errors="ignore")
+    except OSError:
+        return {}
+    return {m.group("clave"): m.group("huella").upper() for m in _RE_ENTRADA.finditer(texto)}
+
+
 class RepositorioHuellas:
-    """Guarda `{"host:puerto": "AA:BB:..."}` dentro de un JSON versionado."""
+    """Guarda `{"host:puerto": "AA:BB:..."}` dentro de un JSON versionado.
+
+    Atributos públicos de estado (la interfaz los usa para avisar, RNF-15):
+        hubo_corrupcion: el archivo estaba dañado (o no se pudo leer) y se empezó vacío.
+        copia_danada: ruta de la copia del archivo dañado (``None`` si no hubo copia).
+        error_lectura: el archivo no se pudo leer o renombrar (permisos, carpeta...).
+        huellas_recuperadas: huellas rescatadas de la copia dañada (``host:puerto``).
+    """
 
     def __init__(self, ruta: Path) -> None:
         self._almacen = AlmacenJson(ruta)
         self.hubo_corrupcion = False
         self.copia_danada: Path | None = None
+        self.error_lectura = False
+        self.huellas_recuperadas: tuple[str, ...] = ()
 
     def _cargar(self) -> dict[str, str]:
         r = self._almacen.leer()
         if r.hubo_corrupcion:
             self.hubo_corrupcion = True
             self.copia_danada = r.copia_danada
+            self.error_lectura = self.error_lectura or r.error_lectura
         crudo = r.datos.get("huellas", {})
-        if not isinstance(crudo, dict):
-            return {}
-        return {str(k): v for k, v in crudo.items() if isinstance(v, str)}
+        huellas = (
+            {str(k): v for k, v in crudo.items() if isinstance(v, str)}
+            if isinstance(crudo, dict)
+            else {}
+        )
+        if r.hubo_corrupcion and r.copia_danada is not None:
+            rescatadas = _recuperar_de_copia(r.copia_danada)
+            if rescatadas:
+                huellas.update(rescatadas)
+                self.huellas_recuperadas = tuple(sorted(rescatadas))
+                self._volcar(huellas)  # se restauran para que no se pierdan en la siguiente lectura
+        return huellas
 
     def _volcar(self, huellas: dict[str, str]) -> None:
         self._almacen.escribir({"version_esquema": VERSION_ESQUEMA, "huellas": huellas})

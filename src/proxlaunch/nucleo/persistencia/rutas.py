@@ -2,11 +2,21 @@
 
 from __future__ import annotations
 
+import contextlib
+import os
 from pathlib import Path
 
 import platformdirs
 
 NOMBRE_APP = "ProxLaunch"
+
+
+def crear_carpeta_privada(ruta: Path) -> None:
+    """Crea la carpeta (y sus padres) y, en POSIX, la deja con permisos 0o700."""
+    ruta.mkdir(parents=True, exist_ok=True, mode=0o700)
+    if os.name == "posix":
+        with contextlib.suppress(OSError):
+            os.chmod(ruta, 0o700)
 
 
 class Rutas:

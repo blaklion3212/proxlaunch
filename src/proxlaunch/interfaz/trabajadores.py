@@ -6,6 +6,7 @@ resultado vuelve al hilo principal por señales en cola; solo ese hilo toca widg
 
 from __future__ import annotations
 
+import contextlib
 import logging
 import threading
 from collections.abc import Callable
@@ -63,27 +64,42 @@ class Trabajador(QRunnable):
         """Pide al trabajo que deje de esperar (no deshace nada)."""
         self.cancelado.set()
 
+    @staticmethod
+    def _emitir(senal: Any, valor: Any) -> None:
+        """Emite la señal sin fallar si el objeto Qt ya se destruyó (cierre de la ventana)."""
+        try:
+            senal.emit(valor)
+        except RuntimeError:
+            _log.debug("Señal descartada: el receptor ya no existe")
+
+    def _emitir_etapa(self, etapa: Any) -> None:
+        self._emitir(self.senales.etapa, etapa)
+
+    def _emitir_upid(self, upid: str) -> None:
+        self._emitir(self.senales.upid, upid)
+
     def run(self) -> None:
         try:
             if self._con_contexto:
                 resultado = self._funcion(
                     *self._args,
-                    al_cambiar_etapa=self.senales.etapa.emit,
-                    al_enviar=self.senales.upid.emit,
+                    al_cambiar_etapa=self._emitir_etapa,
+                    al_enviar=self._emitir_upid,
                     cancelado=self.cancelado,
                     **self._kwargs,
                 )
             else:
                 resultado = self._funcion(*self._args, **self._kwargs)
         except ErrorProxLaunch as error:
-            self.senales.fallo.emit(error)
+            self._emitir(self.senales.fallo, error)
         except Exception as exc:  # error inesperado: nunca debe romper el hilo
             _log.exception("Error inesperado en un trabajo en segundo plano")
-            self.senales.fallo.emit(
-                ErrorProxLaunch(CodigoError.DESCONOCIDO, {}, enmascarar(str(exc)))
+            self._emitir(
+                self.senales.fallo,
+                ErrorProxLaunch(CodigoError.DESCONOCIDO, {}, enmascarar(str(exc))),
             )
         else:
-            self.senales.terminado.emit(resultado)
+            self._emitir(self.senales.terminado, resultado)
 
 
 class Lanzador(QObject):
@@ -122,10 +138,23 @@ class Lanzador(QObject):
         QThreadPool.globalInstance().start(trabajador)
         return trabajador
 
+    @staticmethod
+    def _desconectar(trabajador: Trabajador) -> None:
+        """Rompe el ciclo trabajador -> señales -> lambda -> trabajador."""
+        for senal in (
+            trabajador.senales.terminado,
+            trabajador.senales.fallo,
+            trabajador.senales.etapa,
+            trabajador.senales.upid,
+        ):
+            with contextlib.suppress(RuntimeError, TypeError):
+                senal.disconnect()
+
     def _finalizar(
         self, trabajador: Trabajador, destino: Callable[[Any], None] | None, resultado: Any
     ) -> None:
         self._activos.discard(trabajador)
+        self._desconectar(trabajador)
         if destino is not None:
             destino(resultado)
 
@@ -136,6 +165,7 @@ class Lanzador(QObject):
         error: ErrorProxLaunch,
     ) -> None:
         self._activos.discard(trabajador)
+        self._desconectar(trabajador)
         if destino is not None:
             destino(error)
 
@@ -194,6 +224,7 @@ def reanudar_seguimiento(
     cfg: ConfiguracionVM,
     upid: str,
     una_vez: bool,
+    inv: Inventario | None = None,
     *,
     al_cambiar_etapa: Callable[[Etapa], None],
     cancelado: threading.Event,
@@ -207,8 +238,13 @@ def reanudar_seguimiento(
     del al_enviar
     al_cambiar_etapa(Etapa.CREANDO)
     if una_vez:
-        resultado = servicio.comprobar_ahora(cfg, upid)
+        resultado = servicio.comprobar_ahora(cfg, upid, inv=inv)
         if resultado.desenlace in (Desenlace.OK, Desenlace.CON_AVISOS):
             al_cambiar_etapa(Etapa.LISTO)
         return resultado
-    return servicio.seguir(cfg, upid, cancelado, al_cambiar_etapa)
+    return servicio.seguir(cfg, upid, cancelado, al_cambiar_etapa, inv=inv)
+
+
+def comprobar_existencia(servicio: ServicioCreacion, cfg: ConfiguracionVM) -> bool | None:
+    """Envío incierto sin UPID: ¿existe ya la máquina? ``None`` si no se pudo comprobar."""
+    return servicio.existe_vm(cfg)

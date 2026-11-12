@@ -269,11 +269,12 @@ def test_comprobar_ahora_con_tarea_fallida_es_error(hacer_cfg, reloj):
     assert resultado.desenlace == Desenlace.ERROR
 
 
-def test_comprobar_ahora_con_error_que_no_es_de_red_es_error(hacer_cfg, reloj):
+def test_comprobar_ahora_con_error_ajeno_al_desenlace_es_conexion_perdida(hacer_cfg, reloj):
+    # F7: un 403 al consultar la tarea no es el desenlace de la tarea; no se sabe su estado.
     prohibido = ErrorProxLaunch(CodigoError.PERMISO_INSUFICIENTE, {}, "403")
     t = rutas_creacion(TransporteFalso(), estado=prohibido)
     resultado = _servicio(t, reloj).comprobar_ahora(hacer_cfg(), UPID)
-    assert resultado.desenlace == Desenlace.ERROR
+    assert resultado.desenlace == Desenlace.CONEXION_PERDIDA
     assert resultado.error.codigo == CodigoError.PERMISO_INSUFICIENTE
 
 

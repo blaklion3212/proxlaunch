@@ -244,6 +244,9 @@ class TablaDiscos(QWidget):
         avisos: list[str] = []
         con_error_tamano: set[int] = set()
         for p in problemas:
+            if p.campo == "discos":  # regla de la lista completa (V-07.sindisco)
+                errores.append(texto_problema(p))
+                continue
             if not p.campo.startswith("discos["):
                 continue
             try:

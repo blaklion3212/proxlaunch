@@ -32,13 +32,41 @@ def _a_dict(p: PerfilConexion) -> dict[str, Any]:
     return d
 
 
+def _es_texto(valor: object) -> bool:
+    return isinstance(valor, str)
+
+
+def _es_booleano(valor: object) -> bool:
+    return isinstance(valor, bool)
+
+
 def _desde_dict(d: dict[str, Any]) -> PerfilConexion | None:
-    """Reconstruye un perfil; ignora claves desconocidas y descarta entradas inválidas."""
+    """Reconstruye un perfil; ignora claves desconocidas y descarta entradas inválidas.
+
+    Valida los tipos: ``hosts`` lista no vacía de textos no vacíos, ``puerto`` entero
+    (no booleano) entre 1 y 65535, textos y booleanos donde corresponde.
+    """
     try:
         conocidos = {c.name for c in fields(PerfilConexion)}
         datos = {k: v for k, v in d.items() if k in conocidos}
         if "metodo" in datos:
             datos["metodo"] = MetodoAuth(datos["metodo"])
+        hosts = datos.get("hosts")
+        if (
+            not isinstance(hosts, list)
+            or not hosts
+            or not all(isinstance(h, str) and h.strip() for h in hosts)
+        ):
+            return None
+        puerto = datos.get("puerto", 8006)
+        if isinstance(puerto, bool) or not isinstance(puerto, int) or not 1 <= puerto <= 65535:
+            return None
+        if not all(_es_texto(datos.get(k, "x")) for k in ("id", "nombre", "usuario", "realm")):
+            return None
+        if not all(
+            _es_booleano(datos.get(k, False)) for k in ("recordar_credenciales", "ignorar_ssl")
+        ):
+            return None
         return PerfilConexion(**datos)
     except (TypeError, ValueError):
         return None
@@ -51,12 +79,14 @@ class RepositorioPerfiles:
         self._almacen = AlmacenJson(ruta)
         self.hubo_corrupcion = False
         self.copia_danada: Path | None = None
+        self.error_lectura = False  # True si el archivo no se pudo leer (permisos, etc.)
 
     def _cargar(self) -> list[PerfilConexion]:
         r = self._almacen.leer()
         if r.hubo_corrupcion:
             self.hubo_corrupcion = True
             self.copia_danada = r.copia_danada
+            self.error_lectura = self.error_lectura or r.error_lectura
         crudos = r.datos.get("perfiles", [])
         if not isinstance(crudos, list):
             return []

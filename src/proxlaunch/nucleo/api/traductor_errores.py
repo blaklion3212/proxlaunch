@@ -31,7 +31,7 @@ _RE_PERMISO = re.compile(
     r"Permission check failed \(\s*(?P<ruta>[^,)]*?)\s*,\s*(?P<priv>[^)]*?)\s*\)", re.IGNORECASE
 )
 _RE_VMID_EXISTE = re.compile(
-    r"VM\s+(?P<vmid>\d+)\s+already exists(?:\s+on node\s+'(?P<nodo>[^']*)')?", re.IGNORECASE
+    r"(?:VM|CT)\s+(?P<vmid>\d+)\s+already exists(?:\s+on node\s+'(?P<nodo>[^']*)')?", re.IGNORECASE
 )
 _RE_SIN_ESPACIO = re.compile(
     r"out of (?:data )?space|insufficient free space|no space left", re.IGNORECASE

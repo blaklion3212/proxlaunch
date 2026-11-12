@@ -88,6 +88,10 @@ class AutenticadorToken:
     def renovar(self, transporte: Transporte) -> None:
         return None
 
+    def olvidar(self) -> None:
+        """Suelta el secreto del token (al cerrar la sesión)."""
+        self._credencial = CredencialToken(self._credencial.token_id, "")
+
 
 def _es_ticket_parcial(ticket: str) -> bool:
     partes = ticket.split(":")
@@ -141,6 +145,11 @@ class AutenticadorTicket:
         cookies[COOKIE_TICKET] = t.ticket
         if metodo.upper() != "GET":
             cabeceras[CABECERA_CSRF] = t.csrf
+
+    def olvidar(self) -> None:
+        """Suelta ticket y CSRF (al cerrar la sesión)."""
+        with self._lock:
+            self._ticket = Ticket(ticket="", csrf="", usuario=self._ticket.usuario, emitido_en=0.0)
 
     def necesita_renovar(self) -> bool:
         edad = self._reloj.ahora() - self._ticket.emitido_en

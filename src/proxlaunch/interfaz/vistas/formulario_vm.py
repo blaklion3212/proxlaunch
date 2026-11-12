@@ -692,6 +692,8 @@ class FormularioVM(QWidget):
             nodo_txt = None  # el motivo ya está debajo del selector
         self.fila_nodo.marcar_tocado()
         self.fila_nodo.mostrar_error(nodo_txt)
+        self.fila_cpu.marcar_tocado()
+        self.fila_cpu.mostrar_error(texto("tipo_cpu"))
         self.fila_sockets.mostrar_error(texto("sockets"))
         self.fila_cores.mostrar_error(texto("cores"))
         self.fila_memoria.mostrar_error(texto("memoria_mib"))

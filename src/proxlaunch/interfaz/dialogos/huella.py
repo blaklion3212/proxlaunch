@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from PySide6.QtCore import Qt
 from PySide6.QtWidgets import (
     QDialog,
     QHBoxLayout,
@@ -17,6 +18,12 @@ from proxlaunch.interfaz.textos import texto_error
 from proxlaunch.interfaz.vistas.campos import boton_ayuda
 from proxlaunch.nucleo.errores import CodigoError, ErrorProxLaunch
 from proxlaunch.nucleo.servicios.conexion import EstadoHuella, InformacionHuella
+
+
+def _plano(texto: str) -> QLabel:
+    lbl = QLabel(texto)
+    lbl.setTextFormat(Qt.TextFormat.PlainText)
+    return lbl
 
 
 def _caja_huella(huella: str) -> QPlainTextEdit:
@@ -39,7 +46,12 @@ class DialogoHuella(QDialog):
     """
 
     def __init__(
-        self, info: InformacionHuella, avanzado: bool, parent: QWidget | None = None
+        self,
+        info: InformacionHuella,
+        avanzado: bool,
+        parent: QWidget | None = None,
+        *,
+        archivo_danado: bool = False,
     ) -> None:
         super().__init__(parent)
         self.setModal(True)
@@ -57,7 +69,7 @@ class DialogoHuella(QDialog):
             aviso.setWordWrap(True)
             aviso.setProperty("error", True)
             capa.addWidget(aviso)
-            capa.addWidget(QLabel(self.tr("Servidor: {destino}").format(destino=destino)))
+            capa.addWidget(_plano(self.tr("Servidor: {destino}").format(destino=destino)))
             capa.addWidget(QLabel(self.tr("Huella guardada:")))
             capa.addWidget(_caja_huella(info.huella_guardada or ""))
             capa.addWidget(QLabel(self.tr("Huella nueva:")))
@@ -69,20 +81,28 @@ class DialogoHuella(QDialog):
             if avanzado:
                 # CA-05.5: solo en modo avanzado y con confirmación explícita.
                 boton = QPushButton(self.tr("Reemplazar la huella guardada"))
+                boton.setAutoDefault(False)
                 boton.clicked.connect(self._confirmar_reemplazo)
                 botones.addWidget(boton)
         else:
             self.setWindowTitle(self.tr("Confiar en este servidor"))
-            intro = QLabel(
-                self.tr(
-                    "Es la primera vez que te conectas a este servidor. Comprueba que la huella "
-                    "de abajo coincide con la que te dio tu administrador. No se ha enviado "
-                    "ninguna credencial."
+            if archivo_danado:
+                # Seg M2: no es «primera vez»: se perdió el registro, hay que comparar.
+                texto_intro = self.tr(
+                    "No tenemos registro de este servidor porque el archivo de huellas se "
+                    "dañó. Compara la huella con la de tu administrador antes de confiar."
                 )
-            )
+            else:
+                texto_intro = self.tr(
+                    "Es la primera vez que te conectas a este servidor. Comprueba que la "
+                    "huella de abajo coincide con la que te dio tu administrador. No se ha "
+                    "enviado ninguna credencial."
+                )
+            intro = QLabel(texto_intro)
+            intro.setTextFormat(Qt.TextFormat.PlainText)
             intro.setWordWrap(True)
             capa.addWidget(intro)
-            capa.addWidget(QLabel(self.tr("Servidor: {host}").format(host=info.host)))
+            capa.addWidget(_plano(self.tr("Servidor: {host}").format(host=info.host)))
             capa.addWidget(QLabel(self.tr("Puerto: {puerto}").format(puerto=info.puerto)))
             fila = QHBoxLayout()
             fila.addWidget(QLabel(self.tr("Huella SHA-256:")))
@@ -91,9 +111,10 @@ class DialogoHuella(QDialog):
             capa.addLayout(fila)
             capa.addWidget(_caja_huella(info.huella_observada or ""))
             cancelar = QPushButton(self.tr("Cancelar"))
+            cancelar.setDefault(True)  # Seg B1: Intro nunca confía por accidente
             cancelar.clicked.connect(self.reject)
             confiar = QPushButton(self.tr("Confiar y continuar"))
-            confiar.setDefault(True)
+            confiar.setAutoDefault(False)
             confiar.setProperty("primario", True)
             confiar.clicked.connect(self.accept)
             botones.addWidget(cancelar)

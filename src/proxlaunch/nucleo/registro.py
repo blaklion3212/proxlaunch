@@ -2,12 +2,16 @@
 
 from __future__ import annotations
 
+import contextlib
 import logging
+import os
 import re
 import threading
 from logging.handlers import RotatingFileHandler
 from pathlib import Path
 from urllib.parse import quote, quote_plus
+
+from proxlaunch.nucleo.persistencia.rutas import crear_carpeta_privada
 
 MASCARA = "***"
 NOMBRE_LOGGER = "proxlaunch"
@@ -15,7 +19,10 @@ ARCHIVO_LOG = "proxlaunch.log"
 
 # Nombres de campo cuyo valor siempre se enmascara (cabeceras, parámetros de formulario,
 # claves de diccionarios o JSON). Cubre `clave=valor`, `clave: valor` y `'clave': 'valor'`.
-_CAMPOS = "password|contrasena|otp|tfa|ticket|CSRFPreventionToken|PVEAuthCookie|PVEAPIToken"
+_CAMPOS = (
+    "tfa-challenge|tfa_challenge|password|contrasena|otp|tfa|ticket|"
+    "CSRFPreventionToken|PVEAuthCookie|PVEAPIToken"
+)
 _RE_CAMPO = re.compile(
     rf"""(?ix)(?<![A-Za-z])({_CAMPOS})(["']?\s*[:=]\s*)("[^"]*"|'[^']*'|[^\s&;,}}"']+)"""
 )
@@ -23,6 +30,10 @@ _RE_CAMPO = re.compile(
 _RE_CABECERA = re.compile(
     r"""(?i)(?<![A-Za-z])((?:set-)?cookie|authorization|proxy-authorization)(["']?\s*[:=]\s*)["']?[^\r\n"',}]+"""
 )
+
+# Códigos de segundo factor con prefijo (totp:123456, recovery:xxxx-..., y su forma
+# codificada en URL totp%3A...). No toca `"recovery": [..]` del desafío (lleva comillas).
+_RE_CODIGO_TFA = re.compile(r"(?i)\b(totp|recovery)(:|%3A)[^\s&;,\"'}]+")
 
 _lock = threading.Lock()
 _secretos: set[str] = set()
@@ -47,6 +58,7 @@ def enmascarar(texto: str) -> str:
     """Devuelve `texto` con todos los secretos conocidos sustituidos por `***`."""
     texto = _RE_CABECERA.sub(lambda m: f"{m.group(1)}{m.group(2)}{MASCARA}", texto)
     texto = _RE_CAMPO.sub(lambda m: f"{m.group(1)}{m.group(2)}{MASCARA}", texto)
+    texto = _RE_CODIGO_TFA.sub(lambda m: f"{m.group(1)}{m.group(2)}{MASCARA}", texto)
     with _lock:
         conocidos = sorted(_secretos, key=len, reverse=True)
     for s in conocidos:
@@ -74,6 +86,17 @@ class FiltroSecretos(logging.Filter):
         return True
 
 
+class _RotativoPrivado(RotatingFileHandler):
+    """Archivo rotativo que en POSIX queda con permisos 0o600 (también tras rotar)."""
+
+    def _open(self):  # noqa: ANN202
+        flujo = super()._open()
+        if os.name == "posix":
+            with contextlib.suppress(OSError):
+                os.chmod(self.baseFilename, 0o600)
+        return flujo
+
+
 def configurar_registro(
     directorio: Path | str,
     nivel: int | str = logging.INFO,
@@ -83,13 +106,13 @@ def configurar_registro(
     """Configura el logger "proxlaunch" con archivo rotativo (1 MB x 5 por defecto) y
     filtro de secretos. Es idempotente: reemplaza el manejador previo si lo hubiera."""
     carpeta = Path(directorio)
-    carpeta.mkdir(parents=True, exist_ok=True)
+    crear_carpeta_privada(carpeta)
     logger = logging.getLogger(NOMBRE_LOGGER)
     for h in list(logger.handlers):
         if getattr(h, "_proxlaunch", False):
             logger.removeHandler(h)
             h.close()
-    manejador = RotatingFileHandler(
+    manejador = _RotativoPrivado(
         carpeta / ARCHIVO_LOG, maxBytes=max_bytes, backupCount=copias, encoding="utf-8"
     )
     manejador._proxlaunch = True  # type: ignore[attr-defined]

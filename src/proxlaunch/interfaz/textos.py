@@ -103,6 +103,12 @@ def texto_error(error: ErrorProxLaunch) -> str:
             "de nuevo.",
         )
     if c == CodigoError.SERVIDOR_NO_RESPONDE:
+        if p.get("incierto") == "1":
+            return QCoreApplication.translate(
+                "Textos",
+                "No sabemos si Proxmox recibió la orden de crear la máquina. Pulsa "
+                "«Comprobar» antes de intentarlo de nuevo.",
+            )
         return _texto_servidor_no_responde(p)
     if c == CodigoError.NODO_NO_DISPONIBLE:
         if p.get("nodo"):
@@ -369,6 +375,14 @@ def texto_problema(p: Problema) -> str:
         return QCoreApplication.translate("Textos", "Escribe solo el nombre o la IP del servidor.")
     if cod == "V-20":
         return QCoreApplication.translate("Textos", "El origen del sistema no es válido.")
+    if cod == "V-07.sindisco":
+        return QCoreApplication.translate("Textos", "Agrega al menos un disco o marca «Sin disco».")
+    if cod == "V-22":
+        return QCoreApplication.translate("Textos", "El tipo de CPU no es válido.")
+    if cod == "V-23":
+        return QCoreApplication.translate(
+            "Textos", "Una máquina admite como máximo 32 interfaces de red."
+        )
     if cod == "V-21":
         return QCoreApplication.translate("Textos", "El código tiene 6 números.")
     return texto_generico()

@@ -97,6 +97,8 @@ class DialogoConexion(QDialog):
         self._generacion = 0  # invalida los resultados de un intento abandonado
         self._ocupado = False
         self._dialogo_tfa: DialogoDosFactores | None = None
+        self._desafio_tfa: DesafioTFA | None = None
+        self._cargando = False  # evita reacciones a cambios hechos por código
         self.sesion: Sesion | None = None
         self.perfil_conectado: PerfilConexion | None = None
         self.version_forzada: tuple[int, int] | None = version_forzada
@@ -208,7 +210,9 @@ class DialogoConexion(QDialog):
         self._contenedor_ssl = QWidget()
         self._contenedor_ssl.setLayout(fila_ssl)
         fila_ssl.setContentsMargins(0, 0, 0, 0)
+        self._nota_recordar = mensaje(aviso=True)
         capa.addWidget(self.chk_recordar)
+        capa.addWidget(self._nota_recordar)
         capa.addWidget(self._contenedor_ssl)
         capa.addWidget(self.fila_version)
         if self.version_forzada is not None:
@@ -254,6 +258,7 @@ class DialogoConexion(QDialog):
         self.token.textChanged.connect(lambda _t: self._revisar_root())
         self.realm.currentTextChanged.connect(lambda _t: self._revisar_root())
         self.chk_ignorar.toggled.connect(lambda _v: self._actualizar_info_ssl())
+        self.chk_recordar.toggled.connect(self._al_cambiar_recordar)
 
     def _seleccionar_version(self, version: tuple[int, int]) -> None:
         """Selecciona por igualdad: PySide compara las tuplas de ``findData`` por identidad."""
@@ -287,6 +292,14 @@ class DialogoConexion(QDialog):
         self._cargar_perfil(self._perfiles.obtener(str(pid)) if pid else None)
 
     def _cargar_perfil(self, perfil: PerfilConexion | None) -> None:
+        self._cargando = True
+        try:
+            poner_mensaje(self._nota_recordar, None)
+            self._cargar_perfil_interno(perfil)
+        finally:
+            self._cargando = False
+
+    def _cargar_perfil_interno(self, perfil: PerfilConexion | None) -> None:
         self._perfil_actual = perfil
         self._secreto_guardado = None
         poner_mensaje(self._estado, None)
@@ -332,6 +345,24 @@ class DialogoConexion(QDialog):
         self._actualizar_info_ssl()
         self.btn_duplicar.setEnabled(perfil is not None)
         self.btn_eliminar.setEnabled(perfil is not None)
+
+    def _al_cambiar_recordar(self, marcada: bool) -> None:
+        """Seg B3: al desmarcar deja de usarse el secreto guardado y se avisa en línea
+        (sin ventana modal) de que se borrará al guardar o conectar (CA-08.6)."""
+        if self._cargando:
+            return
+        if marcada:
+            poner_mensaje(self._nota_recordar, None)
+            return
+        if self._secreto_guardado is None:
+            return
+        self._secreto_guardado = None
+        self._actualizar_marcador_secreto()
+        poner_mensaje(
+            self._nota_recordar,
+            self.tr("Las credenciales guardadas se borrarán del llavero al guardar o conectar."),
+            aviso=True,
+        )
 
     def _actualizar_marcador_secreto(self) -> None:
         guardado = self.tr("(guardado en el llavero)")
@@ -404,7 +435,7 @@ class DialogoConexion(QDialog):
                 puerto_en_host = puerto
         return hosts, puerto_en_host
 
-    def _leer_perfil(self) -> PerfilConexion | None:
+    def _leer_perfil(self, *, credenciales: bool = True) -> PerfilConexion | None:
         """Construye el perfil de los campos; ``None`` si hay errores (ya mostrados)."""
         hosts, puerto_host = self._leer_hosts()
         texto_puerto = self.puerto.text().strip()
@@ -436,6 +467,18 @@ class DialogoConexion(QDialog):
             texto_problema(errores_puerto[0]) if errores_puerto else None
         )
         ok = ok and not problemas
+        if not credenciales:
+            # Guardar el perfil no exige credenciales (p. ej. tras dejar de recordarlas).
+            token = self.token.text().strip()
+            if self._es_token():
+                perfil.usuario = (
+                    token.split("=", 1)[0]
+                    if not validar_token(token)
+                    else (self._perfil_actual.usuario if self._perfil_actual else "")
+                )
+            else:
+                perfil.usuario = self.usuario.text().strip()
+            return perfil if ok else None
         if self._es_token():
             token = self._texto_token()
             self.fila_token.marcar_tocado()
@@ -509,7 +552,9 @@ class DialogoConexion(QDialog):
     # --- Guardar ----------------------------------------------------------------------
 
     def _guardar_clic(self) -> None:
-        perfil = self._leer_perfil()
+        # Sin nada escrito en el token no se exige (p. ej. tras dejar de recordarlo).
+        escrito = bool(self.token.text().strip())
+        perfil = self._leer_perfil(credenciales=escrito if self._es_token() else True)
         if perfil is None:
             return
         self._guardar_perfil(perfil)
@@ -588,6 +633,20 @@ class DialogoConexion(QDialog):
             self.fila_contrasena.mostrar_error(self.tr("Escribe tu contraseña."))
             return
         self.fila_contrasena.mostrar_error(None)
+        if self._avanzado and perfil.ignorar_ssl and perfil.metodo == MetodoAuth.CONTRASENA:
+            respuesta = QMessageBox.warning(
+                self,
+                self.tr("Conexión sin verificar"),
+                self.tr(
+                    "No se comprobará la identidad del servidor. Tu contraseña viajaría sin "
+                    "esa protección y alguien en la red podría interceptarla. ¿Conectar "
+                    "igualmente?"
+                ),
+                QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+                QMessageBox.StandardButton.No,
+            )
+            if respuesta != QMessageBox.StandardButton.Yes:
+                return
         self._generacion += 1
         gen = self._generacion
         # CA-06.3: fuera del modo avanzado se verifica siempre por huella.
@@ -615,8 +674,12 @@ class DialogoConexion(QDialog):
             return
         pendientes = [i for i in infos if i.estado in (EstadoHuella.CAMBIADA, EstadoHuella.NUEVA)]
         for info in pendientes:
-            dialogo = DialogoHuella(info, self._avanzado, self)
-            if dialogo.exec() != QDialog.DialogCode.Accepted:
+            dialogo = DialogoHuella(
+                info, self._avanzado, self, archivo_danado=self._huellas.hubo_corrupcion
+            )
+            aceptado = dialogo.exec() == QDialog.DialogCode.Accepted
+            dialogo.deleteLater()
+            if not aceptado:
                 # CA-05.3 y CA-05.4: no se conecta y no se guarda nada.
                 self._abandonar(
                     texto_error(ErrorProxLaunch(CodigoError.HUELLA_CAMBIADA))
@@ -661,6 +724,7 @@ class DialogoConexion(QDialog):
         self._ocupar(True, self.tr("Esperando el segundo factor..."))
         dialogo = DialogoDosFactores(desafio, self)
         self._dialogo_tfa = dialogo
+        self._desafio_tfa = desafio
         dialogo.enviado.connect(lambda codigo, tipo: self._enviar_tfa(gen, desafio, codigo, tipo))
         dialogo.rejected.connect(lambda: self._tfa_cancelado(gen))
         dialogo.open()
@@ -679,6 +743,7 @@ class DialogoConexion(QDialog):
         if gen != self._generacion:
             return
         self.uso_clave_recuperacion = tipo == TipoTFA.RECUPERACION
+        self._desafio_tfa = None
         self._cerrar_tfa()
         self._exito(sesion)
 
@@ -695,15 +760,24 @@ class DialogoConexion(QDialog):
     def _tfa_cancelado(self, gen: int) -> None:
         if gen != self._generacion or self._dialogo_tfa is None:
             return
-        self._dialogo_tfa = None
+        dialogo, self._dialogo_tfa = self._dialogo_tfa, None
+        dialogo.deleteLater()
+        self._descartar_tfa_pendiente()
         self._generacion += 1
         self._ocupar(False)
+
+    def _descartar_tfa_pendiente(self) -> None:
+        """Pide al servicio que olvide el desafío 2FA pendiente (Seg B2)."""
+        desafio, self._desafio_tfa = self._desafio_tfa, None
+        if desafio is not None:
+            self._servicio.cancelar_tfa(desafio)
 
     def _cerrar_tfa(self) -> None:
         dialogo, self._dialogo_tfa = self._dialogo_tfa, None
         if dialogo is not None:
             dialogo.blockSignals(True)
             dialogo.close()
+            dialogo.deleteLater()
 
     def _error_conexion(self, gen: int, error: ErrorProxLaunch) -> None:
         if gen != self._generacion:
@@ -731,6 +805,8 @@ class DialogoConexion(QDialog):
     def reject(self) -> None:
         # Los resultados que lleguen después de cerrar se descartan.
         self._generacion += 1
+        if self._dialogo_tfa is not None:
+            self._descartar_tfa_pendiente()
         self._cerrar_tfa()
         super().reject()
 

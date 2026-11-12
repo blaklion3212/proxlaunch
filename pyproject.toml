@@ -9,9 +9,10 @@ description = "Asistente de escritorio para crear máquinas virtuales en Proxmox
 requires-python = ">=3.11"
 dependencies = [
     "PySide6-Essentials>=6.11",
-    "requests",
-    "keyring",
-    "platformdirs",
+    "requests>=2.32.4",
+    "urllib3>=2.6.3,<3",
+    "keyring>=25",
+    "platformdirs>=4",
 ]
 
 [project.optional-dependencies]

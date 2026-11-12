@@ -194,10 +194,14 @@ def test_ca_20_3_ok_sin_permiso_para_confirmar_es_con_avisos(ejecutar_creacion):
     assert resultado.error.codigo == CodigoError.PERMISO_INSUFICIENTE
 
 
-def test_ca_20_4_un_error_no_de_red_durante_el_sondeo_termina_con_error_y_upid(ejecutar_creacion):
+def test_ca_20_4_un_error_ajeno_al_desenlace_durante_el_sondeo_es_conexion_perdida_con_upid(
+    ejecutar_creacion,
+):
+    # F7: tras obtener el UPID, un error que no es el desenlace de la tarea (aquí sesión
+    # expirada) ya no es ERROR definitivo: no se sabe el estado real, así que CONEXION_PERDIDA.
     expirada = ErrorProxLaunch(CodigoError.SESION_EXPIRADA, {}, "401")
     resultado, _ = ejecutar_creacion(_ok(estado=expirada))
-    assert resultado.desenlace == Desenlace.ERROR
+    assert resultado.desenlace == Desenlace.CONEXION_PERDIDA
     assert resultado.upid == UPID
     assert resultado.error.codigo == CodigoError.SESION_EXPIRADA
 

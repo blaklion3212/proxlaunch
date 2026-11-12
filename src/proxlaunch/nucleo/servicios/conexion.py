@@ -39,7 +39,7 @@ from proxlaunch.nucleo.modelos.conexion import (
 from proxlaunch.nucleo.modelos.inventario import Version
 from proxlaunch.nucleo.persistencia.huellas import RepositorioHuellas
 from proxlaunch.nucleo.persistencia.secretos import AlmacenSecretos
-from proxlaunch.nucleo.registro import registrar_secreto
+from proxlaunch.nucleo.registro import olvidar_secretos, registrar_secreto
 from proxlaunch.nucleo.reloj import Reloj
 
 _log = logging.getLogger("proxlaunch.servicios.conexion")
@@ -156,6 +156,7 @@ class ServicioConexion:
         self._obtener_huella = obtener_huella_fn
         self._pendientes: dict[str, _Pendiente] = {}
         self._cerrojo = threading.Lock()
+        self._sesiones: set[int] = set()  # sesiones abiertas (por id)
 
     # --- Huella -----------------------------------------------------------------------
 
@@ -293,6 +294,28 @@ class ServicioConexion:
             pendiente.version_forzada,
         )
 
+    def cancelar_tfa(self, desafio: DesafioTFA) -> None:
+        """Descarta el 2FA pendiente: transporte, ticket parcial y contraseña a recordar."""
+        pendiente = None
+        with self._cerrojo:
+            pendiente = self._pendientes.pop(desafio.ticket_parcial, None)
+        if pendiente is not None:
+            pendiente.contrasena_a_recordar = None
+            cerrar = getattr(pendiente.transporte, "cerrar", None)
+            if callable(cerrar):
+                cerrar()
+
+    def cerrar_sesion(self, sesion: Sesion) -> None:
+        """Cierra la sesión: transporte, autenticador y ticket. Si no queda ninguna otra
+        sesión ni 2FA pendiente, olvida los secretos registrados en el filtro del log (lo
+        ya escrito conserva su enmascarado; los secretos de otras sesiones no se tocan)."""
+        sesion.cliente.cerrar()
+        with self._cerrojo:
+            self._sesiones.discard(id(sesion))
+            libre = not self._sesiones and not self._pendientes
+        if libre:
+            olvidar_secretos()
+
     # --- Internos ---------------------------------------------------------------------
 
     def _descartar(self, desafio: DesafioTFA) -> None:
@@ -336,6 +359,8 @@ class ServicioConexion:
             host_activo=transporte.host_activo,
             usuario_efectivo=usuario_efectivo,
         )
+        with self._cerrojo:
+            self._sesiones.add(id(sesion))
         if (version.mayor, version.menor) > ULTIMA_VERSION_CONOCIDA:
             # Se permite conectar, pero se avisa de que la versión no se ha probado (CA-09.3).
             sesion.avisos.append(Aviso(CodigoAviso.VERSION_NO_PROBADA, {"version": version.texto}))
@@ -380,6 +405,8 @@ def permisos_faltantes_detalle(sesion: Sesion) -> list[tuple[str, str]] | None:
         permisos = sesion.cliente.permisos()
     except ErrorProxLaunch:
         return None
+    # Se recalcula en cada comprobación: se retira el aviso anterior (sin duplicados).
+    sesion.avisos[:] = [a for a in sesion.avisos if a.codigo != CodigoAviso.PERMISOS_INCOMPLETOS]
     faltan = [
         (priv, ruta)
         for ruta, privs in PERMISOS_POR_RUTA.items()

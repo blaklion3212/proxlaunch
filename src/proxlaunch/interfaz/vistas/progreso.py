@@ -46,6 +46,7 @@ class PanelProgreso(QGroupBox):
             self._lbl_etapas[etapa] = lbl
             self._etapas.addWidget(lbl)
         self._mensaje = QLabel()
+        self._mensaje.setTextFormat(Qt.TextFormat.PlainText)
         self._mensaje.setWordWrap(True)
         self._mensaje.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse)
         self._upid_titulo = QLabel(
@@ -167,6 +168,11 @@ class PanelProgreso(QGroupBox):
         poner_propiedad(self._mensaje, "error", desenlace in (Desenlace.ERROR, Desenlace.PARCIAL))
         self._mensaje.setText(texto)
         self._mensaje.show()
+        self.boton_comprobar.setText(
+            QCoreApplication.translate("PanelProgreso", "Comprobar")
+            if not upid
+            else QCoreApplication.translate("PanelProgreso", "Comprobar ahora")
+        )
         if desenlace == Desenlace.TIEMPO_AGOTADO:
             self._botones(False, True, True, True)
         elif desenlace == Desenlace.CONEXION_PERDIDA:

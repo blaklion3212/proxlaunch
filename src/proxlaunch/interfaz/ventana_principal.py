@@ -11,6 +11,8 @@ from typing import Any
 from PySide6.QtCore import QSize, Qt, QTimer
 from PySide6.QtGui import QAction, QActionGroup, QCloseEvent, QKeySequence
 from PySide6.QtWidgets import (
+    QApplication,
+    QDialog,
     QFrame,
     QHBoxLayout,
     QLabel,
@@ -37,6 +39,7 @@ from proxlaunch.interfaz.textos import (
 )
 from proxlaunch.interfaz.trabajadores import (
     Lanzador,
+    comprobar_existencia,
     comprobar_vmid,
     descubrir_y_comprobar_permisos,
     reanudar_seguimiento,
@@ -107,6 +110,7 @@ class VentanaPrincipal(QMainWindow):
         self._bloqueo_permiso: str | None = None
         self._dialogo_conexion: DialogoConexion | None = None
         self._descubriendo = False
+        self._upid_recibido: str | None = None
         self._errores_sesion: list[str] = []
         self._avisos_extra: list[str] = []
 
@@ -254,12 +258,19 @@ class VentanaPrincipal(QMainWindow):
 
         m_ayuda = barra.addMenu(self.tr("A&yuda"))
         a_guia = QAction(self.tr("¿Cómo creo un API Token?"), self)
-        a_guia.triggered.connect(lambda: DialogoGuiaToken(self).exec())
+        a_guia.triggered.connect(lambda: self._mostrar_y_borrar(DialogoGuiaToken(self)))
         a_acerca = QAction(self.tr("Acerca de ProxLaunch"), self)
         a_acerca.triggered.connect(
-            lambda: DialogoAcercaDe(self._deps.gestor_tema.tema_actual, self).exec()
+            lambda: self._mostrar_y_borrar(
+                DialogoAcercaDe(self._deps.gestor_tema.tema_actual, self)
+            )
         )
         m_ayuda.addActions([a_guia, a_acerca])
+
+    @staticmethod
+    def _mostrar_y_borrar(dialogo: QDialog) -> None:
+        dialogo.exec()
+        dialogo.deleteLater()
 
     # --- Ajustes persistentes ---------------------------------------------------------
 
@@ -314,11 +325,12 @@ class VentanaPrincipal(QMainWindow):
         )
         self._dialogo_conexion = dialogo
         dialogo.accepted.connect(lambda: self._al_conectar(dialogo))
-        dialogo.finished.connect(lambda _r: self._dialogo_cerrado())
+        dialogo.finished.connect(lambda _r: self._dialogo_cerrado(dialogo))
         dialogo.open()
 
-    def _dialogo_cerrado(self) -> None:
+    def _dialogo_cerrado(self, dialogo: DialogoConexion) -> None:
         self._dialogo_conexion = None
+        dialogo.deleteLater()
 
     def _al_conectar(self, dialogo: DialogoConexion) -> None:
         sesion = dialogo.sesion
@@ -350,6 +362,14 @@ class VentanaPrincipal(QMainWindow):
         if cambio_perfil:
             self._formulario_listo = False
             self._inv = None
+            # Un resultado pendiente de otro servidor ya no se puede retomar.
+            self._ultimo_resultado = None
+            self._servicio_creacion = None
+            self._cfg_creacion = None
+            self._upid_recibido = None
+            self.progreso.reiniciar()
+            self.formulario.bloquear(False)
+            self.resumen.liberar()
         self._descubrir()
 
     def _actualizar_barra(self) -> None:
@@ -376,10 +396,17 @@ class VentanaPrincipal(QMainWindow):
     def _cerrar_sesion(self) -> None:
         if self._creando:
             return
+        sesion = self._sesion
+        if sesion is not None:
+            try:
+                self._deps.servicio_conexion.cerrar_sesion(sesion)
+            except ErrorProxLaunch:
+                _log.warning("No se pudo cerrar la sesión limpiamente")
         self._sesion = None
         self._inv = None
         self._formulario_listo = False
         self._perfil_id = None
+        self._ultimo_resultado = None
         self.barra.limpiar()
         self._paginas.setCurrentIndex(0)
         self.statusBar().showMessage(self.tr("Sin conexión"))
@@ -401,7 +428,7 @@ class VentanaPrincipal(QMainWindow):
             item = self._zona_avisos.takeAt(0)
             if item is not None and item.widget() is not None:
                 item.widget().deleteLater()
-        textos_aviso = list(self._avisos_extra)
+        textos_aviso = list(self._avisos_extra) + self._avisos_archivos()
         if self._sesion is not None:
             textos_aviso.extend(texto_aviso(a) for a in self._sesion.avisos)
         for texto in dict.fromkeys(textos_aviso):
@@ -409,10 +436,39 @@ class VentanaPrincipal(QMainWindow):
         for texto in self._errores_sesion:
             self._zona_avisos.addWidget(self._etiqueta_aviso(texto, error=True))
 
+    def _avisos_archivos(self) -> list[str]:
+        """Avisa si algún archivo de datos estaba dañado o no se pudo leer (RNF-15)."""
+        avisos: list[str] = []
+        huellas = self._deps.huellas
+        if huellas.error_lectura:
+            avisos.append(self.tr("No se pudo leer el archivo de huellas (permisos)"))
+        elif huellas.hubo_corrupcion:
+            avisos.append(
+                self.tr(
+                    "Se dañó el archivo de huellas; se recuperaron {n} servidores. Los demás "
+                    "tendrás que confirmarlos de nuevo comparando la huella con tu "
+                    "administrador."
+                ).format(n=len(huellas.huellas_recuperadas))
+            )
+        perfiles = self._deps.perfiles
+        if perfiles.error_lectura:
+            avisos.append(self.tr("No se pudo leer el archivo de perfiles (permisos)"))
+        elif perfiles.hubo_corrupcion:
+            avisos.append(
+                self.tr(
+                    "El archivo de perfiles estaba dañado: se guardó una copia y se empezó uno "
+                    "nuevo."
+                )
+            )
+        if self._deps.preferencias.error_lectura:
+            avisos.append(self.tr("No se pudo leer el archivo de preferencias (permisos)"))
+        return avisos
+
     @staticmethod
     def _etiqueta_aviso(texto: str, *, error: bool) -> QLabel:
         lbl = QLabel(texto)
         lbl.setWordWrap(True)
+        lbl.setTextFormat(Qt.TextFormat.PlainText)
         lbl.setProperty("error" if error else "aviso", True)
         return lbl
 
@@ -420,10 +476,10 @@ class VentanaPrincipal(QMainWindow):
 
     def _descubrir(self) -> None:
         sesion = self._sesion
-        if sesion is None or self._descubriendo:
+        if sesion is None or self._descubriendo or self._creando:
             return
         self._descubriendo = True
-        self.boton_actualizar.setEnabled(False)
+        self._refrescar_botones_red()
         self._estado_descubrimiento.setText(self.tr("Buscando nodos, almacenamientos y redes..."))
         self._errores_sesion = []
         self._lanzador.lanzar(
@@ -435,14 +491,14 @@ class VentanaPrincipal(QMainWindow):
 
     def _fallo_descubrimiento(self, error: ErrorProxLaunch) -> None:
         self._descubriendo = False
-        self.boton_actualizar.setEnabled(True)
+        self._refrescar_botones_red()
         self._estado_descubrimiento.setText(self.tr("No se pudo leer el servidor."))
         self._manejar_fallo(error, durante="en el descubrimiento")
 
     def _al_descubierto(self, resultado: tuple[Inventario, list[str] | None]) -> None:
         inv, _faltantes = resultado
         self._descubriendo = False
-        self.boton_actualizar.setEnabled(True)
+        self._refrescar_botones_red()
         self._inv = inv
         self._estado_descubrimiento.setText(
             self.tr("{n} nodo(s) encontrados.").format(n=len(inv.topologia.nodos))
@@ -479,7 +535,7 @@ class VentanaPrincipal(QMainWindow):
 
     def _reintentar_nodos(self) -> None:
         sesion, inv = self._sesion, self._inv
-        if sesion is None or inv is None or not inv.errores_por_nodo:
+        if sesion is None or inv is None or not inv.errores_por_nodo or self._creando:
             return
         self.boton_reintentar.setEnabled(False)
         self._lanzador.lanzar(
@@ -493,7 +549,7 @@ class VentanaPrincipal(QMainWindow):
     def _tras_reintento(self, resultado: Any) -> None:
         recuperados, _fallidos = resultado
         inv = self._inv
-        self.boton_reintentar.setEnabled(True)
+        self._refrescar_botones_red()
         if inv is None:
             return
         for nodo, (storages, bridges) in recuperados.items():
@@ -577,12 +633,13 @@ class VentanaPrincipal(QMainWindow):
         if self._creando or sesion is None or inv is None:
             return
         self._creando = True
+        self._upid_recibido = None
         cfg = self.formulario.configuracion()
         self._cfg_creacion = cfg
         self.formulario.bloquear(True)
         self.progreso.iniciar()
-        fabrica = self._deps.fabrica_creacion
-        servicio = fabrica(sesion) if fabrica else ServicioCreacion(sesion, self._deps.reloj)
+        self._refrescar_botones_red()
+        servicio = self._nuevo_servicio_creacion(sesion)
         self._servicio_creacion = servicio
         self._lanzador.lanzar(
             servicio.crear,
@@ -596,8 +653,20 @@ class VentanaPrincipal(QMainWindow):
         )
         self._timer_validar.start()
 
+    def _nuevo_servicio_creacion(self, sesion: Sesion) -> ServicioCreacion:
+        """Servicio ligado a la sesión ACTUAL (la anterior pudo expirar o cambiar)."""
+        fabrica = self._deps.fabrica_creacion
+        return fabrica(sesion) if fabrica else ServicioCreacion(sesion, self._deps.reloj)
+
+    def _refrescar_botones_red(self) -> None:
+        """«Actualizar» y «Reintentar» no se usan mientras se crea o se descubre."""
+        libre = not self._creando and not self._descubriendo
+        self.boton_actualizar.setEnabled(libre)
+        self.boton_reintentar.setEnabled(libre)
+
     def _al_upid(self, upid: str) -> None:
         """Muestra el UPID en cuanto Proxmox acepta la petición."""
+        self._upid_recibido = upid
         self.progreso.establecer_upid(upid)
         cfg = self._cfg_creacion
         if cfg is not None:
@@ -607,23 +676,38 @@ class VentanaPrincipal(QMainWindow):
         self.progreso.establecer_etapa(etapa)
 
     def _fallo_creacion(self, error: ErrorProxLaunch) -> None:
-        """Error inesperado fuera del flujo normal del servicio."""
+        """Error inesperado fuera del flujo normal del servicio.
+
+        Si la petición pudo haber salido, no se sabe el estado real: se trata como conexión
+        perdida (con el UPID ya mostrado, si lo hay) y no se desbloquea el formulario.
+        """
         cfg = self._cfg_creacion
         if cfg is None:
+            self._creando = False
             return
         self._al_terminar_creacion(
-            ResultadoCreacion(Desenlace.ERROR, cfg.vmid, cfg.nodo, None, error)
+            ResultadoCreacion(
+                Desenlace.CONEXION_PERDIDA, cfg.vmid, cfg.nodo, self._upid_recibido, error
+            )
         )
 
     def _al_terminar_creacion(self, resultado: ResultadoCreacion) -> None:
         cfg = self._cfg_creacion
         self._creando = False
+        self._refrescar_botones_red()
         self._ultimo_resultado = resultado
         nombre = cfg.nombre if cfg else ""
         texto = texto_desenlace(resultado, nombre)
         d = resultado.desenlace
         if resultado.error is not None and d == Desenlace.CON_AVISOS:
             texto += "\n" + texto_error(resultado.error)
+        elif (
+            resultado.error is not None
+            and d == Desenlace.CONEXION_PERDIDA
+            and resultado.error.codigo == CodigoError.SERVIDOR_NO_RESPONDE
+            and resultado.error.params.get("incierto") == "1"
+        ):
+            texto = texto_error(resultado.error)
         self.progreso.mostrar_resultado(texto, d, resultado.upid)
         self.progreso.detalles.establecer(
             texto_detalles(resultado.error, resultado),
@@ -653,6 +737,24 @@ class VentanaPrincipal(QMainWindow):
     def _volver_al_formulario(self) -> None:
         if self._creando:
             return
+        res = self._ultimo_resultado
+        if res is not None and res.desenlace in (
+            Desenlace.CONEXION_PERDIDA,
+            Desenlace.TIEMPO_AGOTADO,
+        ):
+            # Aún no se sabe si la máquina se creó: volver y repetir podría duplicarla.
+            respuesta = QMessageBox.question(
+                self,
+                self.tr("Todavía no sabemos si se creó"),
+                self.tr(
+                    "No hemos podido confirmar si la máquina se creó. Si vuelves al formulario "
+                    "y la creas otra vez, podrías duplicarla. ¿Volver de todos modos?"
+                ),
+                QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+                QMessageBox.StandardButton.No,
+            )
+            if respuesta != QMessageBox.StandardButton.Yes:
+                return
         self.progreso.reiniciar()
         self._desbloquear()
         self._timer_validar.start()
@@ -668,12 +770,24 @@ class VentanaPrincipal(QMainWindow):
 
     def _reanudar(self, *, una_vez: bool) -> None:
         sesion, cfg, res = self._sesion, self._cfg_creacion, self._ultimo_resultado
-        servicio = self._servicio_creacion
-        if self._creando or sesion is None or cfg is None or res is None or servicio is None:
+        if self._creando or sesion is None or cfg is None or res is None:
             return
-        if not res.upid:
-            return
+        # Siempre con la sesión actual: la de la creación pudo expirar o cambiar.
+        servicio = self._nuevo_servicio_creacion(sesion)
+        self._servicio_creacion = servicio
         self._creando = True
+        self._refrescar_botones_red()
+        if not res.upid:
+            # Envío incierto: se comprueba si la máquina existe, sin volver a enviar nada.
+            self.progreso.mostrar_progreso_mensaje(self.tr("Comprobando si la máquina existe..."))
+            self._lanzador.lanzar(
+                comprobar_existencia,
+                servicio,
+                cfg,
+                al_terminar=self._tras_existencia,
+                al_fallar=self._fallo_reanudar,
+            )
+            return
         self.progreso.mostrar_progreso_mensaje(
             self.tr("Comprobando la tarea...")
             if una_vez
@@ -685,11 +799,41 @@ class VentanaPrincipal(QMainWindow):
             cfg,
             res.upid,
             una_vez,
+            self._inv,
             con_contexto=True,
             al_etapa=self._al_etapa,
             al_terminar=self._al_terminar_creacion,
             al_fallar=self._fallo_reanudar,
         )
+
+    def _tras_existencia(self, existe: bool | None) -> None:
+        """Resultado de comprobar si una creación de envío incierto llegó a crearse."""
+        cfg, res = self._cfg_creacion, self._ultimo_resultado
+        self._creando = False
+        self._refrescar_botones_red()
+        if cfg is None:
+            return
+        if existe is True:
+            texto = self.tr("La máquina sí se creó. Verifica en Proxmox que quedó como esperabas.")
+            self._ultimo_resultado = ResultadoCreacion(Desenlace.OK, cfg.vmid, cfg.nodo, None, None)
+            self.progreso.mostrar_resultado(texto, Desenlace.OK, None)
+        elif existe is False:
+            texto = self.tr("No se creó; puedes intentarlo de nuevo.")
+            self._ultimo_resultado = ResultadoCreacion(
+                Desenlace.CANCELADO, cfg.vmid, cfg.nodo, None, None
+            )
+            self.progreso.mostrar_resultado(texto, Desenlace.CANCELADO, None)
+            self._desbloquear()
+        else:
+            texto = self.tr(
+                "No se pudo comprobar si la máquina existe. Revisa la conexión e inténtalo "
+                "de nuevo antes de volver a crearla."
+            )
+            self.progreso.mostrar_resultado(texto, Desenlace.CONEXION_PERDIDA, None)
+            if res is not None:
+                self._ultimo_resultado = res
+        self.statusBar().showMessage(texto)
+        self._timer_validar.start()
 
     def _fallo_reanudar(self, error: ErrorProxLaunch) -> None:
         cfg, res = self._cfg_creacion, self._ultimo_resultado
@@ -701,7 +845,7 @@ class VentanaPrincipal(QMainWindow):
                 Desenlace.CONEXION_PERDIDA,
                 cfg.vmid,
                 cfg.nodo,
-                res.upid if res else None,
+                res.upid if res else self._upid_recibido,
                 error,
             )
         )
@@ -725,6 +869,19 @@ class VentanaPrincipal(QMainWindow):
             if respuesta != QMessageBox.StandardButton.Yes:
                 ev.ignore()
                 return
+        # Se avisa, se cancela y se espera un tope corto. Si algún hilo sigue (p. ej. una
+        # petición de red bloqueada) no se fuerza la salida: los hilos del pool no impiden
+        # que el proceso termine al cerrar la aplicación y la tarea sigue en Proxmox.
+        if self._lanzador.hay_activos:
+            self.statusBar().showMessage(self.tr("Cerrando..."))
+            self.setEnabled(False)
+            QApplication.processEvents()
         self._lanzador.cancelar_todos()
         self._lanzador.esperar(3000)
+        sesion = self._sesion
+        if sesion is not None:
+            try:
+                self._deps.servicio_conexion.cerrar_sesion(sesion)
+            except Exception:  # cerrar la ventana nunca debe fallar
+                _log.warning("No se pudo cerrar la sesión limpiamente", exc_info=True)
         super().closeEvent(ev)

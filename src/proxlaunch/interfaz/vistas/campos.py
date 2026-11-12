@@ -30,6 +30,7 @@ def etiqueta(texto: str, *, secundario: bool = False, mono: bool = False) -> QLa
     """Crea una etiqueta con ajuste de línea y las propiedades del tema."""
     lbl = QLabel(texto)
     lbl.setWordWrap(True)
+    lbl.setTextFormat(Qt.TextFormat.PlainText)  # puede llevar datos del servidor
     if secundario:
         lbl.setProperty("secundario", True)
     if mono:
