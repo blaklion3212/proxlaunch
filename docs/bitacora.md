@@ -26,8 +26,7 @@ Nunca registres contraseñas, tokens ni datos personales.
 
 ## Estado actual (2026-11-11)
 
-- **Fase en curso:** arquitectura e interfaces del MVP 1 (orquestador). Requisitos
-  aprobados en `docs/requisitos/mvp1.md`.
+- **Fase en curso:** aprobación de la arquitectura del MVP 1 (`docs/arquitectura/mvp1.md`).
 - **Bloqueo (⚠️):** el laboratorio Proxmox está **apagado**. Se perdió el permiso
   temporal (ACL) de `/dev/kvm`. El usuario se agregará al grupo `kvm` y
   reiniciará el equipo.
@@ -112,6 +111,17 @@ Nunca registres contraseñas, tokens ni datos personales.
   preguntas abiertas con la recomendación (D-16) y D-14 pasó a Aprobada.
 - **Archivos:** `docs/requisitos/mvp1.md`, `docs/decisiones.md`.
 - **Siguientes pasos:** arquitectura e interfaces del MVP 1 (orquestador).
+
+### 2026-11-11 · 7. Arquitectura del MVP 1
+- **Responsable:** orquestador
+- **Qué se hizo:** diseño de módulos, modelos de datos (`dataclasses`), interfaces entre
+  capas, manejo de errores por códigos, hilos de trabajo y plan de implementación por fases.
+  Se dejó abierta la decisión ADR-01 (usar `proxmoxer` o `requests` directo para el
+  transporte), que resolverá el `investigador`.
+- **Resultado:** ⏳ propuesta enviada al usuario para aprobación.
+- **Archivos:** `docs/arquitectura/mvp1.md`.
+- **Siguientes pasos:** con la aprobación, F0 (entorno, `devops-ci`) y F1 (ADR-01,
+  `investigador`) en paralelo.
 
 ---
 
