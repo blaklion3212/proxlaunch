@@ -92,7 +92,7 @@ def nombre_dns_valido(texto: Any) -> bool:
     """Nombre DNS según RFC 1123 (V-01 y V-19)."""
     if not isinstance(texto, str) or not texto or len(texto) > 253:
         return False
-    return all(_RE_ETIQUETA_DNS.match(e) for e in texto.split("."))
+    return all(_RE_ETIQUETA_DNS.fullmatch(e) for e in texto.split("."))
 
 
 def formatos_permitidos(tipo_storage: str) -> tuple[FormatoDisco, ...]:
@@ -301,7 +301,7 @@ def normalizar_host(texto: str) -> tuple[str, int | None]:
         t = t.split("://", 1)[1]
     t = re.split(r"[/?#]", t, maxsplit=1)[0]
     if t.startswith("["):
-        m = re.match(r"^\[([^\]]*)\](?::(\d+))?$", t)
+        m = re.fullmatch(r"\[([^\]]*)\](?::(\d+))?", t)
         if m:
             return m.group(1), int(m.group(2)) if m.group(2) else None
         return t, None
@@ -337,13 +337,13 @@ def validar_perfil(p: PerfilConexion) -> list[Problema]:
 
 def validar_token(texto: str) -> list[Problema]:
     """Valida el formato ``usuario@realm!nombre=secreto`` (V-18)."""
-    if isinstance(texto, str) and _RE_TOKEN.match(texto):
+    if isinstance(texto, str) and _RE_TOKEN.fullmatch(texto):
         return []
     return [Problema("token", "V-18", Severidad.ERROR, {})]
 
 
 def validar_codigo_totp(texto: str) -> list[Problema]:
     """Código TOTP de exactamente 6 dígitos (V-21). La clave de recuperación no pasa por aquí."""
-    if isinstance(texto, str) and _RE_TOTP.match(texto):
+    if isinstance(texto, str) and _RE_TOTP.fullmatch(texto):
         return []
     return [Problema("codigo", "V-21", Severidad.ERROR, {})]

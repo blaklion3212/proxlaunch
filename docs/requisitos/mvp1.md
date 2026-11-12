@@ -691,3 +691,19 @@ documento.
    ajustar la tabla de la sección 7.
 5. Soporte de `discard` en bus `ide`.
 6. Formato `net0` y codificación (CT-9) en 8.0 y 9.2.
+
+---
+
+## 11. Aclaraciones posteriores (orquestador, 2026-11-11)
+
+Surgidas de las pruebas de F2; los requisitos anteriores no cambian de ID.
+
+- **A-1 (V-01, V-18, V-19, V-21):** las validaciones comprueban el texto **completo**. Un
+  salto de línea final (por ejemplo, al pegar un token) es inválido. Corregido en F2.
+- **A-2 (V-13):** se mantiene el criterio conservador: `discard` no se permite en `ide`
+  hasta verificarlo en el laboratorio.
+- **A-3 (V-19):** un host formado solo por 4 grupos numéricos separados por puntos se
+  trata como IPv4 y debe ser una IPv4 válida (`999.1.1.1` es inválido). Pendiente de
+  implementar en F3.
+- **A-4 (§1.4, perfiles duplicados):** se permiten dos perfiles con el mismo nombre, pero
+  la interfaz avisa de forma no bloqueante al guardar (F4).
