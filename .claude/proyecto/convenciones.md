@@ -2,7 +2,7 @@
 
 ## Stack
 - Python >= 3.11 (el equipo de desarrollo usa 3.14); interfaz con PySide6.
-- Dependencias de ejecución: PySide6-Essentials (sin Addons ni WebEngine, para instaladores más livianos), requests, proxmoxer, keyring, platformdirs.
+- Dependencias de ejecución: PySide6-Essentials (sin Addons ni WebEngine, para instaladores más livianos), requests (sin proxmoxer, D-17), keyring, platformdirs.
 - Desarrollo: pytest, pytest-qt, pytest-cov, responses, pytest-socket, ruff, mypy.
 - Gestor: venv local en `.venv` (ignorado por git) + pip; metadatos en `pyproject.toml`
   (setuptools, layout `src/`, paquete `proxlaunch`).

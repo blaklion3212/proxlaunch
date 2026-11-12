@@ -299,7 +299,9 @@ class ClienteProxmox:
 ```
 El resto del código solo usa `ClienteProxmox`; nadie más construye rutas de la API.
 
-### 5.4 Decisión abierta: `proxmoxer` o `requests` directo (ADR-01)
+### 5.4 ADR-01 — RESUELTA: `requests` directo (D-17)
+
+Ver `docs/decisiones.md` D-17 y `docs/investigacion/f1-api-proxmox.md`. Texto original:
 D-05 eligió `proxmoxer`, pero el MVP 1 necesita control fino que podría no exponer:
 huella fija (`assert_fingerprint`), 2FA en dos pasos interactivos, renovación sin guardar
 la contraseña, failover de IPs y redacción de secretos en el registro. La interfaz
@@ -393,9 +395,8 @@ filas sin tocar otro código.
 
 | Paquete | Uso |
 |---|---|
-| PySide6 | Interfaz |
-| requests | HTTP (y dependencia de proxmoxer) |
-| proxmoxer | Según ADR-01 |
+| PySide6-Essentials ≥ 6.11 | Interfaz |
+| requests (+ urllib3) | HTTP con huella fija (D-17) |
 | keyring | Llavero del sistema |
 | platformdirs | Carpetas de usuario |
 | **Desarrollo:** pytest, pytest-qt, responses, pytest-socket, ruff, mypy | Pruebas, mocks HTTP, bloqueo de red, estilo y tipos |

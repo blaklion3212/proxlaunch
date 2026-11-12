@@ -26,7 +26,7 @@ Nunca registres contraseñas, tokens ni datos personales.
 
 ## Estado actual (2026-11-11)
 
-- **Fase en curso:** aprobación de la arquitectura del MVP 1 (`docs/arquitectura/mvp1.md`).
+- **Fase en curso:** F3, capa API y servicios del MVP 1 (`implementador`).
 - **Bloqueo (⚠️):** el laboratorio Proxmox está **apagado**. Se perdió el permiso
   temporal (ACL) de `/dev/kvm`. El usuario se agregará al grupo `kvm` y
   reiniciará el equipo.
@@ -118,10 +118,32 @@ Nunca registres contraseñas, tokens ni datos personales.
   capas, manejo de errores por códigos, hilos de trabajo y plan de implementación por fases.
   Se dejó abierta la decisión ADR-01 (usar `proxmoxer` o `requests` directo para el
   transporte), que resolverá el `investigador`.
-- **Resultado:** ⏳ propuesta enviada al usuario para aprobación.
+- **Resultado:** ✅ aprobada por el usuario.
 - **Archivos:** `docs/arquitectura/mvp1.md`.
 - **Siguientes pasos:** con la aprobación, F0 (entorno, `devops-ci`) y F1 (ADR-01,
   `investigador`) en paralelo.
+
+### 2026-11-11 · 8. F0 entorno, F2 núcleo y F5a pruebas
+- **Responsable:** `devops-ci` (F0), 3 × `implementador` (F2a/b/c), `probador` (F5a), orquestador
+- **Qué se hizo:** entorno `.venv` (Python 3.14, PySide6-Essentials 6.12) y esqueleto; núcleo
+  puro (modelos, 21 validaciones, capacidades, constructor de parámetros); persistencia,
+  llavero y registro con filtro de secretos; paleta, QSS, gestor de tema y fuentes OFL.
+  El probador escribió 602 pruebas derivadas de los requisitos.
+- **Resultado:** ✅ 602 pruebas en verde, 99 % de cobertura del núcleo. Se corrigieron 3
+  defectos (validaciones que aceptaban un salto de línea final).
+- **Archivos:** `pyproject.toml`, `src/proxlaunch/`, `tests/`, anexo A de la arquitectura,
+  aclaraciones A-1 a A-4 de los requisitos.
+- **Siguientes pasos:** F3 (API y servicios).
+
+### 2026-11-11 · 9. F1 investigación y D-17
+- **Responsable:** `investigador`; decisión del usuario
+- **Qué se hizo:** análisis del código de proxmoxer y de la API de Proxmox (2FA,
+  renovación, permisos, parámetros de creación, PySide6/Qt).
+- **Resultado:** ✅ se reemplaza `proxmoxer` por `requests` directo (D-17, aprobada por el
+  usuario). Se corrigieron la tabla de permisos y la regla V-13 (discard en ide permitido).
+- **Archivos:** `docs/investigacion/f1-api-proxmox.md`, `docs/decisiones.md` (D-17),
+  aclaraciones A-5 a A-9 de los requisitos.
+- **Siguientes pasos:** F3 con las especificaciones de la investigación.
 
 ---
 

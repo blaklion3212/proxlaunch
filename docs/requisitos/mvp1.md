@@ -569,7 +569,7 @@ prompt, son **propuestos**; ver P-02.
 
 ## 6. Permisos mínimos de Proxmox
 
-**Estado: a verificar por investigador/laboratorio.** La lista sale de la documentación y
+**Estado: corregida por la investigación F1 (ver `docs/investigacion/f1-api-proxmox.md`, sección 5, que manda sobre esta tabla); queda pendiente de confirmar en laboratorio.** La lista sale de la documentación y
 la experiencia general de la API; ningún privilegio se ha comprobado aún contra el
 laboratorio 9.2 ni contra 8.0. Los marcados con (?) son los más dudosos.
 
@@ -700,10 +700,22 @@ Surgidas de las pruebas de F2; los requisitos anteriores no cambian de ID.
 
 - **A-1 (V-01, V-18, V-19, V-21):** las validaciones comprueban el texto **completo**. Un
   salto de línea final (por ejemplo, al pegar un token) es inválido. Corregido en F2.
-- **A-2 (V-13):** se mantiene el criterio conservador: `discard` no se permite en `ide`
-  hasta verificarlo en el laboratorio.
+- **A-2 (V-13), revisada tras F1:** la API admite `discard` en los cuatro buses, incluido
+  `ide`. Se permite.
 - **A-3 (V-19):** un host formado solo por 4 grupos numéricos separados por puntos se
   trata como IPv4 y debe ser una IPv4 válida (`999.1.1.1` es inválido). Pendiente de
   implementar en F3.
 - **A-4 (§1.4, perfiles duplicados):** se permiten dos perfiles con el mismo nombre, pero
   la interfaz avisa de forma no bloqueante al guardar (F4).
+- **A-5 (sección 6):** la tabla de permisos válida es la de
+  `docs/investigacion/f1-api-proxmox.md` §5, con el rol `ProxLaunchCreador`.
+- **A-6 (RF-10):** si `/cluster/status` responde 403 (falta `Sys.Audit` en `/`), no se
+  bloquea la conexión: se muestra "topología desconocida (N nodos)" con un aviso de permiso.
+- **A-7 (RF-04, CA-04.5):** el desafío 2FA se obtiene del ticket parcial (`PVE:!tfa!…`). Se
+  admite si trae `totp` o `recovery` no vacío; `webauthn`, `u2f` y `yubico` no se admiten.
+  La clave de recuperación se normaliza (minúsculas, sin espacios).
+- **A-8 (sección 7, CA-13.2/13.3):** patrones de VMID ocupado: HTTP 500
+  `VM <n> already exists on node '<nodo>'` al crear; HTTP 400 con
+  `errors.vmid = "VM <n> already exists"` en `/cluster/nextid?vmid=`.
+- **A-9 (V-09, P-06):** sin `format`, Proxmox crea raw en storages de directorio. Por eso,
+  con AUTO se envía `format=qcow2` explícito en directorio y NFS (ya implementado).

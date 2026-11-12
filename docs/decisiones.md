@@ -47,7 +47,8 @@ confirmar) | **Pospuesta** (se decidirá más adelante).
 - Los errores de la API de Proxmox (en inglés) se traducen a mensajes claros.
 
 ## D-05 · Stack tecnológico — Aprobada (2026-11-11)
-- **Python 3.11+**, **PySide6 (Qt 6)** y **proxmoxer**. Se descartó Rust + Tauri.
+- **Python 3.11+**, **PySide6 (Qt 6)** y ~~proxmoxer~~ **`requests`** (ver D-17). Se
+  descartó Rust + Tauri.
 - El núcleo (modelos, cliente de la API, validaciones, motor de lotes) **no
   depende de Qt**, para probarlo sin interfaz y poder usarlo desde la terminal
   más adelante.
@@ -160,6 +161,19 @@ El usuario aprobó "por ahora" las 15 recomendaciones P-01 a P-15 de
 - Nodo "Automático": el de mayor RAM libre con espacio suficiente (P-07).
 - Huella SSL por host:puerto; la contraseña no se conserva en memoria (P-12, P-13).
 - Tema de respaldo si falla la detección: oscuro (P-14).
+
+## D-17 · Conexión HTTP con `requests` directo, sin `proxmoxer` — Aprobada (2026-11-11)
+- Sustituye la parte de D-05 que elegía `proxmoxer`.
+- Motivo (investigación F1, `docs/investigacion/f1-api-proxmox.md`): `proxmoxer` envía la
+  contraseña fuera de la sesión, sin la verificación de huella (rompería D-10). Además no
+  admite 2FA interactiva en dos pasos, registra los datos completos de cada petición y no
+  tiene failover de IPs.
+- La conexión se implementa sobre `requests.Session` con huella fija (urllib3
+  `assert_fingerprint`). Autenticación por token y ticket, 2FA en dos pasos, renovación y
+  failover son código propio en `nucleo/api/`.
+- Decisiones técnicas asociadas (orquestador): PySide6 ≥ 6.11; si falta `Sys.Audit`
+  para ver el clúster, la app sigue con un aviso (no bloquea); el rol recomendado en la
+  guía de tokens incluye `Sys.Audit`.
 
 ## Correcciones técnicas a `prompt.md`
 Errores o imprecisiones de la especificación original que los requisitos deben

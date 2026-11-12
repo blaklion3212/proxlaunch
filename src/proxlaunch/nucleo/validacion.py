@@ -44,7 +44,8 @@ MAX_DISPOSITIVOS: dict[Bus, int] = {Bus.SCSI: 31, Bus.VIRTIO: 16, Bus.SATA: 6, B
 TIPOS_STORAGE_QCOW2 = frozenset({"dir", "nfs", "cifs"})
 
 # V-13: buses con discard permitido. ide queda fuera hasta verificarlo.
-BUSES_CON_DISCARD = frozenset({Bus.SCSI, Bus.SATA, Bus.VIRTIO})  # por verificar en laboratorio
+# V-13: la API admite discard en los cuatro buses (investigación F1, aclaración A-2).
+BUSES_CON_DISCARD = frozenset({Bus.SCSI, Bus.SATA, Bus.VIRTIO, Bus.IDE})
 # V-12: buses con ssd permitido (CT-4: no en virtio).
 BUSES_CON_SSD = frozenset({Bus.SCSI, Bus.SATA, Bus.IDE})
 

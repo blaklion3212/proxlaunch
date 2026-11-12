@@ -428,10 +428,10 @@ def test_v13_discard_es_independiente_de_ssd(hacer_cfg, inv, caps, con_codigo):
         assert con_codigo(problemas, "V-13") == []
 
 
-def test_v13_discard_en_ide_no_se_permite_hasta_verificar(hacer_cfg, inv, caps, con_codigo):
-    """Anexo A: criterio conservador, ide sin discard (la regla está 'por verificar')."""
+def test_v13_a2_discard_en_ide_se_permite(hacer_cfg, inv, caps, con_codigo):
+    """Aclaración A-2 (tras F1): la API admite discard en ide."""
     cfg = hacer_cfg(discos=[Disco("nfs1", 8, bus=Bus.IDE, discard=True, ssd=False, iothread=False)])
-    assert con_codigo(validar_vm(cfg, inv, caps), "V-13", "discos[0].discard")
+    assert con_codigo(validar_vm(cfg, inv, caps), "V-13") == []
 
 
 # --- V-14 espacio -------------------------------------------------------------------
