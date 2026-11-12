@@ -18,16 +18,38 @@ from proxlaunch.nucleo.servicios.conexion import Aviso, CodigoAviso, EstadoHuell
 from proxlaunch.nucleo.validacion import Problema
 
 
+def _valor_neutro(clave: str) -> str:
+    """Texto neutro para un parámetro que falta (nunca se muestra «{clave}»)."""
+    tr = QCoreApplication.translate
+    if clave in ("host", "destino"):
+        return tr("Textos", "este servidor")
+    if clave in ("vmid", "siguiente"):
+        return tr("Textos", "esa máquina")
+    if clave == "nodo":
+        return tr("Textos", "ese nodo")
+    if clave == "campo":
+        return tr("Textos", "un campo")
+    if clave == "version":
+        return tr("Textos", "una versión desconocida")
+    if clave == "minima":
+        return "8.0"
+    return tr("Textos", "un dato")
+
+
 class _Seguro(dict[str, str]):
     """Diccionario que deja visible el marcador si falta un parámetro."""
 
     def __missing__(self, clave: str) -> str:
-        return "{" + clave + "}"
+        # Un marcador sin valor nunca debe verse: se usa un valor neutro traducible.
+        return _valor_neutro(clave)
 
 
 def _fmt(texto: str, params: Mapping[str, str] | None = None, **extra: str) -> str:
     datos = _Seguro({**(params or {}), **extra})
-    return texto.format_map(datos)
+    try:
+        return texto.format_map(datos)
+    except (ValueError, IndexError, KeyError, AttributeError):
+        return texto
 
 
 # --- Errores ------------------------------------------------------------------------

@@ -115,25 +115,11 @@ def _version_nueva(mayor, menor):
     return (int(str(mayor)), int(str(menor)))
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason=(
-        "DEFECTO RF-26: dialogos/conexion.py:216 usa combo.findData(tupla); PySide6 compara "
-        "las tuplas por identidad, así que una versión forzada leída de las preferencias "
-        "(tupla nueva) no se encuentra y el selector queda en «Detectada». Además, "
-        "conexion.py:589 sobrescribe version_forzada con None al conectar, perdiendo "
-        "la preferencia guardada sin avisar."
-    ),
-)
 def test_version_forzada_previa_queda_seleccionada(crear):
     d = crear(avanzado=True, version_forzada=_version_nueva(8, 4))
     assert d.combo_version.currentData() == (8, 4)
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason="DEFECTO RF-26: consecuencia de conexion.py:216 (ver la prueba anterior).",
-)
 def test_version_forzada_previa_se_conserva_al_conectar(qtbot, crear, servicio_falso):
     servicio_falso.infos = [info_huella(EstadoHuella.CONFIRMADA)]
     servicio_falso.resultado_conectar = sesion_falsa(version=(8, 4), forzada=True)

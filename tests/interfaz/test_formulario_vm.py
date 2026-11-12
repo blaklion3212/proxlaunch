@@ -513,15 +513,6 @@ def test_bridge_inexistente_en_el_nodo_nuevo_se_avisa_y_bloquea(formulario, inv_
     assert any(p.codigo == "V-16" for p in _validar(formulario, inv_cluster))
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason=(
-        "DEFECTO CA-11.7: al cambiar de nodo, FormularioVM carga los recursos dos veces "
-        "(formulario_vm.py:474 _cargar_recursos_nodo, una al elegir y otra en "
-        "actualizar_recursos_nodo). En la segunda carga la selección ya está vacía y el "
-        "aviso «la red/el almacenamiento no existe en el nodo» desaparece."
-    ),
-)
 def test_aviso_de_bridge_perdido_sobrevive_a_la_recarga_del_nodo(formulario, inv_cluster):
     formulario.tabla_redes.establecer_redes([InterfazRed("vmbr1")])
     formulario._radio_manual.setChecked(True)
@@ -533,13 +524,6 @@ def test_aviso_de_bridge_perdido_sobrevive_a_la_recarga_del_nodo(formulario, inv
     assert "vmbr1" in formulario.tabla_redes._aviso_nodo.text()
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason=(
-        "DEFECTO CA-11.7: mismo problema que con las redes, para los almacenamientos "
-        "(formulario_vm.py:474 y tabla_discos.py establecer_storages)."
-    ),
-)
 def test_aviso_de_storage_perdido_sobrevive_a_la_recarga_del_nodo(formulario, inv_cluster):
     formulario.tabla_discos.establecer_discos([Disco("local", 10)])  # no existe en pve3
     formulario._radio_manual.setChecked(True)

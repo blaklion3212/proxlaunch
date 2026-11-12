@@ -83,6 +83,8 @@ class _FilaDisco:
         self.pref_discard = True
         self.pref_ssd = True
         self.pref_iothread = True
+        # Selección pedida que no existe en el nodo actual (el aviso debe sobrevivir a recargas).
+        self.perdido: str | None = None
 
     def widgets(self) -> list[tuple[int, QWidget]]:
         return [
@@ -177,13 +179,15 @@ class TablaDiscos(QWidget):
         self._storages = {s.id: s for s in storages}
         perdidos: list[str] = []
         for f in self._filas:
-            previo = f.storage.currentData()
+            previo = f.storage.currentData() or f.perdido
             self._llenar_storage(f)
             idx = f.storage.findData(previo) if previo else -1
-            if idx >= 0 and self._storages[previo].activo:
+            if idx >= 0 and self._storages[str(previo)].activo:
                 f.storage.setCurrentIndex(idx)
+                f.perdido = None
             else:
                 f.storage.setCurrentIndex(-1)
+                f.perdido = str(previo) if previo else None
                 if previo:
                     perdidos.append(str(previo))
             self._refrescar_formato(f)
@@ -346,6 +350,8 @@ class TablaDiscos(QWidget):
             self._quitar_fila(f)
 
     def _al_cambiar_storage(self, f: _FilaDisco) -> None:
+        if f.storage.currentIndex() >= 0:
+            f.perdido = None  # el usuario eligió otro valor
         self._refrescar_formato(f)
         self.cambiado.emit()
 

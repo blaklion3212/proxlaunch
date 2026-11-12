@@ -49,6 +49,7 @@ class _FilaRed:
         self.modelo = QComboBox()
         self.modelo.addItem("VirtIO", ModeloRed.VIRTIO)
         self.modelo.addItem("Intel E1000", ModeloRed.E1000)
+        self.perdido: str | None = None  # selección pedida que no existe en el nodo
         self.vlan = QLineEdit()
         self.vlan.setMaximumWidth(80)
         self.vlan.setPlaceholderText(QCoreApplication.translate("TablaRedes", "Sin VLAN"))
@@ -124,10 +125,11 @@ class TablaRedes(QWidget):
         self._bridges = list(bridges)
         perdidos: list[str] = []
         for f in self._filas:
-            previo = f.bridge.currentData()
+            previo = f.bridge.currentData() or f.perdido
             self._llenar_bridge(f)
             idx = f.bridge.findData(previo) if previo else -1
             f.bridge.setCurrentIndex(idx)
+            f.perdido = str(previo) if idx < 0 and previo else None
             if idx < 0 and previo:
                 perdidos.append(str(previo))
         self._agregar.setEnabled(bool(self._bridges))
@@ -211,7 +213,7 @@ class TablaRedes(QWidget):
         f.bridge.setCurrentIndex(f.bridge.findData(red.bridge))
         f.modelo.setCurrentIndex(max(f.modelo.findData(red.modelo), 0))
         f.vlan.setText("" if red.vlan is None else str(red.vlan))
-        f.bridge.currentIndexChanged.connect(lambda _i: self.cambiado.emit())
+        f.bridge.currentIndexChanged.connect(lambda _i, fila=f: self._al_cambiar_bridge(fila))
         f.modelo.currentIndexChanged.connect(lambda _i: self.cambiado.emit())
         f.vlan.textEdited.connect(lambda _t: self.cambiado.emit())
         f.quitar.clicked.connect(lambda _c=False, fila=f: self._quitar_fila(fila))
@@ -220,6 +222,11 @@ class TablaRedes(QWidget):
             self._rejilla.addWidget(w, len(self._filas), col)
         self._avanzados.append(f.modelo)
         f.modelo.setVisible(self._avanzado)
+
+    def _al_cambiar_bridge(self, f: _FilaRed) -> None:
+        if f.bridge.currentIndex() >= 0:
+            f.perdido = None  # el usuario eligió otro valor
+        self.cambiado.emit()
 
     def _quitar_fila(self, f: _FilaRed, *, emitir: bool = True) -> None:
         self._filas.remove(f)

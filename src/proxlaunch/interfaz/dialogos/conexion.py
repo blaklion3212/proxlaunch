@@ -212,9 +212,7 @@ class DialogoConexion(QDialog):
         capa.addWidget(self._contenedor_ssl)
         capa.addWidget(self.fila_version)
         if self.version_forzada is not None:
-            self.combo_version.setCurrentIndex(
-                max(self.combo_version.findData(self.version_forzada), 0)
-            )
+            self._seleccionar_version(self.version_forzada)
 
         # Avisos y estado.
         self._aviso_root = mensaje(aviso=True)
@@ -256,6 +254,18 @@ class DialogoConexion(QDialog):
         self.token.textChanged.connect(lambda _t: self._revisar_root())
         self.realm.currentTextChanged.connect(lambda _t: self._revisar_root())
         self.chk_ignorar.toggled.connect(lambda _v: self._actualizar_info_ssl())
+
+    def _seleccionar_version(self, version: tuple[int, int]) -> None:
+        """Selecciona por igualdad: PySide compara las tuplas de ``findData`` por identidad."""
+        for i in range(self.combo_version.count()):
+            dato = self.combo_version.itemData(i)
+            if dato is not None and tuple(dato) == tuple(version):
+                self.combo_version.setCurrentIndex(i)
+                return
+
+    def _version_elegida(self) -> tuple[int, int] | None:
+        dato = self.combo_version.currentData()
+        return None if dato is None else (int(dato[0]), int(dato[1]))
 
     # --- Perfiles ---------------------------------------------------------------------
 
@@ -586,7 +596,9 @@ class DialogoConexion(QDialog):
         )
         self._perfil_a_conectar = perfil
         self._efectivo = efectivo
-        self.version_forzada = self.combo_version.currentData() if self._avanzado else None
+        if self._avanzado:
+            self.version_forzada = self._version_elegida()
+        # En modo básico se conserva la preferencia previa (solo se oculta el selector).
         self._ocupar(True, self.tr("Comprobando el certificado del servidor..."))
         self._lanzador.lanzar(
             self._servicio.consultar_huellas,
@@ -627,7 +639,7 @@ class DialogoConexion(QDialog):
             self._servicio.conectar,
             efectivo,
             credencial,
-            version_forzada=self.version_forzada,
+            version_forzada=self.version_forzada if self._avanzado else None,
             al_terminar=lambda r: self._tras_conectar(gen, r),
             al_fallar=lambda e: self._error_conexion(gen, e),
         )
