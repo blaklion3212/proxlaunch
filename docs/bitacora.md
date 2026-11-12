@@ -26,11 +26,11 @@ Nunca registres contraseñas, tokens ni datos personales.
 
 ## Estado actual (2026-11-11)
 
-- **Fase en curso:** F5c, pruebas de interfaz del MVP 1 (`probador`). F3, F4 y F5b terminadas.
+- **Fase en curso:** F8, documentación del MVP 1. F3 a F5 y F7 terminadas; F6 (laboratorio) bloqueada.
 - **Bloqueo (⚠️):** el laboratorio Proxmox está **apagado**. Se perdió el permiso
   temporal (ACL) de `/dev/kvm`. El usuario se agregará al grupo `kvm` y
   reiniciará el equipo.
-- **Próximo paso:** tras F5c y el reinicio del equipo, F6 en el laboratorio
+- **Próximo paso:** tras el reinicio del equipo, F6 en el laboratorio
   (`lab.sh iniciar`): verificar permisos, formatos reales de 8.x/9.2 y elementos [LAB].
 
 ---
@@ -161,6 +161,23 @@ Nunca registres contraseñas, tokens ni datos personales.
   `src/proxlaunch/interfaz/`, `tests/nucleo/`; commits e66a6e9, 59cfb9a, d946095.
 - **Siguientes pasos:** F5c (pruebas de interfaz, cobertura global ≥ 75 %), F6 laboratorio.
 
+### 2026-11-11 · 11. F5c pruebas de interfaz y F7 revisión
+- **Responsable:** `probador` (F5c y regresión F7), `revisor-qa` y `auditor-seguridad` (F7),
+  2 × `implementador`, orquestador
+- **Qué se hizo:** 587 pruebas de interfaz (pytest-qt). Se corrigieron 2 defectos que
+  encontraron (versión forzada no conservada, RF-26; aviso de recurso perdido, CA-11.7) y los
+  mensajes con marcadores sin sustituir. Revisión de calidad: 2 altas, 5 medias, 9 bajas;
+  auditoría: 0 críticas/altas, 4 medias, 8 bajas. Todas corregidas en una ronda.
+- **Resultado:** ✅ 1761 pruebas, cobertura global 98 %. Lo más importante: la app ya no
+  puede inducir a crear dos veces la misma MV (envío incierto, «Comprobar» verifica si
+  existe; tras el UPID, los errores dan "conexión perdida" y no "error"). El transporte
+  falla en cerrado si no hay verificación de huella. Decisión del usuario: D-18 (sin proxy).
+- **Archivos:** `src/proxlaunch/`, `tests/**/*_f7.py`, `pyproject.toml`, `docs/decisiones.md`;
+  commits a1c37c0, aea1a20, 7b27097, 42a09a4.
+- **Por verificar en laboratorio:** texto real de "CT <n> already exists" y cuándo pveproxy
+  responde 596 en un POST.
+- **Siguientes pasos:** F8 documentación; F6 laboratorio tras el reinicio.
+
 ---
 
 ## Pendientes y riesgos abiertos
@@ -173,6 +190,6 @@ Nunca registres contraseñas, tokens ni datos personales.
 | Política de sobreasignación | Bloquear o advertir en pools thin: se define en el MVP 2. |
 | Firma de código en Windows | Pospuesta al MVP 5 (D-06). |
 | Permisos de Proxmox | Rol `ProxLaunchCreador` definido (investigación F1 §5); falta verificarlo en laboratorio. |
-| Cobertura de interfaz | Global en 39 % antes de F5c; meta 75 %. |
 | Respuestas sintéticas | Los JSON de `tests/datos/respuestas` se reemplazan por capturas reales en F6. |
+| Comprobaciones en laboratorio | Mensaje real de VMID ocupado por un contenedor; 596 en POST; rol mínimo de permisos. |
 | Sin Proxmox de pruebas en los sitios | Nunca crear ni borrar MVs contra producción (D-15). |
