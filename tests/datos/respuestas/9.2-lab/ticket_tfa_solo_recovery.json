@@ -1,0 +1,8 @@
+{
+  "data": {
+    "NeedTFA": 1,
+    "CSRFPreventionToken": "00000000:CSRF_SANEADO",
+    "username": "tfacaprec@pve",
+    "ticket": "PVE:!tfa!%7B%22recovery%22%3A%5B0%2C1%2C2%2C3%2C4%2C5%2C6%2C7%2C8%2C9%5D%7D:00000000::FIRMA_SANEADA"
+  }
+}

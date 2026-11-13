@@ -1,0 +1,12 @@
+{
+  "data": [
+    {
+      "ssl_fingerprint": "HUELLA:SANEADA",
+      "status": "online",
+      "id": "node/pve-lab",
+      "node": "pve-lab",
+      "type": "node",
+      "level": ""
+    }
+  ]
+}

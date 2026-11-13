@@ -1,0 +1,20 @@
+{
+  "data": {
+    "machine": "q35",
+    "boot": "order=scsi0;net0",
+    "memory": "2048",
+    "efidisk0": "local:9041/vm-9041-disk-0.qcow2,efitype=4m,ms-cert=2023k,pre-enrolled-keys=1,size=528K",
+    "vmgenid": "07e30ef4-7967-48c0-b940-807998bf3250",
+    "scsi0": "local:9041/vm-9041-disk-1.qcow2,discard=on,iothread=1,size=1G,ssd=1",
+    "scsihw": "virtio-scsi-single",
+    "meta": "creation-qemu=11.1.3,ctime=1794597555",
+    "name": "captura-ovmf",
+    "digest": "0000000000000000000000000000000000000000",
+    "bios": "ovmf",
+    "net0": "virtio=BC:24:11:A5:F2:B9,bridge=vmbr1,tag=5",
+    "sockets": 1,
+    "cpu": "x86-64-v2-AES",
+    "cores": 2,
+    "smbios1": "uuid=a877ac92-aae2-4462-a7b3-bae1c6224629"
+  }
+}

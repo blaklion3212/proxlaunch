@@ -1,0 +1,7 @@
+{
+  "data": null,
+  "errors": {
+    "vmid": "VM 9040 already exists"
+  },
+  "message": "Parameter verification failed.\n"
+}

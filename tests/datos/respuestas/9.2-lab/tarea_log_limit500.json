@@ -1,0 +1,21 @@
+{
+  "data": [
+    {
+      "t": "  Logical volume \"vm-9040-disk-0\" created.",
+      "n": 1
+    },
+    {
+      "t": "  Logical volume lab/vm-9040-disk-0 changed.",
+      "n": 2
+    },
+    {
+      "n": 3,
+      "t": "scsi0: successfully created disk 'lab-lvmthin:vm-9040-disk-0,discard=on,iothread=1,size=2G,ssd=1'"
+    },
+    {
+      "t": "TASK OK",
+      "n": 4
+    }
+  ],
+  "total": 4
+}

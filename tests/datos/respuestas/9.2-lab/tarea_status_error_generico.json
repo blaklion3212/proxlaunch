@@ -1,0 +1,15 @@
+{
+  "data": {
+    "user": "plc@pve",
+    "exitstatus": "unable to create VM 9042 - unsupported format 'qcow2' at /usr/share/perl5/PVE/Storage/LvmThinPlugin.pm line 106.",
+    "starttime": 1698000000,
+    "type": "qmcreate",
+    "pid": 241074,
+    "id": "9042",
+    "upid": "UPID:pve-lab:00000002:00000002:00000002:qmcreate:9042:plc@pve!t1:",
+    "tokenid": "t1",
+    "status": "stopped",
+    "pstart": 16040403,
+    "node": "pve-lab"
+  }
+}

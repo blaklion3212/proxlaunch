@@ -1,0 +1,35 @@
+{
+  "data": {
+    "CSRFPreventionToken": "00000000:CSRF_SANEADO",
+    "cap": {
+      "storage": {
+        "Datastore.AllocateSpace": 1,
+        "Datastore.Audit": 1
+      },
+      "vms": {
+        "VM.Config.Network": 1,
+        "VM.Config.CPU": 1,
+        "VM.Config.Memory": 1,
+        "VM.Config.HWType": 1,
+        "VM.Audit": 1,
+        "VM.Config.Disk": 1,
+        "VM.Config.Options": 1,
+        "VM.Allocate": 1
+      },
+      "access": {},
+      "mapping": {},
+      "dc": {
+        "SDN.Use": 1,
+        "Sys.Audit": 1
+      },
+      "nodes": {
+        "Sys.Audit": 1
+      },
+      "sdn": {
+        "SDN.Use": 1
+      }
+    },
+    "ticket": "PVE:plc@pve:00000000::FIRMA_SANEADA",
+    "username": "plc@pve"
+  }
+}

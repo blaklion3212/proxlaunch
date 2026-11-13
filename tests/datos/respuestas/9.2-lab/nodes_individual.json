@@ -1,0 +1,19 @@
+{
+  "data": [
+    {
+      "uptime": 1107,
+      "maxcpu": 4,
+      "node": "pve-lab",
+      "maxmem": 6205157376,
+      "id": "node/pve-lab",
+      "cpu": 0.0577833125778331,
+      "disk": 5773131776,
+      "level": "",
+      "type": "node",
+      "ssl_fingerprint": "HUELLA:SANEADA",
+      "status": "online",
+      "maxdisk": 42058584064,
+      "mem": 1826959360
+    }
+  ]
+}

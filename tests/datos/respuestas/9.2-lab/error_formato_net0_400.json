@@ -1,0 +1,7 @@
+{
+  "errors": {
+    "net0": "invalid format - format error\nnet0.tag: value must have a maximum value of 4094\n"
+  },
+  "message": "Parameter verification failed.\n",
+  "data": null
+}

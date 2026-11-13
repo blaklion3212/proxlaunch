@@ -1,0 +1,40 @@
+{
+  "data": [
+    {
+      "shared": 0,
+      "used": 65275953152,
+      "used_fraction": 0.949948116950497,
+      "content": "images",
+      "enabled": 1,
+      "avail": 3439329280,
+      "type": "lvm",
+      "active": 1,
+      "total": 68715282432,
+      "storage": "lab-lvm"
+    },
+    {
+      "shared": 0,
+      "used": 5774401536,
+      "content": "images,vztmpl,iso,backup",
+      "used_fraction": 0.137294244789914,
+      "enabled": 1,
+      "type": "dir",
+      "avail": 34524012544,
+      "active": 1,
+      "storage": "local",
+      "total": 42058584064
+    },
+    {
+      "total": 65141735424,
+      "storage": "lab-lvmthin",
+      "active": 1,
+      "enabled": 1,
+      "avail": 65141735424,
+      "type": "lvmthin",
+      "used_fraction": 0,
+      "content": "images,rootdir",
+      "used": 0,
+      "shared": 0
+    }
+  ]
+}

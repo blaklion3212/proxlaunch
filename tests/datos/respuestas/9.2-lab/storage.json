@@ -1,0 +1,28 @@
+{
+  "data": [
+    {
+      "content": "iso,backup,images,vztmpl",
+      "used_fraction": 0.137264054520121,
+      "shared": 0,
+      "used": 5773131776,
+      "storage": "local",
+      "total": 42058584064,
+      "active": 1,
+      "type": "dir",
+      "enabled": 1,
+      "avail": 34525282304
+    },
+    {
+      "enabled": 1,
+      "type": "lvmthin",
+      "avail": 65141735424,
+      "active": 1,
+      "total": 65141735424,
+      "storage": "lab-lvmthin",
+      "shared": 0,
+      "used": 0,
+      "used_fraction": 0,
+      "content": "images,rootdir"
+    }
+  ]
+}

@@ -1,0 +1,247 @@
+{
+  "cluster_status_individual.json": {
+    "estado_http": 200,
+    "motivo_http": "OK",
+    "nota": ""
+  },
+  "crear_vm_upid.json": {
+    "estado_http": 200,
+    "motivo_http": "OK",
+    "nota": ""
+  },
+  "error_cluster_status_sin_sys_audit_403.json": {
+    "estado_http": 403,
+    "motivo_http": "Permission check failed (/, Sys.Audit)",
+    "nota": ""
+  },
+  "error_config_inexistente_500.json": {
+    "estado_http": 500,
+    "motivo_http": "Configuration file 'nodes/pve-lab/qemu-server/9099.conf' does not exist",
+    "nota": ""
+  },
+  "error_config_vm_de_un_ct_500.json": {
+    "estado_http": 500,
+    "motivo_http": "Configuration file 'nodes/pve-lab/qemu-server/9050.conf' does not exist",
+    "nota": ""
+  },
+  "error_credenciales_401.json": {
+    "estado_http": 401,
+    "motivo_http": "authentication failure",
+    "nota": ""
+  },
+  "error_formato_net0_400.json": {
+    "estado_http": 400,
+    "motivo_http": "Parameter verification failed.",
+    "nota": ""
+  },
+  "error_nodo_inexistente.json": {
+    "estado_http": 500,
+    "motivo_http": "hostname lookup 'noexiste' failed - failed to get address info for: noexiste: Name or service not known",
+    "nota": ""
+  },
+  "error_permiso_403.json": {
+    "estado_http": 403,
+    "motivo_http": "Permission check failed (/vms/9044, VM.Config.Memory)",
+    "nota": ""
+  },
+  "error_permiso_403_config_vm_audit.json": {
+    "estado_http": 403,
+    "motivo_http": "Permission check failed (/vms/9040, VM.Audit)",
+    "nota": ""
+  },
+  "error_permiso_403_datastore.json": {
+    "estado_http": 403,
+    "motivo_http": "Permission check failed (/storage/lab-lvmthin, Datastore.AllocateSpace)",
+    "nota": ""
+  },
+  "error_permiso_403_sdn.json": {
+    "estado_http": 403,
+    "motivo_http": "Permission check failed (/sdn/zones/localnetwork/vmbr0, SDN.Use)",
+    "nota": ""
+  },
+  "error_permiso_403_vm_allocate.json": {
+    "estado_http": 403,
+    "motivo_http": "Permission check failed",
+    "nota": ""
+  },
+  "error_tfa_codigo_incorrecto_401.json": {
+    "estado_http": 401,
+    "motivo_http": "authentication failure",
+    "nota": ""
+  },
+  "error_ticket_invalido_401.json": {
+    "estado_http": 401,
+    "motivo_http": "Authentication failed!",
+    "nota": ""
+  },
+  "error_token_401.json": {
+    "estado_http": 401,
+    "motivo_http": "Authentication failed!",
+    "nota": ""
+  },
+  "error_vmid_ocupado_crear_500.json": {
+    "estado_http": 500,
+    "motivo_http": "VM 9040 already exists on node 'pve-lab'",
+    "nota": ""
+  },
+  "error_vmid_ocupado_ct_crear_500.json": {
+    "estado_http": 500,
+    "motivo_http": "CT 9050 already exists on node 'pve-lab'",
+    "nota": ""
+  },
+  "error_vmid_ocupado_ct_nextid_400.json": {
+    "estado_http": 400,
+    "motivo_http": "Parameter verification failed.",
+    "nota": ""
+  },
+  "error_vmid_ocupado_nextid_400.json": {
+    "estado_http": 400,
+    "motivo_http": "Parameter verification failed.",
+    "nota": ""
+  },
+  "network.json": {
+    "estado_http": 200,
+    "motivo_http": "OK",
+    "nota": ""
+  },
+  "network_sin_sdn_use.json": {
+    "estado_http": 200,
+    "motivo_http": "OK",
+    "nota": ""
+  },
+  "nextid.json": {
+    "estado_http": 200,
+    "motivo_http": "OK",
+    "nota": ""
+  },
+  "nodes.json": {
+    "estado_http": 200,
+    "motivo_http": "OK",
+    "nota": ""
+  },
+  "nodes_individual.json": {
+    "estado_http": 200,
+    "motivo_http": "OK",
+    "nota": ""
+  },
+  "nodes_sin_sys_audit.json": {
+    "estado_http": 200,
+    "motivo_http": "OK",
+    "nota": ""
+  },
+  "permisos_completos.json": {
+    "estado_http": 200,
+    "motivo_http": "OK",
+    "nota": ""
+  },
+  "permisos_sin_allocate_space.json": {
+    "estado_http": 200,
+    "motivo_http": "OK",
+    "nota": ""
+  },
+  "permisos_sin_sdn_use.json": {
+    "estado_http": 200,
+    "motivo_http": "OK",
+    "nota": ""
+  },
+  "permisos_sin_sys_audit.json": {
+    "estado_http": 200,
+    "motivo_http": "OK",
+    "nota": ""
+  },
+  "permisos_sin_vm_allocate.json": {
+    "estado_http": 200,
+    "motivo_http": "OK",
+    "nota": ""
+  },
+  "permisos_sin_vm_audit.json": {
+    "estado_http": 200,
+    "motivo_http": "OK",
+    "nota": ""
+  },
+  "permisos_sin_vm_config_memory.json": {
+    "estado_http": 200,
+    "motivo_http": "OK",
+    "nota": ""
+  },
+  "qemu_config.json": {
+    "estado_http": 200,
+    "motivo_http": "OK",
+    "nota": ""
+  },
+  "qemu_config_ovmf.json": {
+    "estado_http": 200,
+    "motivo_http": "OK",
+    "nota": ""
+  },
+  "storage.json": {
+    "estado_http": 200,
+    "motivo_http": "OK",
+    "nota": ""
+  },
+  "storage_con_lvm_grueso.json": {
+    "estado_http": 200,
+    "motivo_http": "OK",
+    "nota": ""
+  },
+  "tarea_log.json": {
+    "estado_http": 200,
+    "motivo_http": "OK",
+    "nota": ""
+  },
+  "tarea_log_limit500.json": {
+    "estado_http": 200,
+    "motivo_http": "OK",
+    "nota": ""
+  },
+  "tarea_status_error_generico.json": {
+    "estado_http": 200,
+    "motivo_http": "OK",
+    "nota": "format=qcow2 en lvmthin"
+  },
+  "tarea_status_error_sin_espacio.json": {
+    "estado_http": 200,
+    "motivo_http": "OK",
+    "nota": ""
+  },
+  "tarea_status_ok.json": {
+    "estado_http": 200,
+    "motivo_http": "OK",
+    "nota": ""
+  },
+  "tarea_status_running.json": {
+    "estado_http": 200,
+    "motivo_http": "OK",
+    "nota": ""
+  },
+  "ticket_completo.json": {
+    "estado_http": 200,
+    "motivo_http": "OK",
+    "nota": ""
+  },
+  "ticket_renovado.json": {
+    "estado_http": 200,
+    "motivo_http": "OK",
+    "nota": "renovación con el ticket vigente como contraseña"
+  },
+  "ticket_tfa_paso2_ok.json": {
+    "estado_http": 200,
+    "motivo_http": "OK",
+    "nota": ""
+  },
+  "ticket_tfa_solo_recovery.json": {
+    "estado_http": 200,
+    "motivo_http": "OK",
+    "nota": ""
+  },
+  "ticket_tfa_totp_recovery.json": {
+    "estado_http": 200,
+    "motivo_http": "OK",
+    "nota": ""
+  },
+  "version.json": {
+    "estado_http": 200,
+    "motivo_http": "OK",
+    "nota": ""
+  }
+}

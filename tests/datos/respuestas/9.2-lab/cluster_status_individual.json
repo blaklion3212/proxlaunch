@@ -1,0 +1,14 @@
+{
+  "data": [
+    {
+      "id": "node/pve-lab",
+      "nodeid": 0,
+      "local": 1,
+      "ip": "10.0.2.15",
+      "level": "",
+      "type": "node",
+      "name": "pve-lab",
+      "online": 1
+    }
+  ]
+}

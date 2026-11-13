@@ -1,0 +1,15 @@
+{
+  "data": {
+    "user": "plc@pve",
+    "exitstatus": "unable to create VM 9043 - lvcreate 'lab/vm-9043-disk-0' error:   Volume group \"lab\" has insufficient free space (820 extents): 2560 required.",
+    "type": "qmcreate",
+    "starttime": 1698000000,
+    "pid": 241074,
+    "upid": "UPID:pve-lab:00000003:00000003:00000003:qmcreate:9043:plc@pve!t1:",
+    "id": "9043",
+    "pstart": 16040403,
+    "status": "stopped",
+    "tokenid": "t1",
+    "node": "pve-lab"
+  }
+}

@@ -1,0 +1,108 @@
+{
+  "data": {
+    "/": {
+      "VM.Config.Memory": 1,
+      "VM.Config.CPU": 1,
+      "VM.Config.Options": 1,
+      "Datastore.Audit": 1,
+      "VM.Config.Disk": 1,
+      "VM.Audit": 1,
+      "Sys.Audit": 1,
+      "Datastore.AllocateSpace": 1,
+      "VM.Config.Network": 1,
+      "VM.Allocate": 1,
+      "VM.Config.HWType": 1
+    },
+    "/access/groups": {
+      "VM.Config.HWType": 1,
+      "VM.Allocate": 1,
+      "VM.Config.Network": 1,
+      "Datastore.AllocateSpace": 1,
+      "Sys.Audit": 1,
+      "VM.Config.Disk": 1,
+      "VM.Audit": 1,
+      "VM.Config.CPU": 1,
+      "VM.Config.Options": 1,
+      "Datastore.Audit": 1,
+      "VM.Config.Memory": 1
+    },
+    "/access": {
+      "Datastore.AllocateSpace": 1,
+      "VM.Allocate": 1,
+      "VM.Config.Network": 1,
+      "VM.Config.HWType": 1,
+      "VM.Config.Disk": 1,
+      "VM.Audit": 1,
+      "Sys.Audit": 1,
+      "VM.Config.Memory": 1,
+      "VM.Config.Options": 1,
+      "VM.Config.CPU": 1,
+      "Datastore.Audit": 1
+    },
+    "/storage": {
+      "VM.Config.Memory": 1,
+      "Datastore.Audit": 1,
+      "VM.Config.Options": 1,
+      "VM.Config.CPU": 1,
+      "VM.Audit": 1,
+      "VM.Config.Disk": 1,
+      "Sys.Audit": 1,
+      "Datastore.AllocateSpace": 1,
+      "VM.Config.Network": 1,
+      "VM.Allocate": 1,
+      "VM.Config.HWType": 1
+    },
+    "/vms": {
+      "VM.Config.Memory": 1,
+      "Datastore.Audit": 1,
+      "VM.Config.Options": 1,
+      "VM.Config.CPU": 1,
+      "VM.Audit": 1,
+      "VM.Config.Disk": 1,
+      "Sys.Audit": 1,
+      "Datastore.AllocateSpace": 1,
+      "VM.Config.Network": 1,
+      "VM.Allocate": 1,
+      "VM.Config.HWType": 1
+    },
+    "/nodes": {
+      "Sys.Audit": 1,
+      "VM.Audit": 1,
+      "VM.Config.Disk": 1,
+      "VM.Config.Network": 1,
+      "VM.Allocate": 1,
+      "VM.Config.HWType": 1,
+      "Datastore.AllocateSpace": 1,
+      "Datastore.Audit": 1,
+      "VM.Config.Options": 1,
+      "VM.Config.CPU": 1,
+      "VM.Config.Memory": 1
+    },
+    "/pool": {
+      "VM.Config.Memory": 1,
+      "Datastore.Audit": 1,
+      "VM.Config.Options": 1,
+      "VM.Config.CPU": 1,
+      "VM.Audit": 1,
+      "VM.Config.Disk": 1,
+      "Sys.Audit": 1,
+      "Datastore.AllocateSpace": 1,
+      "VM.Allocate": 1,
+      "VM.Config.HWType": 1,
+      "VM.Config.Network": 1
+    },
+    "/sdn": {
+      "Datastore.AllocateSpace": 1,
+      "VM.Config.HWType": 1,
+      "VM.Allocate": 1,
+      "VM.Config.Network": 1,
+      "VM.Audit": 1,
+      "VM.Config.Disk": 1,
+      "Sys.Audit": 1,
+      "VM.Config.Memory": 1,
+      "Datastore.Audit": 1,
+      "VM.Config.Options": 1,
+      "VM.Config.CPU": 1
+    }
+  }
+}

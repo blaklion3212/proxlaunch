@@ -1,0 +1,16 @@
+{
+  "data": {
+    "CSRFPreventionToken": "00000000:CSRF_SANEADO",
+    "cap": {
+      "mapping": {},
+      "dc": {},
+      "nodes": {},
+      "sdn": {},
+      "storage": {},
+      "vms": {},
+      "access": {}
+    },
+    "username": "tfacap@pve",
+    "ticket": "PVE:tfacap@pve:00000000::FIRMA_SANEADA"
+  }
+}

@@ -1,0 +1,20 @@
+{
+  "data": [
+    {
+      "active": 1,
+      "autostart": 1,
+      "exists": 1,
+      "priority": 3,
+      "method": "dhcp",
+      "type": "eth",
+      "method6": "manual",
+      "altnames": [
+        "enx525400123456"
+      ],
+      "families": [
+        "inet"
+      ],
+      "iface": "enp0s2"
+    }
+  ]
+}
