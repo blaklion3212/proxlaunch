@@ -45,12 +45,13 @@ PRIVILEGIOS_ROL: tuple[str, ...] = (
     "VM.Config.CPU",
     "VM.Config.Memory",
     "VM.Config.Network",
-    "VM.Config.Disk",
-    "Datastore.Audit",
     "Datastore.AllocateSpace",
     "SDN.Use",
     "Sys.Audit",
 )
+
+# Privilegios que sobran para MVP 1 (se miden como "no requeridos").
+PRIVILEGIOS_SOBRANTES: tuple[str, ...] = ("VM.Config.Disk", "Datastore.Audit")
 
 
 def secreto(nombre: str) -> str:

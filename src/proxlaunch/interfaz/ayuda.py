@@ -19,8 +19,6 @@ PRIVILEGIOS_ROL = (
     "VM.Config.CPU",
     "VM.Config.Memory",
     "VM.Config.Network",
-    "VM.Config.Disk",
-    "Datastore.Audit",
     "Datastore.AllocateSpace",
     "SDN.Use",
     "Sys.Audit",

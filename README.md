@@ -31,10 +31,9 @@ contenedores LXC, alta disponibilidad, editar o borrar MV existentes, instalador
 interfaz en otros idiomas y macOS. El plan completo está en
 [`docs/decisiones.md`](docs/decisiones.md) (D-12).
 
-> **Pendiente de verificar en laboratorio:** el rol mínimo de permisos, los formatos
-> exactos de algunos parámetros (por ejemplo `efidisk0`) y los textos reales de varios
-> errores de Proxmox se validaron solo con respuestas simuladas. Ver
-> [`docs/bitacora.md`](docs/bitacora.md), sección «Pendientes y riesgos abiertos».
+> Validado contra Proxmox VE 9.2 real en laboratorio (rol mínimo, parámetros, 2FA y
+> mensajes de error; ver `tests/integracion/`). Clústeres multinodo y Proxmox 8.x solo
+> con respuestas simuladas. Ver [`docs/bitacora.md`](docs/bitacora.md).
 
 ## Requisitos
 

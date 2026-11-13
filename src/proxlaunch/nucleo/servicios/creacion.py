@@ -201,7 +201,7 @@ class ServicioCreacion:
         try:
             upid = cliente.crear_vm(cfg.nodo, parametros)
         except ErrorProxLaunch as e:
-            error_envio = self._con_siguiente_vmid(e)
+            error_envio = self._completar_permiso(self._con_siguiente_vmid(e), cfg)
             desenlace = (
                 Desenlace.CONEXION_PERDIDA
                 if e.codigo == CodigoError.SERVIDOR_NO_RESPONDE
@@ -303,6 +303,16 @@ class ServicioCreacion:
             return self._sesion.cliente.config_vm(cfg.nodo, cfg.vmid) is not None
         except Exception:
             return None
+
+    @staticmethod
+    def _completar_permiso(error: ErrorProxLaunch, cfg: ConfiguracionVM) -> ErrorProxLaunch:
+        """Un 403 real al crear llega sin (ruta, privilegio): se infiere VM.Allocate en
+        ``/vms/{vmid}`` y se marca ``inferido="1"``."""
+        if error.codigo == CodigoError.PERMISO_INSUFICIENTE and not error.params.get("privilegio"):
+            error.params["privilegio"] = "VM.Allocate"
+            error.params["ruta"] = f"/vms/{cfg.vmid}"
+            error.params["inferido"] = "1"
+        return error
 
     def _con_siguiente_vmid(self, error: ErrorProxLaunch) -> ErrorProxLaunch:
         """Si el VMID está ocupado intenta añadir el siguiente libre (CA-13.3)."""

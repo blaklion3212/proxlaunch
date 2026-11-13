@@ -22,7 +22,8 @@ _MAX_DETALLE = 2000
 
 HTTP_NODO_SIN_RUTA = 595
 HTTP_NODO_TIMEOUT = 596
-ESTADOS_NODO_CAIDO = (HTTP_NODO_SIN_RUTA, HTTP_NODO_TIMEOUT)
+HTTP_FALLO_CUERPO = 597  # AnyEvent: fallo al recibir el cuerpo; la petición ya se procesó
+ESTADOS_NODO_CAIDO = (HTTP_NODO_SIN_RUTA, HTTP_NODO_TIMEOUT, HTTP_FALLO_CUERPO)
 
 # Códigos que indican un fallo de red/servidor (y no una respuesta definitiva).
 CODIGOS_DE_RED = frozenset({CodigoError.SERVIDOR_NO_RESPONDE, CodigoError.NODO_NO_DISPONIBLE})
@@ -152,12 +153,15 @@ def traducir_http(
         estado: código HTTP.
         motivo: frase de estado (``reason``); Proxmox pone ahí el mensaje corto.
         cuerpo: cuerpo de la respuesta (JSON o texto).
-        nodo: nodo de la petición, si se conoce (para 595/596).
+        nodo: nodo de la petición, si se conoce (para 595/596/597).
         sesion_ticket: ``True`` si la petición iba con ticket; un 401 significa entonces
             sesión expirada y no credenciales inválidas.
     """
     mensaje, errores = _analizar_cuerpo(cuerpo)
-    partes = [p for p in (motivo, mensaje, *errores.values()) if p]
+    # Se recorta antes de deduplicar: el message del cuerpo trae un \n final y la frase HTTP no.
+    partes = [
+        p for p in (motivo.strip(), mensaje.strip(), *(v.strip() for v in errores.values())) if p
+    ]
     texto = " | ".join(dict.fromkeys(partes))
     detalle = limpiar_detalle(f"HTTP {estado}: {texto}" if texto else f"HTTP {estado}")
 

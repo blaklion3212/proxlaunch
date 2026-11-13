@@ -297,12 +297,6 @@ def test_exitstatus_real_sin_espacio_en_lvm_grueso():
     assert e.params == {"storage": "lab"}  # el grupo de volúmenes; creacion.py lo cambia al id
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason="El detalle técnico repite el mensaje: el motivo HTTP no lleva '\\n' y el cuerpo "
-    "'message' sí; traductor_errores.py:_analizar_cuerpo no lo recorta y la deduplicación "
-    "de traducir_http no los reconoce como iguales.",
-)
 def test_detalle_tecnico_de_un_403_real_no_repite_el_mensaje():
     e = traducir("error_permiso_403", nodo="pve-lab")
     texto = "Permission check failed (/vms/9044, VM.Config.Memory)"

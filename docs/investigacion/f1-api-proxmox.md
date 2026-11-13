@@ -66,7 +66,11 @@ fuente · **[I]** inferencia · **[LAB]** por verificar en laboratorio. Resultad
 **Rol mínimo recomendado `ProxLaunchCreador`:** `VM.Allocate, VM.Audit, VM.Config.Options,
 VM.Config.HWType, VM.Config.CPU, VM.Config.Memory, VM.Config.Network, VM.Config.Disk,
 Datastore.Audit, Datastore.AllocateSpace, SDN.Use, Sys.Audit`, asignado en `/` con
-propagación (lo más simple). [LAB] Si `VM.Config.Disk` hace falta al crear, y el contenido
+propagación (lo más simple). **Verificado en laboratorio (F6, PVE 9.2.26):** `VM.Config.Disk`
+y `Datastore.Audit` NO hacen falta para crear discos nuevos (`PVE/API2/Qemu.pm:194,1031`):
+el rol mínimo del MVP 1 son 10 privilegios. Sin `VM.Audit` la creación termina con avisos;
+sin `Sys.Audit` la topología se degrada. El 403 por falta de `VM.Allocate` llega sin ruta ni
+privilegio (`Qemu.pm:1353`). [LAB, original] Si `VM.Config.Disk` hace falta al crear, y el contenido
 de los roles integrados.
 
 ## 6. Parámetros de creación

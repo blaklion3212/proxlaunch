@@ -6,9 +6,8 @@ Proxmox: cada término se explica la primera vez que aparece.
 
 Los nombres de botones, menús y mensajes de esta guía son los que ves en la aplicación.
 
-> **Pendiente de verificar en laboratorio:** todavía no se ha probado ProxLaunch contra un
-> Proxmox real. Los permisos mínimos y los textos exactos de algunos errores de Proxmox
-> están marcados así, porque pueden variar un poco.
+> ProxLaunch se probó contra un Proxmox VE 9.2 real (servidor individual). Los clústeres
+> de varios nodos y Proxmox 8.x se han probado solo con respuestas simuladas.
 
 ## Contenido
 
@@ -67,17 +66,18 @@ VM.Config.HWType
 VM.Config.CPU
 VM.Config.Memory
 VM.Config.Network
-VM.Config.Disk
-Datastore.Audit
 Datastore.AllocateSpace
 SDN.Use
 Sys.Audit
 ```
 
-> **Pendiente de verificar en laboratorio:** esta lista sale de la documentación de
-> Proxmox y de la investigación del proyecto, pero aún no se ha comprobado que sea el
-> mínimo exacto (por ejemplo, si `VM.Config.Disk` es imprescindible). Si Proxmox rechaza
-> la creación por falta de un permiso, ProxLaunch te dirá cuál.
+Esta lista se comprobó en un Proxmox real: son los 10 privilegios mínimos.
+- Sin `VM.Audit`, la máquina se crea, pero ProxLaunch no puede confirmar cómo quedó y lo
+  verás como «creada con avisos».
+- Sin `Sys.Audit`, la máquina se crea, pero no verás la memoria y los procesadores libres de
+  cada nodo ni el estado del clúster.
+- Sin cualquiera de los demás, Proxmox rechaza la creación. ProxLaunch te avisa al conectar
+  de los permisos que faltan.
 
 ### Cómo se prepara (pasos para el administrador)
 
@@ -402,9 +402,8 @@ modos?» La tarea **no se detiene**. Al volver, revisa en Proxmox si la máquina
 
 ## Mensajes de error frecuentes
 
-> **Pendiente de verificar en laboratorio:** los textos de la columna «Mensaje» son los
-> que muestra ProxLaunch. Los mensajes originales de Proxmox, que ves en «Ver detalles
-> técnicos», no se han comparado todavía con un servidor real y podrían diferir.
+Los textos de la columna «Mensaje» son los que muestra ProxLaunch. El mensaje original de
+Proxmox está en «Ver detalles técnicos»; se comprobó con Proxmox VE 9.2.
 
 | Mensaje | Qué significa | Qué hacer |
 |---|---|---|
@@ -525,8 +524,7 @@ No está previsto.
 El campo **Realm** es editable y puedes escribir el realm de tu servidor, pero solo se han
 previsto `pam` y `pve`.
 
-> **Pendiente de verificar en laboratorio:** el uso con otros realms (LDAP, AD) no se ha
-> probado.
+> **Pendiente de verificar:** el uso con otros realms (LDAP, AD) no se ha probado.
 
 **No puedo guardar mis credenciales.**
 Revisa que tu sistema tenga un llavero (en Ubuntu, el servicio de secretos del escritorio).

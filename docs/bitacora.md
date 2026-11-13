@@ -24,14 +24,12 @@ Nunca registres contraseñas, tokens ni datos personales.
 
 ---
 
-## Estado actual (2026-11-11)
+## Estado actual (2026-11-13)
 
-- **Fase en curso:** F8, documentación del MVP 1. F3 a F5 y F7 terminadas; F6 (laboratorio) bloqueada.
-- **Bloqueo (⚠️):** el laboratorio Proxmox está **apagado**. Se perdió el permiso
-  temporal (ACL) de `/dev/kvm`. El usuario se agregará al grupo `kvm` y
-  reiniciará el equipo.
-- **Próximo paso:** tras el reinicio del equipo, F6 en el laboratorio
-  (`lab.sh iniciar`): verificar permisos, formatos reales de 8.x/9.2 y elementos [LAB].
+- **Fase en curso:** cierre del MVP 1 (pendiente de aprobación del usuario). F0 a F8 terminadas.
+- **Laboratorio:** encendido (PVE 9.2, solo 127.0.0.1). Se destruirá sin rastro al terminar
+  todas las pruebas (D-15).
+- **Próximo paso:** cierre con `definicion-de-terminado` y aprobación; después, MVP 2.
 
 ---
 
@@ -178,18 +176,35 @@ Nunca registres contraseñas, tokens ni datos personales.
   responde 596 en un POST.
 - **Siguientes pasos:** F8 documentación; F6 laboratorio tras el reinicio.
 
+### 2026-11-13 · 12. F6 laboratorio (Proxmox VE 9.2 real)
+- **Responsable:** `probador`, `implementador`, orquestador
+- **Qué se hizo:** tras el reinicio (usuario en el grupo `kvm`) se encendió el laboratorio.
+  86 pruebas de integración contra PVE 9.2.26 con el núcleo real (huella, token, ticket, 2FA
+  TOTP y recuperación, renovación, descubrimiento, creación SeaBIOS/OVMF, VMID ocupado por
+  VM y por CT, SIN_ESPACIO con un LVM temporal, matriz de permisos). 50 respuestas reales
+  saneadas en `tests/datos/respuestas/9.2-lab/` y 79 pruebas de contrato sin red.
+- **Resultado:** ✅ sin defectos graves. Rol mínimo real: 10 privilegios (sin
+  `VM.Config.Disk` ni `Datastore.Audit`). Se confirmó en vivo que un 596 puede llegar con la
+  MV ya creada (la política de "envío incierto" de F7 era necesaria). Corregidos: detalle
+  técnico duplicado en 403 reales, estado 597 tratado como incierto, 403 de `VM.Allocate`
+  sin detalle (se infiere el privilegio). Guía y README sin marcas de "pendiente" salvo
+  realms LDAP/AD. El laboratorio quedó limpio de artefactos de prueba.
+- **No reproducible en el laboratorio:** clúster multinodo, nodo caído, PVE 8.x, WARNINGS,
+  webauthn/yubico (siguen con respuestas sintéticas).
+- **Archivos:** `tests/integracion/`, `tests/datos/respuestas/9.2-lab/`,
+  `src/proxlaunch/nucleo/{api/traductor_errores.py, servicios/conexion.py, servicios/creacion.py}`,
+  `src/proxlaunch/interfaz/{ayuda.py, textos.py}`, `docs/`.
+- **Siguientes pasos:** cierre del MVP 1.
+
 ---
 
 ## Pendientes y riesgos abiertos
 
 | Tema | Detalle |
 |---|---|
-| Laboratorio apagado | Requiere grupo `kvm` y reinicio del equipo antes de seguir validando. |
 | Eliminación del laboratorio | Obligatoria al final de las pruebas, sin dejar rastro (D-15). |
 | D-13 pospuesta | Origen del SO (ISO, OVA, VMware): algunas importaciones exigen `root@pam` o SSH y dependen de la versión (MVP 4). |
 | Política de sobreasignación | Bloquear o advertir en pools thin: se define en el MVP 2. |
 | Firma de código en Windows | Pospuesta al MVP 5 (D-06). |
-| Permisos de Proxmox | Rol `ProxLaunchCreador` definido (investigación F1 §5); falta verificarlo en laboratorio. |
-| Respuestas sintéticas | Los JSON de `tests/datos/respuestas` se reemplazan por capturas reales en F6. |
-| Comprobaciones en laboratorio | Mensaje real de VMID ocupado por un contenedor; 596 en POST; rol mínimo de permisos. |
+| Respuestas sintéticas | Clúster multinodo, nodo caído y PVE 8.x solo con respuestas sintéticas (el laboratorio es un nodo 9.2). |
 | Sin Proxmox de pruebas en los sitios | Nunca crear ni borrar MVs contra producción (D-15). |

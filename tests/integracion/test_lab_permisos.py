@@ -58,7 +58,7 @@ def sesion_sin(entorno) -> Iterator[Callable]:
 
     @contextmanager
     def abrir(quitar: str | None):
-        privs = tuple(p for p in lab.PRIVILEGIOS_ROL if p != quitar)
+        privs = tuple(p for p in (*lab.PRIVILEGIOS_ROL, *lab.PRIVILEGIOS_SOBRANTES) if p != quitar)
         lab.borrar_usuario(USUARIO_VAR)
         lab.borrar_rol(ROL_VAR)
         lab.crear_rol(privs, ROL_VAR)
@@ -115,14 +115,10 @@ def test_flujo_completo_con_el_rol_minimo(via, entorno, plc, vms):
 # --- Privilegios que sobran o faltan --------------------------------------------------
 
 
-def test_sin_vm_config_disk_no_bloquea_pero_avisa(sesion_sin, vms):
+def test_sin_vm_config_disk_no_bloquea_ni_avisa(sesion_sin, vms):
     with sesion_sin("VM.Config.Disk") as s:
-        assert permisos_faltantes_detalle(s) == [("VM.Config.Disk", "/vms")]
-        aviso = next(a for a in s.avisos if a.codigo == CodigoAviso.PERMISOS_INCOMPLETOS)
-        assert aviso.params == {
-            "privilegios": "VM.Config.Disk",
-            "rutas": "VM.Config.Disk@/vms",
-        }
+        assert permisos_faltantes_detalle(s) == []  # ya no es requerido
+        assert s.avisos == []
         inv = descubrir(s)
         for vmid, fw, st in (
             (vms(9030), Firmware.SEABIOS, "lab-lvmthin"),
@@ -185,7 +181,7 @@ def test_sin_sdn_use_no_aparecen_bridges_y_proxmox_rechaza_la_red(sesion_sin, vm
         assert 9035 not in lab.vmids_de_prueba()
 
 
-def test_sin_datastore_audit_no_cambia_nada(sesion_sin, vms):
+def test_sin_datastore_audit_no_cambia_nada_ni_avisa(sesion_sin, vms):
     with sesion_sin("Datastore.Audit") as s:
         assert permisos_faltantes_detalle(s) == []  # no es obligatorio (AllocateSpace basta)
         assert s.avisos == []
@@ -223,15 +219,19 @@ def test_sin_el_privilegio_imprescindible_proxmox_rechaza_con_403_y_ruta(
         assert vmid not in lab.vmids_de_prueba()
 
 
-def test_sin_vm_allocate_proxmox_rechaza_sin_decir_el_privilegio(sesion_sin, vms):
+def test_sin_vm_allocate_proxmox_rechaza_y_el_privilegio_se_infiere(sesion_sin, vms):
     with sesion_sin("VM.Allocate") as s:
         inv = descubrir(s)
         vmid = vms(9038)
         r = _crear(s, _cfg(vmid), inv)
         assert r.desenlace == Desenlace.ERROR, r
         assert r.error.codigo == CodigoError.PERMISO_INSUFICIENTE
-        # El 403 de VM.Allocate no trae "(ruta, privilegio)": el aviso previo sí los da.
-        assert r.error.params == {}
+        # El 403 real no trae "(ruta, privilegio)": ProxLaunch infiere VM.Allocate y lo marca.
+        assert r.error.params == {
+            "privilegio": "VM.Allocate",
+            "ruta": f"/vms/{vmid}",
+            "inferido": "1",
+        }
         assert permisos_faltantes(s) == ["VM.Allocate"]
         assert vmid not in lab.vmids_de_prueba()
 
@@ -256,7 +256,7 @@ def test_acl_sin_propagar_se_detecta_en_las_rutas_hijas(entorno):
             assert faltan is not None
             nombres = {priv for priv, _ in faltan}
             # Solo Sys.Audit (pedido en `/`, la propia ruta) sigue vigente.
-            assert nombres == set(lab.PRIVILEGIOS_ROL) - {"Sys.Audit", "Datastore.Audit"}
+            assert nombres == set(lab.PRIVILEGIOS_ROL) - {"Sys.Audit"}
             assert ("VM.Allocate", "/vms") in faltan
             inv = descubrir(s)
             # Sin SDN.Use heredado Proxmox no lista bridges: no se puede elegir red.
@@ -282,7 +282,7 @@ def test_token_con_privsep_sin_acl_propia_no_tiene_permisos(entorno):
         try:
             faltan = permisos_faltantes(s)
             assert faltan is not None
-            assert set(faltan) == set(lab.PRIVILEGIOS_ROL) - {"Datastore.Audit"}
+            assert set(faltan) == set(lab.PRIVILEGIOS_ROL)
             aviso = next(a for a in s.avisos if a.codigo == CodigoAviso.PERMISOS_INCOMPLETOS)
             assert "VM.Allocate@/vms" in aviso.params["rutas"].split(",")
         finally:

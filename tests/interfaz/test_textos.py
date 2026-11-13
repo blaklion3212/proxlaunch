@@ -273,3 +273,22 @@ def test_cada_motivo_de_nodo_tiene_texto(motivo):
 @pytest.mark.parametrize("estado", list(EstadoHuella))
 def test_cada_estado_de_huella_tiene_texto(estado):
     assert textos.texto_estado_huella(estado)
+
+
+def test_403_con_privilegio_inferido_dice_lo_mas_probable_sin_marcadores():
+    e = ErrorProxLaunch(
+        CodigoError.PERMISO_INSUFICIENTE,
+        {"privilegio": "VM.Allocate", "ruta": "/vms/9040", "inferido": "1"},
+    )
+    t = textos.texto_error(e)
+    assert "Lo más probable es que a tu usuario le falte VM.Allocate en /vms/9040" in t
+    assert "{" not in t and "inferido" not in t
+
+
+def test_403_con_privilegio_conocido_conserva_falta_x_en_y():
+    e = ErrorProxLaunch(
+        CodigoError.PERMISO_INSUFICIENTE, {"privilegio": "VM.Audit", "ruta": "/vms/9040"}
+    )
+    t = textos.texto_error(e)
+    assert "Falta VM.Audit en /vms/9040" in t
+    assert "Lo más probable" not in t

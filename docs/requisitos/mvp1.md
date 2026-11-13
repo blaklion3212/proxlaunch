@@ -582,7 +582,7 @@ laboratorio 9.2 ni contra 8.0. Los marcados con (?) son los más dudosos.
 | Listar bridges | `GET /nodes/{n}/network` | `Sys.Audit` en `/nodes/{n}` |
 | Listar storages y espacio | `GET /nodes/{n}/storage` | `Datastore.Audit` (o `Datastore.AllocateSpace`) en `/storage/{id}` |
 | Crear la MV | `POST /nodes/{n}/qemu` | `VM.Allocate` en `/vms/{vmid}` (o `/vms`) |
-| Crear discos | ídem | `Datastore.AllocateSpace` en `/storage/{id}` y `VM.Config.Disk` en `/vms/{vmid}` |
+| Crear discos | ídem | `Datastore.AllocateSpace` en `/storage/{id}` (verificado F6: `VM.Config.Disk` no hace falta para discos nuevos) |
 | Cómputo | ídem | `VM.Config.CPU`, `VM.Config.Memory` en `/vms/{vmid}` |
 | Red | ídem | `VM.Config.Network` en `/vms/{vmid}` y `SDN.Use` en `/sdn/zones/localnetwork/{bridge}` (PVE 8+) (?) |
 | BIOS, machine, scsihw | ídem | `VM.Config.HWType` y/o `VM.Config.Options` en `/vms/{vmid}` (?) |

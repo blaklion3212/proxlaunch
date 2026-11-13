@@ -716,11 +716,12 @@ def test_ca_12_3_si_la_consulta_falla_se_omite_la_verificacion():
     assert sesion.avisos == []
 
 
-def test_los_privilegios_requeridos_cubren_el_rol_de_f1_salvo_datastore_audit():
-    # f1 §5: rol ProxLaunchCreador; Datastore.Audit es alternativo a AllocateSpace para listar.
+def test_los_privilegios_requeridos_son_exactamente_el_rol_minimo_de_10():
+    # Medido en el laboratorio (PVE 9.2): VM.Config.Disk y Datastore.Audit no se exigen.
     rol = {
         "VM.Allocate", "VM.Audit", "VM.Config.Options", "VM.Config.HWType", "VM.Config.CPU",
-        "VM.Config.Memory", "VM.Config.Network", "VM.Config.Disk", "Datastore.AllocateSpace",
+        "VM.Config.Memory", "VM.Config.Network", "Datastore.AllocateSpace",
         "SDN.Use", "Sys.Audit",
     }  # fmt: skip
-    assert rol <= set(PRIVILEGIOS_REQUERIDOS)
+    assert set(PRIVILEGIOS_REQUERIDOS) == rol
+    assert len(PRIVILEGIOS_REQUERIDOS) == 10

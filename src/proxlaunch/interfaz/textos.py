@@ -117,6 +117,16 @@ def texto_error(error: ErrorProxLaunch) -> str:
             )
         return QCoreApplication.translate("Textos", "El nodo no está disponible.")
     if c == CodigoError.PERMISO_INSUFICIENTE:
+        if p.get("privilegio") and p.get("inferido") == "1":
+            # Proxmox no dijo qué falta; el privilegio se dedujo del contexto.
+            return _fmt(
+                QCoreApplication.translate(
+                    "Textos",
+                    "Proxmox no permitió crear la máquina. Lo más probable es que a tu usuario "
+                    "le falte {privilegio} en {ruta}. Pide a tu administrador que lo revise.",
+                ),
+                p,
+            )
         if p.get("privilegio"):
             return _fmt(
                 QCoreApplication.translate(

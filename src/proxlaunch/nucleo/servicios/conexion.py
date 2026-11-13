@@ -48,7 +48,8 @@ FabricaTransporte = Callable[[PerfilConexion, Mapping[str, str]], Transporte]
 ObtenerHuella = Callable[[str, int, float], str]
 
 # Privilegios mínimos del rol ProxLaunchCreador (f1 §5) y la ruta donde se exige cada uno.
-# Datastore.Audit no es obligatorio: AllocateSpace basta para listar los storages.
+# Rol mínimo verificado en laboratorio (10 privilegios). Ni VM.Config.Disk ni Datastore.Audit
+# se exigen: AllocateSpace basta para listar y crear discos.
 PERMISOS_POR_RUTA: dict[str, tuple[str, ...]] = {
     "/vms": (
         "VM.Allocate",
@@ -58,7 +59,6 @@ PERMISOS_POR_RUTA: dict[str, tuple[str, ...]] = {
         "VM.Config.CPU",
         "VM.Config.Memory",
         "VM.Config.Network",
-        "VM.Config.Disk",
     ),
     "/storage": ("Datastore.AllocateSpace",),
     "/sdn/zones/localnetwork": ("SDN.Use",),
