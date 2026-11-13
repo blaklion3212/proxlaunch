@@ -290,6 +290,7 @@ def _actualizar(
 
 
 def test_resumen_en_lenguaje_llano(resumen, hacer_cfg_ui):
+    """CA-19.1."""
     cfg = hacer_cfg_ui()
     _actualizar(resumen, cfg, etiquetas=("virtio0", "sata0"))
     html = resumen.texto_html
@@ -323,6 +324,7 @@ def test_resumen_muestra_motivo_del_nodo(resumen, hacer_cfg_ui):
 
 
 def test_sin_errores_el_boton_crear_se_habilita(resumen, hacer_cfg_ui):
+    """CA-19.1."""
     _actualizar(resumen, hacer_cfg_ui())
     assert resumen.boton_crear.isEnabled()
     assert resumen.texto_pendientes == ""
@@ -399,6 +401,7 @@ def test_sin_datos_del_nodo_no_hay_aviso_de_recursos(resumen, hacer_cfg_ui):
 
 def test_modo_basico_lista_opciones_avanzadas_no_predeterminadas(resumen, hacer_cfg_ui):
     # CA-24.5
+    """CA-24.2."""
     _actualizar(resumen, hacer_cfg_ui(), avanzado=False, etiquetas=("virtio0", "sata0"))
     assert "Opciones avanzadas" in resumen.texto_html
     assert "x86-64-v3" in resumen.texto_html
@@ -478,6 +481,7 @@ def test_barra_muestra_perfil_version_y_usuario(barra):
 
 
 def test_barra_version_forzada_y_ssl_sin_verificar(barra):
+    """CA-26.2."""
     barra.establecer_conexion("Lab", "8.1", True, True)
     assert "(forzada)" in barra.texto_version
     assert "sin verificar" in barra.texto_ssl

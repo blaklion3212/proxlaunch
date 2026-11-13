@@ -20,6 +20,10 @@
 - Identificadores del dominio en español (según la arquitectura); comentarios y docstrings en español.
 - El núcleo devuelve códigos (`CodigoError`/`CodigoProblema`), la interfaz los traduce con `tr()`;
   el núcleo no contiene textos para el usuario.
+- Textos traducibles: siempre `self.tr("…")` o `QCoreApplication.translate("Contexto", "…")`
+  con literales directos; sin alias ni envolturas (lupdate no los detecta). Regenerar el `.ts`
+  con `.venv/lib/python3.14/site-packages/PySide6/lupdate -extensions py -recursive
+  src/proxlaunch/interfaz -no-obsolete -ts src/proxlaunch/recursos/traducciones/proxlaunch_es.ts`.
 - Dependencias (reloj, transporte, llavero, carpetas) se inyectan.
 - Los secretos nunca se persisten ni se registran en el log.
 - Firmas públicas de la arquitectura: no cambiar sin consultar al orquestador.

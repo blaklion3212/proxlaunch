@@ -64,6 +64,7 @@ def test_ca19_3_no_se_envian_parametros_fuera_de_alcance(hacer_cfg, inv):
 
 
 def test_ca14_1_seabios_no_lleva_efidisk_ni_machine(hacer_cfg, inv):
+    """CA-14.1."""
     params = construir_parametros(hacer_cfg(firmware=Firmware.SEABIOS), inv)
     assert params.get("bios", "seabios") == "seabios"
     assert "efidisk0" not in params
@@ -87,6 +88,7 @@ def test_ca14_2_ovmf_sin_disco_usa_el_primer_storage_con_images(hacer_cfg, inv):
 
 
 def test_ca14_3_storage_efi_explicito_manda_sobre_el_del_disco(hacer_cfg, inv):
+    """CA-14.3."""
     cfg = hacer_cfg(firmware=Firmware.OVMF, storage_efi="nfs1")
     assert construir_parametros(cfg, inv)["efidisk0"].startswith("nfs1:1,efitype=4m,")
 
@@ -98,6 +100,7 @@ def test_ca14_2_efidisk_incluye_claves_precargadas(hacer_cfg, inv):
 
 
 def test_ca14_5_volver_a_seabios_quita_efidisk_y_machine(hacer_cfg, inv):
+    """CA-14.5."""
     cfg = hacer_cfg(firmware=Firmware.OVMF)
     assert "efidisk0" in construir_parametros(cfg, inv)
     cfg.firmware = Firmware.SEABIOS
@@ -115,6 +118,7 @@ def test_ca15_2_sockets_y_cores_van_por_separado(hacer_cfg, inv):
 
 
 def test_ca15_4_la_memoria_va_en_mib(hacer_cfg, inv):
+    """CA-15.4."""
     assert construir_parametros(hacer_cfg(memoria_mib=4096), inv)["memory"] == "4096"
 
 
@@ -293,3 +297,13 @@ def test_la_construccion_es_pura_no_modifica_la_configuracion(hacer_cfg, inv):
     antes = cfg.a_dict()
     construir_parametros(cfg, inv)
     assert cfg.a_dict() == antes
+
+
+def test_ca16_9_disco_vacio_no_pide_iso_ni_importa_contenido(hacer_cfg, inv):
+    """CA-16.9: con origen "Disco vacío" los discos se crean sin contenido (sin ISO)."""
+    params = construir_parametros(hacer_cfg(), inv)
+    texto = " ".join(f"{k}={v}" for k, v in params.items())
+    for prohibido in ("cdrom", "media=cdrom", "import-from", ".iso", "iso/", "ide2"):
+        assert prohibido not in texto
+    discos = [v for k, v in params.items() if re.fullmatch(r"(scsi|virtio|sata|ide)\d+", k)]
+    assert discos and all(re.fullmatch(r"[^:,]+:\d+(,.*)?", d) for d in discos)  # storage:GiB

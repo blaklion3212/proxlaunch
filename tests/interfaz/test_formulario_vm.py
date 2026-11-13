@@ -63,6 +63,7 @@ def _validar(f, inv):
     ],
 )
 def test_gib_a_mib(texto, esperado):
+    """CA-15.4."""
     assert gib_a_mib(texto) == esperado
 
 
@@ -102,6 +103,7 @@ def test_etiquetas_de_discos_por_defecto(formulario):
 
 
 def test_nombre_invalido_muestra_error_junto_al_campo_tras_editar(qtbot, formulario, inv_cluster):
+    """CA-13.4."""
     formulario.nombre.setText("mal nombre!")
     formulario.nombre.textEdited.emit("mal nombre!")
     formulario.aplicar_problemas(_validar(formulario, inv_cluster))
@@ -545,6 +547,7 @@ def test_nodo_sin_bridges_deshabilita_agregar_y_muestra_mensaje(formulario):
 
 
 def test_modo_basico_oculta_los_campos_avanzados(formulario):
+    """CA-24.2."""
     assert formulario.fila_cpu.isHidden()
     assert formulario.fila_balloon.isHidden()
     assert formulario.fila_ctrl.isHidden()
@@ -553,6 +556,7 @@ def test_modo_basico_oculta_los_campos_avanzados(formulario):
 
 
 def test_modo_avanzado_muestra_campos_sin_perder_valores(formulario):
+    """CA-24.3."""
     formulario.nombre.setText("mi-vm")
     formulario.memoria.setText("4")
     formulario.establecer_modo(True)
@@ -583,6 +587,7 @@ def test_ballooning_desactivado_se_envia_como_inactivo(formulario):
 
 
 def test_cpu_host_muestra_su_aviso_solo_en_avanzado(formulario):
+    """CA-15.7."""
     formulario.establecer_modo(True)
     assert formulario._aviso_cpu.isHidden()
     formulario.combo_cpu.setCurrentIndex(formulario.combo_cpu.findData("host"))
@@ -590,6 +595,7 @@ def test_cpu_host_muestra_su_aviso_solo_en_avanzado(formulario):
 
 
 def test_uefi_muestra_almacenamiento_efi_en_avanzado(formulario):
+    """CA-14.3, CA-24.2."""
     formulario.establecer_modo(True)
     assert formulario.fila_efi.isHidden()
     formulario.combo_firmware.setCurrentIndex(1)

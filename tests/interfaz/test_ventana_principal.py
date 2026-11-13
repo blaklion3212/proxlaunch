@@ -385,6 +385,7 @@ def test_resumen_se_sincroniza_con_el_formulario(qtbot, entorno):
 
 
 def test_nombre_invalido_deshabilita_crear_y_marca_el_campo(qtbot, entorno):
+    """CA-13.4."""
     v = entorno.ventana
     conectar(qtbot, entorno)
     poner_nombre(qtbot, v, "mal nombre")

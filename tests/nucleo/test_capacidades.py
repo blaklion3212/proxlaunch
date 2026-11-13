@@ -119,6 +119,7 @@ def test_la_comparacion_es_por_tupla_no_por_menor_aislado():
 
 
 def test_ca26_2_version_forzada_manda_sobre_la_detectada():
+    """CA-26.2."""
     caps = capacidades_para(Version("9.2", 9, 2, 0), (8, 0))
     assert caps.version == (8, 0)
     assert caps.forzada is True

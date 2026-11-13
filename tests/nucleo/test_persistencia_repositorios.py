@@ -342,6 +342,7 @@ def test_ca24_4_el_modo_se_guarda_y_se_restaura(modo, tmp_path):
 
 
 def test_ca26_2_la_version_forzada_se_conserva(tmp_path):
+    """CA-26.2."""
     ruta = tmp_path / "preferencias.json"
     RepositorioPreferencias(ruta).guardar(Preferencias(version_forzada=(8, 2)))
     assert RepositorioPreferencias(ruta).cargar().version_forzada == (8, 2)

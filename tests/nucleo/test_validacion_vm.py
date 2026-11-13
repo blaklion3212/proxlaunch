@@ -64,6 +64,7 @@ def test_v01_nombre_valido(nombre, hacer_cfg, inv, caps, con_codigo):
 
 @pytest.mark.parametrize("nombre", NOMBRES_INVALIDOS)
 def test_v01_nombre_invalido(nombre, hacer_cfg, inv, caps, con_codigo):
+    """CA-13.4."""
     problemas = validar_vm(hacer_cfg(nombre=nombre), inv, caps)
     assert con_codigo(problemas, "V-01", "nombre")
     assert not nombre_dns_valido(nombre)
@@ -594,6 +595,7 @@ def test_v17_storage_debe_existir_en_el_nodo_destino(hacer_cfg, inv, caps, con_c
 
 
 def test_ca14_4_ovmf_sin_storage_con_images_se_bloquea(hacer_cfg, inv, caps, con_codigo):
+    """CA-14.4."""
     cfg = hacer_cfg(nodo="pve3", firmware=Firmware.OVMF, discos=[], con_disco=False, redes=[])
     assert con_codigo(validar_vm(cfg, inv, caps), "V-17", "storage_efi")
 
@@ -609,6 +611,7 @@ def test_ca14_2_ovmf_con_disco_valido_no_da_problemas(hacer_cfg, inv, caps):
 
 
 def test_ca14_3_ovmf_con_storage_efi_invalido(hacer_cfg, inv, caps, con_codigo):
+    """CA-14.3."""
     cfg = hacer_cfg(firmware=Firmware.OVMF, storage_efi="local")
     assert con_codigo(validar_vm(cfg, inv, caps), "V-17", "storage_efi")
 

@@ -208,6 +208,7 @@ def test_cancelar_rechaza_el_dialogo(qtbot, dialogo_tfa):
 
 
 def test_guia_de_token_lista_pasos_y_privilegios(qtbot):
+    """CA-25.3."""
     d = DialogoGuiaToken()
     qtbot.addWidget(d)
     privilegios = d.findChildren(QPlainTextEdit)[0].toPlainText()

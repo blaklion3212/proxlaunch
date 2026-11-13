@@ -173,17 +173,16 @@ class ResumenVM(QGroupBox):
     ) -> None:
         """Redibuja el resumen y decide si se puede crear."""
         e = escape
-        tr = QCoreApplication.translate
-        et_nombre = tr("ResumenVM", "Nombre")
-        et_vmid = tr("ResumenVM", "Número de máquina")
-        et_nodo = tr("ResumenVM", "Nodo")
-        et_arranque = tr("ResumenVM", "Arranque")
-        et_cpu = tr("ResumenVM", "Procesadores")
-        et_memoria = tr("ResumenVM", "Memoria")
-        et_discos = tr("ResumenVM", "Discos")
-        et_redes = tr("ResumenVM", "Redes")
-        sin_disco = tr("ResumenVM", "Sin disco")
-        sin_red = tr("ResumenVM", "Sin red")
+        et_nombre = QCoreApplication.translate("ResumenVM", "Nombre")
+        et_vmid = QCoreApplication.translate("ResumenVM", "Número de máquina")
+        et_nodo = QCoreApplication.translate("ResumenVM", "Nodo")
+        et_arranque = QCoreApplication.translate("ResumenVM", "Arranque")
+        et_cpu = QCoreApplication.translate("ResumenVM", "Procesadores")
+        et_memoria = QCoreApplication.translate("ResumenVM", "Memoria")
+        et_discos = QCoreApplication.translate("ResumenVM", "Discos")
+        et_redes = QCoreApplication.translate("ResumenVM", "Redes")
+        sin_disco = QCoreApplication.translate("ResumenVM", "Sin disco")
+        sin_red = QCoreApplication.translate("ResumenVM", "Sin red")
         lineas: list[str] = []
         lineas.append(f"<b>{e(et_nombre)}:</b> {e(cfg.nombre) or '—'}")
         lineas.append(f"<b>{e(et_vmid)}:</b> {cfg.vmid or '—'}")
@@ -194,21 +193,23 @@ class ResumenVM(QGroupBox):
         if cfg.firmware == Firmware.OVMF:
             firmware = "UEFI (OVMF)"
         else:
-            firmware = tr("ResumenVM", "SeaBIOS (clásico)")
+            firmware = QCoreApplication.translate("ResumenVM", "SeaBIOS (clásico)")
         lineas.append(f"<b>{e(et_arranque)}:</b> {e(firmware)}")
-        total = tr("ResumenVM", "{n} procesadores virtuales en total").format(
-            n=cfg.sockets * cfg.cores
-        )
+        total = QCoreApplication.translate(
+            "ResumenVM", "{n} procesadores virtuales en total"
+        ).format(n=cfg.sockets * cfg.cores)
         lineas.append(f"<b>{e(et_cpu)}:</b> {e(total)} ({cfg.sockets} × {cfg.cores})")
-        memoria = tr("ResumenVM", "{valor} GiB").format(valor=mib_a_texto_gib(cfg.memoria_mib))
+        memoria = QCoreApplication.translate("ResumenVM", "{valor} GiB").format(
+            valor=mib_a_texto_gib(cfg.memoria_mib)
+        )
         lineas.append(f"<b>{e(et_memoria)}:</b> {e(memoria)}")
         if cfg.con_disco and cfg.discos:
             partes = []
             for i, d in enumerate(cfg.discos):
                 etiqueta = etiquetas_discos[i] if i < len(etiquetas_discos) else f"#{i + 1}"
-                detalle = tr("ResumenVM", "{etiqueta}: {tam} GiB en {storage}").format(
-                    etiqueta=etiqueta, tam=d.tamano_gib, storage=d.storage or "—"
-                )
+                detalle = QCoreApplication.translate(
+                    "ResumenVM", "{etiqueta}: {tam} GiB en {storage}"
+                ).format(etiqueta=etiqueta, tam=d.tamano_gib, storage=d.storage or "—")
                 partes.append("• " + e(detalle))
             lineas.append(f"<b>{e(et_discos)}:</b><br>" + "<br>".join(partes))
         else:
@@ -224,7 +225,7 @@ class ResumenVM(QGroupBox):
         if not avanzado:
             ocultas = opciones_avanzadas_no_predeterminadas(cfg)
             if ocultas:
-                titulo = tr(
+                titulo = QCoreApplication.translate(
                     "ResumenVM", "Opciones avanzadas que se aplicarán (ocultas en modo básico)"
                 )
                 lineas.append(

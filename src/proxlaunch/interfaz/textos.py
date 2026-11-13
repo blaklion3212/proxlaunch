@@ -20,20 +20,19 @@ from proxlaunch.nucleo.validacion import Problema
 
 def _valor_neutro(clave: str) -> str:
     """Texto neutro para un parámetro que falta (nunca se muestra «{clave}»)."""
-    tr = QCoreApplication.translate
     if clave in ("host", "destino"):
-        return tr("Textos", "este servidor")
+        return QCoreApplication.translate("Textos", "este servidor")
     if clave in ("vmid", "siguiente"):
-        return tr("Textos", "esa máquina")
+        return QCoreApplication.translate("Textos", "esa máquina")
     if clave == "nodo":
-        return tr("Textos", "ese nodo")
+        return QCoreApplication.translate("Textos", "ese nodo")
     if clave == "campo":
-        return tr("Textos", "un campo")
+        return QCoreApplication.translate("Textos", "un campo")
     if clave == "version":
-        return tr("Textos", "una versión desconocida")
+        return QCoreApplication.translate("Textos", "una versión desconocida")
     if clave == "minima":
         return "8.0"
-    return tr("Textos", "un dato")
+    return QCoreApplication.translate("Textos", "un dato")
 
 
 class _Seguro(dict[str, str]):

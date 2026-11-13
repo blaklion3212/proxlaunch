@@ -92,16 +92,19 @@ def test_perfil_nuevo_por_defecto(crear):
 
 
 def test_modo_basico_oculta_ssl_y_version_forzada(crear):
+    """CA-06.1, CA-24.2, CA-26.3."""
     d = crear(avanzado=False)
     assert not d.fila_version.isVisible() and not d._contenedor_ssl.isVisible()
 
 
 def test_modo_avanzado_muestra_ssl_y_version_forzada(crear):
+    """CA-26.1."""
     d = crear(avanzado=True)
     assert d.fila_version.isVisible() and d._contenedor_ssl.isVisible()
 
 
 def test_selector_de_version_se_puebla_desde_versiones_conocidas(crear):
+    """CA-26.1."""
     d = crear(avanzado=True)
     datos = [d.combo_version.itemData(i) for i in range(d.combo_version.count())]
     assert datos == [None, *VERSIONES_CONOCIDAS]
@@ -208,6 +211,7 @@ def test_usuario_vacio_con_metodo_clave_muestra_error(crear):
 
 
 def test_aviso_no_bloqueante_si_se_usa_root_pam(crear):
+    """CA-25.4."""
     d = crear()
     d.token.setText("root@pam!lab=abc")
     assert d._aviso_root.isVisible()
@@ -461,6 +465,7 @@ def test_ignorar_ssl_en_avanzado_no_pide_huella(qtbot, crear, servicio_falso, mo
 
 def test_ignorar_ssl_guardado_no_se_aplica_en_modo_basico(qtbot, crear, deps, servicio_falso):
     # CA-06.3: fuera del modo avanzado se verifica siempre por huella.
+    """CA-06.1."""
     deps.perfiles.guardar(perfil("a", "Alfa", ignorar_ssl=True))
     servicio_falso.infos = [info_huella(EstadoHuella.CONFIRMADA)]
     servicio_falso.resultado_conectar = sesion_falsa()
@@ -486,6 +491,7 @@ def test_version_forzada_elegida_se_pasa_al_servicio(qtbot, crear, servicio_fals
 
 
 def test_en_modo_basico_no_se_fuerza_version(qtbot, crear, servicio_falso):
+    """CA-26.3."""
     servicio_falso.infos = [info_huella(EstadoHuella.CONFIRMADA)]
     servicio_falso.resultado_conectar = sesion_falsa()
     d = crear(avanzado=False, version_forzada=(8, 2))
@@ -738,3 +744,15 @@ def test_textos_de_avisos_antes_y_despues_de_conectar(qtbot, crear, servicio_fal
 def test_el_modulo_expone_las_constantes_de_valores_por_defecto():
     assert modulo.PUERTO == 8006 and modulo.REALM == "pam"
     assert isinstance(CredencialContrasena("a", "pam", "x"), CredencialContrasena)
+
+
+def test_enlace_de_la_guia_del_token_abre_el_dialogo(crear, monkeypatch):
+    """CA-25.3: la pantalla de conexión trae «¿Cómo creo un API Token?» y abre la guía."""
+    from proxlaunch.interfaz.dialogos import conexion as modulo
+
+    abiertos = []
+    monkeypatch.setattr(modulo.DialogoGuiaToken, "exec", lambda self: abiertos.append(self))
+    d = crear(avanzado=False)
+    assert d.enlace_guia.text() == "¿Cómo creo un API Token?"
+    d.enlace_guia.clicked.emit()
+    assert len(abiertos) == 1

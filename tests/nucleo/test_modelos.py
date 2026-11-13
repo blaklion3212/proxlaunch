@@ -30,6 +30,7 @@ from .conftest import GIB, storage
 
 
 def test_ca18_1_el_modelo_contiene_los_campos_requeridos(hacer_cfg):
+    """CA-18.1."""
     cfg = hacer_cfg()
     requeridos = {
         "vmid", "nombre", "nodo", "firmware", "sockets", "cores", "tipo_cpu", "memoria_mib",
@@ -39,6 +40,7 @@ def test_ca18_1_el_modelo_contiene_los_campos_requeridos(hacer_cfg):
 
 
 def test_ca18_1_origen_solo_admite_disco_vacio():
+    """CA-18.1."""
     assert [o.value for o in OrigenSO] == ["disco_vacio"]
 
 
@@ -58,6 +60,7 @@ def test_valores_por_defecto_del_modelo():
 
 @pytest.mark.parametrize("origen", ["iso", "ova", "", "DISCO_VACIO", None, 1])
 def test_ca18_2_origen_distinto_lanza_error_de_validacion(origen):
+    """CA-18.2."""
     with pytest.raises(ErrorProxLaunch) as e:
         ConfiguracionVM(vmid=100, nombre="a", nodo="pve1", origen=origen)
     assert e.value.codigo == CodigoError.PARAMETRO_INVALIDO
@@ -65,6 +68,7 @@ def test_ca18_2_origen_distinto_lanza_error_de_validacion(origen):
 
 
 def test_ca18_2_desde_dict_con_origen_invalido_lanza_error(hacer_cfg):
+    """CA-18.2."""
     datos = hacer_cfg().a_dict()
     datos["origen"] = "iso"
     with pytest.raises(ErrorProxLaunch):
@@ -84,10 +88,12 @@ def test_desde_dict_rechaza_enumeraciones_invalidas(campo, valor, hacer_cfg):
 
 
 def test_ca18_3_origen_explicito_en_el_diccionario(hacer_cfg):
+    """CA-18.3."""
     assert hacer_cfg().a_dict()["origen"] == "disco_vacio"
 
 
 def test_ca18_3_ida_y_vuelta_identica(hacer_cfg):
+    """CA-18.3."""
     cfg = hacer_cfg(
         firmware=Firmware.OVMF,
         storage_efi="nfs1",

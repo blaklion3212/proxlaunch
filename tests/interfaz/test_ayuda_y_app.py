@@ -18,6 +18,7 @@ from proxlaunch.nucleo.servicios.conexion import PRIVILEGIOS_REQUERIDOS
 @pytest.mark.parametrize("campo", ay.CAMPOS_AYUDA)
 def test_cada_campo_tecnico_tiene_ayuda_breve(campo):
     # CA-25.1: de 1 a 3 frases.
+    """CA-25.2."""
     texto = ay.ayuda(campo)
     assert texto.strip()
     frases = [f for f in texto.replace("?", ".").split(".") if f.strip()]
@@ -47,6 +48,7 @@ def test_ayuda_de_campo_inexistente_es_cadena_vacia():
 
 
 def test_aviso_de_cpu_host_menciona_mover_entre_nodos():
+    """CA-15.7."""
     assert "nodos" in ay.ayuda_cpu_host()
 
 
@@ -57,6 +59,7 @@ def test_guia_de_token_cubre_los_privilegios_que_exige_el_nucleo():
 
 
 def test_guia_de_token_tiene_pasos_notas_y_titulo():
+    """CA-25.3."""
     assert ay.titulo_guia_token()
     pasos = ay.pasos_guia_token()
     assert len(pasos) >= 4 and all("{" not in p for p in pasos)
