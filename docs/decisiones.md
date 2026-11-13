@@ -189,6 +189,27 @@ El usuario aprobó "por ahora" las 15 recomendaciones P-01 a P-15 de
 - Se puede abrir más adelante; las dependencias (PySide6/Qt LGPL-3.0, fuentes OFL) se
   usan sin modificar y sus licencias se incluyen.
 
+## D-20 · Comportamiento de los lotes (MVP 2) — Aprobada (2026-11-13)
+El usuario aprobó las 12 recomendaciones de `docs/requisitos/mvp2.md` §9:
+1. **Rollback** manual: lista de lo creado por el lote y confirmación; "solo incompletas" o
+   "todo el lote". Nunca automático (P-L03).
+2. **Sobreasignación thin:** advertir con casilla de confirmación; bloquear si la suma supera
+   3 × el espacio libre (P-L01).
+3. **Etiquetas** `proxlaunch;lote-<id>` en las MVs: activadas por defecto, desactivables en
+   modo avanzado (P-L04).
+4. **Lote que no cabe:** bloquear y ofrecer "Reducir a N" (P-L02).
+5. **Concurrencia:** 1 MV a la vez por nodo, hasta 4 nodos en paralelo (P-L05).
+6. **VMIDs ocupados:** saltarlos y avisar; si se ocupa justo antes de enviar, esa MV falla y se
+   ofrece reintentar (P-L06).
+7. **Tamaño máximo:** 100 MVs por lote (P-L07).
+8. **Errores repetidos:** pausa inmediata ante errores globales (sesión, huella, permisos, sin
+   nodos) y tras 3 seguidos de la misma causa (P-L09).
+9. **Reparto por defecto:** equilibrado por memoria y espacio; "por turnos" en avanzado (P-L08).
+10. **Simulación** solo conectada; no se ejecuta de verdad si la versión forzada es mayor que la
+    detectada (P-L10).
+11. **Lote homogéneo**, sin edición por MV (P-L12).
+12. **Informe final:** copiar y guardar `.txt` (P-L11).
+
 ## Correcciones técnicas a `prompt.md`
 Errores o imprecisiones de la especificación original que los requisitos deben
 respetar:
