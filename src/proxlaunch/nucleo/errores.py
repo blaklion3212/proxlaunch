@@ -29,6 +29,27 @@ class CodigoError(StrEnum):
     UPID_INVALIDO = "upid_invalido"
     LLAVERO_NO_DISPONIBLE = "llavero_no_disponible"
     DESCONOCIDO = "desconocido"
+    # --- Lotes (MVP 2, docs/requisitos/mvp2.md §7) ---
+    LOTE_SIN_NODO_APTO = "lote_sin_nodo_apto"  # E-L01
+    LOTE_VMIDS_INSUFICIENTES = "lote_vmids_insuficientes"  # E-L02
+    LOTE_SIN_ESPACIO = "lote_sin_espacio"  # E-L04
+    LOTE_ENVIO_INCIERTO = "lote_envio_incierto"  # E-L05
+    LOTE_EXISTENCIA_INDETERMINADA = "lote_existencia_indeterminada"  # E-L06
+    LOTE_PAUSADO_REPETIDO = "lote_pausado_repetido"  # E-L07
+    LOTE_PAUSADO_CONEXION = "lote_pausado_conexion"  # E-L09
+    LOTE_NO_ENVIADA = "lote_no_enviada"  # E-L10
+    LOTE_PLAN_CAMBIO = "lote_plan_cambio"  # E-L11
+    LOTE_EN_CURSO = "lote_en_curso"  # E-L12
+    LOTE_CANTIDAD_INVALIDA = "lote_cantidad_invalida"  # E-L13
+    VERSION_FORZADA_MAYOR = "version_forzada_mayor"  # E-L14
+    ETIQUETA_RECHAZADA = "etiqueta_rechazada"  # E-L15
+    ROLLBACK_FALLO = "rollback_fallo"  # E-L17
+    ROLLBACK_NO_PROPIA = "rollback_no_propia"  # E-L18
+    ROLLBACK_ENCENDIDA = "rollback_encendida"  # E-L19
+    ROLLBACK_BLOQUEADA = "rollback_bloqueada"  # E-L20
+    ROLLBACK_DISCOS_SUELTOS = "rollback_discos_sueltos"  # E-L21
+    ROLLBACK_INCIERTO = "rollback_incierto"  # E-L22
+    ESCRITURA_EN_SIMULACION = "escritura_en_simulacion"  # E-L23
 
 
 class ErrorProxLaunch(Exception):
