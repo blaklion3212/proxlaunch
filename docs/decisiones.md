@@ -272,6 +272,16 @@ funcionado en Proxmox y quedan fuera.
    (`images`, `iso`, `import`), nunca por el nombre; si hay varios candidatos pregunta una vez
    cuál usar y lo guarda en el perfil de conexión de ese servidor (editable). Si el storage
    recordado desaparece o deja de admitir ese contenido, avisa y no sustituye en silencio.
+7. **Ajustes tras la investigación** (`docs/investigacion/mvp4-origen-so.md`, 2026-11-14):
+   importar qcow2 solo en Proxmox ≥ 8.4 y con un storage de directorio/NFS/CIFS con el
+   contenido «Import» activado por un administrador (el usuario lo activará donde haga falta;
+   si no existe, la app explica cómo pedirlo); en 8.0–8.3 se explica la limitación y se ofrece
+   ISO o clon. Descargar por URL en el servidor: desde 8.2 con `Sys.AccessNetwork`. virtio-win:
+   descarga en el servidor si hay permiso, o ISO ya presente / subida por el usuario; la app no
+   la redistribuye. Las subidas no se pueden deshacer desde la app y se comprueba antes que no
+   exista un archivo con el mismo nombre.
+8. **Rol `ProxLaunchCreador` ampliado** (decisión del usuario): `VM.Config.Disk`, `VM.Clone`,
+   `Datastore.AllocateTemplate` y `Sys.AccessNetwork` sobre `/nodes`. Sin `Datastore.Allocate`.
 
 ## Correcciones técnicas a `prompt.md`
 Errores o imprecisiones de la especificación original que los requisitos deben
