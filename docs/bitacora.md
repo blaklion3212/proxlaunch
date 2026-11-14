@@ -27,10 +27,10 @@ Nunca registres contraseñas, tokens ni datos personales.
 ## Estado actual (2026-11-13)
 
 - **Fase en curso:** MVP 3 (perfiles de máquina, guardar y cargar lotes, CSV): requisitos
-  redactados; esperando la decisión del usuario sobre P-M01 (CSV heterogéneo frente a D-20).
+  listos y D-22 aprobada (lote por filas). Arquitectura en curso.
 - **Laboratorio:** apagado y conservado (PVE 9.2, solo 127.0.0.1); limpio de MVs y ajustes.
   Se destruirá sin rastro al terminar todas las pruebas (D-15).
-- **Próximo paso:** con P-M01 resuelta, registrar D-22 y diseñar la arquitectura del MVP 3.
+- **Próximo paso:** arquitectura del MVP 3 y, después, implementación.
 
 ---
 
@@ -243,7 +243,8 @@ Nunca registres contraseñas, tokens ni datos personales.
   de D-20) cambia una decisión aprobada: se le consulta. Las demás P-M (02 a 12) se adoptan
   de forma provisional con la recomendación del analista, para revisión del usuario.
 - **Archivos:** `docs/requisitos/mvp3.md`.
-- **Siguientes pasos:** respuesta a P-M01, D-22, arquitectura del MVP 3.
+- **Decisión:** el usuario eligió P-M01 A, lote por filas (D-22, 2026-11-14).
+- **Siguientes pasos:** arquitectura del MVP 3.
 
 ---
 

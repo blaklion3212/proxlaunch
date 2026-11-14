@@ -218,6 +218,21 @@ las creaciones de ProxLaunch no dejan discos sueltos. Sustituye lo propuesto en
 CA-L18.5. La app no busca discos sueltos tras borrar (E-L21 queda sin uso); la guía
 indica revisarlos en Proxmox si se sospecha que quedó alguno.
 
+## D-22 · MVP 3: lote por filas y decisiones de perfiles, lotes guardados y CSV — Aprobada (2026-11-14)
+1. **Lote por filas (P-M01 A, decidida por el usuario):** un CSV con MVs distintas se crea como
+   **un solo lote** en el que cada fila es una MV con su propia configuración: un resumen, una
+   confirmación, un informe y un «Deshacer». Amplía D-20 (11) y P-L12: el lote homogéneo
+   sigue existiendo; el lote por filas es una segunda forma de definir el mismo lote. Todas
+   las garantías del MVP 2 (INV-L1..L5) se mantienen y se vuelven a probar.
+2. Adoptadas con la recomendación del analista mientras el usuario estaba ausente (pendientes
+   de su revisión, se pueden cambiar): P-M02 B (importar solo las filas válidas, con
+   confirmación y las excluidas visibles), P-M03 A (lote guardado autocontenido), P-M04 A
+   (storage y bridge como pistas opcionales con reemplazo avisado), P-M05 A (6 perfiles de
+   fábrica, sin Windows 11), P-M06 A (GiB sin unidad), P-M07 A (archivos elegidos por el
+   usuario), P-M08 A (cargar requiere conexión), P-M09 A (informe en CSV, Podría), P-M10 A
+   (rechazar más de 100 filas), P-M11 A (columna `perfil` por fila), P-M12 A («Perfil de
+   máquina»).
+
 ## Correcciones técnicas a `prompt.md`
 Errores o imprecisiones de la especificación original que los requisitos deben
 respetar:
