@@ -37,6 +37,7 @@ from proxlaunch.interfaz.vistas.tabla_discos import TablaDiscos, entero_o_cero, 
 from proxlaunch.interfaz.vistas.tabla_redes import TablaRedes
 from proxlaunch.nucleo.errores import ErrorProxLaunch
 from proxlaunch.nucleo.modelos.inventario import Inventario
+from proxlaunch.nucleo.modelos.origen import TipoSO
 from proxlaunch.nucleo.modelos.vm import (
     Ballooning,
     ConfiguracionVM,
@@ -44,6 +45,7 @@ from proxlaunch.nucleo.modelos.vm import (
     Firmware,
     OrigenSO,
 )
+from proxlaunch.nucleo.origen.asistente import aplicar_asistente
 from proxlaunch.nucleo.seleccion_nodo import MotivoNodo, elegir_nodo
 from proxlaunch.nucleo.validacion import Problema, Severidad
 from proxlaunch.nucleo.valores_defecto import (
@@ -97,6 +99,9 @@ class FormularioVM(QWidget):
         self._avanzados: list[tuple[QWidget, Callable[[], bool]]] = []
         # Storage de UEFI cargado de un lote o perfil que el nodo no tiene (CA-G04.3).
         self._efi_ausente: str | None = None
+        # Configuración (widgets) justo antes de aplicar el asistente de SO: base de la lista de
+        # cambios y para reescribir solo el bus al marcar «Disco compatible (SATA)».
+        self._base_asistente: ConfiguracionVM | None = None
         # Storage de discos recordado para este servidor (RF-O05); None = el de más espacio.
         self._recordado_mv: str | None = None
 
@@ -147,6 +152,7 @@ class FormularioVM(QWidget):
         g.addWidget(self.selector_origen)
         g.addWidget(self._nota_clon)
         self.selector_origen.seleccion_cambiada.connect(self._al_cambiar_origen)
+        self.selector_origen.asistente_solicitado.connect(self._al_pedir_asistente)
 
     def _registrar_avanzado(self, w: QWidget, condicion: Callable[[], bool] | None = None) -> None:
         self._avanzados.append((w, condicion or (lambda: True)))
@@ -204,8 +210,22 @@ class FormularioVM(QWidget):
         self._registrar_avanzado(
             self.fila_efi, lambda: self.combo_firmware.currentData() == Firmware.OVMF
         )
+        # TPM y agente de QEMU: los fija el asistente de SO y el avanzado puede dejarlos distintos
+        # (CA-O13.8). En básico no se ven, pero su valor es el que se envía.
+        self.chk_tpm = QCheckBox()
+        self.chk_tpm.setAccessibleName(self.tr("TPM 2.0"))
+        self.fila_tpm = FilaCampo(self.tr("TPM 2.0"), self.chk_tpm)
+        self.chk_agente = QCheckBox()
+        self.chk_agente.setAccessibleName(self.tr("Agente de QEMU"))
+        self.fila_agente = FilaCampo(self.tr("Agente de QEMU"), self.chk_agente)
+        self._registrar_avanzado(self.fila_tpm)
+        self._registrar_avanzado(self.fila_agente)
         g.addWidget(self.fila_firmware)
         g.addWidget(self.fila_efi)
+        g.addWidget(self.fila_tpm)
+        g.addWidget(self.fila_agente)
+        self.chk_tpm.toggled.connect(lambda _m: self._al_editar())
+        self.chk_agente.toggled.connect(lambda _m: self._al_editar())
         self.combo_firmware.currentIndexChanged.connect(self._al_cambiar_firmware)
         self.combo_efi.currentIndexChanged.connect(self._al_cambiar_efi)
 
@@ -376,19 +396,25 @@ class FormularioVM(QWidget):
         self._aplicar_modo()
         self.cambiado.emit()
 
-    def aplicar_hardware(self, cfg: ConfiguracionVM, *, origen: bool = True) -> None:
+    def aplicar_hardware(
+        self, cfg: ConfiguracionVM, *, origen: bool = True, asistente: bool = False
+    ) -> None:
         """Aplica SOLO el hardware de ``cfg`` (perfil de máquina o lote guardado).
 
         No toca el nombre, el VMID, el nodo ni sus marcas de «tocado». Un almacenamiento o una
         red que el nodo no tiene se muestran como «x (no existe)» con error, nunca se sustituyen
         en silencio (CA-G04.3); el usuario debe elegir otro. Con ``origen`` también carga el
         origen del SO de ``cfg`` y su detalle (un lote guardado, un perfil con origen sugerido).
+        Con ``asistente`` (perfil con ``tipo_so``) se aplica además, una vez, el asistente de SO
+        sobre lo cargado; un lote guardado ya trae lo que el usuario dejó y no se toca.
         """
         self._ocupado = True
         try:
             if origen:
                 self.selector_origen.aplicar(cfg)
             self.combo_firmware.setCurrentIndex(max(self.combo_firmware.findData(cfg.firmware), 0))
+            self.chk_tpm.setChecked(cfg.tpm)
+            self.chk_agente.setChecked(cfg.agente_qemu)
             self.combo_sockets.setCurrentIndex(max(self.combo_sockets.findData(cfg.sockets), 0))
             self.cores.setText(str(cfg.cores))
             idx = self.combo_cpu.findData(cfg.tipo_cpu)
@@ -415,6 +441,13 @@ class FormularioVM(QWidget):
             self._actualizar_nodo()
             self._avisar_ausentes()
             self._actualizar_para_origen()
+            if (
+                asistente
+                and origen
+                and cfg.tipo_so is not None
+                and cfg.origen in (OrigenSO.ISO, OrigenSO.IMPORTAR_DISCO)
+            ):
+                self._escribir_asistente(cfg.tipo_so, solo_bus=False)
         finally:
             self._ocupado = False
         self._aplicar_modo()
@@ -454,6 +487,8 @@ class FormularioVM(QWidget):
         self.nombre.setText(cfg.nombre)
         self.selector_origen.aplicar(cfg)
         self.combo_firmware.setCurrentIndex(max(self.combo_firmware.findData(cfg.firmware), 0))
+        self.chk_tpm.setChecked(cfg.tpm)
+        self.chk_agente.setChecked(cfg.agente_qemu)
         self.combo_sockets.setCurrentIndex(max(self.combo_sockets.findData(cfg.sockets), 0))
         self.cores.setText(str(cfg.cores))
         idx = self.combo_cpu.findData(cfg.tipo_cpu)
@@ -488,8 +523,8 @@ class FormularioVM(QWidget):
     def configuracion(self) -> ConfiguracionVM:
         """Construye la configuración con lo que hay en los widgets.
 
-        Incluye el origen del SO y su detalle, con el asistente de SO ya aplicado cuando hay
-        ISO o disco importado (``SelectorOrigen.completar``).
+        Incluye el origen del SO y su detalle. El asistente de SO se aplicó una vez a los widgets
+        al elegir el sistema (``_escribir_asistente``): aquí se lee lo que muestran (CA-O13.8).
         """
         return self.selector_origen.completar(self._configuracion_base())
 
@@ -508,6 +543,8 @@ class FormularioVM(QWidget):
             nombre=self.nombre.text().strip(),
             nodo=nodo,
             firmware=Firmware(self.combo_firmware.currentData()),
+            tpm=self.chk_tpm.isChecked(),
+            agente_qemu=self.chk_agente.isChecked(),
             storage_efi=self.combo_efi.currentData() or None,
             sockets=self.combo_sockets.currentData(),
             cores=entero_o_cero(self.cores.text()),
@@ -576,10 +613,8 @@ class FormularioVM(QWidget):
         return self._radio_auto.isChecked()
 
     def etiquetas_discos(self) -> list[str]:
-        """Etiquetas de los discos; con el asistente de SO salen de la configuración efectiva
-        (puede cambiar el bus del primer disco)."""
-        if self.selector_origen.cambios_asistente:
-            return self.tabla_discos.etiquetas_para(self.configuracion().discos)
+        """Etiquetas de los discos tal como están en la tabla (el asistente ya escribió el bus
+        del primero)."""
         return self.tabla_discos.etiquetas_discos()
 
     # --- Nodo -------------------------------------------------------------------------
@@ -783,6 +818,46 @@ class FormularioVM(QWidget):
         """Otro origen, fuente o sistema operativo: se ajusta el formulario y se revalida."""
         self._actualizar_para_origen()
         self._al_editar()
+
+    def _al_pedir_asistente(self, tipo: object, solo_bus: bool) -> None:
+        """El usuario eligió otro SO (o «Disco compatible»): se aplica el asistente una vez."""
+        if self._ocupado or not isinstance(tipo, TipoSO):
+            return
+        self._escribir_asistente(tipo, solo_bus=solo_bus)
+        self._aplicar_modo()
+        self._al_editar()
+
+    def _escribir_asistente(self, tipo: TipoSO, *, solo_bus: bool) -> None:
+        """Aplica el asistente de SO a los widgets (firmware, TPM, agente, controlador, tarjeta de
+        red y bus del primer disco). A partir de aquí ``configuracion()`` devuelve lo que muestran
+        los widgets y el modo avanzado puede dejar otros valores (CA-O13.8). Con ``solo_bus`` solo
+        se reescribe el bus del primer disco (casilla «Disco compatible»)."""
+        selector = self.selector_origen
+        if solo_bus and self._base_asistente is not None:
+            base = self._base_asistente
+        else:
+            base = self._configuracion_base()
+            self._base_asistente = base
+        resultado = aplicar_asistente(base, tipo, disco_compatible=selector.disco_compatible)
+        cfg = resultado.cfg
+        previo, self._ocupado = self._ocupado, True
+        try:
+            if not solo_bus:
+                self.combo_firmware.setCurrentIndex(
+                    max(self.combo_firmware.findData(cfg.firmware), 0)
+                )
+                self.chk_tpm.setChecked(cfg.tpm)
+                self.chk_agente.setChecked(cfg.agente_qemu)
+                self.combo_ctrl.setCurrentIndex(
+                    max(self.combo_ctrl.findData(cfg.controlador_scsi), 0)
+                )
+                if cfg.redes:
+                    self.tabla_redes.establecer_modelo_todas(cfg.redes[0].modelo)
+            if cfg.con_disco and cfg.discos:
+                self.tabla_discos.establecer_bus_primero(cfg.discos[0].bus)
+        finally:
+            self._ocupado = previo
+        selector.establecer_cambios(resultado.cambios)
 
     def _actualizar_para_origen(self) -> None:
         """Con una plantilla el hardware es el suyo; con un disco importado el primero es la

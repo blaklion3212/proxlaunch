@@ -113,6 +113,7 @@ from proxlaunch.interfaz.vistas.selector_perfil import PanelAvisos, SelectorPerf
 from proxlaunch.nucleo.csv_importacion.interpretacion import filas_lote, interpretar
 from proxlaunch.nucleo.csv_importacion.modelos import ResultadoImportacion, TablaCsv
 from proxlaunch.nucleo.errores import CodigoError, ErrorProxLaunch
+from proxlaunch.nucleo.lote.ajustes import tiene_ajustes_pendientes
 from proxlaunch.nucleo.lote.constantes import (
     ACTUALIZACIONES_POR_S,
     ETIQUETA_APP,
@@ -424,6 +425,7 @@ class VentanaPrincipal(QMainWindow):
         self._timer_lote.timeout.connect(self._tick_lote)
         self.progreso.crear_otra.connect(self._crear_otra)
         self.progreso.crear_sin_etiquetas.connect(self._preparar_sin_etiquetas)
+        self.progreso.reintentar_ajustes_solicitado.connect(self._reintentar_ajustes_uno)
         self.progreso.seguir_esperando.connect(lambda: self._reanudar(una_vez=False))
         self.progreso.comprobar_ahora.connect(lambda: self._reanudar(una_vez=True))
         self.progreso.volver.connect(self._volver_al_formulario)
@@ -2168,6 +2170,40 @@ class VentanaPrincipal(QMainWindow):
             ),
             " ".join(t for t in (texto_aviso_entrada(a) for a in e.avisos) if t),
         )
+        # Clon PARCIAL con ajustes pendientes (E-O24): se puede reintentar sin crear otra máquina.
+        self.progreso.ofrecer_reintentar_ajustes(tiene_ajustes_pendientes(e))
+
+    def _reintentar_ajustes_uno(self) -> None:
+        """«Reintentar ajustes» de una sola máquina: mismo camino que el lote, solo los PUT."""
+        lote = self._lote
+        if lote is None or lote.libro is None or lote.cerrado or not lote.modo_uno or self._creando:
+            return
+        vmids = tuple(
+            e.elemento.vmid for e in lote.libro.instantanea() if tiene_ajustes_pendientes(e)
+        )
+        if not vmids:
+            return
+        lote.terminado = False
+        lote.control = ControlLote()
+        lote.cancelando = False
+        self._creando = True
+        self._bloquear_edicion(True)
+        self._refrescar_botones_red()
+        self.progreso.mostrar_progreso_mensaje(self.tr("Reintentando los ajustes pendientes..."))
+        self._lanzador.lanzar(
+            reintentar_ajustes_lote,
+            lote.sesion,
+            self._deps.reloj,
+            lote.libro,
+            vmids,
+            lote.inv,
+            lote.puente.observar,
+            lote.control,
+            self._fabrica_adaptada(),
+            al_terminar=lambda libro: self._al_lote_terminado(lote, libro),
+            al_fallar=lambda e: self._fallo_lote(lote, e),
+        )
+        self._timer_lote.start()
 
     def _sincronizar_libro_uno(
         self, resultado: ResultadoCreacion, *, avisos: tuple[str, ...] = ()
@@ -2691,7 +2727,7 @@ class VentanaPrincipal(QMainWindow):
             )
         self._aplicando = True
         try:
-            self.formulario.aplicar_hardware(resultado.cfg)
+            self.formulario.aplicar_hardware(resultado.cfg, asistente=True)
         finally:
             self._aplicando = False
         self._cfg_ultima_aplicada = self.formulario.configuracion()

@@ -175,6 +175,13 @@ class TablaRedes(QWidget):
         self._renumerar()
         self.cambiado.emit()
 
+    def establecer_modelo_todas(self, modelo: ModeloRed) -> None:
+        """Pone la misma tarjeta en todas las redes (lo usa el asistente de SO)."""
+        for f in self._filas:
+            idx = f.modelo.findData(modelo)
+            if idx >= 0:
+                f.modelo.setCurrentIndex(idx)
+
     def vlan_no_numericas(self) -> list[str]:
         """Etiquetas («net0»…) de las interfaces cuya VLAN escrita no es un número entero."""
         malas: list[str] = []

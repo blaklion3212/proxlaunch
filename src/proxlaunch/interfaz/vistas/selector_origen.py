@@ -62,7 +62,7 @@ from proxlaunch.nucleo.modelos.origen import (
     TipoSO,
 )
 from proxlaunch.nucleo.modelos.vm import ConfiguracionVM, OrigenSO
-from proxlaunch.nucleo.origen.asistente import CambioAsistente, aplicar_asistente
+from proxlaunch.nucleo.origen.asistente import CambioAsistente
 from proxlaunch.nucleo.origen.capacidades_origen import (
     CapacidadesOrigen,
     Disponibilidad,
@@ -136,6 +136,9 @@ class SelectorOrigen(QWidget):
     pedir_subida = Signal(object)
     pedir_descarga = Signal(object)
     seleccion_cambiada = Signal()
+    # El asistente de SO debe aplicarse UNA vez al formulario: (tipo_so, solo_bus). ``solo_bus``
+    # = solo cambió «Disco compatible (SATA)» y basta con reescribir el bus del primer disco.
+    asistente_solicitado = Signal(object, bool)
 
     def __init__(self, parent: QWidget | None = None) -> None:
         super().__init__(parent)
@@ -144,8 +147,9 @@ class SelectorOrigen(QWidget):
         self._tema = "oscuro"
         self._caps: CapacidadesOrigen | None = None
         self._origen = OrigenSO.DISCO_VACIO
-        self._cfg_base: ConfiguracionVM | None = None
         self._cambios: tuple[CambioAsistente, ...] = ()
+        # Se cargó una configuración sin pasar por el asistente: no se sabe qué cambió.
+        self._cambios_desconocidos = False
         # Catálogo recibido
         self._volumenes: tuple[Volumen, ...] = ()
         self._nodo_catalogo = ""
@@ -399,15 +403,19 @@ class SelectorOrigen(QWidget):
             self.tr("Disco compatible (SATA): no hace falta cargar un controlador al instalar")
         )
         self.casilla_disco_compatible.setAccessibleName(self.tr("Disco compatible (SATA)"))
-        self.casilla_disco_compatible.toggled.connect(self._al_cambiar_so)
+        self.casilla_disco_compatible.toggled.connect(self._al_cambiar_disco_compatible)
         capa.addWidget(self.casilla_disco_compatible)
 
         self.titulo_cambios = etiqueta("", secundario=True)
         capa.addWidget(self.titulo_cambios)
+        # Una sola etiqueta con todas las líneas: no se crean ni destruyen widgets al regenerar la
+        # lista, así que no quedan restos encimados (defecto de repintado).
         self.contenedor_cambios = QWidget()
-        self._capa_cambios = QVBoxLayout(self.contenedor_cambios)
-        self._capa_cambios.setContentsMargins(12, 0, 0, 0)
-        self._capa_cambios.setSpacing(2)
+        capa_cambios = QVBoxLayout(self.contenedor_cambios)
+        capa_cambios.setContentsMargins(12, 0, 0, 0)
+        self.lista_cambios = etiqueta("")
+        capa_cambios.addWidget(self.lista_cambios)
+        self.contenedor_cambios.hide()
         capa.addWidget(self.contenedor_cambios)
         return grupo
 
@@ -661,15 +669,20 @@ class SelectorOrigen(QWidget):
         dialogo.open()
         self.dialogo_capacidades = dialogo
 
-    def actualizar_base(self, cfg: ConfiguracionVM) -> None:
-        """Configuración sobre la que se calcula la lista de cambios del asistente (sin tocar la
-        selección). Llamar cuando cambie el formulario."""
-        self._cfg_base = cfg
-        self._recalcular_cambios()
+    @property
+    def disco_compatible(self) -> bool:
+        """Casilla «Disco compatible (SATA)» marcada (solo cuenta con un SO Windows)."""
+        return self.casilla_disco_compatible.isChecked()
+
+    def establecer_cambios(self, cambios: Sequence[CambioAsistente]) -> None:
+        """Lista de lo que el asistente cambió en el formulario (la calcula el formulario al
+        aplicarlo una vez). Es lo que muestran el selector y el resumen."""
+        self._cambios = tuple(cambios)
+        self._cambios_desconocidos = False
+        self._pintar_cambios()
 
     def aplicar(self, cfg: ConfiguracionVM) -> None:
         """Pone el selector como ``cfg`` (carga de un lote, perfil o formulario)."""
-        self._cfg_base = cfg
         det = cfg.detalle_origen
         self._iso = RefVolumen()
         self._drivers = None
@@ -711,15 +724,20 @@ class SelectorOrigen(QWidget):
         self._origen = cfg.origen
         self._mostrar_pagina()
         self._actualizar_valores()
-        self._recalcular_cambios()
+        # La lista se rellena cuando el formulario aplica el asistente; al cargar sin él se oculta.
+        self._cambios = ()
+        self._cambios_desconocidos = True
+        self._pintar_cambios()
 
     def completar(self, cfg: ConfiguracionVM) -> ConfiguracionVM:
-        """Copia de ``cfg`` con el origen, su detalle y —con ISO o disco importado— el asistente
-        de SO aplicado (firmware, TPM, controlador, red, bus del primer disco y agente)."""
+        """Copia de ``cfg`` con el origen y su detalle. El asistente de SO NO se reaplica aquí: se
+        aplicó una vez a los widgets del formulario y ``cfg`` ya trae lo que ellos muestran. Con
+        ISO o disco importado solo se fija el tipo de SO elegido (CA-O13.8)."""
         nueva = copy.deepcopy(cfg)
         nueva.origen = self._origen
         if self._origen == OrigenSO.DISCO_VACIO:
             nueva.detalle_origen = None
+            nueva.tipo_so, nueva.tpm, nueva.agente_qemu = None, False, False
             return nueva
         if self._origen == OrigenSO.ISO:
             nueva.detalle_origen = DetalleIso(
@@ -734,14 +752,9 @@ class SelectorOrigen(QWidget):
             )
         else:
             nueva.detalle_origen = self._detalle_clon()
-        tipo = self.tipo_so
-        if self._origen in (OrigenSO.ISO, OrigenSO.IMPORTAR_DISCO) and tipo is not None:
-            resultado = aplicar_asistente(
-                nueva, tipo, disco_compatible=self.casilla_disco_compatible.isChecked()
-            )
-            self._cambios = resultado.cambios
-            resultado.cfg.detalle_origen = nueva.detalle_origen
-            return resultado.cfg
+            nueva.tipo_so, nueva.tpm, nueva.agente_qemu = None, False, False
+            return nueva
+        nueva.tipo_so = self.tipo_so
         return nueva
 
     # ------------------------------------------------------------------------------------
@@ -826,7 +839,7 @@ class SelectorOrigen(QWidget):
             return
         self._origen = origen
         self._mostrar_pagina()
-        self._recalcular_cambios()
+        self._pedir_asistente(solo_bus=False)
         self.origen_cambiado.emit(origen)
         self.seleccion_cambiada.emit()
 
@@ -865,10 +878,28 @@ class SelectorOrigen(QWidget):
         self._actualizar_drivers()
 
     def _al_cambiar_so(self, *_args: object) -> None:
+        """Otro sistema operativo: el asistente se aplica una vez al formulario."""
         self._actualizar_visibilidad()
         self._actualizar_drivers()
-        self._recalcular_cambios()
+        self._pedir_asistente(solo_bus=False)
         self.seleccion_cambiada.emit()
+
+    def _al_cambiar_disco_compatible(self, *_args: object) -> None:
+        """Solo cambia el bus del primer disco; el resto de lo que dejó el usuario se respeta."""
+        self._actualizar_visibilidad()
+        self._actualizar_drivers()
+        self._pedir_asistente(solo_bus=True)
+        self.seleccion_cambiada.emit()
+
+    def _pedir_asistente(self, *, solo_bus: bool) -> None:
+        """Pide al formulario aplicar el asistente (SO elegido con ISO o disco importado)."""
+        tipo = self.tipo_so
+        if tipo is None or self._origen not in (OrigenSO.ISO, OrigenSO.IMPORTAR_DISCO):
+            self._cambios = ()
+            self._cambios_desconocidos = False
+            self._pintar_cambios()
+            return
+        self.asistente_solicitado.emit(tipo, solo_bus)
 
     def _al_cambiar_modo(self, _indice: int) -> None:
         self._actualizar_visibilidad()
@@ -915,36 +946,31 @@ class SelectorOrigen(QWidget):
     def _via_ofrecida(self, via: Via) -> bool:
         return self._caps is not None and self._caps.disponible(via)
 
-    def _recalcular_cambios(self) -> None:
-        """Lista de cambios del asistente para el SO elegido (antes → después, RF-O13)."""
-        while self._capa_cambios.count():
-            item = self._capa_cambios.takeAt(0)
-            widget = item.widget() if item is not None else None
-            if widget is not None:
-                widget.deleteLater()
+    def _pintar_cambios(self) -> None:
+        """Muestra la lista de cambios del asistente para el SO elegido (antes → después)."""
         tipo = self.tipo_so
-        self._cambios = ()
-        if tipo is None or self._origen not in (OrigenSO.ISO, OrigenSO.IMPORTAR_DISCO):
+        activo = tipo is not None and self._origen in (OrigenSO.ISO, OrigenSO.IMPORTAR_DISCO)
+        if not activo or tipo is None or self._cambios_desconocidos:
             self.titulo_cambios.setText("")
             self.titulo_cambios.hide()
+            self.contenedor_cambios.hide()
             return
-        base = self._cfg_base or ConfiguracionVM(vmid=0, nombre="", nodo="")
-        resultado = aplicar_asistente(
-            base, tipo, disco_compatible=self.casilla_disco_compatible.isChecked()
-        )
-        self._cambios = resultado.cambios
         self.titulo_cambios.show()
-        if resultado.cambios:
+        if self._cambios:
             self.titulo_cambios.setText(
                 self.tr("Para {so} el asistente va a cambiar:").format(so=texto_tipo_so(tipo))
             )
-            for cambio in resultado.cambios:
-                linea = etiqueta(f"• {texto_cambio_asistente(cambio)}")
-                self._capa_cambios.addWidget(linea)
+            self.lista_cambios.setText(
+                "\n".join(f"• {texto_cambio_asistente(c)}" for c in self._cambios)
+            )
+            self.contenedor_cambios.show()
         else:
             self.titulo_cambios.setText(
                 self.tr("Para {so} no hace falta cambiar nada más.").format(so=texto_tipo_so(tipo))
             )
+            self.lista_cambios.setText("")
+            self.contenedor_cambios.hide()
+        self.contenedor_cambios.updateGeometry()
 
     # --- Catálogo -----------------------------------------------------------------------
 

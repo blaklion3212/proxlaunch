@@ -370,6 +370,37 @@ def _motivo_red(motivo: str) -> str:
 # --- Problemas de validación --------------------------------------------------------
 
 
+def texto_campo(campo: str) -> str:
+    """Etiqueta traducida del campo de un problema (``detalle_origen.plantilla`` → «Origen»).
+
+    ``""`` si el campo no está mapeado: el llamador muestra solo el mensaje, nunca el
+    identificador crudo.
+    """
+    base = campo.split("[")[0].split(".")[0]
+    t = QCoreApplication.translate
+    nombres = {
+        "nombre": t("Textos", "Nombre"),
+        "vmid": t("Textos", "Número de máquina"),
+        "nodo": t("Textos", "Nodo"),
+        "sockets": t("Textos", "Sockets"),
+        "cores": t("Textos", "Núcleos"),
+        "memoria_mib": t("Textos", "Memoria"),
+        "ballooning": t("Textos", "Ballooning"),
+        "controlador_scsi": t("Textos", "Controlador SCSI"),
+        "storage_efi": t("Textos", "Almacenamiento de UEFI"),
+        "discos": t("Textos", "Disco"),
+        "redes": t("Textos", "Red"),
+        "origen": t("Textos", "Origen"),
+        "detalle_origen": t("Textos", "Origen"),
+        "tipo_so": t("Textos", "Sistema operativo"),
+        "tpm": t("Textos", "TPM 2.0"),
+        "agente_qemu": t("Textos", "Agente de QEMU"),
+        "firmware": t("Textos", "Arranque"),
+        "tipo_cpu": t("Textos", "Tipo de CPU"),
+    }
+    return nombres.get(base, "")
+
+
 def texto_problema(p: Problema) -> str:
     """Mensaje de una regla V-xx (sección 4 de los requisitos)."""
     cod = p.codigo
@@ -3308,11 +3339,29 @@ def _campo_legible_origen(campo: str) -> str:
     return QCoreApplication.translate("Textos", "el archivo de origen")
 
 
-def _texto_v_o07(prm: Mapping[str, str]) -> str:
+def _texto_v_o07(prm: Mapping[str, str], campo: str = "") -> str:
+    """Aviso de mínimos de Windows: cada problema dice solo el mínimo que no se cumple."""
     try:
         so = texto_tipo_so(TipoSO(prm.get("tipo_so", "")))
     except ValueError:
         so = QCoreApplication.translate("Textos", "Este sistema")
+    if campo == "cores":
+        return QCoreApplication.translate("Textos", "{so} pide al menos {cores} núcleos.").format(
+            so=so, cores=prm.get("minimo_cores", "?")
+        )
+    if campo == "memoria_mib":
+        memoria = (
+            f"{int(prm['minimo_memoria_mib']) / 1024:g}"
+            if prm.get("minimo_memoria_mib", "").isdigit()
+            else "?"
+        )
+        return QCoreApplication.translate(
+            "Textos", "{so} pide al menos {memoria} GiB de memoria."
+        ).format(so=so, memoria=memoria)
+    if campo.startswith("discos"):
+        return QCoreApplication.translate(
+            "Textos", "{so} pide al menos {disco} GiB de disco."
+        ).format(so=so, disco=prm.get("minimo_disco_gib", "?"))
     return QCoreApplication.translate(
         "Textos",
         "{so} pide al menos {cores} núcleos, {memoria} GiB de memoria y {disco} GiB de disco.",
@@ -3410,7 +3459,7 @@ def _texto_problema_origen(p: Problema) -> str | None:
             maximo=prm.get("maximo", "2"),
         )
     if cod == "V-O07":
-        return _texto_v_o07(prm)
+        return _texto_v_o07(prm, p.campo)
     if cod == "V-O08":
         if prm.get("storage"):
             return _fmt(

@@ -11,6 +11,7 @@ from PySide6.QtWidgets import QGroupBox, QLabel, QPushButton, QVBoxLayout, QWidg
 from proxlaunch.interfaz.textos import (
     texto_ajustes_clon,
     texto_cambio_asistente,
+    texto_campo,
     texto_modo_clon,
     texto_problema,
     texto_resumen_origen,
@@ -38,23 +39,9 @@ from proxlaunch.nucleo.valores_defecto import TIPO_CPU
 
 
 def nombre_campo(campo: str) -> str:
-    """Nombre corto del campo para prefijar un problema en la lista del resumen."""
-    base = campo.split("[")[0].split(".")[0]
-    nombres = {
-        "nombre": QCoreApplication.translate("ResumenVM", "Nombre"),
-        "vmid": QCoreApplication.translate("ResumenVM", "Número de máquina"),
-        "nodo": QCoreApplication.translate("ResumenVM", "Nodo"),
-        "sockets": QCoreApplication.translate("ResumenVM", "Sockets"),
-        "cores": QCoreApplication.translate("ResumenVM", "Núcleos"),
-        "memoria_mib": QCoreApplication.translate("ResumenVM", "Memoria"),
-        "ballooning": QCoreApplication.translate("ResumenVM", "Ballooning"),
-        "controlador_scsi": QCoreApplication.translate("ResumenVM", "Controlador SCSI"),
-        "storage_efi": QCoreApplication.translate("ResumenVM", "Almacenamiento de UEFI"),
-        "discos": QCoreApplication.translate("ResumenVM", "Disco"),
-        "redes": QCoreApplication.translate("ResumenVM", "Red"),
-        "origen": QCoreApplication.translate("ResumenVM", "Origen"),
-    }
-    return nombres.get(base, base)
+    """Nombre corto del campo para prefijar un problema; ``""`` si no hay uno traducido (nunca
+    se muestra un identificador crudo: el mensaje va sin prefijo)."""
+    return texto_campo(campo)
 
 
 def opciones_avanzadas_no_predeterminadas(cfg: ConfiguracionVM) -> list[str]:
@@ -274,7 +261,12 @@ class ResumenVM(QGroupBox):
             cabecera = QCoreApplication.translate(
                 "ResumenVM", "Para crear la máquina hay que corregir:"
             )
-            cuerpo = "\n".join(f"• {nombre_campo(p.campo)}: {texto_problema(p)}" for p in errores)
+            cuerpo = "\n".join(
+                f"• {nombre_campo(p.campo)}: {texto_problema(p)}"
+                if nombre_campo(p.campo)
+                else f"• {texto_problema(p)}"
+                for p in errores
+            )
             poner_mensaje(self._pendientes, f"{cabecera}\n{cuerpo}")
         else:
             poner_mensaje(self._pendientes, None)

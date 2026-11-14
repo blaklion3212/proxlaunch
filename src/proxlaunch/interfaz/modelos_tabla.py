@@ -20,7 +20,7 @@ from PySide6.QtCore import (
     QSortFilterProxyModel,
     Qt,
 )
-from PySide6.QtGui import QColor, QKeyEvent, QKeySequence
+from PySide6.QtGui import QColor, QKeyEvent, QKeySequence, QResizeEvent
 from PySide6.QtWidgets import QAbstractItemView, QApplication, QHeaderView, QTableView, QWidget
 
 from proxlaunch.interfaz.tema.paleta import TOKENS_CLARO, TOKENS_OSCURO
@@ -291,6 +291,10 @@ class ModeloPlan(_ModeloBase):
             if self._con_origen:
                 celdas = (*celdas, _texto_origen_celda(e.cfg))
             return celdas[col]
+        if role == Qt.ItemDataRole.ToolTipRole and self._con_origen:
+            if col == (8 if self._por_filas else 6):
+                return _texto_origen_celda(e.cfg)  # el texto completo de la columna recortada
+            return None
         numericas = (0, 2, 5, 6, 7) if self._por_filas else (0, 2, 5)
         if role == Qt.ItemDataRole.TextAlignmentRole and col in numericas:
             return int(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
@@ -663,6 +667,9 @@ class ModeloRollback(_ModeloBase):
         return None
 
 
+_ANCHO_MIN_ULTIMA = 48  # píxeles mínimos de la columna que elide (origen del SO)
+
+
 # --- Vista copiable -----------------------------------------------------------------
 
 
@@ -683,6 +690,12 @@ class TablaCopiable(QTableView):
         self.horizontalHeader().setStretchLastSection(True)
         self.horizontalHeader().setHighlightSections(False)
         self.setFocusPolicy(Qt.FocusPolicy.StrongFocus)
+        self._elidir_ultima = False
+
+    def elidir_ultima_columna(self, elidir: bool) -> None:
+        """La última columna se encoge con «…» en vez de ensanchar la tabla (y el panel)."""
+        self._elidir_ultima = elidir
+        self._ajustar_columnas()
 
     def setModel(self, model: QAbstractItemModel | None) -> None:
         super().setModel(model)
@@ -698,7 +711,30 @@ class TablaCopiable(QTableView):
         cabecera = self.horizontalHeader()
         for c in range(modelo.columnCount()):
             cabecera.setSectionResizeMode(c, QHeaderView.ResizeMode.ResizeToContents)
+        if self._elidir_ultima and modelo.columnCount() > 0:
+            # La última columna ocupa lo que sobra (con un mínimo) y elide el texto largo.
+            cabecera.setStretchLastSection(False)
+            cabecera.setTextElideMode(Qt.TextElideMode.ElideRight)
+            cabecera.setSectionResizeMode(
+                modelo.columnCount() - 1, QHeaderView.ResizeMode.Interactive
+            )
+            self._repartir_ultima()
+            return
         cabecera.setStretchLastSection(True)
+
+    def _repartir_ultima(self) -> None:
+        """Da a la última columna el ancho que sobra, con un mínimo."""
+        modelo = self.model()
+        if not self._elidir_ultima or modelo is None or modelo.columnCount() == 0:
+            return
+        cabecera = self.horizontalHeader()
+        ultima = modelo.columnCount() - 1
+        resto = self.viewport().width() - sum(cabecera.sectionSize(c) for c in range(ultima))
+        cabecera.resizeSection(ultima, max(resto, _ANCHO_MIN_ULTIMA))
+
+    def resizeEvent(self, ev: QResizeEvent) -> None:
+        super().resizeEvent(ev)
+        self._repartir_ultima()
 
     def texto(self, *, solo_seleccion: bool) -> str:
         """Texto tabulado de la selección (o de toda la tabla), con la cabecera."""

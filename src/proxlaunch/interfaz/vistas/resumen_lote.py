@@ -242,6 +242,7 @@ class ResumenLote(QWidget):
         )
         self.tabla.setModel(self.modelo)
         self.tabla.setMinimumHeight(160)
+        self.tabla.elidir_ultima_columna(True)  # la de origen se recorta con «…» y trae tooltip
 
         self._totales = self._etiqueta_datos()
         self._origen = self._etiqueta_datos()
@@ -321,16 +322,25 @@ class ResumenLote(QWidget):
         self.boton_simular.clicked.connect(self.simular_solicitado)
         self.boton_crear.clicked.connect(self._al_crear)
 
-        botones = QHBoxLayout()
-        botones.addWidget(self.boton_volver)
-        botones.addWidget(self.boton_copiar)
-        botones.addWidget(self.boton_informe_simulacion)
-        botones.addStretch(1)
-        botones.addWidget(self.boton_cancelar)
-        botones.addWidget(self.boton_reducir)
-        botones.addWidget(self.boton_quitar_excedentes)
-        botones.addWidget(self.boton_simular)
-        botones.addWidget(self.boton_crear)
+        # Varias filas cortas para que el panel no pida scroll horizontal con la ventana a ~1320 px
+        # (los botones largos van solos o de dos en dos).
+        botones = QVBoxLayout()
+        botones.setSpacing(4)
+        for fila_botones in (
+            (self.boton_volver, self.boton_copiar),
+            (self.boton_informe_simulacion, self.boton_cancelar),
+            (self.boton_reducir,),
+            (self.boton_quitar_excedentes,),
+            (self.boton_simular, self.boton_crear),
+        ):
+            fila = QHBoxLayout()
+            if len(fila_botones) == 1 or fila_botones[0] is self.boton_simular:
+                fila.addStretch(1)
+            for b in fila_botones:
+                fila.addWidget(b)
+            if fila_botones[0] is not self.boton_simular and len(fila_botones) > 1:
+                fila.addStretch(1)
+            botones.addLayout(fila)
 
         capa = QVBoxLayout(self)
         capa.setContentsMargins(0, 0, 0, 0)

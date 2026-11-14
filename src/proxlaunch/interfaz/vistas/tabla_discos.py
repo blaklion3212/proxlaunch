@@ -260,6 +260,15 @@ class TablaDiscos(QWidget):
         self._renumerar()
         self.cambiado.emit()
 
+    def establecer_bus_primero(self, bus: Bus) -> None:
+        """Pone el bus del primer disco (lo usa el asistente de SO); no toca los demás."""
+        if not self._filas:
+            return
+        f = self._filas[0]
+        idx = f.bus.findData(bus)
+        if idx >= 0 and f.bus.currentIndex() != idx:
+            f.bus.setCurrentIndex(idx)  # dispara _al_cambiar_bus: opciones, etiquetas y cambiado
+
     def tamanos_no_numericos(self) -> list[str]:
         """Etiquetas («scsi0»…) de los discos cuyo tamaño escrito no es un número entero."""
         malos: list[str] = []
