@@ -12,10 +12,18 @@ from typing import Any
 from urllib.parse import quote
 
 from proxlaunch.nucleo.api.autenticacion import Autenticador
+from proxlaunch.nucleo.api.solo_lectura import TransporteSoloLectura
 from proxlaunch.nucleo.api.transporte import Transporte
 from proxlaunch.nucleo.capacidades import interpretar_version
 from proxlaunch.nucleo.errores import CodigoError, ErrorProxLaunch
-from proxlaunch.nucleo.modelos.inventario import Bridge, Nodo, Storage, Topologia, Version
+from proxlaunch.nucleo.modelos.inventario import (
+    Bridge,
+    Nodo,
+    Storage,
+    Topologia,
+    Version,
+    VMRemota,
+)
 from proxlaunch.nucleo.modelos.tarea import EstadoTarea
 from proxlaunch.nucleo.reloj import Reloj
 
@@ -71,6 +79,14 @@ class ClienteProxmox:
         cerrar = getattr(self._transporte, "cerrar", None)
         if callable(cerrar):
             cerrar()
+
+    def solo_lectura(self) -> ClienteProxmox:
+        """Cliente que comparte la sesión pero NO puede escribir (simulación, INV-L5).
+
+        No se debe llamar a ``cerrar()`` en el cliente devuelto: soltaría la credencial
+        compartida con el cliente original.
+        """
+        return ClienteProxmox(TransporteSoloLectura(self._transporte), self._auth, self._reloj)
 
     # --- Base -------------------------------------------------------------------------
 
@@ -192,6 +208,39 @@ class ClienteProxmox:
             raise ErrorProxLaunch(CodigoError.DESCONOCIDO, {}, f"nextid inesperado: {data!r}")
         return valor
 
+    def vmid_libre(self, vmid: int) -> bool:
+        """``GET /cluster/nextid?vmid=``: ``True`` si el VMID está libre en todo el clúster.
+
+        Un 400 por ``vmid`` (ya existe) es ``False``; cualquier otro error se propaga.
+        """
+        try:
+            self._llamar("GET", "/cluster/nextid", params={"vmid": vmid})
+        except ErrorProxLaunch as e:
+            if e.codigo == CodigoError.VMID_OCUPADO or (
+                e.codigo == CodigoError.PARAMETRO_INVALIDO and e.params.get("campo") == "vmid"
+            ):
+                return False
+            raise
+        return True
+
+    def vms_visibles(self) -> list[VMRemota]:
+        """``GET /cluster/resources?type=vm``: solo lo que el usuario puede ver (LAB-L11)."""
+        data = self._llamar("GET", "/cluster/resources", params={"type": "vm"})
+        resultado: list[VMRemota] = []
+        for e in data if isinstance(data, list) else []:
+            vmid = _entero(e.get("vmid")) if isinstance(e, dict) else None
+            if vmid is None:
+                continue
+            resultado.append(
+                VMRemota(
+                    vmid=vmid,
+                    nombre=str(e.get("name", "")),
+                    nodo=str(e.get("node", "")),
+                    tipo=str(e.get("type", "")),
+                )
+            )
+        return resultado
+
     def permisos(self) -> dict[str, dict[str, int]]:
         """``GET /access/permissions``: ``{ruta: {privilegio: 1}}`` del usuario."""
         data = self._llamar("GET", "/access/permissions")
@@ -251,3 +300,28 @@ class ClienteProxmox:
                 return None
             raise
         return data if isinstance(data, dict) else None
+
+    def estado_actual_vm(self, nodo: str, vmid: int) -> dict[str, Any]:
+        """``GET /nodes/{n}/qemu/{vmid}/status/current`` (``VM.Audit``): ``status``, ``lock``..."""
+        data = self._llamar("GET", f"/nodes/{_seg(nodo)}/qemu/{_seg(vmid)}/status/current")
+        if not isinstance(data, dict):
+            raise ErrorProxLaunch(CodigoError.DESCONOCIDO, {}, f"estado inesperado: {data!r}")
+        return data
+
+    def eliminar_vm(self, nodo: str, vmid: int) -> str:
+        """``DELETE /nodes/{n}/qemu/{vmid}``. Devuelve el UPID de la tarea de borrado.
+
+        Los parámetros van en la CONSULTA, no en el cuerpo (LAB-L05). Método no seguro:
+        el transporte no hace failover de host.
+
+        Raises:
+            ErrorProxLaunch: ``UPID_INVALIDO`` si la respuesta no trae un UPID válido.
+        """
+        data = self._llamar(
+            "DELETE",
+            f"/nodes/{_seg(nodo)}/qemu/{_seg(vmid)}",
+            params={"destroy-unreferenced-disks": 1, "purge": 0},
+        )
+        if not isinstance(data, str) or not _RE_UPID.match(data):
+            raise ErrorProxLaunch(CodigoError.UPID_INVALIDO, {}, f"respuesta: {data!r}")
+        return data

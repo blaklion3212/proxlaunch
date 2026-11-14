@@ -4,6 +4,7 @@ Función pura: devuelve valores SIN codificar; la codificación del formulario l
 el transporte (CT-9).
 """
 
+from proxlaunch.nucleo.capacidades import admite_etiquetas
 from proxlaunch.nucleo.errores import CodigoError, ErrorProxLaunch
 from proxlaunch.nucleo.modelos.inventario import Inventario
 from proxlaunch.nucleo.modelos.vm import (
@@ -60,8 +61,14 @@ def _valor_disco(cfg: ConfiguracionVM, inv: Inventario, d: Disco) -> str:
     return ",".join(partes)
 
 
-def construir_parametros(cfg: ConfiguracionVM, inv: Inventario) -> dict[str, str]:
-    """Convierte la configuración en los parámetros de ``POST /nodes/{nodo}/qemu``."""
+def construir_parametros(
+    cfg: ConfiguracionVM, inv: Inventario, version: tuple[int, int] | None = None
+) -> dict[str, str]:
+    """Convierte la configuración en los parámetros de ``POST /nodes/{nodo}/qemu``.
+
+    ``version`` (opcional) es la versión contra la que se construye; sin ella se asume que
+    admite etiquetas. Sin etiquetas la petición es idéntica a la del MVP 1.
+    """
     discos = cfg.discos if cfg.con_disco else []
     params: dict[str, str] = {"vmid": str(cfg.vmid), "name": cfg.nombre}
 
@@ -101,4 +108,6 @@ def construir_parametros(cfg: ConfiguracionVM, inv: Inventario) -> dict[str, str
         if r.vlan is not None:
             valor += f",tag={r.vlan}"
         params[f"net{i}"] = valor
+    if cfg.etiquetas and (version is None or admite_etiquetas(version)):
+        params["tags"] = ";".join(cfg.etiquetas)
     return params

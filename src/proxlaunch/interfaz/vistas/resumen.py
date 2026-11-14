@@ -132,6 +132,7 @@ class ResumenVM(QGroupBox):
         self.boton_crear.setEnabled(False)
         self.boton_crear.clicked.connect(self._al_pulsar)
         self._enviado = False
+        self._modo_lote = False
         capa = QVBoxLayout(self)
         capa.addWidget(self._texto)
         capa.addWidget(self._pendientes)
@@ -146,6 +147,15 @@ class ResumenVM(QGroupBox):
         self._enviado = True
         self.boton_crear.setEnabled(False)
         self.crear_solicitado.emit()
+
+    def establecer_modo_lote(self, activo: bool) -> None:
+        """Con más de una máquina el botón lleva al resumen del lote en vez de crear."""
+        self._modo_lote = activo
+        self.boton_crear.setText(
+            QCoreApplication.translate("ResumenVM", "Ver resumen")
+            if activo
+            else QCoreApplication.translate("ResumenVM", "Crear máquina")
+        )
 
     def liberar(self) -> None:
         """Permite un nuevo envío (al terminar la tarea)."""

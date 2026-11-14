@@ -43,6 +43,9 @@ _RE_CAMPO_FORMATO = re.compile(
     re.IGNORECASE | re.MULTILINE,
 )
 _RE_INEXISTENTE = re.compile(r"does not exist|no such|not found|does not exists", re.IGNORECASE)
+_RE_ETIQUETA_RECHAZADA = re.compile(
+    r"Sys\.Modify for modifying tags?\s*:?\s*['\"]?(?P<tag>[^\s'\")]+)?", re.IGNORECASE
+)
 _RE_ENTRE_COMILLAS = re.compile(r"['\"](?P<nombre>[^'\"]+)['\"]")
 _RE_STORAGE = re.compile(
     r"storage\s+'(?P<id>[^']+)'|volume group\s+[\"'](?P<vg>[^\"']+)[\"']", re.IGNORECASE
@@ -175,6 +178,14 @@ def traducir_http(
         params = {"nodo": nodo} if nodo else {}
         params["estado_http"] = str(estado)
         return ErrorProxLaunch(CodigoError.NODO_NO_DISPONIBLE, params, detalle)
+
+    # E-L15: la política de etiquetas del sitio exige Sys.Modify (va antes del 403 genérico,
+    # cuyo patrón de permiso también casaría con este texto).
+    if estado == 403:
+        me = _RE_ETIQUETA_RECHAZADA.search(texto)
+        if me:
+            params = {"tag": me.group("tag")} if me.group("tag") else {}
+            return ErrorProxLaunch(CodigoError.ETIQUETA_RECHAZADA, params, detalle)
 
     clasificado = _clasificar_texto(texto, errores, nodo)
     if clasificado is not None:

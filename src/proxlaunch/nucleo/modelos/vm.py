@@ -94,6 +94,7 @@ class ConfiguracionVM:
     controlador_scsi: ControladorScsi = ControladorScsi.VIRTIO_SINGLE
     redes: list[InterfazRed] = field(default_factory=list)
     origen: OrigenSO = OrigenSO.DISCO_VACIO
+    etiquetas: tuple[str, ...] = ()  # MVP 2: marca de propiedad del lote (RF-L24)
 
     def __post_init__(self) -> None:
         # CA-18.2: cualquier origen distinto de "disco_vacio" es un error de validación.
@@ -101,7 +102,7 @@ class ConfiguracionVM:
 
     def a_dict(self) -> dict[str, Any]:
         """Serializa a un diccionario JSON-compatible (ida y vuelta, CA-18.3)."""
-        return {
+        datos: dict[str, Any] = {
             "vmid": self.vmid,
             "nombre": self.nombre,
             "nodo": self.nodo,
@@ -138,6 +139,9 @@ class ConfiguracionVM:
             ],
             "origen": str(self.origen),
         }
+        if self.etiquetas:  # solo si existen: el formato de M1 no cambia
+            datos["etiquetas"] = list(self.etiquetas)
+        return datos
 
     @classmethod
     def desde_dict(cls, d: dict[str, Any]) -> "ConfiguracionVM":
@@ -177,4 +181,5 @@ class ConfiguracionVM:
                 for x in d["redes"]
             ],
             origen=d["origen"],
+            etiquetas=tuple(str(e) for e in d.get("etiquetas", ())),
         )

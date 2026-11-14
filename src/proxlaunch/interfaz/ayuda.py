@@ -10,6 +10,8 @@ from collections.abc import Callable
 
 from PySide6.QtCore import QCoreApplication
 
+from proxlaunch.nucleo.lote.constantes import MAX_LOTE
+
 # Privilegios del rol ProxLaunchCreador (docs/investigacion/f1-api-proxmox.md §5).
 PRIVILEGIOS_ROL = (
     "VM.Allocate",
@@ -154,7 +156,105 @@ _TEXTOS: dict[str, Callable[[], str]] = {
         "Hace que ProxLaunch se comporte como si el servidor tuviera otra versión de Proxmox. "
         "Solo para casos especiales; normalmente se detecta sola.",
     ),
+    # --- Lotes (MVP 2, RF-L22) ---
+    "lote_cantidad": lambda: QCoreApplication.translate(
+        "Ayuda",
+        "Cuántas máquinas iguales quieres crear de una vez, de 1 a {max}. Todas comparten la "
+        "misma configuración del formulario y solo cambian el nombre y el número.",
+    ).format(max=MAX_LOTE),
+    "lote_prefijo": lambda: QCoreApplication.translate(
+        "Ayuda",
+        "Es el principio del nombre de todas las máquinas. Con «srv-web» se crean srv-web-01, "
+        "srv-web-02, etc. Usa letras sin acentos, números y guiones.",
+    ),
+    "lote_separador": lambda: QCoreApplication.translate(
+        "Ayuda",
+        "Lo que va entre el prefijo y el número. Puede ser un guion («srv-01») o nada («srv01»).",
+    ),
+    "lote_inicio": lambda: QCoreApplication.translate(
+        "Ayuda",
+        "Es el número con el que empieza la numeración de los nombres. Con 5, las máquinas se "
+        "llaman srv-05, srv-06, srv-07...",
+    ),
+    "lote_relleno": lambda: QCoreApplication.translate(
+        "Ayuda",
+        "Cuántos dígitos tiene como mínimo el número del nombre, completando con ceros: con 2 "
+        "es «01» y con 3 es «001». Si hacen falta más dígitos, se usan en todos los nombres.",
+    ),
+    "lote_vmid_inicial": lambda: QCoreApplication.translate(
+        "Ayuda",
+        "Es el primer número de máquina (VMID) del lote; las demás usan los siguientes. Si "
+        "alguno ya está ocupado se salta y se te avisa. Déjalo vacío para que ProxLaunch "
+        "proponga uno.",
+    ),
+    "lote_destino": lambda: QCoreApplication.translate(
+        "Ayuda",
+        "Dónde se crean las máquinas. En Automático ProxLaunch las reparte entre los nodos "
+        "del clúster que pueden alojarlas; en «Un nodo» van todas al que elijas.",
+    ),
+    "lote_nodos": lambda: QCoreApplication.translate(
+        "Ayuda",
+        "Marca los nodos entre los que se repartirán las máquinas. Solo se pueden elegir los "
+        "que están en línea.",
+    ),
+    "lote_equilibrado": lambda: QCoreApplication.translate(
+        "Ayuda",
+        "Equilibrado manda cada máquina al nodo que tenga más memoria libre en ese momento "
+        "(contando las que ya le tocaron), para que ninguno se llene antes que los demás.",
+    ),
+    "lote_por_turnos": lambda: QCoreApplication.translate(
+        "Ayuda",
+        "Por turnos reparte las máquinas una a cada nodo, en orden alfabético, y vuelve a "
+        "empezar. Es predecible, pero no tiene en cuenta cuánta memoria le queda a cada nodo.",
+    ),
+    "lote_sobreasignacion": lambda: QCoreApplication.translate(
+        "Ayuda",
+        "Algunos almacenamientos prometen el espacio de los discos pero no lo reservan hasta "
+        "que se usa. Puedes crear más discos de los que caben, y funciona mientras no se "
+        "llenen; si se llenan, todas las máquinas de ese almacenamiento pueden fallar.",
+    ),
+    "lote_simulacion": lambda: QCoreApplication.translate(
+        "Ayuda",
+        "Simular hace todas las comprobaciones y muestra qué se enviaría a Proxmox, pero no "
+        "crea nada ni cambia nada en el servidor.",
+    ),
+    "lote_deshacer": lambda: QCoreApplication.translate(
+        "Ayuda",
+        "Elimina de Proxmox las máquinas que creó este lote, con sus discos. Solo toca las "
+        "que ProxLaunch puede demostrar que creó él, y nunca se hace sin que lo confirmes.",
+    ),
+    "lote_etiqueta": lambda: QCoreApplication.translate(
+        "Ayuda",
+        "Marca cada máquina con las etiquetas «proxlaunch» y «lote-» más un código, visibles "
+        "en Proxmox. Sirven para reconocer lo que creó este lote y poder deshacerlo con "
+        "seguridad. Si tu servidor no admite etiquetas nuevas, desactívalo.",
+    ),
+    "lote_envio_incierto": lambda: QCoreApplication.translate(
+        "Ayuda",
+        "Si se corta la conexión justo al enviar una máquina, no se sabe si Proxmox llegó a "
+        "crearla. ProxLaunch nunca la vuelve a enviar sola, porque podría duplicarla: usa "
+        "«Comprobar» para ver si existe.",
+    ),
 }
+
+# Ayudas del lote que deben tener texto (CA-L22.4).
+CAMPOS_AYUDA_LOTE: tuple[str, ...] = (
+    "lote_cantidad",
+    "lote_prefijo",
+    "lote_separador",
+    "lote_inicio",
+    "lote_relleno",
+    "lote_vmid_inicial",
+    "lote_destino",
+    "lote_nodos",
+    "lote_equilibrado",
+    "lote_por_turnos",
+    "lote_sobreasignacion",
+    "lote_simulacion",
+    "lote_deshacer",
+    "lote_etiqueta",
+    "lote_envio_incierto",
+)
 
 # Campos técnicos que deben tener ayuda (CA-25.1, CA-25.2).
 CAMPOS_AYUDA: tuple[str, ...] = (

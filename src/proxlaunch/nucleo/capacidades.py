@@ -33,11 +33,13 @@ class Funcion(StrEnum):
 
     # Entrada de EJEMPLO: el MVP 4 añadirá las funciones reales (importaciones).
     IMPORTAR_DISCO = "importar_disco"
+    ETIQUETAS = "etiquetas"  # parámetro ``tags`` al crear (RF-L24)
 
 
 # Única tabla: función -> (mayor, menor) desde la que está disponible.
 TABLA: dict[Funcion, tuple[int, int]] = {
     Funcion.IMPORTAR_DISCO: (8, 2),
+    Funcion.ETIQUETAS: (7, 3),  # todas las versiones soportadas (>= 8.0) la admiten
 }
 
 
@@ -59,6 +61,11 @@ class Capacidades:
     def es_soportada(self) -> bool:
         """Indica si la versión cumple la mínima del programa (CA-09.2)."""
         return self.version >= VERSION_MINIMA
+
+
+def admite_etiquetas(version: tuple[int, int]) -> bool:
+    """Indica si la versión admite ``tags`` al crear una MV (desde 7.3)."""
+    return version >= TABLA[Funcion.ETIQUETAS]
 
 
 def interpretar_version(texto: str) -> tuple[Version, bool]:

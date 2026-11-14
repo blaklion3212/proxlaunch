@@ -19,6 +19,7 @@ from proxlaunch.nucleo.api.traductor_errores import (
     traducir_http,
 )
 from proxlaunch.nucleo.errores import CodigoError, ErrorProxLaunch
+from proxlaunch.nucleo.lote.constantes import MAX_NODOS_PARALELOS, MAX_PETICIONES_SIMULTANEAS
 
 if TYPE_CHECKING:
     from proxlaunch.nucleo.api.autenticacion import Autenticador
@@ -28,6 +29,8 @@ TIMEOUT_CONEXION = 10  # segundos por host (RNF-03)
 TIMEOUT_LECTURA = 30  # segundos por petición (RNF-03)
 PREFIJO_API = "/api2/json"
 _METODOS_SEGUROS = frozenset({"GET", "HEAD"})
+# Conexiones simultáneas por host: sondeos del lote + una creación por nodo en paralelo.
+POOL_MAXSIZE = MAX_PETICIONES_SIMULTANEAS + MAX_NODOS_PARALELOS
 
 _log = logging.getLogger("proxlaunch.api.transporte")
 
@@ -168,7 +171,8 @@ class TransporteHttp:
             huella = None if ignorar_ssl else self._huellas.get(host)
             if ignorar_ssl or huella:
                 self._sesion.mount(
-                    f"https://{_netloc(host, self._puerto)}/", AdaptadorHuella(huella)
+                    f"https://{_netloc(host, self._puerto)}/",
+                    AdaptadorHuella(huella, pool_maxsize=POOL_MAXSIZE),
                 )
 
     # --- Contrato de Transporte ---------------------------------------------------

@@ -30,6 +30,7 @@ class PanelProgreso(QGroupBox):
     seguir_esperando = Signal()
     comprobar_ahora = Signal()
     volver = Signal()
+    deshacer_solicitado = Signal()
 
     def __init__(self, parent: QWidget | None = None) -> None:
         super().__init__(QCoreApplication.translate("PanelProgreso", "Progreso"), parent)
@@ -73,6 +74,8 @@ class PanelProgreso(QGroupBox):
         self.boton_volver = QPushButton(
             QCoreApplication.translate("PanelProgreso", "Volver al formulario")
         )
+        self.boton_deshacer = QPushButton(QCoreApplication.translate("PanelProgreso", "Deshacer…"))
+        self.boton_deshacer.clicked.connect(self.deshacer_solicitado)
         self.boton_crear_otra.clicked.connect(self.crear_otra)
         self.boton_seguir.clicked.connect(self.seguir_esperando)
         self.boton_comprobar.clicked.connect(self.comprobar_ahora)
@@ -86,6 +89,7 @@ class PanelProgreso(QGroupBox):
             self.boton_seguir,
             self.boton_comprobar,
             self.boton_volver,
+            self.boton_deshacer,
         ):
             fila_botones.addWidget(b)
         fila_botones.addStretch(1)
@@ -118,6 +122,7 @@ class PanelProgreso(QGroupBox):
         self.boton_seguir.setVisible(seguir)
         self.boton_comprobar.setVisible(comprobar)
         self.boton_volver.setVisible(volver)
+        self.boton_deshacer.setVisible(False)
 
     def iniciar(self) -> None:
         """Comienza el seguimiento de una creación."""
@@ -179,6 +184,10 @@ class PanelProgreso(QGroupBox):
             self._botones(False, False, True, True)
         else:
             self._botones(ok, False, False, not ok)
+        # CA-L18.13: también con una sola máquina se puede deshacer lo creado.
+        self.boton_deshacer.setVisible(
+            desenlace in (Desenlace.OK, Desenlace.CON_AVISOS, Desenlace.PARCIAL)
+        )
 
     def mostrar_progreso_mensaje(self, texto: str) -> None:
         """Mensaje intermedio (por ejemplo, mientras se vuelve a comprobar)."""

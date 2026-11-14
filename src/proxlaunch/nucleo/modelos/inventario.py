@@ -71,6 +71,16 @@ class Topologia:
     nodos: tuple[Nodo, ...]
 
 
+@dataclass(frozen=True)
+class VMRemota:
+    """Máquina o contenedor visible en ``/cluster/resources?type=vm`` (aviso V-L06)."""
+
+    vmid: int
+    nombre: str
+    nodo: str
+    tipo: str  # "qemu" o "lxc"
+
+
 @dataclass
 class Inventario:
     """Todo lo descubierto en la conexión."""

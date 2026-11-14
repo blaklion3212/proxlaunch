@@ -57,6 +57,8 @@ _RE_ETIQUETA_DNS = re.compile(r"^[A-Za-z0-9](?:[A-Za-z0-9-]{0,61}[A-Za-z0-9])?$"
 _RE_TOKEN = re.compile(r"^[^@!=\s]+@[^@!=\s]+![A-Za-z0-9._-]+=\S+$")
 _RE_TIPO_CPU = re.compile(r"[A-Za-z0-9._-]+")
 _RE_TOTP = re.compile(r"^[0-9]{6}$")
+# V-24: patrón de etiqueta de Proxmox (LAB-L06 lo confirma en 9.2).
+_RE_ETIQUETA_PVE = re.compile(r"^[a-z0-9_][a-z0-9_\-+.]*$")
 _RE_CUATRO_GRUPOS = re.compile(r"[0-9]+(?:\.[0-9]+){3}")
 _GIB = 1024**3
 
@@ -177,6 +179,11 @@ def validar_vm(cfg: ConfiguracionVM, inv: Inventario, caps: Capacidades) -> list
     # V-10 controlador scsi
     if cfg.controlador_scsi not in tuple(ControladorScsi):
         err("controlador_scsi", "V-10")
+
+    # V-24 etiquetas (MVP 2)
+    for i, etiqueta in enumerate(cfg.etiquetas):
+        if not isinstance(etiqueta, str) or not _RE_ETIQUETA_PVE.fullmatch(etiqueta):
+            err(f"etiquetas[{i}]", "V-24", etiqueta=str(etiqueta))
 
     discos = cfg.discos if cfg.con_disco else []
     _validar_discos(cfg, inv, discos, p)

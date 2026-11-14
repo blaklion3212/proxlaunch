@@ -84,6 +84,7 @@ class FormularioVM(QWidget):
         super().__init__(parent)
         self._inv: Inventario | None = None
         self._avanzado = False
+        self._modo_lote = False
         self._ocupado = False  # evita reentradas al rellenar widgets por código
         self._nodo_cargado = ""
         self._nodo_actual = ""
@@ -119,6 +120,7 @@ class FormularioVM(QWidget):
 
     def _construir_general(self, capa: QVBoxLayout) -> None:
         g = self._grupo(self.tr("General"), capa)
+        self._caja_general = g.parentWidget()
         self.vmid = QLineEdit()
         self.vmid.setMaximumWidth(140)
         self.fila_vmid = FilaCampo(self.tr("Número de máquina (VMID)"), self.vmid, "vmid")
@@ -283,7 +285,7 @@ class FormularioVM(QWidget):
         try:
             self._llenar_combo_nodos()
             es_cluster = inv.topologia.es_cluster
-            self.fila_nodo.setVisible(es_cluster)
+            self.fila_nodo.setVisible(es_cluster and not self._modo_lote)
             if primera:
                 nodo, motivo, error = self._calcular_nodo(requerido_gib=32)
                 nodo_inicial = nodo or next(
@@ -707,3 +709,50 @@ class FormularioVM(QWidget):
     def bloquear(self, bloqueado: bool) -> None:
         """Bloquea los campos mientras se crea la máquina (CA-19.4)."""
         self.setEnabled(not bloqueado)
+
+    # --- Lote (MVP 2) -----------------------------------------------------------------
+
+    def establecer_lote(self, activo: bool) -> None:
+        """Con más de una máquina el nombre, el VMID y el nodo salen del bloque «Lote»."""
+        self._modo_lote = activo
+        if self._caja_general is not None:
+            self._caja_general.setVisible(not activo)
+        self.fila_nombre.setVisible(not activo)
+        self.fila_vmid.setVisible(not activo)
+        es_cluster = self._inv is not None and self._inv.topologia.es_cluster
+        self.fila_nodo.setVisible(es_cluster and not activo)
+
+    @property
+    def modo_lote(self) -> bool:
+        return self._modo_lote
+
+    def usar_nodo_manual(self, nodo: str) -> None:
+        """El bloque «Lote» eligió un nodo: sus almacenamientos y redes alimentan el formulario."""
+        if self._inv is None or not self._inv.topologia.es_cluster:
+            return
+        self._ocupado = True
+        try:
+            idx = self.combo_nodo.findData(nodo)
+            if idx >= 0:
+                self.combo_nodo.setCurrentIndex(idx)
+            self._radio_manual.setChecked(True)
+            self.combo_nodo.setEnabled(True)
+        finally:
+            self._ocupado = False
+        self._actualizar_nodo()
+        self.cambiado.emit()
+        if self._nodo_actual:
+            self.nodo_elegido.emit(self._nodo_actual)
+
+    def usar_nodo_automatico(self) -> None:
+        """Vuelve a la elección automática del nodo (lo que usa de referencia el formulario)."""
+        if self._inv is None or self._radio_auto.isChecked():
+            return
+        self._ocupado = True
+        try:
+            self._radio_auto.setChecked(True)
+            self.combo_nodo.setEnabled(False)
+        finally:
+            self._ocupado = False
+        self._actualizar_nodo()
+        self.cambiado.emit()

@@ -14,6 +14,7 @@ from proxlaunch.nucleo.modelos.inventario import (
     Storage,
     Topologia,
     Version,
+    VMRemota,
 )
 from proxlaunch.nucleo.modelos.tarea import Desenlace, EstadoTarea, Etapa, ResultadoCreacion
 from proxlaunch.nucleo.modelos.vm import (
@@ -54,5 +55,6 @@ __all__ = [
     "Storage",
     "Ticket",
     "Topologia",
+    "VMRemota",
     "Version",
 ]
