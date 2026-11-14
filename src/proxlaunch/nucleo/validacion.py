@@ -11,9 +11,9 @@ from dataclasses import dataclass, field
 from enum import StrEnum
 from typing import Any
 
-from proxlaunch.nucleo.capacidades import Capacidades
+from proxlaunch.nucleo.capacidades import VERSION_MINIMA, Capacidades
 from proxlaunch.nucleo.modelos.conexion import PerfilConexion
-from proxlaunch.nucleo.modelos.inventario import Inventario, Storage
+from proxlaunch.nucleo.modelos.inventario import Inventario, Storage, Topologia, Version
 from proxlaunch.nucleo.modelos.vm import (
     Bus,
     ConfiguracionVM,
@@ -190,6 +190,63 @@ def validar_vm(cfg: ConfiguracionVM, inv: Inventario, caps: Capacidades) -> list
     _validar_efi(cfg, inv, discos, p)
     _validar_redes(cfg, inv, p)
     return p
+
+
+# Reglas de validar_vm que no dependen del servidor (capa 1 de perfiles, lotes y CSV).
+CODIGOS_SIN_SERVIDOR = frozenset(
+    {
+        "V-05",
+        "V-06",
+        "V-07",
+        "V-07.sindisco",
+        "V-08",
+        "V-10",
+        "V-11",
+        "V-12",
+        "V-13",
+        "V-15",
+        "V-20",
+        "V-22",
+        "V-23",
+        "V-24",
+    }
+)
+
+
+def _inventario_vacio() -> Inventario:
+    """Inventario sin nodos, storages ni bridges (solo para filtrar reglas sin servidor)."""
+    return Inventario(
+        version=Version("0.0", 0, 0, 0),
+        topologia=Topologia(es_cluster=False, nombre_cluster=None, nodos=()),
+        proximo_vmid=VMID_MIN,
+        storages={},
+        bridges={},
+        errores_por_nodo={},
+    )
+
+
+def validar_sin_servidor(
+    cfg: ConfiguracionVM, *, incluir_nombre: bool = False, incluir_vmid: bool = False
+) -> list[Problema]:
+    """Reglas de ``validar_vm`` que no necesitan inventario (perfiles, lotes, CSV).
+
+    Reutiliza ``validar_vm`` contra un inventario vacío y conserva solo los códigos de
+    ``CODIGOS_SIN_SERVIDOR`` (sin duplicar reglas). V-01 (nombre) y V-02 (VMID) solo si se piden.
+    """
+    admitidos = set(CODIGOS_SIN_SERVIDOR)
+    if incluir_nombre:
+        admitidos.add("V-01")
+    if incluir_vmid:
+        admitidos.add("V-02")
+    caps = Capacidades(version=VERSION_MINIMA, forzada=False)
+    problemas = validar_vm(cfg, _inventario_vacio(), caps)
+    # V-16 también si el problema es el modelo de red (hardware, no depende del servidor);
+    # el V-16 del bridge sí depende del inventario y se descarta.
+    return [
+        q
+        for q in problemas
+        if q.codigo in admitidos or (q.codigo == "V-16" and q.campo.endswith(".modelo"))
+    ]
 
 
 def _id_con_caracteres_prohibidos(valor: object) -> bool:

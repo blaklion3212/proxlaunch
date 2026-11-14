@@ -50,6 +50,23 @@ class CodigoError(StrEnum):
     ROLLBACK_DISCOS_SUELTOS = "rollback_discos_sueltos"  # E-L21
     ROLLBACK_INCIERTO = "rollback_incierto"  # E-L22
     ESCRITURA_EN_SIMULACION = "escritura_en_simulacion"  # E-L23
+    # --- Perfiles, lotes guardados y CSV (MVP 3, docs/requisitos/mvp3.md §7) ---
+    ARCHIVO_NO_PERMITIDO = "archivo_no_permitido"  # E-M01
+    ARCHIVO_FORMATO_AJENO = "archivo_formato_ajeno"  # E-M02
+    ARCHIVO_VERSION_FUTURA = "archivo_version_futura"  # E-M03
+    ARCHIVO_DANADO = "archivo_danado"  # E-M04 (sin «ñ» en el identificador)
+    ARCHIVO_NO_ACCESIBLE = "archivo_no_accesible"  # E-M05
+    ARCHIVO_DEMASIADAS_FILAS = "archivo_demasiadas_filas"  # E-M06
+    CSV_CODIFICACION = "csv_codificacion"  # E-M07
+    ARCHIVO_NO_GUARDABLE = "archivo_no_guardable"  # E-M08
+    CSV_VACIO = "csv_vacio"  # E-M09
+    CSV_COLUMNAS = "csv_columnas"  # E-M10
+    CSV_VALOR_INVALIDO = "csv_valor_invalido"  # E-M11
+    PERFIL_INEXISTENTE = "perfil_inexistente"  # E-M12
+    PERFIL_NO_MODIFICABLE = "perfil_no_modificable"  # E-M13
+    PERFILES_SOLO_LECTURA = "perfiles_solo_lectura"  # E-M14
+    LOTE_NO_ENCAJA = "lote_no_encaja"  # E-M15
+    PERFIL_RECHAZADO = "perfil_rechazado"  # interno: regla V-M01/V-M03/V-M05 (sin E-M propio)
 
 
 class ErrorProxLaunch(Exception):

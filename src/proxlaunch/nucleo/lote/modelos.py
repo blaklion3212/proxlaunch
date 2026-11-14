@@ -52,8 +52,30 @@ class Destino:
 
 
 @dataclass(frozen=True)
+class FilaLote:
+    """Una MV de un lote por filas (D-22).
+
+    El hardware, storage y bridge son los de ``cfg``; ``cfg.vmid``, ``cfg.nombre``,
+    ``cfg.nodo`` y ``cfg.etiquetas`` se ignoran (los fija el plan). ``cfg`` es mutable
+    (M1): no se muta nunca dentro de este modelo; se copia con ``copy.deepcopy``.
+    """
+
+    nombre: str
+    cfg: ConfiguracionVM
+    vmid: int | None = None  # explícito (CA-C08.3); None = siguiente libre
+    nodo: str | None = None  # explícito (CA-C08.4); None = reparto automático
+    origen: int | None = None  # nº de fila del CSV (Excel) o posición en el archivo; solo mostrar
+
+
+@dataclass(frozen=True)
 class DefinicionLote:
-    """Lo que el usuario pide. ``plantilla.vmid/nombre/nodo`` se ignoran."""
+    """Lo que el usuario pide. ``plantilla.vmid/nombre/nodo`` se ignoran.
+
+    Homogéneo (``filas`` vacío): ``plantilla`` es la configuración de todas las MVs.
+    Por filas (``filas`` no vacío, D-22): ``plantilla`` es solo informativa (perfil base) y
+    ningún cálculo la lee; ``cantidad`` debe ser ``len(filas)`` (V-L01), ``patron`` se ignora
+    y ``destino`` es siempre automático (V-L13).
+    """
 
     plantilla: ConfiguracionVM
     cantidad: int
@@ -62,6 +84,11 @@ class DefinicionLote:
     vmid_inicial: int | None = None  # None = /cluster/nextid
     etiquetar: bool = True  # D-20 (3)
     politica_thin: PoliticaThin = PoliticaThin.CONFIRMAR_CON_TOPE
+    filas: tuple[FilaLote, ...] = ()  # vacío = homogéneo; no vacío = por filas (D-22)
+
+    @property
+    def es_por_filas(self) -> bool:
+        return bool(self.filas)
 
 
 @dataclass(frozen=True)
@@ -120,6 +147,7 @@ class Plan:
     version_validacion: tuple[int, int]  # forzada o detectada (CA-L11.6)
     es_simulacion: bool = False
     permisos_verificados: bool = True  # falso si GET /access/permissions falló (CA-L09.4)
+    filas_excedentes: tuple[int, ...] = ()  # índices que no caben (CA-C08.6), solo por filas
 
     @property
     def bloqueado(self) -> bool:
@@ -252,7 +280,11 @@ class MetadatosInforme:
 
 @dataclass(frozen=True)
 class InformeLote:
-    """Informe estructurado (códigos, sin textos); la interfaz lo convierte en texto."""
+    """Informe estructurado (códigos, sin textos); la interfaz lo convierte en texto.
+
+    En un lote por filas (``por_filas``) ``plantilla`` es solo informativa: la configuración
+    real de cada MV está en ``entradas[i].elemento.cfg``.
+    """
 
     metadatos: MetadatosInforme
     id_lote: str
@@ -265,3 +297,4 @@ class InformeLote:
     rollback: tuple[ResultadoRollback, ...] = ()
     problemas_plan: tuple[Problema, ...] = ()
     permisos_verificados: bool = True
+    por_filas: bool = False  # la interfaz muestra la configuración de cada MV (CA-C08.8)
