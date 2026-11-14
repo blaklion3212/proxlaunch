@@ -26,11 +26,11 @@ Nunca registres contraseñas, tokens ni datos personales.
 
 ## Estado actual (2026-11-13)
 
-- **Fase en curso:** MVP 2 (creación por lotes) terminado; pendiente de la aprobación del
-  usuario. Siguiente: MVP 3.
+- **Fase en curso:** MVP 2 (creación por lotes) cerrado y aprobado por el usuario
+  (2026-11-13). Siguiente: MVP 3 (perfiles predefinidos, guardar y cargar lotes, CSV).
 - **Laboratorio:** apagado y conservado (PVE 9.2, solo 127.0.0.1); limpio de MVs y ajustes.
   Se destruirá sin rastro al terminar todas las pruebas (D-15).
-- **Próximo paso:** aprobación del cierre del MVP 2; luego requisitos del MVP 3.
+- **Próximo paso:** requisitos del MVP 3.
 
 ---
 
@@ -230,7 +230,8 @@ Nunca registres contraseñas, tokens ni datos personales.
 - **Archivos:** `src/proxlaunch/nucleo/lote/`, `src/proxlaunch/interfaz/`, `tests/`,
   `docs/requisitos/mvp2.md`, `docs/arquitectura/mvp2.md`, `docs/guia-usuario.md`, `README.md`;
   commits f9e5bbc a b1dec89.
-- **Siguientes pasos:** aprobación del cierre del MVP 2; MVP 3.
+- **Cierre:** ✅ aprobado por el usuario (2026-11-13).
+- **Siguientes pasos:** MVP 3.
 
 ---
 
