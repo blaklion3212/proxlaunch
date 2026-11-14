@@ -589,8 +589,8 @@ class SelectorOrigen(QWidget):
             poner_mensaje(
                 self.etiqueta_modo_efectivo,
                 self.tr(
-                    "Se hará una copia rápida y ligera. Las máquinas dependen de la plantilla: "
-                    "Proxmox no te dejará borrarla mientras existan."
+                    "Se hará una copia rápida y ligera. Las máquinas comparten el disco base con "
+                    "la plantilla: no borres la plantilla mientras existan."
                 ),
                 aviso=True,
             )

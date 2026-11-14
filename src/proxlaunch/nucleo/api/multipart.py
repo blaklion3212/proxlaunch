@@ -48,7 +48,9 @@ class CuerpoMultipart:
     """Cuerpo multipart: campos de texto primero y, al final, la parte ``filename``.
 
     Args:
-        campos: campos de texto (``content``, ``checksum``…), en orden de inserción.
+        campos: campos de texto, enviados en el orden de inserción del mapeo. pveproxy exige
+            el orden fijo ``content``, ``checksum-algorithm``, ``checksum`` (y luego el
+            archivo): quien llama es responsable de construirlo en ese orden.
         parte: archivo a enviar. Se envían exactamente ``parte.tamano`` bytes; si el flujo
             acaba antes se lanza ``ARCHIVO_CAMBIO`` (el archivo se truncó) en vez de dejar
             al servidor esperando bytes que no llegarán.

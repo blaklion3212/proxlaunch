@@ -331,3 +331,19 @@ def test_ningun_texto_del_mvp4_usa_alias_que_lupdate_no_detecte():
     for relativa in ARCHIVOS_MVP4:
         texto = (RAIZ / relativa).read_text(encoding="utf-8")
         assert not patron.search(texto), relativa
+
+
+def test_hallazgo_lab_03_ningun_texto_de_la_interfaz_promete_que_proxmox_impide_borrar():
+    """En lvmthin PVE 9.2 sí deja borrar una plantilla con clones enlazados: no se promete lo
+    contrario. La interfaz avisa de que se comparte el disco base."""
+    from pathlib import Path
+
+    import proxlaunch
+
+    raiz = Path(proxlaunch.__file__).parent
+    archivos = [*raiz.joinpath("interfaz").rglob("*.py"), *raiz.rglob("*.ts")]
+    assert archivos
+    for archivo in archivos:
+        texto = archivo.read_text(encoding="utf-8").lower()
+        assert "no te dejará borrar" not in texto, archivo
+        assert "no te dejara borrar" not in texto, archivo

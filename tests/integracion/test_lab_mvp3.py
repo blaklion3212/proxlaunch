@@ -42,7 +42,8 @@ from proxlaunch.nucleo.lotes_guardados.formato import guardar_lote, leer_archivo
 from proxlaunch.nucleo.lotes_guardados.modelos import LoteGuardado
 from proxlaunch.nucleo.lotes_guardados.revalidacion import desajustes
 from proxlaunch.nucleo.modelos.inventario import Inventario
-from proxlaunch.nucleo.modelos.vm import ConfiguracionVM, Disco, InterfazRed
+from proxlaunch.nucleo.modelos.origen import DetalleIso, RefVolumen, TipoSO
+from proxlaunch.nucleo.modelos.vm import ConfiguracionVM, Disco, InterfazRed, OrigenSO
 from proxlaunch.nucleo.perfiles_maquina.aplicar import aplicar_perfil
 from proxlaunch.nucleo.perfiles_maquina.fabrica import CLAVES_FABRICA, perfiles_fabrica
 from proxlaunch.nucleo.perfiles_maquina.modelos import ID_PREDETERMINADO
@@ -186,12 +187,31 @@ ESPERADO = {
     "servidor-grande": (8, 16384, 128, "scsi0", "virtio", "seabios"),
     "escritorio-compatible": (4, 4096, 80, "sata0", "e1000", "ovmf"),
     "minimo": (1, 512, 8, "scsi0", "virtio", "seabios"),
+    # MVP 4 (D-25.2): perfiles con SO, solo hardware. Sin fuente de ISO no hay ``ide2``.
+    "windows-11": (4, 8192, 64, "scsi0", "virtio", "ovmf"),
+    "windows-server": (4, 8192, 80, "scsi0", "virtio", "ovmf"),
+    "linux-red-hat": (2, 4096, 40, "scsi0", "virtio", "seabios"),
 }
+
+
+ISO_PERFIL = "proxlaunch-lab-perfil.iso"
+RUTA_ISO_PERFIL = f"/var/lib/vz/template/iso/{ISO_PERFIL}"
+
+
+@pytest.fixture
+def iso_de_perfil() -> Iterator[str]:
+    """Un ISO mínimo (1 MiB, vacío) en ``local``: los perfiles con SO (MVP 4) sugieren «instalar
+    desde ISO» sin fuente y V-O01 exige elegir una; aquí solo se prueba la config de Proxmox."""
+    lab.ssh(f"sudo truncate -s 1M {RUTA_ISO_PERFIL}")
+    try:
+        yield f"local:iso/{ISO_PERFIL}"
+    finally:
+        lab.ssh(f"sudo rm -f {RUTA_ISO_PERFIL}", comprobar=False)
 
 
 @pytest.mark.parametrize("clave", CLAVES_FABRICA)
 def test_m3_01_cada_perfil_de_fabrica_crea_una_mv_real_cuya_config_coincide(
-    sesion_plc, vmids_m3, clave
+    sesion_plc, vmids_m3, iso_de_perfil, clave
 ):
     """CA-P02.3, CA-P05.7, RF-P02, §8: el perfil se aplica al formulario, se simula (solo GET) y el
     motor lo crea; la ``config`` real coincide (núcleos, memoria, disco, bus, ``scsihw``, red,
@@ -207,6 +227,14 @@ def test_m3_01_cada_perfil_de_fabrica_crea_una_mv_real_cuya_config_coincide(
     # El laboratorio solo trae el storage «lab-lvmthin» para discos: se fija para no depender del
     # de mayor espacio libre (p. ej. un directorio con límites distintos).
     cfg.discos = [dataclasses.replace(d, storage=STORAGE) for d in cfg.discos]
+    con_so = cfg.origen == OrigenSO.ISO
+    if con_so:
+        # El perfil solo sugiere «ISO» sin fuente (RF-O31): se elige una como lo haría el usuario.
+        # En Windows también hay que decidir los drivers (V-O02): el laboratorio no tiene
+        # virtio-win, así que se elige «sin drivers» como lo haría el usuario.
+        cfg.detalle_origen = DetalleIso(
+            iso=RefVolumen(ISO_PERFIL, iso_de_perfil), sin_drivers=cfg.tipo_so != TipoSO.LINUX
+        )
     d = definicion_por_filas([FilaLote(nombre, cfg, vmid=vmid)], plantilla_base=cfg, etiquetar=True)
 
     inicio = _lineas_acceso()
@@ -239,9 +267,27 @@ def test_m3_01_cada_perfil_de_fabrica_crea_una_mv_real_cuya_config_coincide(
     ]
     assert conf.get("bios", "seabios") == bios
     if bios == "ovmf":
-        assert "efidisk0" in conf and str(conf.get("machine", "")).startswith("q35")
+        # Con ``ostype`` Windows Proxmox fija la versión del tipo de máquina («pc-q35-11.1»).
+        assert "efidisk0" in conf and re.fullmatch(r"(pc-)?q35.*", str(conf.get("machine", "")))
         evidencia("M3-01-ovmf", machine=conf.get("machine"), efidisk0=conf.get("efidisk0"))
     assert _tags(conf) >= {"proxlaunch"}
+    if con_so:
+        assert conf["ide2"].startswith(f"{iso_de_perfil},media=cdrom"), conf["ide2"]
+        assert conf["ostype"] == ("l26" if "linux" in clave else "win11")
+        assert bool(cfg.tpm) == ("tpmstate0" in conf)
+        assert bool(cfg.agente_qemu) == (str(conf.get("agent", "0")).startswith("1"))
+        if "efidisk0" in conf:
+            assert "pre-enrolled-keys=1" in conf["efidisk0"]  # Windows conserva las claves
+        evidencia(
+            "M3-01-so",
+            perfil=clave,
+            ostype=conf["ostype"],
+            ide2=conf["ide2"],
+            boot=conf.get("boot"),
+            tpmstate0=conf.get("tpmstate0"),
+            agent=conf.get("agent"),
+            efidisk0=conf.get("efidisk0"),
+        )
     evidencia(
         "M3-01",
         perfil=clave,

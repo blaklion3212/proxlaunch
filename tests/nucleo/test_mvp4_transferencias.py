@@ -91,7 +91,8 @@ def test_ca_o09_1_una_sola_peticion_upload_con_content_checksum_y_el_archivo_al_
     orden = [
         x.decode() for x in re.findall(rb'Content-Disposition: form-data; name="([^"]+)"', cuerpo)
     ]
-    assert orden == ["content", "checksum", "checksum-algorithm", "filename"]
+    # Orden que exige pveproxy (DEFECTO-LAB-01): content, checksum-algorithm, checksum, archivo.
+    assert orden == ["content", "checksum-algorithm", "checksum", "filename"]
     assert f'name="checksum"\r\n\r\n{sha}\r\n'.encode() in cuerpo  # sha256 calculado ANTES
     assert b'name="checksum-algorithm"\r\n\r\nsha256\r\n' in cuerpo
     assert b'name="content"\r\n\r\niso\r\n' in cuerpo
@@ -984,3 +985,12 @@ def test_el_cliente_pide_el_contenido_con_el_parametro_content():
     crear_sesion(srv).cliente.contenido_storage("pve1", "local", Contenido.IMPORT)
     (ll,) = srv.llamadas_a("GET", "/content$")
     assert ll.params == {"content": "import"} and ll.ruta == "/nodes/pve1/storage/local/content"
+
+
+def test_lab_01_el_orden_exacto_de_las_partes_del_cliente_es_el_que_exige_pveproxy(m):
+    """Regresión DEFECTO-LAB-01: otro orden da 400 «wrong Content-Disposition» en pveproxy."""
+    m.subir()
+    cuerpo = m.srv.subidas[0]
+    partes = re.findall(rb'--[^\r\n]+\r\nContent-Disposition: form-data; name="([^"]+)"', cuerpo)
+    assert [p.decode() for p in partes] == ["content", "checksum-algorithm", "checksum", "filename"]
+    assert cuerpo.index(b'name="filename"') > cuerpo.index(b'name="checksum"')

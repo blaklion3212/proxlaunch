@@ -13,8 +13,14 @@ RESERVA_RAIZ_MIB = 512  # margen libre exigido en la raíz del nodo (aviso)
 ESPERA_BASE_S = 600.0  # M1 P-05
 ESPERA_POR_GIB_S = 30.0
 MAX_CATALOGO = 500  # volúmenes máximos mostrados por storage
-URL_VIRTIO_WIN = ""  # se fija en LAB-M4-07 (DT-O10)
-SHA256_VIRTIO_WIN = ""  # se fija en LAB-M4-07 (DT-O10)
+# URL versionada (la «stable» cambia de contenido con cada versión). ISO 0.1.302, 877 373 440 B,
+# medida en el laboratorio (DT-O10). El nombre empieza por «virtio-win» y acaba en «.iso», como
+# exige la detección del catálogo (PREFIJO_VIRTIO_WIN).
+URL_VIRTIO_WIN = (
+    "https://fedorapeople.org/groups/virt/virtio-win/direct-downloads/"
+    "archive-virtio/virtio-win-0.1.302-1/virtio-win-0.1.302.iso"
+)
+SHA256_VIRTIO_WIN = "303f7ae40dad495d6ae474fdc571df58958a4dbc5c37a522d80f9a203867949d"
 
 ORDEN_ARRANQUE: tuple[str, ...] = ("disco", "cd", "red")  # DT-O1
 RANURA_ISO = "ide2"

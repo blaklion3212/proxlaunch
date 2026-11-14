@@ -4825,7 +4825,7 @@
     </message>
     <message>
         <location filename="../../interfaz/vistas/resumen_lote.py" line="175"/>
-        <source>Las máquinas dependen de la plantilla (copia {modo}): Proxmox no te dejará borrarla mientras existan.</source>
+        <source>Las máquinas comparten el disco base con la plantilla (copia {modo}): no borres la plantilla mientras existan.</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
@@ -5236,7 +5236,7 @@
     </message>
     <message>
         <location filename="../../interfaz/vistas/resumen.py" line="377"/>
-        <source>La máquina depende de la plantilla: Proxmox no te dejará borrarla mientras exista.</source>
+        <source>La máquina comparte el disco base con la plantilla: no borres la plantilla mientras exista.</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
@@ -5482,7 +5482,7 @@
     </message>
     <message>
         <location filename="../../interfaz/vistas/selector_origen.py" line="592"/>
-        <source>Se hará una copia rápida y ligera. Las máquinas dependen de la plantilla: Proxmox no te dejará borrarla mientras existan.</source>
+        <source>Se hará una copia rápida y ligera. Las máquinas comparten el disco base con la plantilla: no borres la plantilla mientras existan.</source>
         <translation type="unfinished"></translation>
     </message>
     <message>

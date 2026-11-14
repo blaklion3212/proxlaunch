@@ -174,8 +174,8 @@ def texto_origen_del_plan(plan: Plan) -> str:
             lineas.append(
                 QCoreApplication.translate(
                     "ResumenLote",
-                    "Las máquinas dependen de la plantilla (copia {modo}): Proxmox no te dejará "
-                    "borrarla mientras existan.",
+                    "Las máquinas comparten el disco base con la plantilla (copia {modo}): no "
+                    "borres la plantilla mientras existan.",
                 ).format(modo=texto_modo_clon(ModoClon.ENLAZADO))
             )
     elif isinstance(det, DetalleImportacion) and primero.discos:

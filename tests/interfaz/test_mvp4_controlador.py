@@ -21,6 +21,7 @@ from .apoyo import perfil, sesion_falsa
 from .apoyo_mvp4 import (
     VOLID_ISO,
     ServicioTransferenciasFalso,
+    caps_origen,
     inv_origen,
     resultado_transferencia,
     volumen,
@@ -208,6 +209,45 @@ def test_enlazar_oculta_la_descarga_de_virtio_mientras_no_haya_url_fija(qtbot, c
     from proxlaunch.nucleo.origen.constantes import URL_VIRTIO_WIN
 
     assert bool(URL_VIRTIO_WIN) == ctl.selector.boton_descargar_drivers.isVisible()
+
+
+def test_lab_m4_07_con_la_url_real_la_via_descargarlo_en_el_servidor_se_ofrece(qtbot, ctl):
+    """Con ``URL_VIRTIO_WIN`` no vacía el botón de descarga de drivers es visible y activo."""
+    from proxlaunch.nucleo.modelos.origen import TipoSO
+    from proxlaunch.nucleo.origen.constantes import URL_VIRTIO_WIN
+
+    assert URL_VIRTIO_WIN
+    sel = ctl.selector
+    sel.establecer_capacidades(caps_origen())
+    sel.opciones[OrigenSO.ISO].setChecked(True)
+    sel.combo_so.setCurrentIndex(sel.combo_so.findData(TipoSO.WINDOWS_11.value))
+    assert sel.boton_descargar_drivers.isVisible()
+    assert sel.boton_descargar_drivers.isEnabled()
+
+
+def test_lab_m4_07_pedir_la_descarga_de_drivers_abre_el_dialogo_con_url_y_checksum_reales(
+    qtbot, ctl, widget_padre
+):
+    """Sin red ni modales: el diálogo se abre con la URL y el sha256 prefijados y no editables."""
+    from proxlaunch.interfaz.vistas.selector_origen import PeticionFuente
+    from proxlaunch.nucleo.origen.constantes import SHA256_VIRTIO_WIN, URL_VIRTIO_WIN
+
+    ctl.selector.pedir_descarga.emit(PeticionFuente(FuenteCatalogo.DRIVERS, widget_padre))
+    d = ctl._dialogo
+    assert isinstance(d, DialogoDescarga)
+    assert d.campo_url.text() == URL_VIRTIO_WIN and d.campo_url.isReadOnly()
+    assert d.campo_checksum.text() == SHA256_VIRTIO_WIN
+    d.close()
+
+
+def test_lab_m4_07_una_descarga_de_otro_catalogo_no_lleva_la_url_de_virtio(
+    qtbot, ctl, widget_padre
+):
+    ctl.abrir_descarga(Contenido.ISO, "pve", widget_padre, fuente=FuenteCatalogo.ISO)
+    d = ctl._dialogo
+    assert isinstance(d, DialogoDescarga)
+    assert d.campo_url.text() == "" and not d.campo_url.isReadOnly()
+    d.close()
 
 
 def test_ca_o25_los_archivos_subidos_quedan_en_el_registro_de_la_sesion(ctl):

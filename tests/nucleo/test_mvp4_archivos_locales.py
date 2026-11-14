@@ -52,7 +52,7 @@ from proxlaunch.nucleo.transferencias.url import (
 
 
 def _cuerpo(datos: bytes, campos=None, **kw) -> CuerpoMultipart:
-    campos = campos or {"content": "iso", "checksum": "ab" * 32, "checksum-algorithm": "sha256"}
+    campos = campos or {"content": "iso", "checksum-algorithm": "sha256", "checksum": "ab" * 32}
     return CuerpoMultipart(
         campos, ParteArchivo("alpine.iso", len(datos), io.BytesIO(datos)), frontera="FRONTERA", **kw
     )
@@ -64,9 +64,9 @@ def test_ca_o09_1_cuerpo_multipart_exacto_orden_de_partes_y_content_type_de_la_p
         b"--FRONTERA\r\n"
         b'Content-Disposition: form-data; name="content"\r\n\r\niso\r\n'
         b"--FRONTERA\r\n"
-        b'Content-Disposition: form-data; name="checksum"\r\n\r\n' + b"ab" * 32 + b"\r\n"
-        b"--FRONTERA\r\n"
         b'Content-Disposition: form-data; name="checksum-algorithm"\r\n\r\nsha256\r\n'
+        b"--FRONTERA\r\n"
+        b'Content-Disposition: form-data; name="checksum"\r\n\r\n' + b"ab" * 32 + b"\r\n"
         b"--FRONTERA\r\n"
         b'Content-Disposition: form-data; name="filename"; filename="alpine.iso"\r\n'
         b"Content-Type: application/octet-stream\r\n\r\n"

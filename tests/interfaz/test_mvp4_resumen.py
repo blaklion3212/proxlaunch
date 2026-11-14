@@ -124,14 +124,15 @@ def test_ca_o17_importar_dice_que_el_primer_disco_es_una_copia_de_la_imagen(resu
 def test_ca_o20_clon_muestra_forma_de_copiar_y_oculta_hardware_propio(resumen):
     html = pintar(resumen, cfg_clon(efectivo=ModoClon.ENLAZADO))
     assert "Forma de copiar" in html
-    assert "depende de la plantilla" in html
+    assert "comparte el disco base con la plantilla" in html
+    assert "no borres la plantilla" in html
     assert "los de la plantilla" in html
     assert "Arranque" not in html
 
 
 def test_ca_o20_clon_completo_no_advierte_dependencia(resumen):
     html = pintar(resumen, cfg_clon(modo=ModoClon.COMPLETO, efectivo=ModoClon.COMPLETO))
-    assert "depende de la plantilla" not in html
+    assert "comparte el disco base" not in html
 
 
 def test_ca_o22_los_ajustes_del_clon_aparecen_en_el_resumen(resumen):
@@ -254,7 +255,7 @@ def test_la_simulacion_no_contiene_secretos_ni_cabeceras():
 def test_ca_o29_el_resumen_del_lote_dice_de_que_plantilla_y_como_se_copia():
     texto = texto_origen_del_plan(_plan_de(cfg_clon(efectivo=ModoClon.ENLAZADO), 3))
     assert "Origen:" in texto
-    assert "dependen de la plantilla" in texto
+    assert "comparten el disco base con la plantilla" in texto
 
 
 def test_ca_o29_un_lote_de_discos_vacios_no_agrega_texto_de_origen():

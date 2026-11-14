@@ -376,8 +376,8 @@ class ResumenVM(QGroupBox):
                     e(
                         QCoreApplication.translate(
                             "ResumenVM",
-                            "La máquina depende de la plantilla: Proxmox no te dejará borrarla "
-                            "mientras exista.",
+                            "La máquina comparte el disco base con la plantilla: no borres la "
+                            "plantilla mientras exista.",
                         )
                     )
                 )

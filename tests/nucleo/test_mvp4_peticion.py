@@ -422,3 +422,41 @@ def test_importar_sin_disco_no_construye_la_peticion():
 def test_la_importacion_no_monta_cd_ni_boot_ni_agente_sin_pedirlo():
     p = construir_parametros(cfg_import(), INV)
     assert "ide2" not in p and "boot" not in p and "agent" not in p
+
+
+# --- LAB-M4-04 / DEFECTO-LAB-02: claves de Secure Boot según el tipo de SO ------------------------
+
+EFI_SIN_CLAVES = "local-lvm:1,efitype=4m,pre-enrolled-keys=0"
+EFI_CON_CLAVES = "local-lvm:1,efitype=4m,pre-enrolled-keys=1"
+
+
+@pytest.mark.parametrize("tipo", [TipoSO.LINUX, TipoSO.OTRO])
+def test_lab_02_linux_y_otro_envian_pre_enrolled_keys_0(tipo):
+    cfg = cfg_iso(tipo_so=tipo, firmware=Firmware.OVMF)
+    assert construir_parametros(cfg, INV)["efidisk0"] == EFI_SIN_CLAVES
+
+
+@pytest.mark.parametrize(
+    "tipo",
+    [
+        TipoSO.WINDOWS_11,
+        TipoSO.WINDOWS_10,
+        TipoSO.WINDOWS_SERVER_2022_2025,
+        TipoSO.WINDOWS_SERVER_2016_2019,
+    ],
+)
+def test_lab_02_cada_windows_conserva_pre_enrolled_keys_1(tipo):
+    cfg = cfg_iso(tipo_so=tipo, firmware=Firmware.OVMF)
+    assert construir_parametros(cfg, INV)["efidisk0"] == EFI_CON_CLAVES
+
+
+def test_lab_02_sin_tipo_de_so_conserva_pre_enrolled_keys_1_como_en_mvp3():
+    cfg = cfg_base(firmware=Firmware.OVMF)
+    assert cfg.tipo_so is None
+    assert construir_parametros(cfg, INV)["efidisk0"] == EFI_CON_CLAVES
+
+
+def test_lab_02_el_asistente_de_linux_deja_el_efidisk_sin_claves():
+    res = aplicar_asistente(cfg_iso(tipo_so=None), TipoSO.LINUX)
+    res.cfg.firmware = Firmware.OVMF
+    assert construir_parametros(res.cfg, INV)["efidisk0"] == EFI_SIN_CLAVES

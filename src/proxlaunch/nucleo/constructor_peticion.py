@@ -37,7 +37,11 @@ from proxlaunch.nucleo.validacion import (
 # Forma del efidisk0 (P-10, CT-7). Valores por verificar en laboratorio.
 EFIDISK_TAMANO = "1"  # por verificar en laboratorio
 EFIDISK_TIPO = "4m"  # por verificar en laboratorio
-EFIDISK_CLAVES_PRECARGADAS = "1"  # por verificar en laboratorio
+# Claves de Secure Boot precargadas (LAB-M4-04): un ISO Linux sin firmar (p. ej. Alpine) no
+# arranca con ``pre-enrolled-keys=1``, así que Linux y «Otro» usan ``0``. Windows y la
+# configuración sin datos de SO (disco vacío, comportamiento del MVP 3) conservan ``1``.
+EFIDISK_CLAVES_PRECARGADAS = "1"
+EFIDISK_SIN_CLAVES = "0"
 # Si el efidisk también lleva ``format=`` en dir/nfs/cifs (CA-14.3).
 EFIDISK_CON_FORMATO = True  # por verificar en laboratorio
 MAQUINA_OVMF = "q35"
@@ -138,10 +142,12 @@ def construir_parametros(
         id_efi = storage_efi_efectivo(cfg, inv, discos)
         if id_efi is None:
             raise ErrorProxLaunch(CodigoError.PARAMETRO_INVALIDO, {"campo": "storage_efi"})
-        efi = (
-            f"{id_efi}:{EFIDISK_TAMANO},efitype={EFIDISK_TIPO},"
-            f"pre-enrolled-keys={EFIDISK_CLAVES_PRECARGADAS}"
+        pre_claves = (
+            EFIDISK_SIN_CLAVES
+            if cfg.tipo_so in (TipoSO.LINUX, TipoSO.OTRO)
+            else EFIDISK_CLAVES_PRECARGADAS
         )
+        efi = f"{id_efi}:{EFIDISK_TAMANO},efitype={EFIDISK_TIPO},pre-enrolled-keys={pre_claves}"
         if EFIDISK_CON_FORMATO:
             formato = _formato_a_enviar(inv, cfg.nodo, id_efi, FormatoDisco.AUTO)
             if formato is not None:

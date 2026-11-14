@@ -516,9 +516,9 @@ class ClienteProxmox:
     ) -> str:
         """``POST /nodes/{n}/storage/{s}/upload`` en streaming (I4-§B). Devuelve el UPID.
 
-        Envía ``content``, ``checksum``, ``checksum-algorithm=sha256`` y, al final, la parte
-        ``filename`` con ``Content-Type: application/octet-stream``. Sin reintento ni
-        failover. Nunca se envía ``tmpfilename``.
+        Envía, en este orden, ``content``, ``checksum-algorithm=sha256``, ``checksum`` y, al
+        final, la parte ``filename`` con ``Content-Type: application/octet-stream``. Sin
+        reintento ni failover. Nunca se envía ``tmpfilename``.
 
         Raises:
             TypeError: si el transporte no admite subidas (``TransporteSubida``).
@@ -530,11 +530,14 @@ class ClienteProxmox:
         if not isinstance(transporte, TransporteSubida):
             raise TypeError("el transporte no admite subidas (TransporteSubida)")
         self._preparar_credencial()
+        # El orden lo impone pveproxy (AnyEvent.pm, file_upload_multipart): content,
+        # checksum-algorithm, checksum y al final el archivo; otro orden da 400 «wrong
+        # Content-Disposition … in multipart» (DEFECTO-LAB-01). No reordenar.
         cuerpo = CuerpoMultipart(
             {
                 "content": contenido.value,
-                "checksum": checksum_sha256,
                 "checksum-algorithm": "sha256",
+                "checksum": checksum_sha256,
             },
             parte,
             al_progresar=al_progresar,
