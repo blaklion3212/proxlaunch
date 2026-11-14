@@ -53,6 +53,11 @@ def texto_storage(s: Storage) -> str:
     return texto
 
 
+def texto_ausente(valor: str) -> str:
+    """«x (no existe)»: el valor cargado de un archivo que este servidor no tiene (CA-G04.3)."""
+    return QCoreApplication.translate("TablaDiscos", "{id} (no existe)").format(id=valor)
+
+
 class _FilaDisco:
     """Widgets de una fila de la tabla y las preferencias del usuario sobre sus opciones."""
 
@@ -85,6 +90,9 @@ class _FilaDisco:
         self.pref_iothread = True
         # Selección pedida que no existe en el nodo actual (el aviso debe sobrevivir a recargas).
         self.perdido: str | None = None
+        # Valor cargado de un lote o perfil que el nodo no tiene: se muestra «x (no existe)»
+        # con error hasta que el usuario elija otro (nunca se sustituye en silencio).
+        self.ausente: str | None = None
 
     def widgets(self) -> list[tuple[int, QWidget]]:
         return [
@@ -182,9 +190,17 @@ class TablaDiscos(QWidget):
             previo = f.storage.currentData() or f.perdido
             self._llenar_storage(f)
             idx = f.storage.findData(previo) if previo else -1
-            if idx >= 0 and self._storages[str(previo)].activo:
+            existente = self._storages.get(str(previo)) if previo else None
+            if idx >= 0 and existente is not None and existente.activo:
                 f.storage.setCurrentIndex(idx)
                 f.perdido = None
+                if f.ausente == previo:
+                    f.ausente = None
+            elif idx >= 0 and existente is None and previo == f.ausente:
+                # El valor cargado sigue sin existir en este nodo: se sigue mostrando.
+                f.storage.setCurrentIndex(idx)
+                f.perdido = str(previo)
+                perdidos.append(str(previo))
             else:
                 f.storage.setCurrentIndex(-1)
                 f.perdido = str(previo) if previo else None
@@ -194,14 +210,36 @@ class TablaDiscos(QWidget):
         self.cambiado.emit()
         return perdidos
 
-    def establecer_discos(self, discos: Sequence[Disco]) -> None:
-        """Sustituye las filas por los discos dados."""
+    def establecer_discos(
+        self, discos: Sequence[Disco], *, conservar_ausentes: bool = False
+    ) -> None:
+        """Sustituye las filas por los discos dados.
+
+        Con ``conservar_ausentes`` (carga de un lote o perfil) un almacenamiento que el nodo
+        no tiene se muestra como «x (no existe)» y sigue siendo el valor del disco, de modo que
+        la validación lo marca y no se crea nada hasta que el usuario elija otro (CA-G04.3).
+        Sin él (comportamiento de siempre) la selección queda vacía.
+        """
         for f in list(self._filas):
             self._quitar_fila(f, emitir=False)
         for d in discos:
-            self._nueva_fila(d)
+            self._nueva_fila(d, conservar_ausente=conservar_ausentes)
         self._renumerar()
         self.cambiado.emit()
+
+    def tamanos_no_numericos(self) -> list[str]:
+        """Etiquetas («scsi0»…) de los discos cuyo tamaño escrito no es un número entero."""
+        malos: list[str] = []
+        for f in self._filas:
+            try:
+                int(f.tamano.text().strip())
+            except ValueError:
+                malos.append(f.indice.text())
+        return malos
+
+    def valores_ausentes(self) -> list[str]:
+        """Almacenamientos cargados que el nodo actual no tiene y siguen sin reemplazar."""
+        return list(dict.fromkeys(f.ausente for f in self._filas if f.ausente))
 
     def agregar_disco(self, disco: Disco | None = None) -> None:
         """Añade un disco (por defecto el de la sección 5 en el mejor almacenamiento)."""
@@ -286,10 +324,15 @@ class TablaDiscos(QWidget):
             f.storage.addItem(texto_storage(s), s.id)
             if not s.activo:
                 f.storage.model().item(f.storage.count() - 1).setEnabled(False)
+        if f.ausente and f.ausente not in self._storages:
+            f.storage.addItem(texto_ausente(f.ausente), f.ausente)
+            f.storage.model().item(f.storage.count() - 1).setEnabled(False)
         f.storage.blockSignals(False)
 
-    def _nueva_fila(self, disco: Disco) -> None:
+    def _nueva_fila(self, disco: Disco, *, conservar_ausente: bool = False) -> None:
         f = _FilaDisco()
+        if conservar_ausente and disco.storage and disco.storage not in self._storages:
+            f.ausente = disco.storage
         self._llenar_storage(f)
         idx = f.storage.findData(disco.storage)
         f.storage.setCurrentIndex(idx)
@@ -355,6 +398,8 @@ class TablaDiscos(QWidget):
     def _al_cambiar_storage(self, f: _FilaDisco) -> None:
         if f.storage.currentIndex() >= 0:
             f.perdido = None  # el usuario eligió otro valor
+            if f.storage.currentData() != f.ausente:
+                f.ausente = None
         self._refrescar_formato(f)
         self.cambiado.emit()
 

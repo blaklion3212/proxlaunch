@@ -27,7 +27,7 @@ from proxlaunch.interfaz.textos import (
     texto_motivo_reparto,
     texto_problema_lote,
 )
-from proxlaunch.interfaz.vistas.campos import mensaje, poner_mensaje
+from proxlaunch.interfaz.vistas.campos import etiqueta, mensaje, poner_mensaje
 from proxlaunch.interfaz.vistas.detalles_tecnicos import DetallesTecnicos
 from proxlaunch.nucleo.errores import CodigoError, ErrorProxLaunch
 from proxlaunch.nucleo.lote.modelos import (
@@ -66,6 +66,17 @@ def texto_boton_reducir(n: int) -> str:
     return QCoreApplication.translate("ResumenLote", "Reducir a %n", None, n)
 
 
+def texto_boton_quitar_excedentes() -> str:
+    return QCoreApplication.translate("ResumenLote", "Quitar las filas que no caben")
+
+
+def texto_filas_del_archivo(n: int, total: int) -> str:
+    """«Se van a crear 8 de las 10 filas del archivo» (CA-C07.2)."""
+    return QCoreApplication.translate(
+        "ResumenLote", "Se van a crear {n} de las {total} filas del archivo."
+    ).format(n=n, total=total)
+
+
 def _texto_maquinas(n: int) -> str:
     if n == 1:
         return QCoreApplication.translate("ResumenLote", "1 máquina")
@@ -101,6 +112,9 @@ class ResumenLote(QWidget):
     cancelar_solicitado = Signal()  # cancela la preparación del plan o la simulación (CA-L11.10)
     informe_simulacion_solicitado = Signal()  # exporta la simulación como informe (CA-L11.8)
     nodo_reintento_cambiado = Signal(object)  # str o None (los mismos nodos de antes)
+    # Lote por filas: quitar las filas que no caben (posiciones) y asignar VMID automáticos.
+    quitar_excedentes_solicitado = Signal(object)  # tuple[int, ...]
+    asignar_automatico_solicitado = Signal(object)  # tuple[int, ...] de posiciones de fila
 
     def __init__(self, parent: QWidget | None = None) -> None:
         super().__init__(parent)
@@ -109,6 +123,7 @@ class ResumenLote(QWidget):
         self._bloqueo_crear: str | None = None
         self._enviado = False
         self._ocupado = False
+        self._total_filas_archivo: int | None = None  # filas del CSV (para «N de N+M»)
 
         self._titulo = QLabel()
         fuente = self._titulo.font()
@@ -175,6 +190,25 @@ class ResumenLote(QWidget):
         )
         self.boton_informe_simulacion.hide()
         self.boton_reducir = QPushButton()
+        self.boton_quitar_excedentes = QPushButton(texto_boton_quitar_excedentes())
+        self.boton_quitar_excedentes.setAccessibleName(
+            QCoreApplication.translate(
+                "ResumenLote", "Quitar del lote las filas que no caben en el servidor"
+            )
+        )
+        self.boton_quitar_excedentes.hide()
+        self.boton_quitar_excedentes.clicked.connect(self._al_quitar_excedentes)
+        self._nota_filas = etiqueta("", secundario=True)
+        self._nota_filas.hide()
+        self._excedentes = mensaje(error=True)
+        # Filas con un VMID explícito ocupado: una línea y un botón por fila (CA-C09.3).
+        self._zona_asignar = QWidget()
+        self._zona_asignar.setAccessibleName(
+            QCoreApplication.translate("ResumenLote", "Filas con el número de máquina ocupado")
+        )
+        self._capa_asignar = QVBoxLayout(self._zona_asignar)
+        self._capa_asignar.setContentsMargins(0, 0, 0, 0)
+        self._zona_asignar.hide()
         self.boton_simular = QPushButton(QCoreApplication.translate("ResumenLote", "Simular"))
         self.boton_simular.setToolTip(
             QCoreApplication.translate(
@@ -200,6 +234,7 @@ class ResumenLote(QWidget):
         botones.addStretch(1)
         botones.addWidget(self.boton_cancelar)
         botones.addWidget(self.boton_reducir)
+        botones.addWidget(self.boton_quitar_excedentes)
         botones.addWidget(self.boton_simular)
         botones.addWidget(self.boton_crear)
 
@@ -208,11 +243,14 @@ class ResumenLote(QWidget):
         for w in (
             self._titulo,
             self._simulacion_etiqueta,
+            self._nota_filas,
             self.tabla,
             self._totales,
             self._reparto,
             self._saltados,
             self._errores,
+            self._excedentes,
+            self._zona_asignar,
             self._avisos,
             self._nota_nombres,
             self.casilla_thin,
@@ -255,10 +293,15 @@ class ResumenLote(QWidget):
             self.casilla_thin,
             self._motivo,
             self.boton_reducir,
+            self.boton_quitar_excedentes,
+            self._nota_filas,
+            self._zona_asignar,
             self._etiqueta_nodo,
             self.combo_nodo_reintento,
         ):
             w.hide()
+        self._limpiar_asignar()
+        poner_mensaje(self._excedentes, None)
         poner_mensaje(self._errores, None)
         poner_mensaje(self._avisos, None, aviso=True)
         self.detalles_peticiones.limpiar()
@@ -333,13 +376,16 @@ class ResumenLote(QWidget):
         n = len(plan.elementos) or plan.definicion.cantidad
         self.modelo.establecer_plan(plan)
         self._titulo.setText(texto_total_maquinas(n))
+        total = self._total_filas_archivo
+        self._nota_filas.setText(texto_filas_del_archivo(n, total) if total else "")
+        self._nota_filas.setVisible(bool(total) and plan.definicion.es_por_filas)
         self._pintar_simulacion(simulacion)
         self._pintar_totales(plan)
 
         errores = [p for p in plan.problemas if p.severidad == Severidad.ERROR]
         avisos = [p for p in plan.problemas if p.severidad != Severidad.ERROR]
-        poner_mensaje(self._errores, self._lista(errores, prefijo="✕ "))
-        textos_avisos = self._lista(avisos, prefijo="⚠ ")
+        poner_mensaje(self._errores, self._lista(errores, prefijo="✕ ", plan=plan))
+        textos_avisos = self._lista(avisos, prefijo="⚠ ", plan=plan)
         if not plan.permisos_verificados:
             textos_avisos = f"⚠ {texto_permisos_no_verificados()}\n{textos_avisos}".strip()
         if diferencia:
@@ -359,9 +405,13 @@ class ResumenLote(QWidget):
         self.casilla_thin.setChecked(False)
         self.casilla_thin.setVisible(plan.requiere_confirmacion_thin)
         capacidad = plan.capacidad_maxima
-        self.boton_reducir.setVisible(capacidad is not None and capacidad >= 1 and plan.bloqueado)
+        por_filas = plan.definicion.es_por_filas
+        self.boton_reducir.setVisible(
+            not por_filas and capacidad is not None and capacidad >= 1 and plan.bloqueado
+        )
         if capacidad:
             self.boton_reducir.setText(texto_boton_reducir(capacidad))
+        self._pintar_por_filas(plan)
         if simulacion is not None and simulacion.peticiones:
             self.detalles_peticiones.establecer(texto_peticiones(simulacion))
         else:
@@ -440,15 +490,94 @@ class ResumenLote(QWidget):
         else:
             self._saltados.hide()
 
-    @staticmethod
-    def _lista(problemas: list[Problema], *, prefijo: str) -> str:
-        textos = list(dict.fromkeys(texto_problema_lote(p) for p in problemas))
+    def _lista(self, problemas: list[Problema], *, prefijo: str, plan: Plan | None = None) -> str:
+        """Textos únicos de los problemas; en un lote por filas cada uno dice «Fila N»."""
+        por_filas = plan is not None and plan.definicion.es_por_filas
+
+        def texto(p: Problema) -> str:
+            if por_filas and p.indice is not None:
+                return texto_problema_lote(p, fila=self.modelo.etiqueta_fila_de(p.indice))
+            return texto_problema_lote(p)
+
+        textos = list(dict.fromkeys(texto(p) for p in problemas))
         extra = len(textos) - _MAX_AVISOS_VISIBLES
         visibles = textos[:_MAX_AVISOS_VISIBLES]
         lineas = [prefijo + t for t in visibles]
         if extra > 0:
             lineas.append(QCoreApplication.translate("ResumenLote", "… y %n más", None, extra))
         return "\n".join(lineas)
+
+    # --- Lote por filas (D-22) ------------------------------------------------------------
+
+    def establecer_total_filas_archivo(self, total: int | None) -> None:
+        """Filas que traía el archivo (para decir «N de N+M»); ``None`` si no viene de un CSV."""
+        self._total_filas_archivo = total
+
+    def _limpiar_asignar(self) -> None:
+        while self._capa_asignar.count():
+            item = self._capa_asignar.takeAt(0)
+            if item is not None and item.widget() is not None:
+                item.widget().deleteLater()
+
+    def _pintar_por_filas(self, plan: Plan) -> None:
+        """Filas que no caben (con «Quitar las filas que no caben») y VMID ocupados."""
+        self._limpiar_asignar()
+        excedentes = plan.filas_excedentes if plan.definicion.es_por_filas else ()
+        self.boton_quitar_excedentes.setVisible(bool(excedentes) and plan.bloqueado)
+        if excedentes:
+            etiquetas = ", ".join(self.modelo.etiqueta_fila_de(i) for i in excedentes)
+            poner_mensaje(
+                self._excedentes,
+                QCoreApplication.translate("ResumenLote", "No caben las filas: {filas}.").format(
+                    filas=etiquetas
+                ),
+            )
+        else:
+            poner_mensaje(self._excedentes, None)
+        ocupadas: list[int] = []
+        if plan.definicion.es_por_filas:
+            ocupadas = sorted(
+                {p.indice for p in plan.problemas if p.regla == "V-03" and p.indice is not None}
+            )
+        for i in ocupadas[:_MAX_AVISOS_VISIBLES]:
+            fila = QWidget()
+            h = QHBoxLayout(fila)
+            h.setContentsMargins(0, 0, 0, 0)
+            vmid = plan.definicion.filas[i].vmid
+            texto = QCoreApplication.translate(
+                "ResumenLote", "Fila {n}: el número {vmid} ya lo usa otra máquina."
+            ).format(n=self.modelo.etiqueta_fila_de(i), vmid=vmid)
+            lbl = etiqueta(texto)
+            boton = QPushButton(
+                QCoreApplication.translate("ResumenLote", "Asignar automáticamente")
+            )
+            boton.setAccessibleName(
+                QCoreApplication.translate(
+                    "ResumenLote", "Asignar un número de máquina automático a la fila {n}"
+                ).format(n=self.modelo.etiqueta_fila_de(i))
+            )
+            boton.clicked.connect(
+                lambda _c=False, k=i: self.asignar_automatico_solicitado.emit((k,))
+            )
+            h.addWidget(lbl, 1)
+            h.addWidget(boton)
+            self._capa_asignar.addWidget(fila)
+        if len(ocupadas) > 1:
+            todas = QPushButton(
+                QCoreApplication.translate(
+                    "ResumenLote", "Asignar automáticamente a las %n filas", None, len(ocupadas)
+                )
+            )
+            todas.clicked.connect(
+                lambda _c=False, k=tuple(ocupadas): self.asignar_automatico_solicitado.emit(k)
+            )
+            self._capa_asignar.addWidget(todas, 0, Qt.AlignmentFlag.AlignLeft)
+        self._zona_asignar.setVisible(bool(ocupadas))
+
+    def _al_quitar_excedentes(self) -> None:
+        plan = self._plan
+        if plan is not None and plan.filas_excedentes:
+            self.quitar_excedentes_solicitado.emit(tuple(plan.filas_excedentes))
 
     # --- Botones ----------------------------------------------------------------------
 

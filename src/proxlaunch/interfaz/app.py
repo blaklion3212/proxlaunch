@@ -10,11 +10,15 @@ from PySide6.QtCore import QSize, Qt, QTranslator
 from PySide6.QtGui import QFont, QGuiApplication, QIcon
 from PySide6.QtWidgets import QApplication
 
+from proxlaunch import __version__
 from proxlaunch.interfaz.fuentes import cargar_fuentes
 from proxlaunch.interfaz.tema import GestorTema, ModoTema
+from proxlaunch.interfaz.textos import textos_perfiles_fabrica
 from proxlaunch.interfaz.ventana_principal import Dependencias, VentanaPrincipal
 from proxlaunch.interfaz.vistas.barra_superior import cargar_svg
 from proxlaunch.nucleo.api.transporte import crear_transporte_http
+from proxlaunch.nucleo.perfiles_maquina.almacen import AlmacenPerfilesMaquina
+from proxlaunch.nucleo.perfiles_maquina.fabrica import perfiles_fabrica
 from proxlaunch.nucleo.persistencia.huellas import RepositorioHuellas
 from proxlaunch.nucleo.persistencia.perfiles import RepositorioPerfiles
 from proxlaunch.nucleo.persistencia.preferencias import RepositorioPreferencias
@@ -60,6 +64,12 @@ def crear_dependencias(rutas: Rutas, gestor_tema: GestorTema) -> Dependencias:
     secretos = AlmacenSecretos()
     reloj = RelojReal()
     servicio = ServicioConexion(crear_transporte_http, huellas, secretos, reloj)
+    almacen_perfiles = AlmacenPerfilesMaquina(
+        rutas.perfiles_maquina,
+        fabrica=perfiles_fabrica(textos_perfiles_fabrica()),
+        app_version=__version__,
+    )
+    almacen_perfiles.cargar()
     return Dependencias(
         servicio_conexion=servicio,
         perfiles=RepositorioPerfiles(rutas.perfiles),
@@ -68,6 +78,9 @@ def crear_dependencias(rutas: Rutas, gestor_tema: GestorTema) -> Dependencias:
         preferencias=RepositorioPreferencias(rutas.preferencias),
         reloj=reloj,
         gestor_tema=gestor_tema,
+        perfiles_maquina=almacen_perfiles,
+        directorio_lotes=rutas.lotes,
+        version_app=__version__,
     )
 
 

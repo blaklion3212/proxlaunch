@@ -25,6 +25,12 @@ from .apoyo import (
 
 
 @pytest.fixture(autouse=True)
+def _sin_pregunta_de_cambios_sin_guardar(monkeypatch):
+    """«¿Guardar el lote antes de continuar?» (RF-G08) responde «No guardar» por defecto."""
+    monkeypatch.setattr(vp.VentanaPrincipal, "_preguntar_guardar_cambios", lambda self: "descartar")
+
+
+@pytest.fixture(autouse=True)
 def _sin_cajas_modales(monkeypatch):
     """Ningún QMessageBox puede bloquear: por defecto responde «No»."""
     for nombre in ("question", "warning", "information", "critical"):

@@ -12,6 +12,7 @@ import contextlib
 import logging
 import os
 from collections.abc import Iterable
+from dataclasses import dataclass
 from pathlib import Path
 
 import platformdirs
@@ -26,10 +27,10 @@ from proxlaunch.interfaz.textos import (
     texto_estado_rollback,
     texto_problema_lote,
 )
+from proxlaunch.nucleo.archivos.csv_seguro import escribir_csv
 from proxlaunch.nucleo.lote.constantes import ETIQUETA_APP, PREFIJO_ETIQUETA_LOTE
 from proxlaunch.nucleo.lote.informe import upid_sin_usuario as _upid_sin_usuario
 from proxlaunch.nucleo.lote.modelos import (
-    EntradaLibro,
     EstadoMV,
     InformeLote,
     ResultadoRollback,
@@ -139,18 +140,135 @@ def _lineas_deshacer(resultados: tuple[ResultadoRollback, ...]) -> list[str]:
     return lineas
 
 
-def _fila_maquina(e: EntradaLibro, duraciones: dict[int, float]) -> tuple[str, ...]:
-    el = e.elemento
-    resultado = f"{simbolo_estado_mv(e.estado)} {texto_estado_mv(e.estado)}"
+@dataclass(frozen=True)
+class DatosMaquina:
+    """Una máquina del informe. Es la ÚNICA fuente de las filas del informe de texto y del CSV
+    (CA-C14.3): así los dos no pueden contradecirse. No lleva host, IP ni usuario."""
+
+    numero: int
+    nombre: str
+    vmid: int
+    nodo: str
+    estado: EstadoMV
+    codigo_error: str
+    duracion_s: float | None
+    upid: str | None
+
+    @property
+    def resultado(self) -> str:
+        return f"{simbolo_estado_mv(self.estado)} {texto_estado_mv(self.estado)}"
+
+
+def datos_maquinas(informe: InformeLote) -> list[DatosMaquina]:
+    """Los datos de cada máquina del informe, en el orden del plan."""
+    return [
+        DatosMaquina(
+            numero=e.elemento.indice + 1,
+            nombre=e.elemento.nombre,
+            vmid=e.elemento.vmid,
+            nodo=e.elemento.nodo,
+            estado=e.estado,
+            codigo_error=str(e.error.codigo) if e.error is not None else "",
+            duracion_s=informe.duraciones_s.get(e.elemento.vmid),
+            upid=e.upid,
+        )
+        for e in informe.entradas
+    ]
+
+
+def _fila_maquina(d: DatosMaquina) -> tuple[str, ...]:
     return (
-        str(el.indice + 1),
-        el.nombre,
-        str(el.vmid),
-        el.nodo,
-        resultado,
-        texto_duracion(duraciones.get(el.vmid)),
-        upid_sin_usuario(e.upid),
+        str(d.numero),
+        d.nombre,
+        str(d.vmid),
+        d.nodo,
+        d.resultado,
+        texto_duracion(d.duracion_s),
+        upid_sin_usuario(d.upid),
     )
+
+
+def _lineas_por_maquina(informe: InformeLote) -> list[str]:
+    """Configuración de cada máquina de un lote por filas (CA-C08.8)."""
+    cab = (
+        QCoreApplication.translate("InformeLote", "N.º"),
+        QCoreApplication.translate("InformeLote", "Nombre"),
+        QCoreApplication.translate("InformeLote", "Procesadores"),
+        QCoreApplication.translate("InformeLote", "Memoria (GiB)"),
+        QCoreApplication.translate("InformeLote", "Discos"),
+        QCoreApplication.translate("InformeLote", "Redes"),
+    )
+    filas: list[tuple[str, ...]] = []
+    ninguno = QCoreApplication.translate("InformeLote", "ninguno")
+    for e in informe.entradas:
+        cfg = e.elemento.cfg
+        discos = (
+            ", ".join(f"{d.tamano_gib} GiB en {d.storage}" for d in cfg.discos)
+            if cfg.con_disco and cfg.discos
+            else ninguno
+        )
+        redes = (
+            ", ".join(
+                r.bridge + (f" (VLAN {r.vlan})" if r.vlan is not None else "") for r in cfg.redes
+            )
+            if cfg.redes
+            else ninguno
+        )
+        filas.append(
+            (
+                str(e.elemento.indice + 1),
+                e.elemento.nombre,
+                str(cfg.sockets * cfg.cores),
+                f"{cfg.memoria_mib / 1024:g}",
+                discos,
+                redes,
+            )
+        )
+    return _tabla(cab, filas)
+
+
+# Encabezado del informe CSV: identificadores estables, no se traducen (RNF-M04).
+ENCABEZADO_INFORME_CSV = (
+    "numero",
+    "nombre",
+    "vmid",
+    "nodo",
+    "desenlace",
+    "resultado",
+    "codigo_error",
+    "duracion_s",
+)
+
+
+def filas_informe_csv(informe: InformeLote) -> list[list[str | int]]:
+    """Filas del informe CSV: nombre, VMID, nodo, desenlace, código de error y duración.
+
+    Nunca el UPID, ni host, IP o usuario (CA-C14).
+    """
+    filas: list[list[str | int]] = []
+    for d in datos_maquinas(informe):
+        duracion: str | int = "" if d.duracion_s is None else max(0, round(d.duracion_s))
+        filas.append(
+            [
+                d.numero,
+                d.nombre,
+                d.vmid,
+                d.nodo,
+                str(d.estado),
+                texto_estado_mv(d.estado),
+                d.codigo_error,
+                duracion,
+            ]
+        )
+    return filas
+
+
+def guardar_informe_csv(ruta: Path, informe: InformeLote) -> None:
+    """Escribe el informe como CSV por el escritor único y seguro (RF-C14, RF-C11).
+
+    Lanza ``ErrorProxLaunch`` ``ARCHIVO_NO_GUARDABLE`` (E-M08) si no se puede escribir.
+    """
+    escribir_csv(ruta, ENCABEZADO_INFORME_CSV, filas_informe_csv(informe))
 
 
 def texto_permisos_no_verificados() -> str:
@@ -242,7 +360,7 @@ def texto_informe(informe: InformeLote) -> str:
         QCoreApplication.translate("InformeLote", "Duración"),
         QCoreApplication.translate("InformeLote", "UPID"),
     )
-    lineas.extend(_tabla(cab, [_fila_maquina(e, informe.duraciones_s) for e in informe.entradas]))
+    lineas.extend(_tabla(cab, [_fila_maquina(d) for d in datos_maquinas(informe)]))
 
     con_detalle = [e for e in informe.entradas if detalle_entrada(e)]
     if con_detalle:
@@ -272,7 +390,10 @@ def texto_informe(informe: InformeLote) -> str:
         QCoreApplication.translate("InformeLote", "Configuración de las máquinas"),
         "-" * 29,
     ]
-    lineas.extend(_lineas_plantilla(informe.plantilla))
+    if informe.por_filas:
+        lineas.extend(_lineas_por_maquina(informe))
+    else:
+        lineas.extend(_lineas_plantilla(informe.plantilla))
 
     if informe.problemas_plan:
         lineas += [
@@ -282,7 +403,8 @@ def texto_informe(informe: InformeLote) -> str:
         ]
         for p in informe.problemas_plan:
             marca = "✕" if p.severidad == Severidad.ERROR else "⚠"
-            lineas.append(f"{marca} {texto_problema_lote(p)}")
+            fila = str(p.indice + 1) if informe.por_filas and p.indice is not None else None
+            lineas.append(f"{marca} {texto_problema_lote(p, fila=fila)}")
 
     if informe.rollback:
         lineas.extend(_lineas_deshacer(informe.rollback))
@@ -351,6 +473,11 @@ def guardar_con_dialogo(
     destino = Path(ruta)
     escribir_informe(destino, texto_informe(informe))
     return destino
+
+
+def nombre_archivo_csv_sugerido(informe: InformeLote) -> str:
+    prefijo = "simulacion" if informe.es_simulacion else "informe-lote"
+    return f"{prefijo}-{informe.id_lote}.csv"
 
 
 def guardar_informe_parcial(informe: InformeLote, carpeta: Path | None = None) -> Path | None:

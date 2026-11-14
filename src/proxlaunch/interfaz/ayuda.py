@@ -229,6 +229,83 @@ _TEXTOS: dict[str, Callable[[], str]] = {
         "en Proxmox. Sirven para reconocer lo que creó este lote y poder deshacerlo con "
         "seguridad. Si tu servidor no admite etiquetas nuevas, desactívalo.",
     ),
+    "perfil": lambda: QCoreApplication.translate(
+        "Ayuda",
+        "Un perfil de máquina guarda el hardware de una máquina virtual (procesadores, memoria, "
+        "discos y red). Al elegirlo se rellena el formulario; el nombre, el número y el nodo "
+        "siguen siendo tuyos.",
+    ),
+    "perfil_fabrica": lambda: QCoreApplication.translate(
+        "Ayuda",
+        "Los perfiles de fábrica vienen con ProxLaunch y no se pueden cambiar ni borrar. Si "
+        "quieres una variante, duplícalo y haz tu propia versión.",
+    ),
+    "perfil_pistas": lambda: QCoreApplication.translate(
+        "Ayuda",
+        "Un perfil puede recordar el almacenamiento y la red que usaba. Si en este servidor no "
+        "existen, ProxLaunch usa los predeterminados y te avisa; nunca inventa nada.",
+    ),
+    "perfil_guardar": lambda: QCoreApplication.translate(
+        "Ayuda",
+        "Guarda el hardware actual del formulario como perfil de máquina para reutilizarlo. No "
+        "guarda el nombre, el número ni el nodo de la máquina.",
+    ),
+    "perfil_exportar": lambda: QCoreApplication.translate(
+        "Ayuda",
+        "Exportar crea un archivo con tus perfiles para compartirlos. Por defecto no incluye los "
+        "nombres de almacenamiento y de red de tu servidor.",
+    ),
+    "perfil_importar": lambda: QCoreApplication.translate(
+        "Ayuda",
+        "Importar añade perfiles de un archivo. Antes de guardar nada verás una lista para "
+        "elegir cuáles, y si un nombre ya existe puedes conservar ambos.",
+    ),
+    "perfil_compatibilidad": lambda: QCoreApplication.translate(
+        "Ayuda",
+        "Indica si el perfil funciona con la versión de Proxmox y con el servidor al que estás "
+        "conectado. Los avisos no impiden crear la máquina; los errores sí.",
+    ),
+    "lote_guardado": lambda: QCoreApplication.translate(
+        "Ayuda",
+        "Un lote guardado es un archivo con la definición de un lote (hardware, cantidad, "
+        "nombres y reparto) para repetirlo. No guarda datos de conexión ni contraseñas; al "
+        "abrirlo se vuelve a comprobar todo.",
+    ),
+    "csv": lambda: QCoreApplication.translate(
+        "Ayuda",
+        "Importar desde CSV crea un lote con una máquina por cada fila de una hoja de cálculo. "
+        "Antes de crear nada verás una vista previa y un resumen que debes confirmar.",
+    ),
+    "csv_plantilla": lambda: QCoreApplication.translate(
+        "Ayuda",
+        "Descarga un archivo CSV de ejemplo con todas las columnas y dos filas de muestra. "
+        "Ábrelo en tu hoja de cálculo, cambia los datos y guárdalo como CSV.",
+    ),
+    "csv_separador": lambda: QCoreApplication.translate(
+        "Ayuda",
+        "Es el carácter que separa las columnas: punto y coma, coma o tabulador. ProxLaunch lo "
+        "detecta solo; cámbialo si la vista previa se ve mal.",
+    ),
+    "csv_codificacion": lambda: QCoreApplication.translate(
+        "Ayuda",
+        "Es la forma en que el archivo guarda los acentos. ProxLaunch la detecta sola; si ves "
+        "letras raras, prueba otra o guarda el archivo como «CSV UTF-8» desde Excel.",
+    ),
+    "csv_unidades": lambda: QCoreApplication.translate(
+        "Ayuda",
+        "Memoria y disco sin unidad se leen en GiB. También puedes escribir MiB, GiB o TiB "
+        "(por ejemplo «4 GiB»). Evita los separadores de miles: «1.000» es ambiguo.",
+    ),
+    "csv_vista_previa": lambda: QCoreApplication.translate(
+        "Ayuda",
+        "Muestra cada fila del archivo con su estado y sus problemas. Puedes excluir filas "
+        "antes de continuar; nada se crea hasta que confirmes el resumen del lote.",
+    ),
+    "lote_por_filas": lambda: QCoreApplication.translate(
+        "Ayuda",
+        "En un lote por filas cada máquina tiene su propia configuración, como venía en el "
+        "archivo. Para cambiar algo, corrige el archivo e impórtalo de nuevo.",
+    ),
     "lote_envio_incierto": lambda: QCoreApplication.translate(
         "Ayuda",
         "Si se corta la conexión justo al enviar una máquina, no se sabe si Proxmox llegó a "
@@ -254,6 +331,25 @@ CAMPOS_AYUDA_LOTE: tuple[str, ...] = (
     "lote_deshacer",
     "lote_etiqueta",
     "lote_envio_incierto",
+)
+
+# Ayudas del MVP 3 que deben tener texto (CA-P11.3).
+CAMPOS_AYUDA_MVP3: tuple[str, ...] = (
+    "perfil",
+    "perfil_fabrica",
+    "perfil_pistas",
+    "perfil_guardar",
+    "perfil_exportar",
+    "perfil_importar",
+    "perfil_compatibilidad",
+    "lote_guardado",
+    "csv",
+    "csv_plantilla",
+    "csv_separador",
+    "csv_codificacion",
+    "csv_unidades",
+    "csv_vista_previa",
+    "lote_por_filas",
 )
 
 # Campos técnicos que deben tener ayuda (CA-25.1, CA-25.2).

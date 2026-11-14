@@ -81,6 +81,11 @@ class RepositorioPerfiles:
         self.copia_danada: Path | None = None
         self.error_lectura = False  # True si el archivo no se pudo leer (permisos, etc.)
 
+    @property
+    def ruta(self) -> Path:
+        """Archivo de perfiles de conexión (su carpeta es la de configuración)."""
+        return self._almacen.ruta
+
     def _cargar(self) -> list[PerfilConexion]:
         r = self._almacen.leer()
         if r.hubo_corrupcion:

@@ -12,13 +12,15 @@ import dataclasses
 import logging
 import secrets
 import threading
-from collections.abc import Callable
+from collections.abc import Callable, Sequence
+from pathlib import Path
 from typing import Any
 
 from PySide6.QtCore import QObject, QRunnable, Qt, QThreadPool, Signal
 
 from proxlaunch.nucleo.capacidades import Capacidades
 from proxlaunch.nucleo.constructor_peticion import construir_parametros
+from proxlaunch.nucleo.csv_importacion.plantilla import escribir_plantilla
 from proxlaunch.nucleo.errores import CodigoError, ErrorProxLaunch
 from proxlaunch.nucleo.lote.constantes import ETIQUETA_APP, PREFIJO_ETIQUETA_LOTE
 from proxlaunch.nucleo.lote.libro import Libro
@@ -28,6 +30,7 @@ from proxlaunch.nucleo.lote.modelos import (
     ElementoPlan,
     EntradaLibro,
     EstadoMV,
+    InformeLote,
     MotivoReparto,
     Plan,
     Problema,
@@ -41,9 +44,17 @@ from proxlaunch.nucleo.lote.presupuesto import evaluar_espacio, uso_por_clave
 from proxlaunch.nucleo.lote.reconciliacion import config_en_creacion, tiene_etiqueta_del_lote
 from proxlaunch.nucleo.lote.rollback import ServicioRollback
 from proxlaunch.nucleo.lote.simulacion import simular
+from proxlaunch.nucleo.lotes_guardados.formato import guardar_lote, leer_archivo_lote
+from proxlaunch.nucleo.lotes_guardados.modelos import ArchivoLote, LoteGuardado
 from proxlaunch.nucleo.modelos.inventario import Bridge, Inventario, Storage
 from proxlaunch.nucleo.modelos.tarea import Desenlace, Etapa, ResultadoCreacion
 from proxlaunch.nucleo.modelos.vm import ConfiguracionVM
+from proxlaunch.nucleo.perfiles_maquina.formato import (
+    ArchivoPerfiles,
+    exportar_perfiles,
+    leer_archivo_perfiles,
+)
+from proxlaunch.nucleo.perfiles_maquina.modelos import PerfilMaquina
 from proxlaunch.nucleo.registro import enmascarar
 from proxlaunch.nucleo.reloj import Reloj
 from proxlaunch.nucleo.servicios.conexion import Sesion, permisos_faltantes
@@ -601,3 +612,47 @@ def armar_reintento(
         version_validacion=version,
     )
     return inv, plan
+
+
+# --- Archivos del usuario (MVP 3): lectura, análisis y escritura fuera del hilo de la interfaz ---
+# Envoltorios finos del núcleo (RNF-M05): solo reciben rutas y datos, nunca una sesión ni un
+# cliente (INV-M1). Leen con ``O_RDONLY`` y escriben de forma atómica; los errores salen como
+# ``ErrorProxLaunch`` y el ``Lanzador`` los entrega al hilo de la interfaz.
+
+
+def leer_lote_guardado(ruta: Path) -> ArchivoLote:
+    """Lee y valida un lote guardado (carga atómica: o todo válido o error, RF-G03)."""
+    return leer_archivo_lote(ruta)
+
+
+def guardar_lote_guardado(ruta: Path, lote: LoteGuardado, app_version: str) -> Path:
+    """Escribe un lote guardado (lista blanca, atómico, 0600). Devuelve la ruta escrita."""
+    guardar_lote(ruta, lote, app_version=app_version)
+    return ruta
+
+
+def leer_perfiles_de_archivo(ruta: Path) -> ArchivoPerfiles:
+    """Lee un archivo de perfiles de máquina de un tercero (≤ 256 KiB, RF-P09)."""
+    return leer_archivo_perfiles(ruta)
+
+
+def exportar_perfiles_a_archivo(
+    ruta: Path, perfiles: Sequence[PerfilMaquina], con_pistas: bool, app_version: str
+) -> Path:
+    """Exporta perfiles de máquina a un archivo (RF-P08). Devuelve la ruta escrita."""
+    exportar_perfiles(ruta, perfiles, con_pistas=con_pistas, app_version=app_version)
+    return ruta
+
+
+def escribir_plantilla_csv(ruta: Path, separador: str) -> Path:
+    """Escribe la plantilla CSV descargable (RF-C10). Devuelve la ruta escrita."""
+    escribir_plantilla(ruta, separador=separador)
+    return ruta
+
+
+def escribir_informe_csv(ruta: Path, informe: InformeLote) -> Path:
+    """Escribe el informe del lote como CSV por el escritor único (RF-C14)."""
+    from proxlaunch.interfaz.informe_lote import guardar_informe_csv
+
+    guardar_informe_csv(ruta, informe)
+    return ruta

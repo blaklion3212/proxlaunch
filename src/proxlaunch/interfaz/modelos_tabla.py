@@ -39,9 +39,11 @@ from proxlaunch.nucleo.lote.modelos import (
     EntradaLibro,
     EstadoMV,
     EstadoRollback,
+    FilaLote,
     Plan,
     ResultadoRollback,
 )
+from proxlaunch.nucleo.modelos.vm import ConfiguracionVM
 
 _Indice: TypeAlias = QModelIndex | QPersistentModelIndex
 
@@ -150,26 +152,71 @@ def _total_discos_gib(e: ElementoPlan) -> int:
     return sum(d.tamano_gib for d in cfg.discos) if cfg.con_disco else 0
 
 
+def _vcpus(cfg: ConfiguracionVM) -> int:
+    return cfg.sockets * cfg.cores
+
+
+def _gib_memoria(cfg: ConfiguracionVM) -> str:
+    return f"{cfg.memoria_mib / 1024:g}"
+
+
 class ModeloPlan(_ModeloBase):
-    """Una fila por máquina del plan: número, nombre, VMID, nodo, almacenamiento y discos."""
+    """Una fila por máquina del plan: número, nombre, VMID, nodo, almacenamiento y discos.
+
+    En un lote por filas (CSV) añade los procesadores y la memoria de cada máquina (CA-C08.7) y
+    la primera columna es el número de fila del archivo.
+    """
 
     def __init__(self, parent: QObject | None = None) -> None:
         super().__init__(parent)
         self._elementos: tuple[ElementoPlan, ...] = ()
+        self._origenes: tuple[int | None, ...] = ()  # nº de fila del archivo (solo por filas)
+        self._por_filas = False
+
+    @property
+    def por_filas(self) -> bool:
+        return self._por_filas
 
     def _cabeceras(self) -> tuple[str, ...]:
-        return (
-            QCoreApplication.translate("ModelosTabla", "N.º"),
+        base = (
+            QCoreApplication.translate("ModelosTabla", "Fila")
+            if self._por_filas
+            else QCoreApplication.translate("ModelosTabla", "N.º"),
             QCoreApplication.translate("ModelosTabla", "Nombre"),
             "VMID",
             QCoreApplication.translate("ModelosTabla", "Nodo"),
             QCoreApplication.translate("ModelosTabla", "Almacenamiento"),
             QCoreApplication.translate("ModelosTabla", "Discos (GiB)"),
         )
+        if not self._por_filas:
+            return base
+        return (
+            *base,
+            QCoreApplication.translate("ModelosTabla", "Procesadores"),
+            QCoreApplication.translate("ModelosTabla", "Memoria (GiB)"),
+        )
+
+    def etiqueta_fila(self, e: ElementoPlan) -> str:
+        """Número con el que se nombra la máquina: el de la fila del archivo, o su posición."""
+        return self.etiqueta_fila_de(e.indice)
+
+    def etiqueta_fila_de(self, indice: int) -> str:
+        """Lo mismo, a partir de la posición (0..N-1) de la fila en el lote."""
+        if self._por_filas and 0 <= indice < len(self._origenes):
+            origen = self._origenes[indice]
+            if origen is not None:
+                return str(origen)
+        return str(indice + 1)
 
     def establecer_plan(self, plan: Plan | None) -> None:
         self.beginResetModel()
         self._elementos = plan.elementos if plan is not None else ()
+        self._por_filas = plan is not None and plan.definicion.es_por_filas
+        self._origenes = (
+            tuple(f.origen for f in plan.definicion.filas)
+            if plan is not None and self._por_filas
+            else ()
+        )
         self.endResetModel()
 
     def rowCount(self, parent: _Indice = QModelIndex()) -> int:  # noqa: B008
@@ -181,20 +228,113 @@ class ModeloPlan(_ModeloBase):
         e = self._elementos[index.row()]
         col = index.column()
         if role == Qt.ItemDataRole.DisplayRole:
-            return (
-                str(e.indice + 1),
+            celdas: tuple[str, ...] = (
+                self.etiqueta_fila(e),
                 e.nombre,
                 str(e.vmid),
                 e.nodo,
                 _almacenamiento_principal(e),
                 str(_total_discos_gib(e)),
-            )[col]
-        if role == Qt.ItemDataRole.TextAlignmentRole and col in (0, 2, 5):
+            )
+            if self._por_filas:
+                celdas = (*celdas, str(_vcpus(e.cfg)), _gib_memoria(e.cfg))
+            return celdas[col]
+        numericas = (0, 2, 5, 6, 7) if self._por_filas else (0, 2, 5)
+        if role == Qt.ItemDataRole.TextAlignmentRole and col in numericas:
             return int(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
         if role == Qt.ItemDataRole.AccessibleTextRole:
+            if self._por_filas:
+                return QCoreApplication.translate(
+                    "ModelosTabla",
+                    "Fila {n}: {nombre}, número {vmid}, nodo {nodo}, {v} procesadores "
+                    "virtuales, {m} GiB de memoria",
+                ).format(
+                    n=self.etiqueta_fila(e),
+                    nombre=e.nombre,
+                    vmid=e.vmid,
+                    nodo=e.nodo,
+                    v=_vcpus(e.cfg),
+                    m=_gib_memoria(e.cfg),
+                )
             return QCoreApplication.translate(
                 "ModelosTabla", "Máquina {n}: {nombre}, número {vmid}, nodo {nodo}"
             ).format(n=e.indice + 1, nombre=e.nombre, vmid=e.vmid, nodo=e.nodo)
+        return None
+
+
+class ModeloFilasLote(_ModeloBase):
+    """Filas de un lote por filas antes de planificar (``PanelLoteFilas``, solo lectura).
+
+    Una fila por máquina con su configuración: número de fila del archivo, nombre, VMID y nodo
+    (o «Automático»), procesadores, memoria, discos y red. Es una tabla de modelo: 100 filas no
+    son 100 widgets y se desplaza con el teclado.
+    """
+
+    def __init__(self, parent: QObject | None = None) -> None:
+        super().__init__(parent)
+        self._filas: tuple[FilaLote, ...] = ()
+
+    def _cabeceras(self) -> tuple[str, ...]:
+        return (
+            QCoreApplication.translate("ModelosTabla", "Fila"),
+            QCoreApplication.translate("ModelosTabla", "Nombre"),
+            "VMID",
+            QCoreApplication.translate("ModelosTabla", "Nodo"),
+            QCoreApplication.translate("ModelosTabla", "Procesadores"),
+            QCoreApplication.translate("ModelosTabla", "Memoria (GiB)"),
+            QCoreApplication.translate("ModelosTabla", "Discos (GiB)"),
+            QCoreApplication.translate("ModelosTabla", "Almacenamiento"),
+            QCoreApplication.translate("ModelosTabla", "Red"),
+        )
+
+    def establecer_filas(self, filas: Sequence[FilaLote]) -> None:
+        self.beginResetModel()
+        self._filas = tuple(filas)
+        self.endResetModel()
+
+    @property
+    def filas(self) -> tuple[FilaLote, ...]:
+        return self._filas
+
+    def etiqueta_fila(self, i: int) -> str:
+        origen = self._filas[i].origen if 0 <= i < len(self._filas) else None
+        return str(origen if origen is not None else i + 1)
+
+    def rowCount(self, parent: _Indice = QModelIndex()) -> int:  # noqa: B008
+        return 0 if parent.isValid() else len(self._filas)
+
+    def data(self, index: _Indice, role: int = Qt.ItemDataRole.DisplayRole) -> object:
+        if not index.isValid() or not 0 <= index.row() < len(self._filas):
+            return None
+        i = index.row()
+        fila = self._filas[i]
+        cfg = fila.cfg
+        col = index.column()
+        auto = QCoreApplication.translate("ModelosTabla", "Automático")
+        if role == Qt.ItemDataRole.DisplayRole:
+            discos = sum(d.tamano_gib for d in cfg.discos) if cfg.con_disco else 0
+            storage = (cfg.discos[0].storage or "—") if cfg.con_disco and cfg.discos else "—"
+            red = ", ".join(r.bridge or "—" for r in cfg.redes) or "—"
+            return (
+                self.etiqueta_fila(i),
+                fila.nombre,
+                str(fila.vmid) if fila.vmid is not None else auto,
+                fila.nodo or auto,
+                str(_vcpus(cfg)),
+                _gib_memoria(cfg),
+                str(discos),
+                storage,
+                red,
+            )[col]
+        if role == Qt.ItemDataRole.TextAlignmentRole and col in (0, 2, 4, 5, 6):
+            return int(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
+        if role == Qt.ItemDataRole.AccessibleTextRole:
+            return QCoreApplication.translate(
+                "ModelosTabla",
+                "Fila {n}: {nombre}, {v} procesadores virtuales, {m} GiB de memoria",
+            ).format(
+                n=self.etiqueta_fila(i), nombre=fila.nombre, v=_vcpus(cfg), m=_gib_memoria(cfg)
+            )
         return None
 
 
@@ -467,10 +607,18 @@ class TablaCopiable(QTableView):
     def setModel(self, model: QAbstractItemModel | None) -> None:
         super().setModel(model)
         if model is not None:
-            cabecera = self.horizontalHeader()
-            for c in range(model.columnCount()):
-                cabecera.setSectionResizeMode(c, QHeaderView.ResizeMode.ResizeToContents)
-            cabecera.setStretchLastSection(True)
+            self._ajustar_columnas()
+            # El plan de un lote por filas tiene más columnas que el homogéneo.
+            model.modelReset.connect(self._ajustar_columnas)
+
+    def _ajustar_columnas(self) -> None:
+        modelo = self.model()
+        if modelo is None:
+            return
+        cabecera = self.horizontalHeader()
+        for c in range(modelo.columnCount()):
+            cabecera.setSectionResizeMode(c, QHeaderView.ResizeMode.ResizeToContents)
+        cabecera.setStretchLastSection(True)
 
     def texto(self, *, solo_seleccion: bool) -> str:
         """Texto tabulado de la selección (o de toda la tabla), con la cabecera."""

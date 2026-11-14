@@ -7,10 +7,23 @@ genérico de CA-21.2 (los detalles técnicos los muestra la vista aparte).
 
 from __future__ import annotations
 
-from collections.abc import Mapping
+from collections.abc import Callable, Mapping
 
 from PySide6.QtCore import QCoreApplication
 
+from proxlaunch.nucleo.archivos.constantes import (
+    LONG_DESCRIPCION,
+    LONG_NOMBRE_PERFIL,
+    MAX_PERFILES_USUARIO,
+)
+from proxlaunch.nucleo.archivos.esquema import (
+    AvisoArchivo,
+    CodigoAvisoArchivo,
+    ErrorArchivo,
+    ErrorCampo,
+    MotivoCampo,
+)
+from proxlaunch.nucleo.csv_importacion.modelos import EstadoFila, MapaColumnas, ProblemaCelda
 from proxlaunch.nucleo.errores import CodigoError, ErrorProxLaunch
 from proxlaunch.nucleo.lote.constantes import (
     FACTOR_THIN_MAX,
@@ -29,7 +42,10 @@ from proxlaunch.nucleo.lote.modelos import (
 )
 from proxlaunch.nucleo.lote.modelos import Problema as ProblemaLote
 from proxlaunch.nucleo.lote.modelos import Severidad as SeveridadLote
+from proxlaunch.nucleo.lotes_guardados.revalidacion import Desajuste, TipoDesajuste
 from proxlaunch.nucleo.modelos.tarea import Desenlace, Etapa, ResultadoCreacion
+from proxlaunch.nucleo.perfiles_maquina.aplicar import AvisoPista, resumen_perfil
+from proxlaunch.nucleo.perfiles_maquina.modelos import ConfigPerfil
 from proxlaunch.nucleo.seleccion_nodo import MotivoNodo
 from proxlaunch.nucleo.servicios.conexion import Aviso, CodigoAviso, EstadoHuella
 from proxlaunch.nucleo.validacion import Problema, Severidad
@@ -267,6 +283,9 @@ def texto_error(error: ErrorProxLaunch) -> str:
     texto_lote = _texto_error_lote(error)
     if texto_lote is not None:
         return texto_lote
+    texto_archivo = _texto_error_archivo(error)
+    if texto_archivo is not None:
+        return texto_archivo
     return texto_generico()
 
 
@@ -420,6 +439,9 @@ def texto_problema(p: Problema) -> str:
         )
     if cod == "V-21":
         return QCoreApplication.translate("Textos", "El código tiene 6 números.")
+    texto_mvp3 = _texto_problema_mvp3(p)
+    if texto_mvp3 is not None:
+        return texto_mvp3
     return texto_generico()
 
 
@@ -1077,8 +1099,20 @@ def _texto_v_l11(prm: Mapping[str, str]) -> str:
     )
 
 
-def texto_problema_lote(p: ProblemaLote) -> str:
-    """Mensaje de una regla V-L (docs/requisitos/mvp2.md §4) o de una V-xx de M1 por elemento."""
+def _con_fila(p: ProblemaLote, texto: str, fila: str | None) -> str:
+    """Antepone «Fila N:» (lote por filas, ``fila`` = su número de origen) a un texto por fila."""
+    if fila is None or p.indice is None:
+        return texto
+    return QCoreApplication.translate("Textos", "Fila {n}: {texto}").format(n=fila, texto=texto)
+
+
+def texto_problema_lote(p: ProblemaLote, *, fila: str | None = None) -> str:
+    """Mensaje de una regla V-L (docs/requisitos/mvp2.md §4) o de una V-xx de M1 por elemento.
+
+    En un lote por filas, ``fila`` es el número con el que se nombra la fila del problema (su
+    número en el archivo, o su posición): los problemas por fila dicen «Fila N» en vez de
+    «Máquina N».
+    """
     regla, prm = p.regla, p.params
     if regla == "V-L01":
         if prm.get("causa") == "maximo":
@@ -1167,7 +1201,11 @@ def texto_problema_lote(p: ProblemaLote) -> str:
             libre=_gib_de(prm, "libre"),
         )
     if regla == "V-L11":
-        return _texto_v_l11(prm)
+        return _con_fila(p, _texto_v_l11(prm), fila)
+    if regla == "V-M07":
+        return _con_fila(p, texto_problema(_a_problema_m1(p)), fila)
+    if regla == "V-M10":
+        return texto_problema(_a_problema_m1(p))
     if regla == "V-L12.cpu":
         return _fmt(
             QCoreApplication.translate(
@@ -1218,7 +1256,7 @@ def texto_problema_lote(p: ProblemaLote) -> str:
     if regla == "V-L17":
         return texto_error(ErrorProxLaunch(CodigoError.LOTE_EN_CURSO))
     if regla == "E-L01":
-        return _texto_e_l01(prm)
+        return _con_fila(p, _texto_e_l01(prm), fila)
     if regla == "V-24":
         return QCoreApplication.translate(
             "Textos", "Proxmox no admite esa etiqueta: usa solo letras, números y guiones."
@@ -1226,6 +1264,8 @@ def texto_problema_lote(p: ProblemaLote) -> str:
     if regla.startswith("V-") and not regla.startswith("V-L"):
         base = texto_problema(_a_problema_m1(p))
         if p.indice is not None and base != texto_generico():
+            if fila is not None:
+                return _con_fila(p, base, fila)
             return QCoreApplication.translate("Textos", "Máquina {n}: {texto}").format(
                 n=p.indice + 1, texto=base
             )
@@ -1241,3 +1281,750 @@ def _texto_e_l01(prm: Mapping[str, str]) -> str:
             "Ningún nodo tiene sitio para todas las máquinas con el espacio libre actual.",
         )
     return texto_error(ErrorProxLaunch(CodigoError.LOTE_SIN_NODO_APTO))
+
+
+# --- MVP 3: archivos, perfiles de máquina, lotes guardados e importación CSV --------------
+
+
+def _lista_filas(filas: str) -> str:
+    """«3,9,12» -> «3, 9 y 12» (para V-M10)."""
+    partes = [f.strip() for f in filas.split(",") if f.strip()]
+    if len(partes) <= 1:
+        return "".join(partes)
+    return ", ".join(partes[:-1]) + QCoreApplication.translate("Textos", " y ") + partes[-1]
+
+
+def _tamano_legible(valor: str | None) -> str:
+    """Bytes a «1 MiB» / «256 KiB»; si no es un número, el texto tal cual."""
+    try:
+        n = int(valor or "")
+    except ValueError:
+        return valor or "?"
+    if n >= 1024 * 1024 and n % (1024 * 1024) == 0:
+        return QCoreApplication.translate("Textos", "{n} MiB").format(n=n // (1024 * 1024))
+    if n >= 1024:
+        return QCoreApplication.translate("Textos", "{n} KiB").format(n=n // 1024)
+    return QCoreApplication.translate("Textos", "{n} bytes").format(n=n)
+
+
+def _texto_e_m10(p: Mapping[str, str]) -> str:
+    motivo = p.get("motivo", "")
+    if motivo == "falta_nombre":
+        texto = QCoreApplication.translate("Textos", "Falta la columna «nombre».")
+        if p.get("reconocidas"):
+            texto += " " + _fmt(
+                QCoreApplication.translate("Textos", "Columnas reconocidas: {reconocidas}."), p
+            )
+        return texto
+    if motivo == "duplicada":
+        return _fmt(
+            QCoreApplication.translate("Textos", "La columna «{columna}» aparece dos veces."), p
+        )
+    return _fmt(
+        QCoreApplication.translate(
+            "Textos", "Hay datos en columnas que no tienen encabezado (columnas {posiciones})."
+        ),
+        p,
+    )
+
+
+def _motivo_acceso(motivo: str) -> str:
+    if motivo == "no_existe":
+        return QCoreApplication.translate("Textos", "El archivo no existe.")
+    if motivo == "sin_permiso":
+        return QCoreApplication.translate("Textos", "No tienes permiso para leer ese archivo.")
+    return ""
+
+
+def _texto_e_m06(p: Mapping[str, str]) -> str:
+    tipo = p.get("tipo", "filas")
+    maximo = p.get("max", "?")
+    n = _entero(p.get(tipo))
+    if tipo == "columnas":
+        if n is None:
+            return _fmt(
+                QCoreApplication.translate(
+                    "Textos", "El archivo tiene demasiadas columnas; el máximo es {max}."
+                ),
+                p,
+            )
+        return _fmt(
+            QCoreApplication.translate(
+                "Textos", "El archivo tiene %n columnas; el máximo es {max}.", None, n
+            ),
+            p,
+        )
+    if tipo == "celda":
+        texto = _fmt(
+            QCoreApplication.translate(
+                "Textos", "Una celda tiene demasiado texto; el máximo es {max} caracteres."
+            ),
+            p,
+        )
+        if p.get("fila"):
+            texto += " " + _fmt(QCoreApplication.translate("Textos", "(fila {fila})"), p)
+        return texto
+    if n is None:
+        return _fmt(
+            QCoreApplication.translate(
+                "Textos",
+                "El archivo tiene demasiadas filas; el máximo por lote es {max}. Divide el "
+                "archivo en partes.",
+            ),
+            p,
+        )
+    return _fmt(
+        QCoreApplication.translate(
+            "Textos",
+            "El archivo tiene %n filas; el máximo por lote es {max}. Divide el archivo en partes.",
+            None,
+            n,
+        ),
+        p,
+        max=maximo,
+    )
+
+
+def _texto_e_m08(p: Mapping[str, str]) -> str:
+    motivo = p.get("motivo", "")
+    if motivo == "sin_espacio":
+        causa = QCoreApplication.translate("Textos", "no hay espacio en el disco")
+    elif motivo == "sin_permiso":
+        causa = QCoreApplication.translate("Textos", "no tienes permiso para escribir ahí")
+    elif motivo == "bloqueado":
+        causa = QCoreApplication.translate("Textos", "el archivo está abierto en otro programa")
+    elif motivo == "ruta_larga":
+        causa = QCoreApplication.translate("Textos", "la ruta es demasiado larga")
+    else:
+        causa = QCoreApplication.translate("Textos", "ocurrió un error al escribir")
+    return QCoreApplication.translate(
+        "Textos", "No se pudo guardar el archivo: {motivo}. No se cambió nada."
+    ).format(motivo=causa)
+
+
+def _texto_error_archivo(error: ErrorProxLaunch) -> str | None:
+    """Mensajes E-M01 a E-M15; ``None`` si el código no es de archivos o perfiles."""
+    p = error.params
+    c = error.codigo
+    if c == CodigoError.ARCHIVO_NO_PERMITIDO:
+        motivo = p.get("motivo", "")
+        if motivo == "no_regular":
+            causa = QCoreApplication.translate("Textos", "no es un archivo normal")
+            return QCoreApplication.translate(
+                "Textos", "No se puede abrir este archivo: {motivo}."
+            ).format(motivo=causa)
+        if motivo == "demasiadas_entradas":
+            return _fmt(
+                QCoreApplication.translate(
+                    "Textos",
+                    "No se puede abrir este archivo: tiene demasiados elementos (máximo {limite}).",
+                ),
+                p,
+            )
+        return QCoreApplication.translate(
+            "Textos", "No se puede abrir este archivo: es demasiado grande (límite {limite})."
+        ).format(limite=_tamano_legible(p.get("limite")))
+    if c == CodigoError.ARCHIVO_FORMATO_AJENO:
+        texto = QCoreApplication.translate(
+            "Textos", "Este archivo no es un archivo de ProxLaunch del tipo que buscas."
+        )
+        encontrado = p.get("encontrado", "")
+        if encontrado == "proxlaunch.perfiles":
+            texto += " " + QCoreApplication.translate(
+                "Textos", "Parece un archivo de perfiles de máquina."
+            )
+        elif encontrado == "proxlaunch.lote":
+            texto += " " + QCoreApplication.translate(
+                "Textos", "Parece un archivo de lote guardado."
+            )
+        return texto
+    if c == CodigoError.ARCHIVO_VERSION_FUTURA:
+        return QCoreApplication.translate(
+            "Textos",
+            "Este archivo lo creó una versión más nueva de ProxLaunch. Actualiza la aplicación "
+            "para abrirlo.",
+        )
+    if c == CodigoError.ARCHIVO_DANADO:
+        campo = p.get("campo", "")
+        if campo:
+            return _fmt(
+                QCoreApplication.translate(
+                    "Textos", "El archivo está dañado o tiene datos no válidos: {campo}."
+                ),
+                p,
+            )
+        return QCoreApplication.translate(
+            "Textos", "El archivo está dañado o no tiene un formato válido."
+        )
+    if c == CodigoError.ARCHIVO_NO_ACCESIBLE:
+        base = QCoreApplication.translate(
+            "Textos",
+            "No se pudo leer el archivo. Si está abierto en otro programa (como Excel), ciérralo "
+            "o guarda una copia.",
+        )
+        extra = _motivo_acceso(p.get("motivo", ""))
+        return f"{extra} {base}" if extra else base
+    if c == CodigoError.ARCHIVO_DEMASIADAS_FILAS:
+        return _texto_e_m06(p)
+    if c == CodigoError.CSV_CODIFICACION:
+        if p.get("motivo") == "comillas":
+            return _fmt(
+                QCoreApplication.translate(
+                    "Textos",
+                    "Hay unas comillas sin cerrar en la fila {fila}. Revisa el archivo o guárdalo "
+                    "de nuevo como «CSV UTF-8» desde Excel.",
+                ),
+                p,
+            )
+        return _fmt(
+            QCoreApplication.translate(
+                "Textos",
+                "No pude leer el archivo CSV (fila {fila}). Guárdalo como «CSV UTF-8» desde Excel.",
+            ),
+            p,
+        )
+    if c == CodigoError.ARCHIVO_NO_GUARDABLE:
+        return _texto_e_m08(p)
+    if c == CodigoError.CSV_VACIO:
+        return QCoreApplication.translate("Textos", "El archivo no tiene máquinas.")
+    if c == CodigoError.CSV_COLUMNAS:
+        return _texto_e_m10(p)
+    if c == CodigoError.CSV_VALOR_INVALIDO:
+        detalle = _fmt(
+            QCoreApplication.translate(
+                "Textos", "el valor «{valor}» no es válido. Ejemplo: {ejemplo}."
+            ),
+            p,
+            ejemplo=p.get("ejemplo", "—"),
+        )
+        return _fmt(
+            QCoreApplication.translate("Textos", "Fila {fila}, columna «{columna}»: {detalle}"),
+            p,
+            detalle=detalle,
+        )
+    if c == CodigoError.PERFIL_INEXISTENTE:
+        texto = _fmt(QCoreApplication.translate("Textos", "No existe el perfil «{nombre}»."), p)
+        if p.get("disponibles"):
+            texto += " " + _fmt(
+                QCoreApplication.translate("Textos", "Perfiles disponibles: {disponibles}."), p
+            )
+        return texto
+    if c == CodigoError.PERFIL_NO_MODIFICABLE:
+        return QCoreApplication.translate(
+            "Textos",
+            "Los perfiles de fábrica no se pueden cambiar. Duplícalo para hacer tu propia versión.",
+        )
+    if c == CodigoError.PERFILES_SOLO_LECTURA:
+        return QCoreApplication.translate(
+            "Textos",
+            "Tus perfiles se crearon con una versión más nueva de ProxLaunch; no se pueden "
+            "modificar.",
+        )
+    if c == CodigoError.LOTE_NO_ENCAJA:
+        tipo = p.get("campo", "storage")
+        valor = p.get("valor", "")
+        disponibles = p.get("disponibles", "")
+        desajuste = Desajuste(
+            TipoDesajuste(tipo)
+            if tipo in {t.value for t in TipoDesajuste}
+            else TipoDesajuste.STORAGE,
+            valor,
+            (),
+            (),
+            tuple(d for d in disponibles.split(",") if d),
+        )
+        return QCoreApplication.translate(
+            "Textos", "Este lote no encaja en este servidor: {detalle}"
+        ).format(detalle=texto_desajuste(desajuste))
+    if c == CodigoError.PERFIL_RECHAZADO:
+        return texto_regla_perfil(p.get("regla", ""), p.get("campo", ""))
+    return None
+
+
+def texto_aviso_pista(aviso: AvisoPista) -> str:
+    """Una pista de perfil que no sirvió en este nodo y qué se usó en su lugar (CA-P06)."""
+    if aviso.recurso == "bridge":
+        pedida = QCoreApplication.translate(
+            "Textos", "El perfil pedía la red «{pedido}», que no existe en «{nodo}»."
+        )
+    elif aviso.recurso == "storage_efi":
+        pedida = QCoreApplication.translate(
+            "Textos",
+            "El perfil pedía el almacenamiento de UEFI «{pedido}», que no existe en «{nodo}».",
+        )
+    else:
+        pedida = QCoreApplication.translate(
+            "Textos", "El perfil pedía el almacenamiento «{pedido}», que no existe en «{nodo}»."
+        )
+    texto = pedida.format(pedido=aviso.pedido, nodo=aviso.nodo)
+    if aviso.usado:
+        texto += " " + QCoreApplication.translate("Textos", "Se usó «{usado}».").format(
+            usado=aviso.usado
+        )
+    else:
+        texto += " " + QCoreApplication.translate("Textos", "Elige uno antes de crear.")
+    return texto
+
+
+def _texto_problema_mvp3(p: Problema) -> str | None:
+    """Reglas V-M y V-P07 de perfiles, archivos y filas; ``None`` si no es una de ellas."""
+    cod = p.codigo
+    prm = p.params
+    if cod == "V-M01":
+        return _fmt(
+            QCoreApplication.translate("Textos", "Escribe un nombre de 1 a {maximo} caracteres."),
+            prm,
+            maximo=prm.get("maximo", str(LONG_NOMBRE_PERFIL)),
+        )
+    if cod == "V-M01.duplicado":
+        return QCoreApplication.translate("Textos", "Ya existe un perfil con ese nombre.")
+    if cod == "V-M03":
+        return _fmt(
+            QCoreApplication.translate("Textos", "Llegaste al máximo de {max} perfiles."),
+            prm,
+            max=prm.get("max", str(MAX_PERFILES_USUARIO)),
+        )
+    if cod == "V-M04":
+        if p.campo == "descripcion":
+            return _fmt(
+                QCoreApplication.translate(
+                    "Textos",
+                    "La descripción no es válida: máximo {maximo} caracteres y sin caracteres "
+                    "de control.",
+                ),
+                prm,
+                maximo=prm.get("maximo", str(LONG_DESCRIPCION)),
+            )
+        return QCoreApplication.translate("Textos", "El texto no es válido.")
+    if cod == "V-M05":
+        return QCoreApplication.translate(
+            "Textos", "Parece un token de acceso. No lo escribas aquí."
+        )
+    if cod == "V-M07":
+        return QCoreApplication.translate("Textos", "Falta el nombre.")
+    if cod == "V-M10":
+        filas = _lista_filas(prm.get("filas", ""))
+        if "vmid" in prm:
+            return _fmt(
+                QCoreApplication.translate(
+                    "Textos", "Las filas {filas} tienen el mismo número de máquina «{vmid}»."
+                ),
+                prm,
+                filas=filas,
+            )
+        return _fmt(
+            QCoreApplication.translate(
+                "Textos", "Las filas {filas} tienen el mismo nombre «{nombre}»."
+            ),
+            prm,
+            filas=filas,
+        )
+    if cod == "V-P07.version":
+        return _fmt(
+            QCoreApplication.translate(
+                "Textos", "Este perfil requiere Proxmox {version} o superior."
+            ),
+            prm,
+        )
+    if cod == "V-P07.cpu_host":
+        return QCoreApplication.translate(
+            "Textos",
+            "El tipo de CPU «host» impide mover la máquina entre nodos con procesadores distintos.",
+        )
+    return None
+
+
+def textos_perfiles_fabrica() -> dict[str, tuple[str, str]]:
+    """Nombre y descripción traducibles de los perfiles de fábrica (el núcleo no tiene textos)."""
+    return {
+        "fabrica.servidor-pequeno": (
+            QCoreApplication.translate("PerfilesFabrica", "Servidor pequeño"),
+            QCoreApplication.translate("PerfilesFabrica", "Para pruebas y servicios ligeros."),
+        ),
+        "fabrica.servidor-mediano": (
+            QCoreApplication.translate("PerfilesFabrica", "Servidor mediano"),
+            QCoreApplication.translate("PerfilesFabrica", "Para aplicaciones web."),
+        ),
+        "fabrica.base-de-datos": (
+            QCoreApplication.translate("PerfilesFabrica", "Base de datos"),
+            QCoreApplication.translate("PerfilesFabrica", "Para bases de datos."),
+        ),
+        "fabrica.servidor-grande": (
+            QCoreApplication.translate("PerfilesFabrica", "Servidor grande"),
+            QCoreApplication.translate("PerfilesFabrica", "Para cargas pesadas."),
+        ),
+        "fabrica.escritorio-compatible": (
+            QCoreApplication.translate("PerfilesFabrica", "Escritorio (hardware compatible)"),
+            QCoreApplication.translate(
+                "PerfilesFabrica",
+                "Para sistemas que aún no traen controladores virtio: disco SATA y tarjeta de "
+                "red Intel E1000.",
+            ),
+        ),
+        "fabrica.minimo": (
+            QCoreApplication.translate("PerfilesFabrica", "Mínimo"),
+            QCoreApplication.translate("PerfilesFabrica", "Disco y red básicos, para probar."),
+        ),
+    }
+
+
+def alias_columnas_csv() -> dict[str, str]:
+    """Encabezados del idioma activo -> columna canónica, para ``resolver_columnas``.
+
+    El parser acepta siempre los encabezados canónicos; además acepta estos (RNF-M04). En
+    español coinciden con los canónicos, así que no añaden nada nuevo.
+    """
+    return {
+        QCoreApplication.translate("ColumnasCsv", "nombre"): "nombre",
+        QCoreApplication.translate("ColumnasCsv", "perfil"): "perfil",
+        QCoreApplication.translate("ColumnasCsv", "vmid"): "vmid",
+        QCoreApplication.translate("ColumnasCsv", "nodo"): "nodo",
+        QCoreApplication.translate("ColumnasCsv", "cpu"): "cpu",
+        QCoreApplication.translate("ColumnasCsv", "sockets"): "sockets",
+        QCoreApplication.translate("ColumnasCsv", "memoria"): "memoria",
+        QCoreApplication.translate("ColumnasCsv", "disco"): "disco",
+        QCoreApplication.translate("ColumnasCsv", "almacenamiento"): "almacenamiento",
+        QCoreApplication.translate("ColumnasCsv", "red"): "red",
+        QCoreApplication.translate("ColumnasCsv", "vlan"): "vlan",
+        QCoreApplication.translate("ColumnasCsv", "modelo_red"): "modelo_red",
+        QCoreApplication.translate("ColumnasCsv", "firmware"): "firmware",
+        QCoreApplication.translate("ColumnasCsv", "tipo_cpu"): "tipo_cpu",
+    }
+
+
+# --- Textos de archivos, perfiles y filas de CSV (única fuente; antes en F4a) ---------------
+
+
+def texto_motivo_campo(motivo: MotivoCampo) -> str:
+    """Motivo de un campo inválido de un archivo, en lenguaje llano."""
+    textos: dict[MotivoCampo, Callable[[], str]] = {
+        MotivoCampo.REQUERIDO: lambda: QCoreApplication.translate("Textos", "falta"),
+        MotivoCampo.TIPO: lambda: QCoreApplication.translate("Textos", "tipo de dato incorrecto"),
+        MotivoCampo.RANGO: lambda: QCoreApplication.translate("Textos", "fuera de rango"),
+        MotivoCampo.LONGITUD: lambda: QCoreApplication.translate("Textos", "longitud no válida"),
+        MotivoCampo.ENUM: lambda: QCoreApplication.translate("Textos", "valor no admitido"),
+        MotivoCampo.TEXTO_NO_VALIDO: lambda: QCoreApplication.translate(
+            "Textos", "texto no válido"
+        ),
+        MotivoCampo.TOKEN: lambda: QCoreApplication.translate(
+            "Textos", "parece un token de acceso"
+        ),
+        MotivoCampo.DEMASIADOS: lambda: QCoreApplication.translate("Textos", "hay demasiados"),
+        MotivoCampo.DUPLICADO: lambda: QCoreApplication.translate("Textos", "está repetido"),
+    }
+    return textos[motivo]()
+
+
+def texto_error_campo(error: ErrorCampo) -> str:
+    """Una línea «ruta: motivo» para la lista de campos con problemas."""
+    return f"{error.ruta or '·'}: {texto_motivo_campo(error.motivo)}"
+
+
+def texto_aviso_archivo(aviso: AvisoArchivo) -> str:
+    """Aviso no bloqueante al leer un archivo (nunca incluye valores del usuario)."""
+    p = aviso.params
+    c = aviso.codigo
+    columna = p.get("columna", "")
+    if c == CodigoAvisoArchivo.CAMPOS_DESCONOCIDOS:
+        n = _entero_o(p.get("n"), 1)
+        if n == 1:
+            return QCoreApplication.translate(
+                "Textos", "Se ignoró 1 campo que ProxLaunch no conoce."
+            )
+        return QCoreApplication.translate(
+            "Textos", "Se ignoraron %n campos que ProxLaunch no conoce.", None, n
+        )
+    if c == CodigoAvisoArchivo.CREDENCIAL_IGNORADA:
+        return QCoreApplication.translate(
+            "Textos",
+            "El archivo traía datos que parecen una credencial. No se usaron. "
+            "Si eran reales, cámbialas.",
+        )
+    if c == CodigoAvisoArchivo.MIGRADO:
+        return QCoreApplication.translate(
+            "Textos",
+            "El archivo era de la versión {desde} del formato y se convirtió a la {hasta}.",
+        ).format(desde=p.get("desde", "?"), hasta=p.get("hasta", "?"))
+    if c == CodigoAvisoArchivo.COLUMNA_NO_USADA:
+        return QCoreApplication.translate(
+            "Textos", "La columna «{columna}» no se usa y se ignoró."
+        ).format(columna=columna)
+    if c == CodigoAvisoArchivo.GIB_ASUMIDO:
+        return QCoreApplication.translate(
+            "Textos",
+            "En la columna «{columna}» había números sin unidad: se entendieron como GiB.",
+        ).format(columna=columna)
+    if c == CodigoAvisoArchivo.DECIMAL_COMA:
+        return QCoreApplication.translate(
+            "Textos", "En la columna «{columna}» se usó la coma como separador decimal."
+        ).format(columna=columna)
+    return QCoreApplication.translate(
+        "Textos", "En la columna «{columna}», «GB» se tomó como GiB (1 GB = 1024 MiB)."
+    ).format(columna=columna)
+
+
+def _entero_o(valor: str | None, defecto: int) -> int:
+    try:
+        return int(valor) if valor is not None else defecto
+    except ValueError:
+        return defecto
+
+
+def texto_regla_perfil(regla: str, campo: str = "") -> str:
+    """Mensaje de una regla de perfil o de nombre (V-M01..V-M05 y reglas de capa 1)."""
+    if regla == "V-M01":
+        return QCoreApplication.translate(
+            "Textos", "Escribe un nombre de 1 a {maximo} caracteres."
+        ).format(maximo=LONG_NOMBRE_PERFIL)
+    if regla == "V-M01.duplicado":
+        return QCoreApplication.translate(
+            "Textos", "Ya existe un perfil con ese nombre. Elige otro."
+        )
+    if regla == "V-M02":
+        return QCoreApplication.translate("Textos", "El identificador del perfil no es válido.")
+    if regla == "V-M03":
+        return QCoreApplication.translate(
+            "Textos", "Llegaste al máximo de {maximo} perfiles. Elimina alguno para crear otro."
+        ).format(maximo=MAX_PERFILES_USUARIO)
+    if regla == "V-M04":
+        return QCoreApplication.translate(
+            "Textos", "El texto de «{campo}» no es válido. No uses caracteres especiales."
+        ).format(campo=campo or "·")
+    if regla == "V-M05":
+        return QCoreApplication.translate(
+            "Textos", "Parece un token de acceso. No lo escribas aquí."
+        )
+    return texto_problema(Problema(campo, regla, Severidad.ERROR, {}))
+
+
+def texto_fallo(error: ErrorProxLaunch) -> str:
+    """Mensaje de un error al operar con archivos o perfiles, listo para mostrar.
+
+    Añade la lista de campos con problemas a un archivo dañado (E-M04, CA-G03.3) y traduce
+    los rechazos internos del almacén de perfiles; el resto va a ``texto_error``.
+    """
+    if error.codigo == CodigoError.PERFIL_RECHAZADO:
+        return texto_regla_perfil(error.params.get("regla", ""), error.params.get("campo", ""))
+    base = texto_error(error)
+    if isinstance(error, ErrorArchivo) and error.errores:
+        maximo = 10
+        lineas = [texto_error_campo(e) for e in error.errores[:maximo]]
+        resto = len(error.errores) - maximo
+        if resto > 0:
+            lineas.append(QCoreApplication.translate("Textos", "y %n más", None, resto))
+        return base + "\n\n" + "\n".join(lineas)
+    return base
+
+
+def texto_resumen_perfil(config: ConfigPerfil) -> str:
+    """«2 núcleos · 4 GiB · 1 disco de 40 GiB» en lenguaje llano (CA-P09.1, CA-P11.2)."""
+    r = resumen_perfil(config)
+    if r.vcpus == 1:
+        nucleos = QCoreApplication.translate("Textos", "1 núcleo")
+    else:
+        nucleos = QCoreApplication.translate("Textos", "%n núcleos", None, r.vcpus)
+    mib = r.memoria_mib
+    memoria = f"{mib // 1024} GiB" if mib % 1024 == 0 else f"{mib} MiB"
+    if not r.discos_gib:
+        disco = QCoreApplication.translate("Textos", "sin disco")
+    elif len(r.discos_gib) == 1:
+        disco = QCoreApplication.translate("Textos", "1 disco de {gib} GiB").format(
+            gib=r.discos_gib[0]
+        )
+    else:
+        disco = QCoreApplication.translate(
+            "Textos", "%n discos", None, len(r.discos_gib)
+        ) + QCoreApplication.translate("Textos", " ({gib} GiB en total)").format(
+            gib=sum(r.discos_gib)
+        )
+    return f"{nucleos} · {memoria} · {disco}"
+
+
+SIMBOLO_ESTADO: dict[EstadoFila, str] = {
+    EstadoFila.CORRECTA: "✔",
+    EstadoFila.CON_AVISO: "⚠",
+    EstadoFila.CON_ERROR: "✖",
+}
+
+
+def texto_estado_fila(estado: EstadoFila) -> str:
+    """Nombre del estado de una fila, sin símbolo."""
+    if estado == EstadoFila.CORRECTA:
+        return QCoreApplication.translate("Textos", "Correcta")
+    if estado == EstadoFila.CON_AVISO:
+        return QCoreApplication.translate("Textos", "Con aviso")
+    return QCoreApplication.translate("Textos", "Con error")
+
+
+def texto_estado_con_simbolo(estado: EstadoFila) -> str:
+    """«✔ Correcta», «⚠ Con aviso» o «✖ Con error»."""
+    return f"{SIMBOLO_ESTADO[estado]} {texto_estado_fila(estado)}"
+
+
+def _texto_v_m08(p: ProblemaCelda) -> str:
+    prm = p.params
+    if prm.get("motivo") == "ambos":
+        return QCoreApplication.translate(
+            "Textos",
+            "«{valor}» mezcla punto y coma. Escribe el número sin separador de miles, "
+            "por ejemplo 1000.",
+        ).format(valor=prm.get("valor", p.valor))
+    return QCoreApplication.translate(
+        "Textos", "¿Quisiste decir mil o uno? Escribe {mil} o {uno}."
+    ).format(mil=prm.get("mil", "1000"), uno=prm.get("uno", "1"))
+
+
+def _texto_valor_no_admitido(p: ProblemaCelda) -> str:
+    prm = p.params
+    motivo = prm.get("motivo")
+    if motivo == "texto":
+        return QCoreApplication.translate(
+            "Textos",
+            "El texto de «{columna}» no es válido. No uses caracteres especiales.",
+        ).format(columna=p.columna or "·")
+    if motivo == "sin_disco_principal":
+        return QCoreApplication.translate(
+            "Textos", "Indicaste un almacenamiento, pero la fila no tiene disco."
+        )
+    if motivo == "sin_disco":
+        return QCoreApplication.translate(
+            "Textos", "Indicaste un almacenamiento, pero falta el tamaño de ese disco."
+        )
+    return QCoreApplication.translate(
+        "Textos", "«{valor}» no es un valor válido. Valores válidos: {validos}."
+    ).format(valor=p.valor, validos=prm.get("validos", prm.get("ejemplo", "")))
+
+
+def _texto_pista(p: ProblemaCelda) -> str:
+    prm = p.params
+    return texto_aviso_pista(
+        AvisoPista(
+            p.regla.partition(".")[2],
+            prm.get("pedido", ""),
+            prm.get("usado") or None,
+            prm.get("nodo", ""),
+        )
+    )
+
+
+def texto_problema_celda(p: ProblemaCelda, columnas: MapaColumnas | None = None) -> str:
+    """Mensaje del problema de una celda, sin número de fila ni columna (CA-C05.1/C05.9).
+
+    ``columnas`` permite saber qué campo del formulario originó una regla V-xx cuando el texto
+    depende de él (por ejemplo V-05 con sockets o con núcleos).
+    """
+    regla = p.regla
+    prm = p.params
+    if regla == "V-M06":
+        if prm.get("motivo") == "ambiguo":
+            return QCoreApplication.translate(
+                "Textos",
+                "Hay más de un perfil llamado «{nombre}». Escribe el nombre exacto.",
+            ).format(nombre=prm.get("nombre", p.valor))
+        return QCoreApplication.translate(
+            "Textos",
+            "No existe el perfil «{nombre}». Perfiles disponibles: {disponibles}.",
+        ).format(nombre=prm.get("nombre", p.valor), disponibles=prm.get("disponibles", ""))
+    if regla == "V-M07":
+        return QCoreApplication.translate("Textos", "Falta el nombre.")
+    if regla == "V-M08":
+        return _texto_v_m08(p)
+    if regla == "V-M09":
+        return QCoreApplication.translate(
+            "Textos", "Pides {gib} GiB de memoria. ¿Querías MiB?"
+        ).format(gib=prm.get("gib", "?"))
+    if regla == "V-M10":
+        if "vmid" in prm:
+            return QCoreApplication.translate(
+                "Textos", "Las filas {filas} tienen el mismo número de máquina «{valor}»."
+            ).format(filas=prm.get("filas", ""), valor=prm.get("vmid", p.valor))
+        return QCoreApplication.translate(
+            "Textos", "Las filas {filas} tienen el mismo nombre «{valor}»."
+        ).format(filas=prm.get("filas", ""), valor=prm.get("nombre", p.valor))
+    if regla == "V-M11":
+        return QCoreApplication.translate("Textos", "Parece una fila de ejemplo de la plantilla.")
+    if regla == "E-M11.no_numero":
+        return QCoreApplication.translate(
+            "Textos", "«{valor}» no es un número. Escribe, por ejemplo, {ejemplo}."
+        ).format(valor=p.valor, ejemplo=prm.get("ejemplo", "2"))
+    if regla == "E-M11.no_entero":
+        return QCoreApplication.translate(
+            "Textos", "«{valor}» no es un número entero. Escribe, por ejemplo, {ejemplo}."
+        ).format(valor=p.valor, ejemplo=prm.get("ejemplo", "2"))
+    if regla == "E-M11.mib_no_entero":
+        return QCoreApplication.translate(
+            "Textos",
+            "«{valor}» no da una cantidad entera de MiB. Escribe, por ejemplo, {ejemplo}.",
+        ).format(valor=p.valor, ejemplo=prm.get("ejemplo", "1024 MiB"))
+    if regla == "E-M11.gib_no_entero":
+        return QCoreApplication.translate(
+            "Textos",
+            "«{valor}» no da una cantidad entera de GiB. Escribe, por ejemplo, {ejemplo}.",
+        ).format(valor=p.valor, ejemplo=prm.get("ejemplo", "40"))
+    if regla == "E-M11.unidad":
+        return QCoreApplication.translate(
+            "Textos", "«{unidad}» no es una unidad válida. Usa {validas}."
+        ).format(unidad=prm.get("unidad", p.valor), validas=prm.get("validas", "MiB, GiB, TiB"))
+    if regla == "E-M11.valor_no_admitido":
+        return _texto_valor_no_admitido(p)
+    if regla in ("pista.storage", "pista.storage_efi", "pista.bridge"):
+        return _texto_pista(p)
+    if regla == "V-L11":
+        return QCoreApplication.translate(
+            "Textos", "Ningún nodo del servidor puede alojar esta máquina."
+        )
+    if regla == "V-04":
+        if prm.get("motivo") == "no_existe":
+            return QCoreApplication.translate("Textos", "El nodo no existe en este servidor.")
+        if prm.get("motivo") == "sin_conexion":
+            return QCoreApplication.translate("Textos", "El nodo está sin conexión.")
+    campo = ""
+    if columnas is not None and p.columna is not None:
+        if p.columna == columnas.encabezados.get("sockets"):
+            campo = "sockets"
+        elif p.columna == columnas.encabezados.get("cpu"):
+            campo = "cores"
+    return texto_problema(Problema(campo, regla, p.severidad, dict(p.params)))
+
+
+def texto_linea_problema(p: ProblemaCelda, columnas: MapaColumnas | None = None) -> str:
+    """«Fila 7, columna «memoria»: «abc» no es un número. Escribe, por ejemplo, 4.» (CA-C05.1)."""
+    detalle = _con_punto(texto_problema_celda(p, columnas))
+    if p.columna:
+        return QCoreApplication.translate(
+            "Textos", "Fila {fila}, columna «{columna}»: {detalle}"
+        ).format(fila=p.fila, columna=p.columna, detalle=detalle)
+    return QCoreApplication.translate("Textos", "Fila {fila}: {detalle}").format(
+        fila=p.fila, detalle=detalle
+    )
+
+
+def traductor_para_archivo(columnas: MapaColumnas) -> Callable[[ProblemaCelda], str]:
+    """``traducir`` de ``escribir_filas_con_error``: «columna»: detalle (RF-C12)."""
+
+    def traducir(p: ProblemaCelda) -> str:
+        detalle = _con_punto(texto_problema_celda(p, columnas))
+        return f"«{p.columna}»: {detalle}" if p.columna else detalle
+
+    return traducir
+
+
+def texto_desajuste(d: Desajuste) -> str:
+    """Descripción llana de un valor de un lote cargado que el servidor no tiene (E-M15)."""
+    if d.tipo == TipoDesajuste.STORAGE:
+        return QCoreApplication.translate(
+            "Textos", "El almacenamiento «{valor}» no existe en este servidor o no admite discos."
+        ).format(valor=d.valor)
+    if d.tipo == TipoDesajuste.STORAGE_EFI:
+        return QCoreApplication.translate(
+            "Textos",
+            "El almacenamiento «{valor}» para la configuración UEFI no existe en este "
+            "servidor o no admite discos.",
+        ).format(valor=d.valor)
+    if d.tipo == TipoDesajuste.BRIDGE:
+        return QCoreApplication.translate(
+            "Textos", "La red «{valor}» no existe en este servidor."
+        ).format(valor=d.valor)
+    return QCoreApplication.translate(
+        "Textos", "El nodo «{valor}» no existe o está sin conexión."
+    ).format(valor=d.valor)

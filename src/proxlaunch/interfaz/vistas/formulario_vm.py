@@ -32,7 +32,7 @@ from proxlaunch.interfaz.vistas.campos import (
     mensaje,
     poner_mensaje,
 )
-from proxlaunch.interfaz.vistas.tabla_discos import TablaDiscos, entero_o_cero
+from proxlaunch.interfaz.vistas.tabla_discos import TablaDiscos, entero_o_cero, texto_ausente
 from proxlaunch.interfaz.vistas.tabla_redes import TablaRedes
 from proxlaunch.nucleo.errores import ErrorProxLaunch
 from proxlaunch.nucleo.modelos.inventario import Inventario
@@ -93,6 +93,8 @@ class FormularioVM(QWidget):
         self._vmid_ocupado: tuple[int, str | None] | None = None
         # Registro de widgets avanzados: (widget, condición extra de visibilidad).
         self._avanzados: list[tuple[QWidget, Callable[[], bool]]] = []
+        # Storage de UEFI cargado de un lote o perfil que el nodo no tiene (CA-G04.3).
+        self._efi_ausente: str | None = None
 
         capa = QVBoxLayout(self)
         capa.setContentsMargins(0, 0, 0, 0)
@@ -174,7 +176,7 @@ class FormularioVM(QWidget):
         g.addWidget(self.fila_firmware)
         g.addWidget(self.fila_efi)
         self.combo_firmware.currentIndexChanged.connect(self._al_cambiar_firmware)
-        self.combo_efi.currentIndexChanged.connect(lambda _i: self._al_editar(self.fila_efi))
+        self.combo_efi.currentIndexChanged.connect(self._al_cambiar_efi)
 
     def _construir_computo(self, capa: QVBoxLayout) -> None:
         g = self._grupo(self.tr("Cómputo"), capa)
@@ -322,6 +324,73 @@ class FormularioVM(QWidget):
         self._aplicar_modo()
         self.cambiado.emit()
 
+    def aplicar_hardware(self, cfg: ConfiguracionVM) -> None:
+        """Aplica SOLO el hardware de ``cfg`` (perfil de máquina o lote guardado).
+
+        No toca el nombre, el VMID, el nodo ni sus marcas de «tocado». Un almacenamiento o una
+        red que el nodo no tiene se muestran como «x (no existe)» con error, nunca se sustituyen
+        en silencio (CA-G04.3); el usuario debe elegir otro.
+        """
+        self._ocupado = True
+        try:
+            self.combo_firmware.setCurrentIndex(max(self.combo_firmware.findData(cfg.firmware), 0))
+            self.combo_sockets.setCurrentIndex(max(self.combo_sockets.findData(cfg.sockets), 0))
+            self.cores.setText(str(cfg.cores))
+            idx = self.combo_cpu.findData(cfg.tipo_cpu)
+            if idx < 0:
+                self.combo_cpu.addItem(cfg.tipo_cpu, cfg.tipo_cpu)
+                idx = self.combo_cpu.count() - 1
+            self.combo_cpu.setCurrentIndex(idx)
+            self.memoria.setText(mib_a_texto_gib(cfg.memoria_mib))
+            if cfg.ballooning is None:
+                self.combo_balloon.setCurrentIndex(0)
+            else:
+                self.combo_balloon.setCurrentIndex(1 if cfg.ballooning.activo else 2)
+                if cfg.ballooning.activo:
+                    self.balloon_min.setText(mib_a_texto_gib(cfg.ballooning.minimo_mib))
+            self.chk_sin_disco.setChecked(not cfg.con_disco)
+            self.combo_ctrl.setCurrentIndex(max(self.combo_ctrl.findData(cfg.controlador_scsi), 0))
+            self.tabla_discos.establecer_controlador(cfg.controlador_scsi)
+            self.tabla_discos.establecer_discos(cfg.discos, conservar_ausentes=True)
+            self.tabla_redes.establecer_redes(cfg.redes, conservar_ausentes=True)
+            self._efi_ausente = None
+            self._poblar_efi(cfg.storage_efi, conservar_ausente=True)
+            self._actualizar_total_cpu()
+            self._actualizar_sin_disco()
+            self._actualizar_nodo()
+            self._avisar_ausentes()
+        finally:
+            self._ocupado = False
+        self._aplicar_modo()
+        self.cambiado.emit()
+
+    def _avisar_ausentes(self) -> None:
+        """Avisa de cada valor cargado que el nodo actual no tiene (siguen marcados como error)."""
+        nodo = self._nodo_actual
+        self.tabla_discos.mostrar_aviso_nodo(
+            "\n".join(
+                self.tr(
+                    "El almacenamiento «{recurso}» no existe en el nodo «{nodo}». Elige otro."
+                ).format(recurso=sid, nodo=nodo)
+                for sid in self.tabla_discos.valores_ausentes()
+            )
+        )
+        self.tabla_redes.mostrar_aviso_nodo(
+            "\n".join(
+                self.tr("La red «{recurso}» no existe en el nodo «{nodo}». Elige otra.").format(
+                    recurso=b, nodo=nodo
+                )
+                for b in self.tabla_redes.valores_ausentes()
+            )
+        )
+        self.fila_efi.mostrar_aviso(
+            self.tr(
+                "El almacenamiento de UEFI «{recurso}» no existe en el nodo «{nodo}». Elige otro."
+            ).format(recurso=self._efi_ausente, nodo=nodo)
+            if self._efi_ausente
+            else None
+        )
+
     def _aplicar_configuracion_interna(
         self, cfg: ConfiguracionVM, motivo: MotivoNodo | None, error: ErrorProxLaunch | None
     ) -> None:
@@ -385,6 +454,45 @@ class FormularioVM(QWidget):
             controlador_scsi=ControladorScsi(self.combo_ctrl.currentData()),
             redes=self.tabla_redes.redes(),
         )
+
+    def campos_no_numericos(self) -> list[str]:
+        """Campos numéricos cuyo texto no es un número: el lote no se puede guardar así.
+
+        Devuelve los nombres que ve el usuario («Núcleos por socket», «scsi0»…). Un texto no
+        numérico se leería como 0 y se guardaría un valor que el usuario nunca escribió.
+        """
+        malos: list[str] = []
+
+        def revisar(texto: str, nombre: str, *, decimal: bool = False) -> None:
+            try:
+                if decimal:
+                    float(texto.strip().replace(",", "."))
+                else:
+                    int(texto.strip())
+            except ValueError:
+                malos.append(nombre)
+
+        if not self._modo_lote:
+            revisar(self.vmid.text(), self.tr("Número de máquina (VMID)"))
+        revisar(self.cores.text(), self.tr("Núcleos por socket"))
+        revisar(self.memoria.text(), self.tr("Memoria (GiB)"), decimal=True)
+        if self.combo_balloon.currentData() is True:
+            revisar(self.balloon_min.text(), self.tr("Memoria mínima (GiB)"), decimal=True)
+        if not self.chk_sin_disco.isChecked():
+            malos.extend(
+                self.tr("Tamaño del disco {n}").format(n=n)
+                for n in self.tabla_discos.tamanos_no_numericos()
+            )
+        malos.extend(
+            self.tr("VLAN de {n}").format(n=n) for n in self.tabla_redes.vlan_no_numericas()
+        )
+        return malos
+
+    def establecer_nombre(self, nombre: str) -> None:
+        """Pone el nombre de la máquina (lote guardado de una sola máquina con nombre propio)."""
+        self.nombre.setText(nombre)
+        self.fila_nombre.marcar_tocado()
+        self.cambiado.emit()
 
     def nodo_efectivo(self) -> str:
         """Nodo que se usará (el manual, el que eligió Automático o el único)."""
@@ -517,18 +625,33 @@ class FormularioVM(QWidget):
                 self._ocupado = False
             self.cambiado.emit()
 
-    def _poblar_efi(self, seleccionado: str | None) -> None:
+    def _poblar_efi(self, seleccionado: str | None, *, conservar_ausente: bool = False) -> None:
         inv = self._inv
         self.combo_efi.blockSignals(True)
         self.combo_efi.clear()
         self.combo_efi.addItem(self.tr("Automático (el del primer disco)"), None)
+        activos: set[str] = set()
         if inv is not None:
             for s in inv.storages.get(self._nodo_actual, ()):
                 if s.activo:
                     self.combo_efi.addItem(s.id, s.id)
+                    activos.add(s.id)
+        if conservar_ausente and seleccionado and seleccionado not in activos:
+            self._efi_ausente = seleccionado
+        if self._efi_ausente and self._efi_ausente not in activos:
+            self.combo_efi.addItem(texto_ausente(self._efi_ausente), self._efi_ausente)
+            self.combo_efi.model().item(self.combo_efi.count() - 1).setEnabled(False)
+        elif self._efi_ausente in activos:
+            self._efi_ausente = None
         idx = self.combo_efi.findData(seleccionado) if seleccionado else 0
         self.combo_efi.setCurrentIndex(max(idx, 0))
         self.combo_efi.blockSignals(False)
+
+    def _al_cambiar_efi(self, _i: int) -> None:
+        if self._efi_ausente and self.combo_efi.currentData() != self._efi_ausente:
+            self._efi_ausente = None
+            self.fila_efi.mostrar_aviso(None)
+        self._al_editar(self.fila_efi)
 
     def _actualizar_sin_disco(self) -> None:
         """CA-11.9: sin almacenamiento para discos solo se puede crear «sin disco»."""

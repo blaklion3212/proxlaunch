@@ -37,6 +37,11 @@ def vlan_desde_texto(texto: str) -> int | None:
         return 0
 
 
+def texto_ausente(valor: str) -> str:
+    """«x (no existe)»: la red cargada de un archivo que este nodo no tiene (CA-G04.3)."""
+    return QCoreApplication.translate("TablaRedes", "{id} (no existe)").format(id=valor)
+
+
 class _FilaRed:
     def __init__(self) -> None:
         self.indice = QLabel()
@@ -50,6 +55,9 @@ class _FilaRed:
         self.modelo.addItem("VirtIO", ModeloRed.VIRTIO)
         self.modelo.addItem("Intel E1000", ModeloRed.E1000)
         self.perdido: str | None = None  # selección pedida que no existe en el nodo
+        # Bridge cargado de un lote o perfil que el nodo no tiene: se muestra «x (no existe)»
+        # con error hasta que el usuario elija otro (nunca se sustituye en silencio).
+        self.ausente: str | None = None
         self.vlan = QLineEdit()
         self.vlan.setMaximumWidth(80)
         self.vlan.setPlaceholderText(QCoreApplication.translate("TablaRedes", "Sin VLAN"))
@@ -130,7 +138,14 @@ class TablaRedes(QWidget):
             idx = f.bridge.findData(previo) if previo else -1
             f.bridge.setCurrentIndex(idx)
             f.perdido = str(previo) if idx < 0 and previo else None
-            if idx < 0 and previo:
+            if previo and previo == f.ausente:
+                # El valor cargado sigue sin existir en este nodo: se sigue mostrando.
+                if idx >= 0 and previo in {b.nombre for b in self._bridges}:
+                    f.ausente = None
+                else:
+                    f.perdido = str(previo)
+                    perdidos.append(str(previo))
+            elif idx < 0 and previo:
                 perdidos.append(str(previo))
         self._agregar.setEnabled(bool(self._bridges))
         poner_mensaje(
@@ -144,13 +159,38 @@ class TablaRedes(QWidget):
         self.cambiado.emit()
         return perdidos
 
-    def establecer_redes(self, redes: Sequence[InterfazRed]) -> None:
+    def establecer_redes(
+        self, redes: Sequence[InterfazRed], *, conservar_ausentes: bool = False
+    ) -> None:
+        """Sustituye las filas por las redes dadas.
+
+        Con ``conservar_ausentes`` (carga de un lote o perfil) un bridge que el nodo no tiene
+        se muestra como «x (no existe)» y sigue siendo el valor de la interfaz: la validación lo
+        marca y no se crea nada hasta que el usuario elija otro (CA-G04.3).
+        """
         for f in list(self._filas):
             self._quitar_fila(f, emitir=False)
         for r in redes:
-            self._nueva_fila(r)
+            self._nueva_fila(r, conservar_ausente=conservar_ausentes)
         self._renumerar()
         self.cambiado.emit()
+
+    def vlan_no_numericas(self) -> list[str]:
+        """Etiquetas («net0»…) de las interfaces cuya VLAN escrita no es un número entero."""
+        malas: list[str] = []
+        for f in self._filas:
+            texto = f.vlan.text().strip()
+            if not texto:
+                continue
+            try:
+                int(texto)
+            except ValueError:
+                malas.append(f.indice.text())
+        return malas
+
+    def valores_ausentes(self) -> list[str]:
+        """Bridges cargados que el nodo actual no tiene y siguen sin reemplazar."""
+        return list(dict.fromkeys(f.ausente for f in self._filas if f.ausente))
 
     def agregar_red(self, red: InterfazRed | None = None) -> None:
         if red is None:
@@ -210,10 +250,15 @@ class TablaRedes(QWidget):
         f.bridge.setPlaceholderText(QCoreApplication.translate("TablaRedes", "Elige una red"))
         for b in self._bridges:
             f.bridge.addItem(b.nombre, b.nombre)
+        if f.ausente and f.ausente not in {b.nombre for b in self._bridges}:
+            f.bridge.addItem(texto_ausente(f.ausente), f.ausente)
+            f.bridge.model().item(f.bridge.count() - 1).setEnabled(False)
         f.bridge.blockSignals(False)
 
-    def _nueva_fila(self, red: InterfazRed) -> None:
+    def _nueva_fila(self, red: InterfazRed, *, conservar_ausente: bool = False) -> None:
         f = _FilaRed()
+        if conservar_ausente and red.bridge and red.bridge not in {b.nombre for b in self._bridges}:
+            f.ausente = red.bridge
         self._llenar_bridge(f)
         f.bridge.setCurrentIndex(f.bridge.findData(red.bridge))
         f.modelo.setCurrentIndex(max(f.modelo.findData(red.modelo), 0))
@@ -231,6 +276,8 @@ class TablaRedes(QWidget):
     def _al_cambiar_bridge(self, f: _FilaRed) -> None:
         if f.bridge.currentIndex() >= 0:
             f.perdido = None  # el usuario eligió otro valor
+            if f.bridge.currentData() != f.ausente:
+                f.ausente = None
         self.cambiado.emit()
 
     def _quitar_fila(self, f: _FilaRed, *, emitir: bool = True) -> None:

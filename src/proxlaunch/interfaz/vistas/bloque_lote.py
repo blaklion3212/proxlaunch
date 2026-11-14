@@ -8,6 +8,7 @@ y etiquetas. Los errores V-L salen junto a su campo.
 
 from __future__ import annotations
 
+import dataclasses
 from collections.abc import Callable, Sequence
 
 from PySide6.QtCore import QCoreApplication, Signal
@@ -77,6 +78,10 @@ class BloqueLote(QGroupBox):
         self._avanzados: list[tuple[QWidget, Callable[[], bool]]] = []
         self._solo_lote: list[QWidget] = []
         self._filas: dict[str, FilaCampo] = {}
+        # Lote por filas (D-22): la definición con sus filas; ``None`` = lote homogéneo.
+        self._base_por_filas: DefinicionLote | None = None
+        # Nodos de un lote cargado que el servidor no tiene (se muestran, no se descartan).
+        self._nodos_ausentes: list[str] = []
 
         capa = QVBoxLayout(self)
         capa.setSpacing(4)
@@ -273,7 +278,12 @@ class BloqueLote(QGroupBox):
     @property
     def es_lote(self) -> bool:
         """Más de una máquina: se usan nombres, destino y resumen del lote."""
-        return self.cantidad_valor() > 1
+        return self._base_por_filas is not None or self.cantidad_valor() > 1
+
+    @property
+    def es_por_filas(self) -> bool:
+        """Lote por filas (CSV o archivo): cantidad, nombres y destino los fijan las filas."""
+        return self._base_por_filas is not None
 
     def establecer_cantidad(self, n: int) -> None:
         """Cambia la cantidad por código (por ejemplo «Reducir a N»)."""
@@ -283,6 +293,8 @@ class BloqueLote(QGroupBox):
 
     def cantidad_valor(self) -> int:
         """Cantidad escrita; 0 si el texto no es un número (V-L01 lo rechaza)."""
+        if self._base_por_filas is not None:
+            return self._base_por_filas.cantidad
         t = self.cantidad.text().strip()
         try:
             return int(t)
@@ -290,8 +302,13 @@ class BloqueLote(QGroupBox):
             return 0
 
     def _aplicar_visibilidad(self) -> None:
-        lote = self.es_lote or self.cantidad_valor() > MAX_LOTE
         cluster = self._inv is not None and self._inv.topologia.es_cluster
+        if self._base_por_filas is not None:
+            self._visibilidad_por_filas(cluster)
+            return
+        self.setVisible(True)
+        self._filas["cantidad"].setVisible(True)
+        lote = self.es_lote or self.cantidad_valor() > MAX_LOTE
         for w in self._solo_lote:
             w.setVisible(lote)
         for w, cond in self._avanzados:
@@ -311,9 +328,23 @@ class BloqueLote(QGroupBox):
         self.combo_nodo.setEnabled(self._radio_un_nodo.isChecked())
         self._actualizar_vista_previa()
 
+    def _visibilidad_por_filas(self, cluster: bool) -> None:
+        """Por filas se oculta lo que fijan las filas; quedan reparto, VMID inicial y etiquetas."""
+        self.setVisible(self._avanzado)  # en básico no queda nada que mostrar
+        self._filas["cantidad"].setVisible(False)
+        for w in self._solo_lote:
+            w.setVisible(False)
+        for w, _cond in self._avanzados:
+            w.setVisible(False)
+        self._filas["vmid_inicial"].setVisible(self._avanzado)
+        self.fila_algoritmo.setVisible(self._avanzado and cluster)
+        self._fila_etiquetar.setVisible(self._avanzado)
+        self._vista_previa.hide()
+
     def establecer_inventario(self, inv: Inventario) -> None:
         """Carga los nodos del servidor; conserva la elección si el nodo sigue existiendo."""
         self._inv = inv
+        estaba_ocupado = self._ocupado
         self._ocupado = True
         try:
             previo = self.combo_nodo.currentData()
@@ -337,13 +368,132 @@ class BloqueLote(QGroupBox):
                 if not n.en_linea:
                     modelo = self.combo_nodo.model()
                     modelo.item(self.combo_nodo.count() - 1).setEnabled(False)
+            existentes = {n.nombre for n in inv.topologia.nodos}
+            self._nodos_ausentes = [n for n in self._nodos_ausentes if n not in existentes]
+            for nodo in self._nodos_ausentes:
+                self._agregar_nodo_ausente(nodo, marcado=True)
             idx = self.combo_nodo.findData(previo) if previo else -1
             if idx < 0:
                 idx = next((i for i, n in enumerate(inv.topologia.nodos) if n.en_linea), -1)
             self.combo_nodo.setCurrentIndex(idx)
         finally:
-            self._ocupado = False
+            self._ocupado = estaba_ocupado
         self._aplicar_visibilidad()
+
+    def _agregar_nodo_ausente(self, nodo: str, *, marcado: bool) -> None:
+        """Un nodo del lote cargado que el servidor no tiene: visible, marcado y deshabilitado."""
+        texto = QCoreApplication.translate("BloqueLote", "{nodo} (no existe)").format(nodo=nodo)
+        self.combo_nodo.addItem(texto, nodo)
+        self.combo_nodo.model().item(self.combo_nodo.count() - 1).setEnabled(False)
+        check = QCheckBox(texto)
+        check.setEnabled(False)
+        check.setChecked(marcado)
+        self._capa_nodos.addWidget(check)
+        self._checks_nodos[nodo] = check
+
+    # --- Carga de una definición (lote guardado, RF-G03) ------------------------------
+
+    def establecer_definicion(self, definicion: DefinicionLote) -> None:
+        """Rellena el bloque con la definición de un lote guardado (carga atómica, RNF-M11).
+
+        Homogéneo: cantidad, patrón, VMID inicial, destino, reparto y etiquetas. Por filas:
+        entra en modo «por filas» (ver ``establecer_por_filas``). La plantilla de hardware la
+        aplica quien llama con ``FormularioVM.aplicar_hardware``. No dispara ningún cálculo:
+        emite ``cambiado`` y ``destino_cambiado`` una sola vez al final.
+        """
+        if definicion.es_por_filas:
+            self.establecer_por_filas(definicion)
+            return
+        self._base_por_filas = None
+        self._ocupado = True
+        try:
+            self.cantidad.setText(str(definicion.cantidad))
+            patron = definicion.patron
+            self.prefijo.setText(patron.prefijo)
+            i = self.combo_separador.findData(patron.separador)
+            if i < 0:
+                self.combo_separador.addItem(patron.separador, patron.separador)
+                i = self.combo_separador.count() - 1
+            self.combo_separador.setCurrentIndex(i)
+            self.inicio.setText(str(patron.inicio))
+            self.relleno.setText(str(patron.relleno))
+            self.vmid_inicial.setText(
+                "" if definicion.vmid_inicial is None else str(definicion.vmid_inicial)
+            )
+            self.chk_etiquetar.setChecked(definicion.etiquetar)
+            self._aplicar_destino(definicion.destino)
+        finally:
+            self._ocupado = False
+        for fila in self._filas.values():
+            fila.marcar_tocado()
+        self._aplicar_visibilidad()
+        self.destino_cambiado.emit()
+        self.cambiado.emit()
+
+    def _aplicar_destino(self, destino: Destino) -> None:
+        indice = self.combo_algoritmo.findData(destino.algoritmo)
+        self.combo_algoritmo.setCurrentIndex(max(indice, 0))
+        # Se descartan los nodos ausentes anteriores y se muestran los de este destino.
+        existentes = (
+            {n.nombre for n in self._inv.topologia.nodos} if self._inv is not None else set()
+        )
+        self._nodos_ausentes = [n for n in destino.nodos if n not in existentes]
+        if self._inv is not None:
+            self.establecer_inventario(self._inv)
+        if destino.modo == ModoDestino.UN_NODO:
+            self._radio_un_nodo.setChecked(True)
+            if destino.nodos:
+                j = self.combo_nodo.findData(destino.nodos[0])
+                if j < 0:
+                    self._agregar_nodo_ausente(destino.nodos[0], marcado=False)
+                    j = self.combo_nodo.findData(destino.nodos[0])
+                self.combo_nodo.setCurrentIndex(j)
+        elif destino.modo == ModoDestino.NODOS_ELEGIDOS:
+            self._radio_elegidos.setChecked(True)
+            for nombre, check in self._checks_nodos.items():
+                check.setChecked(nombre in destino.nodos)
+        else:
+            self._radio_auto.setChecked(True)
+
+    def establecer_por_filas(self, definicion: DefinicionLote) -> None:
+        """Entra en modo «por filas» (D-22): oculta cantidad, nombres y destino (CA-C01.3).
+
+        Quedan el algoritmo de reparto (avanzado), el VMID inicial de las filas sin VMID y las
+        etiquetas. Las filas mismas se muestran en ``PanelLoteFilas``.
+        """
+        self._ocupado = True
+        try:
+            self._base_por_filas = definicion
+            self.vmid_inicial.setText(
+                "" if definicion.vmid_inicial is None else str(definicion.vmid_inicial)
+            )
+            self.chk_etiquetar.setChecked(definicion.etiquetar)
+            indice = self.combo_algoritmo.findData(definicion.destino.algoritmo)
+            self.combo_algoritmo.setCurrentIndex(max(indice, 0))
+            self._radio_auto.setChecked(True)
+        finally:
+            self._ocupado = False
+        for fila in self._filas.values():
+            fila.marcar_tocado()
+        self._aplicar_visibilidad()
+        self.destino_cambiado.emit()
+        self.cambiado.emit()
+
+    def actualizar_filas(self, definicion: DefinicionLote) -> None:
+        """Cambia las filas del lote por filas (por ejemplo tras quitar las que no caben)."""
+        self._base_por_filas = definicion
+        self._aplicar_visibilidad()
+        self.cambiado.emit()
+
+    def salir_de_por_filas(self) -> None:
+        """Vuelve al lote homogéneo (cantidad 1) con los demás valores como estaban."""
+        if self._base_por_filas is None:
+            return
+        self._base_por_filas = None
+        self.cantidad.setText("1")
+        self._aplicar_visibilidad()
+        self.destino_cambiado.emit()
+        self.cambiado.emit()
 
     # --- Lectura ----------------------------------------------------------------------
 
@@ -376,8 +526,22 @@ class BloqueLote(QGroupBox):
         return d.nodos[0] if d.modo == ModoDestino.UN_NODO and d.nodos else ""
 
     def definicion(self, plantilla: ConfiguracionVM) -> DefinicionLote:
-        """Lote que describe el bloque con la configuración del formulario como plantilla."""
+        """Lote que describe el bloque con la configuración del formulario como plantilla.
+
+        Por filas devuelve las filas cargadas con los ajustes actuales del bloque (algoritmo,
+        VMID inicial, etiquetas); la ``plantilla`` del formulario no se usa (D-22).
+        """
         texto_vmid = self.vmid_inicial.text().strip()
+        base = self._base_por_filas
+        if base is not None:
+            return dataclasses.replace(
+                base,
+                destino=Destino(
+                    ModoDestino.AUTOMATICO, (), Algoritmo(self.combo_algoritmo.currentData())
+                ),
+                vmid_inicial=_entero(texto_vmid, 0) if texto_vmid else None,
+                etiquetar=self.chk_etiquetar.isChecked(),
+            )
         return DefinicionLote(
             plantilla=plantilla,
             cantidad=self.cantidad_valor(),
@@ -389,6 +553,8 @@ class BloqueLote(QGroupBox):
 
     def nombres_previstos(self) -> list[str]:
         """Todos los nombres si el patrón es válido; lista vacía si no."""
+        if self._base_por_filas is not None:
+            return []
         n = self.cantidad_valor()
         if not 1 <= n <= MAX_LOTE:
             return []

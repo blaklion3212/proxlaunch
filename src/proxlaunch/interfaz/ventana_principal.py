@@ -2,8 +2,11 @@
 
 from __future__ import annotations
 
+import contextlib
+import copy
 import dataclasses
 import logging
+import re
 import secrets
 from collections.abc import Callable
 from dataclasses import dataclass, field
@@ -29,27 +32,46 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
+from proxlaunch import __version__
+from proxlaunch.interfaz.archivos_ui import (
+    TipoArchivo,
+    descargar_plantilla,
+    elegir_para_abrir,
+    elegir_para_guardar,
+)
 from proxlaunch.interfaz.dialogos.acerca_de import DialogoAcercaDe
 from proxlaunch.interfaz.dialogos.conexion import DialogoConexion
 from proxlaunch.interfaz.dialogos.confirmar import confirmar
 from proxlaunch.interfaz.dialogos.deshacer import DialogoDeshacer
+from proxlaunch.interfaz.dialogos.guardar_lote import AccionGuardarLote, DialogoGuardarLote
+from proxlaunch.interfaz.dialogos.guardar_perfil import DialogoGuardarPerfil
 from proxlaunch.interfaz.dialogos.guia_token import DialogoGuiaToken
+from proxlaunch.interfaz.dialogos.importar_csv import DialogoImportarCsv
 from proxlaunch.interfaz.dialogos.informe import DialogoInforme
+from proxlaunch.interfaz.dialogos.lote_no_encaja import PanelLoteNoEncaja
 from proxlaunch.interfaz.dialogos.pausa_lote import AccionPausa, DialogoPausaLote
+from proxlaunch.interfaz.dialogos.perfiles_maquina import DialogoPerfilesMaquina
 from proxlaunch.interfaz.informe_lote import (
     guardar_informe_parcial,
+    nombre_archivo_csv_sugerido,
     tomar_aviso_informe_parcial,
 )
 from proxlaunch.interfaz.modelos_tabla import texto_aviso_entrada
 from proxlaunch.interfaz.tema import GestorTema, ModoTema
 from proxlaunch.interfaz.textos import (
+    alias_columnas_csv,
     privilegio_faltante_critico,
     texto_aviso,
+    texto_aviso_archivo,
+    texto_aviso_pista,
     texto_desenlace,
     texto_error,
     texto_existe_sin_confirmar,
+    texto_fallo,
     texto_motivo_nodo,
+    texto_problema,
     texto_problema_lote,
+    textos_perfiles_fabrica,
 )
 from proxlaunch.interfaz.trabajadores import (
     Lanzador,
@@ -63,6 +85,9 @@ from proxlaunch.interfaz.trabajadores import (
     descubrir_y_comprobar_permisos,
     deshacer_lotes,
     ejecutar_lote,
+    escribir_informe_csv,
+    guardar_lote_guardado,
+    leer_lote_guardado,
     planificar_lote,
     reanudar_seguimiento,
     recargar_nodo,
@@ -76,10 +101,14 @@ from proxlaunch.interfaz.vistas.bloque_lote import BloqueLote
 from proxlaunch.interfaz.vistas.campos import mensaje, poner_mensaje
 from proxlaunch.interfaz.vistas.detalles_tecnicos import texto_detalles
 from proxlaunch.interfaz.vistas.formulario_vm import FormularioVM
+from proxlaunch.interfaz.vistas.lote_filas import PanelLoteFilas, texto_titulo_filas
 from proxlaunch.interfaz.vistas.progreso import PanelProgreso
 from proxlaunch.interfaz.vistas.progreso_lote import FaseLote, ProgresoLote, texto_barra
-from proxlaunch.interfaz.vistas.resumen import ResumenVM
+from proxlaunch.interfaz.vistas.resumen import ResumenVM, nombre_campo
 from proxlaunch.interfaz.vistas.resumen_lote import ResumenLote
+from proxlaunch.interfaz.vistas.selector_perfil import PanelAvisos, SelectorPerfil
+from proxlaunch.nucleo.csv_importacion.interpretacion import filas_lote, interpretar
+from proxlaunch.nucleo.csv_importacion.modelos import ResultadoImportacion, TablaCsv
 from proxlaunch.nucleo.errores import CodigoError, ErrorProxLaunch
 from proxlaunch.nucleo.lote.constantes import (
     ACTUALIZACIONES_POR_S,
@@ -89,11 +118,19 @@ from proxlaunch.nucleo.lote.constantes import (
     UMBRAL_CONFIRMACION_DOBLE,
     UMBRAL_PAUSA_ERRORES,
 )
+from proxlaunch.nucleo.lote.filas import (
+    definicion_para_reintento,
+    definicion_por_filas,
+    reemplazar_fila,
+    sin_filas,
+    usa_nombre_de_plantilla,
+)
 from proxlaunch.nucleo.lote.informe import construir_informe, informe_desde_entradas
 from proxlaunch.nucleo.lote.libro import Libro
 from proxlaunch.nucleo.lote.modelos import (
     ESTADOS_DUDOSOS,
     ESTADOS_EN_CURSO,
+    Algoritmo,
     CandidatoRollback,
     DefinicionLote,
     Destino,
@@ -114,9 +151,21 @@ from proxlaunch.nucleo.lote.modelos import (
 from proxlaunch.nucleo.lote.motor import ControlLote
 from proxlaunch.nucleo.lote.reconciliacion import AVISO_CREADA_TRAS_COMPROBAR
 from proxlaunch.nucleo.lote.rollback import ServicioRollback
+from proxlaunch.nucleo.lotes_guardados.formato import lote_a_dict
+from proxlaunch.nucleo.lotes_guardados.modelos import LoteGuardado
+from proxlaunch.nucleo.lotes_guardados.revalidacion import Desajuste, desajustes, sustituir
 from proxlaunch.nucleo.modelos.inventario import Inventario
 from proxlaunch.nucleo.modelos.tarea import Desenlace, Etapa, ResultadoCreacion
 from proxlaunch.nucleo.modelos.vm import ConfiguracionVM
+from proxlaunch.nucleo.perfiles_maquina.almacen import AlmacenPerfilesMaquina
+from proxlaunch.nucleo.perfiles_maquina.aplicar import (
+    aplicar_perfil,
+    config_desde_configuracion,
+    hardware_igual,
+)
+from proxlaunch.nucleo.perfiles_maquina.compatibilidad import evaluar_compatibilidad
+from proxlaunch.nucleo.perfiles_maquina.fabrica import perfiles_fabrica
+from proxlaunch.nucleo.perfiles_maquina.modelos import ID_PREDETERMINADO, PerfilMaquina
 from proxlaunch.nucleo.persistencia.huellas import RepositorioHuellas
 from proxlaunch.nucleo.persistencia.perfiles import RepositorioPerfiles
 from proxlaunch.nucleo.persistencia.preferencias import (
@@ -125,11 +174,12 @@ from proxlaunch.nucleo.persistencia.preferencias import (
     RepositorioPreferencias,
     Tema,
 )
+from proxlaunch.nucleo.persistencia.rutas import Rutas, crear_carpeta_privada
 from proxlaunch.nucleo.persistencia.secretos import AlmacenSecretos
 from proxlaunch.nucleo.reloj import Reloj
 from proxlaunch.nucleo.servicios.conexion import CodigoAviso, ServicioConexion, Sesion
 from proxlaunch.nucleo.servicios.creacion import ServicioCreacion
-from proxlaunch.nucleo.validacion import validar_vm
+from proxlaunch.nucleo.validacion import Severidad, validar_vm
 
 _log = logging.getLogger("proxlaunch.interfaz.ventana")
 
@@ -149,6 +199,13 @@ class Dependencias:
     fabrica_creacion: Callable[[Sesion], ServicioCreacion] | None = None
     # Carpeta de los informes parciales (por defecto, la de datos del usuario).
     directorio_informes: Path | None = None
+    # Perfiles de máquina (MVP 3). Si no se inyecta, la ventana crea el almacén junto al archivo
+    # de perfiles de conexión y lo carga. Uno inyectado debe venir ya cargado (``cargar()``).
+    perfiles_maquina: AlmacenPerfilesMaquina | None = None
+    # Carpeta sugerida para guardar lotes (por defecto, ``Rutas().lotes``).
+    directorio_lotes: Path | None = None
+    # Versión que se escribe en los archivos propios (``app_version``).
+    version_app: str = __version__
 
 
 # Estados que permiten reintentar la máquina en un lote nuevo: nunca se creó (RF-L21).
@@ -197,6 +254,26 @@ class _Lote:
     puente_rollback: PuenteRollback | None = None
     resultados_rollback: list[ResultadoRollback] = field(default_factory=list)
     cerrado: bool = False
+
+
+@dataclass
+class _OrigenLote:
+    """De dónde salió el lote que hay en pantalla (importación CSV o archivo de lote).
+
+    ``tipo``: ``"csv"`` o ``"guardado"``. ``nombre`` es el nombre del archivo (CSV) o del lote
+    (guardado), nunca una ruta. Del CSV se conservan la tabla y el resultado para «Revisar
+    filas…» sin releer el archivo y el total de filas del archivo («N de N+M», CA-C07.2).
+    """
+
+    tipo: str
+    nombre: str
+    tabla: TablaCsv | None = None
+    resultado: ResultadoImportacion | None = None
+    total_filas: int = 0
+
+
+# Huella de «hay cambios sin guardar» para un lote importado de CSV que nunca se guardó.
+_SIN_GUARDAR: dict[str, object] = {}
 
 
 def diferencia_planes(antes: Plan, despues: Plan) -> str:
@@ -272,6 +349,15 @@ class VentanaPrincipal(QMainWindow):
         self._sin_etiquetas_forzado = False
         self._aviso_informe_parcial: str | None = None
         self._tomar_aviso_informe_parcial()
+        # Perfiles de máquina y lotes guardados (MVP 3).
+        self._almacen_perfiles = self._preparar_almacen_perfiles()
+        self._cfg_ultima_aplicada: ConfiguracionVM | None = None  # base de «(modificado)»
+        self._aplicando = False  # se está volcando un perfil o un lote en el formulario
+        self._origen_lote: _OrigenLote | None = None
+        self._ruta_lote: Path | None = None  # archivo desde el que se abrió o donde se guardó
+        self._huella_guardada: dict[str, object] | None = None  # None = nada que proteger
+        self._hay_problemas = False
+        self._cierre_confirmado = False
 
         self._construir()
         self._crear_menus()
@@ -280,6 +366,19 @@ class VentanaPrincipal(QMainWindow):
         self._timer_validar.setInterval(0)
         self._timer_validar.timeout.connect(self._revalidar)
         self.formulario.cambiado.connect(self._timer_validar.start)
+        self.formulario.cambiado.connect(self._al_cambiar_formulario)
+        self.selector_perfil.perfil_elegido.connect(self._al_elegir_perfil)
+        self.selector_perfil.guardar_solicitado.connect(self._guardar_perfil)
+        self.selector_perfil.actualizar_solicitado.connect(self._actualizar_perfil)
+        self.selector_perfil.administrar_solicitado.connect(self._administrar_perfiles)
+        self.panel_filas.resumen_solicitado.connect(self._ver_resumen_lote)
+        self.panel_filas.revisar_solicitado.connect(self._revisar_filas)
+        self.panel_filas.guardar_solicitado.connect(lambda: self._guardar_lote())
+        self.panel_filas.salir_solicitado.connect(self._salir_de_por_filas)
+        self.panel_filas.quitar_solicitado.connect(self._quitar_filas)
+        self.panel_no_encaja.sustitucion_pedida.connect(self._sustituir_desajuste)
+        self.resumen_lote.quitar_excedentes_solicitado.connect(self._quitar_filas_que_no_caben)
+        self.resumen_lote.asignar_automatico_solicitado.connect(self._asignar_automaticamente)
         self.formulario.nodo_elegido.connect(self._al_elegir_nodo)
         self.formulario.vmid_confirmado.connect(self._al_confirmar_vmid)
         self.resumen.crear_solicitado.connect(self._crear)
@@ -317,6 +416,9 @@ class VentanaPrincipal(QMainWindow):
         deps.gestor_tema.tema_cambiado.connect(self._al_cambiar_tema)
         self.bloque_lote.establecer_modo(self._prefs.modo == Modo.AVANZADO)
         self.formulario.establecer_modo(self._prefs.modo == Modo.AVANZADO)
+        self.selector_perfil.establecer_modo(self._prefs.modo == Modo.AVANZADO)
+        self.selector_perfil.establecer_perfiles(self._almacen_perfiles.todos(), None)
+        self._actualizar_acciones()
         self._al_cambiar_tema(deps.gestor_tema.tema_actual)
         self.statusBar().showMessage(self.tr("Sin conexión"))
 
@@ -376,11 +478,20 @@ class VentanaPrincipal(QMainWindow):
 
         self.formulario = FormularioVM()
         self.bloque_lote = BloqueLote()
+        self.selector_perfil = SelectorPerfil()
+        self.panel_filas = PanelLoteFilas()
+        self.panel_filas.hide()
+        self.panel_no_encaja = PanelLoteNoEncaja()
+        self.panel_avisos_archivo = PanelAvisos(self.tr("Avisos del archivo"))
         izquierda = QWidget()
         ci = QVBoxLayout(izquierda)
         ci.setContentsMargins(0, 0, 0, 0)
+        ci.addWidget(self.selector_perfil)
+        ci.addWidget(self.panel_avisos_archivo)
+        ci.addWidget(self.panel_no_encaja)
         ci.addWidget(self.bloque_lote)
         ci.addWidget(self.formulario)
+        ci.addWidget(self.panel_filas, 1)
         zona = QScrollArea()
         zona.setWidgetResizable(True)
         zona.setFrameShape(QFrame.Shape.NoFrame)
@@ -432,6 +543,37 @@ class VentanaPrincipal(QMainWindow):
         m_archivo.addActions([a_conectar, a_cerrar, self._accion_ultimo_lote])
         m_archivo.addSeparator()
         m_archivo.addAction(a_salir)
+
+        m_lote = barra.addMenu(self.tr("&Lote"))
+        self._accion_abrir_lote = QAction(self.tr("Abrir lote…"), self)
+        self._accion_abrir_lote.setShortcut(QKeySequence("Ctrl+O"))
+        self._accion_abrir_lote.triggered.connect(self._abrir_lote)
+        self._accion_guardar_lote = QAction(self.tr("Guardar lote…"), self)
+        self._accion_guardar_lote.setShortcut(QKeySequence("Ctrl+S"))
+        self._accion_guardar_lote.triggered.connect(lambda: self._guardar_lote())
+        self._accion_guardar_lote_como = QAction(self.tr("Guardar lote como…"), self)
+        self._accion_guardar_lote_como.setShortcut(QKeySequence("Ctrl+Shift+S"))
+        self._accion_guardar_lote_como.triggered.connect(lambda: self._guardar_lote(como=True))
+        self._accion_importar_csv = QAction(self.tr("Importar desde CSV…"), self)
+        self._accion_importar_csv.triggered.connect(self._importar_csv)
+        self._accion_plantilla_csv = QAction(self.tr("Descargar plantilla CSV…"), self)
+        self._accion_plantilla_csv.triggered.connect(self._descargar_plantilla_csv)
+        self._accion_informe_csv = QAction(self.tr("Guardar el informe del lote como CSV…"), self)
+        self._accion_informe_csv.triggered.connect(self._guardar_informe_csv)
+        m_lote.addActions([self._accion_abrir_lote, self._accion_guardar_lote])
+        m_lote.addAction(self._accion_guardar_lote_como)
+        m_lote.addSeparator()
+        m_lote.addActions([self._accion_importar_csv, self._accion_plantilla_csv])
+        m_lote.addSeparator()
+        m_lote.addAction(self._accion_informe_csv)
+
+        m_perfiles = barra.addMenu(self.tr("&Perfiles"))
+        self._accion_guardar_perfil = QAction(self.tr("Guardar como perfil de máquina…"), self)
+        self._accion_guardar_perfil.triggered.connect(self._guardar_perfil)
+        self._accion_administrar_perfiles = QAction(self.tr("Administrar perfiles…"), self)
+        self._accion_administrar_perfiles.triggered.connect(self._administrar_perfiles)
+        self._accion_administrar_perfiles.setVisible(self._prefs.modo == Modo.AVANZADO)
+        m_perfiles.addActions([self._accion_guardar_perfil, self._accion_administrar_perfiles])
 
         m_ver = barra.addMenu(self.tr("&Ajustes"))
         m_tema = m_ver.addMenu(self.tr("Tema"))
@@ -494,6 +636,8 @@ class VentanaPrincipal(QMainWindow):
         self._acciones_modo[modo].setChecked(True)
         self.formulario.establecer_modo(modo == Modo.AVANZADO)
         self.bloque_lote.establecer_modo(modo == Modo.AVANZADO)
+        self.selector_perfil.establecer_modo(modo == Modo.AVANZADO)
+        self._accion_administrar_perfiles.setVisible(modo == Modo.AVANZADO)
         self._actualizar_barra()
         self._timer_validar.start()
 
@@ -516,7 +660,16 @@ class VentanaPrincipal(QMainWindow):
     # --- Conexión ---------------------------------------------------------------------
 
     def abrir_conexion(self, motivo: str | None = None) -> None:
-        """Abre el diálogo de conexión (sin perder el formulario, CA-03.3)."""
+        """Abre el diálogo de conexión (sin perder el formulario, CA-03.3).
+
+        Si el usuario la pide con un lote con cambios sin guardar, antes se le pregunta (RF-G08).
+        """
+        if motivo is None and self._sesion is not None and self._hay_cambios_sin_guardar():
+            self._confirmar_cambios(lambda: self._abrir_conexion(None))
+            return
+        self._abrir_conexion(motivo)
+
+    def _abrir_conexion(self, motivo: str | None) -> None:
         if self._dialogo_conexion is not None or self._creando or self._lote_bloquea_conexion():
             return
         dialogo = DialogoConexion(
@@ -578,7 +731,12 @@ class VentanaPrincipal(QMainWindow):
         if cambio_perfil and lote is not None:
             self._cerrar_lote_por_cambio_de_perfil(lote)
         if cambio_perfil:
-            self._formulario_listo = False
+            # Un lote cargado o importado se conserva en el formulario con el servidor nuevo;
+            # su resumen y sus desajustes se recalculan con el inventario nuevo (CA-G04.8).
+            if self._origen_lote is None:
+                self._formulario_listo = False
+            self.panel_no_encaja.establecer_desajustes(())
+            self._al_editar_plantilla()
             self._inv = None
             # Un resultado pendiente de otro servidor ya no se puede retomar.
             self._ultimo_resultado = None
@@ -586,8 +744,7 @@ class VentanaPrincipal(QMainWindow):
             self._cfg_creacion = None
             self._upid_recibido = None
             self.progreso.reiniciar()
-            self.formulario.bloquear(False)
-            self.bloque_lote.bloquear(False)
+            self._bloquear_edicion(False)
             self.resumen.liberar()
         if continuar and lote is not None:
             self._continuar_lote(lote, sesion=sesion, comprobar=True)
@@ -633,6 +790,7 @@ class VentanaPrincipal(QMainWindow):
         self.barra.limpiar()
         self._paginas.setCurrentIndex(0)
         self.statusBar().showMessage(self.tr("Sin conexión"))
+        self._actualizar_acciones()
 
     def _manejar_fallo(self, error: ErrorProxLaunch, *, durante: str = "") -> None:
         """Gestiona el error de una operación de red; reabre la conexión si expiró."""
@@ -687,6 +845,7 @@ class VentanaPrincipal(QMainWindow):
             )
         if self._deps.preferencias.error_lectura:
             avisos.append(self.tr("No se pudo leer el archivo de preferencias (permisos)"))
+        avisos.extend(self._avisos_perfiles_maquina())
         return avisos
 
     @staticmethod
@@ -741,6 +900,8 @@ class VentanaPrincipal(QMainWindow):
         self.bloque_lote.establecer_inventario(inv)
         self.formulario.establecer_inventario(inv, reiniciar=reiniciar)
         self._formulario_listo = True
+        if reiniciar:
+            self._fijar_perfil_inicial(inv)
         self._pintar_avisos()
         self._timer_validar.start()
 
@@ -835,8 +996,12 @@ class VentanaPrincipal(QMainWindow):
     # --- Validación en vivo -----------------------------------------------------------
 
     def _revalidar(self) -> None:
+        self._actualizar_acciones()
         sesion, inv = self._sesion, self._inv
         if sesion is None or inv is None:
+            return
+        if self.bloque_lote.es_por_filas:
+            self._revalidar_por_filas()
             return
         en_lote = self.bloque_lote.es_lote
         if en_lote != self.formulario.modo_lote:
@@ -854,6 +1019,12 @@ class VentanaPrincipal(QMainWindow):
         problemas = validar_vm(cfg, inv, sesion.capacidades) + self.formulario.problemas_extra()
         if en_lote:
             problemas = [p for p in problemas if p.campo not in ("nombre", "vmid")]
+        self._hay_problemas = any(p.severidad == Severidad.ERROR for p in problemas) or any(
+            p.severidad.value == "error" for p in problemas_lote
+        )
+        self._actualizar_compatibilidad(cfg, en_lote=en_lote)
+        if self._origen_lote is not None:
+            self._actualizar_desajustes()
         self.formulario.aplicar_problemas(problemas)
         motivo = (
             texto_motivo_nodo(self.formulario.motivo_nodo)
@@ -892,8 +1063,7 @@ class VentanaPrincipal(QMainWindow):
         self._upid_recibido = None
         cfg = self.formulario.configuracion()
         self._cfg_creacion = cfg
-        self.formulario.bloquear(True)
-        self.bloque_lote.bloquear(True)
+        self._bloquear_edicion(True)
         self.progreso.iniciar()
         self._refrescar_botones_red()
         # CA-L18.13: una máquina también pasa por el motor, para etiquetarla y poder deshacerla.
@@ -1032,8 +1202,7 @@ class VentanaPrincipal(QMainWindow):
         self._timer_validar.start()
 
     def _desbloquear(self) -> None:
-        self.formulario.bloquear(False)
-        self.bloque_lote.bloquear(False)
+        self._bloquear_edicion(False)
         self.resumen.liberar()
 
     def _restaurar_etiquetado(self) -> None:
@@ -1509,8 +1678,7 @@ class VentanaPrincipal(QMainWindow):
         lote = _Lote(plan, inv, sesion, self._perfil_id, control, puente, modo_uno, libro=libro)
         self._lote = lote
         self._accion_ultimo_lote.setEnabled(False)
-        self.formulario.bloquear(True)
-        self.bloque_lote.bloquear(True)
+        self._bloquear_edicion(True)
         if not modo_uno:
             self.progreso_lote.iniciar(plan)
             self._pila_derecha.setCurrentIndex(2)
@@ -2093,10 +2261,10 @@ class VentanaPrincipal(QMainWindow):
         elementos = tuple(e.elemento for e in entradas if e.estado in _ESTADOS_REINTENTABLES)
         if not elementos:
             return
+        # Homogéneo: igual que en el MVP 2. Por filas: una fila por máquina con su propia
+        # configuración, nombre, VMID y nodo (CA-C08.10).
         definicion = dataclasses.replace(
-            lote.plan.definicion,
-            cantidad=len(elementos),
-            vmid_inicial=None,
+            definicion_para_reintento(lote.plan.definicion, elementos),
             etiquetar=lote.plan.definicion.etiquetar if etiquetar is None else etiquetar,
         )
         self._reintento = elementos
@@ -2208,8 +2376,7 @@ class VentanaPrincipal(QMainWindow):
             return  # A2: con un lote, rollback o comprobación en curso no se reinicia la vista
         self.progreso_lote.iniciar(lote.plan)
         self._pila_derecha.setCurrentIndex(2)
-        self.formulario.bloquear(True)
-        self.bloque_lote.bloquear(True)
+        self._bloquear_edicion(True)
         self._finalizar_lote()
 
     def _cerrar_lote_por_cambio_de_perfil(self, lote: _Lote) -> None:
@@ -2236,10 +2403,772 @@ class VentanaPrincipal(QMainWindow):
             if ruta is not None:
                 _log.info("Informe parcial guardado en %s", ruta)
 
+    # --- MVP 3: perfiles de máquina, lotes guardados e importación CSV ----------------------
+
+    def _preparar_almacen_perfiles(self) -> AlmacenPerfilesMaquina:
+        """Almacén de perfiles de máquina: el inyectado o el de la carpeta de configuración."""
+        if self._deps.perfiles_maquina is not None:
+            return self._deps.perfiles_maquina
+        ruta = Path(self._deps.perfiles.ruta).with_name("perfiles_maquina.json")
+        almacen = AlmacenPerfilesMaquina(
+            ruta, fabrica=perfiles_fabrica(textos_perfiles_fabrica()), app_version=__version__
+        )
+        almacen.cargar()  # inexistente = vacío; ilegible = solo fábrica y aviso (CA-P12.2/3)
+        return almacen
+
+    def _avisos_perfiles_maquina(self) -> list[str]:
+        """Avisos del archivo de perfiles de máquina (ilegible, dañado, de versión futura)."""
+        estado = self._almacen_perfiles.estado
+        avisos: list[str] = []
+        if estado.error_lectura:
+            avisos.append(
+                self.tr(
+                    "No se pudo leer el archivo de perfiles de máquina (permisos): solo verás los "
+                    "perfiles de fábrica."
+                )
+            )
+        elif estado.hubo_corrupcion:
+            avisos.append(
+                self.tr(
+                    "El archivo de perfiles de máquina estaba dañado: se guardó una copia y se "
+                    "empezó uno nuevo."
+                )
+            )
+        if estado.solo_lectura:
+            avisos.append(texto_error(ErrorProxLaunch(CodigoError.PERFILES_SOLO_LECTURA)))
+        if estado.descartados:
+            avisos.append(
+                self.tr(
+                    "Se omitieron %n perfiles dañados del archivo de perfiles.",
+                    None,
+                    len(estado.descartados),
+                )
+            )
+        return avisos
+
+    def _bloquear_edicion(self, bloqueado: bool) -> None:
+        """Bloquea o libera todo lo que edita el lote (formulario, bloque, perfil y filas)."""
+        self.formulario.bloquear(bloqueado)
+        self.bloque_lote.bloquear(bloqueado)
+        self.selector_perfil.bloquear(bloqueado)
+        self.panel_filas.bloquear(bloqueado)
+        self.panel_no_encaja.setEnabled(not bloqueado)
+        self._actualizar_acciones()
+
+    def _actualizar_acciones(self) -> None:
+        """Habilita las acciones de archivo y de perfil según la conexión y el trabajo en curso."""
+        listo = self._formulario_listo and self._sesion is not None and self._inv is not None
+        libre = not self._lote_en_curso and not self._creando
+        sin_plan = not self._planificando and not self._iniciando_lote
+        self._accion_abrir_lote.setEnabled(listo and libre and sin_plan)
+        self._accion_guardar_lote.setEnabled(listo)  # también con un lote en marcha (CA-G02.4)
+        self._accion_guardar_lote_como.setEnabled(listo)
+        self._accion_importar_csv.setEnabled(libre and sin_plan)
+        self._accion_plantilla_csv.setEnabled(True)
+        self._accion_informe_csv.setEnabled(self._lote is not None and not self._lote.modo_uno)
+        self._accion_guardar_perfil.setEnabled(
+            listo and libre and not self.bloque_lote.es_por_filas
+        )
+        self._accion_administrar_perfiles.setEnabled(libre)
+
+    def _mostrar_error_archivo(self, error: ErrorProxLaunch) -> None:
+        """Error al leer o escribir un archivo: banner rojo y barra de estado (sin diálogo)."""
+        texto = texto_fallo(error)
+        self._errores_sesion = [texto]
+        self._pintar_avisos()
+        self.statusBar().showMessage(texto.splitlines()[0] if texto else "")
+
+    # --- Perfil de máquina en el formulario ---
+
+    def _fijar_perfil_inicial(self, inv: Inventario) -> None:
+        """Formulario recién abierto: el selector muestra el perfil predeterminado (CA-P05.4)."""
+        cfg = self.formulario.configuracion()
+        self._cfg_ultima_aplicada = cfg
+        # Formulario pristino: base de «cambios sin guardar» (RF-G08, §6.8).
+        self._huella_guardada = self._huella_de(self._definicion_actual())
+        try:
+            predeterminado = self._almacen_perfiles.obtener(ID_PREDETERMINADO)
+        except ErrorProxLaunch:
+            self.selector_perfil.marcar_aplicado(None)
+            return
+        coincide = hardware_igual(aplicar_perfil(predeterminado, cfg, inv).cfg, cfg)
+        self.selector_perfil.marcar_aplicado(ID_PREDETERMINADO if coincide else None)
+
+    def _al_cambiar_formulario(self) -> None:
+        """Tras cualquier edición el selector dice «<perfil> (modificado)» (CA-P05.8)."""
+        if self._aplicando or self._cfg_ultima_aplicada is None:
+            return
+        modificado = not hardware_igual(self.formulario.configuracion(), self._cfg_ultima_aplicada)
+        self.selector_perfil.marcar_modificado(modificado)
+
+    def _recargar_selector(self, actual_id: str | None) -> None:
+        self.selector_perfil.establecer_perfiles(self._almacen_perfiles.todos(), actual_id)
+
+    def _al_elegir_perfil(self, id_perfil: str) -> None:
+        """Aplica un perfil: solo hardware, sin red (INV-M1). Pide confirmar si hay cambios."""
+        inv = self._inv
+        if inv is None or self._lote_en_curso or self._creando or self.bloque_lote.es_por_filas:
+            self.selector_perfil.restaurar()
+            return
+        try:
+            perfil = self._almacen_perfiles.obtener(id_perfil)
+        except ErrorProxLaunch as error:
+            self._mostrar_error_archivo(error)
+            self.selector_perfil.restaurar()
+            return
+        base = self._cfg_ultima_aplicada
+        if base is not None and not hardware_igual(self.formulario.configuracion(), base):
+            acepta = confirmar(
+                self,
+                self.tr("Cambiar de perfil"),
+                self.tr("Se reemplazarán los ajustes de hardware que cambiaste."),
+                self.tr("Reemplazar"),
+                self.tr("Cancelar"),
+            )
+            if not acepta:
+                self.selector_perfil.restaurar()
+                return
+        self._aplicar_perfil_elegido(perfil, inv)
+
+    def _aplicar_perfil_elegido(self, perfil: PerfilMaquina, inv: Inventario) -> None:
+        resultado = aplicar_perfil(perfil, self.formulario.configuracion(), inv)
+        self._aplicando = True
+        try:
+            self.formulario.aplicar_hardware(resultado.cfg)
+        finally:
+            self._aplicando = False
+        self._cfg_ultima_aplicada = self.formulario.configuracion()
+        self.selector_perfil.marcar_aplicado(perfil.id)
+        self.selector_perfil.mostrar_avisos([texto_aviso_pista(a) for a in resultado.avisos])
+        self.statusBar().showMessage(
+            self.tr("Perfil «{nombre}» aplicado").format(nombre=perfil.nombre)
+        )
+        self._timer_validar.start()
+
+    def _actualizar_compatibilidad(self, cfg: ConfiguracionVM, *, en_lote: bool) -> None:
+        """Panel «Compatibilidad del perfil» con la validación existente (CA-P07.1)."""
+        sesion, inv = self._sesion, self._inv
+        id_perfil = self.selector_perfil.perfil_actual_id
+        if sesion is None or inv is None or id_perfil is None:
+            self.selector_perfil.mostrar_compatibilidad([], [])
+            return
+        try:
+            perfil = self._almacen_perfiles.obtener(id_perfil)
+        except ErrorProxLaunch:
+            self.selector_perfil.mostrar_compatibilidad([], [])
+            return
+        problemas = evaluar_compatibilidad(cfg, perfil.config, inv, sesion.capacidades)
+        # El nombre y el VMID no son del perfil: sus errores no son de compatibilidad.
+        problemas = [p for p in problemas if p.campo not in ("nombre", "vmid")]
+        errores: list[str] = []
+        avisos: list[str] = []
+        for p in problemas:
+            texto = texto_problema(p)
+            campo = nombre_campo(p.campo) if p.campo else ""
+            linea = f"{campo}: {texto}" if campo else texto
+            (errores if p.severidad == Severidad.ERROR else avisos).append(linea)
+        self.selector_perfil.mostrar_compatibilidad(
+            list(dict.fromkeys(errores)), list(dict.fromkeys(avisos))
+        )
+
+    def _guardar_perfil(self) -> None:
+        """«Guardar como perfil de máquina…» (RF-P03)."""
+        if not self._formulario_listo or self._lote_en_curso or self._creando:
+            return
+        dialogo = DialogoGuardarPerfil(
+            self._almacen_perfiles,
+            self.formulario.configuracion(),
+            avanzado=self.avanzado,
+            parent=self,
+        )
+        aceptado = dialogo.exec() == QDialog.DialogCode.Accepted
+        perfil = getattr(dialogo, "perfil_creado", None)
+        dialogo.deleteLater()
+        if not aceptado or perfil is None:
+            return
+        self._cfg_ultima_aplicada = self.formulario.configuracion()
+        self._recargar_selector(perfil.id)
+        self.statusBar().showMessage(
+            self.tr("Perfil «{nombre}» guardado").format(nombre=perfil.nombre)
+        )
+
+    def _actualizar_perfil(self) -> None:
+        """«Guardar cambios en el perfil «X»»: reemplaza el hardware del perfil del usuario."""
+        id_perfil = self.selector_perfil.perfil_actual_id
+        if id_perfil is None or not self._formulario_listo or self._lote_en_curso:
+            return
+        try:
+            perfil = self._almacen_perfiles.obtener(id_perfil)
+        except ErrorProxLaunch as error:
+            self._mostrar_error_archivo(error)
+            return
+        acepta = confirmar(
+            self,
+            self.tr("Guardar cambios en el perfil"),
+            self.tr("Se reemplazará el hardware guardado en el perfil «{nombre}».").format(
+                nombre=perfil.nombre
+            ),
+            self.tr("Guardar cambios"),
+            self.tr("Cancelar"),
+        )
+        if not acepta:
+            return
+        config = config_desde_configuracion(self.formulario.configuracion(), con_pistas=True)
+        try:
+            self._almacen_perfiles.actualizar(id_perfil, config)
+        except ErrorProxLaunch as error:
+            self._mostrar_error_archivo(error)
+            return
+        self._cfg_ultima_aplicada = self.formulario.configuracion()
+        self._recargar_selector(id_perfil)
+        self.statusBar().showMessage(
+            self.tr("Perfil «{nombre}» actualizado").format(nombre=perfil.nombre)
+        )
+
+    def _administrar_perfiles(self) -> None:
+        """«Administrar perfiles…» (avanzado): lista, duplicar, renombrar, eliminar, E/I."""
+        if self._lote_en_curso or self._creando:
+            return
+        dialogo = DialogoPerfilesMaquina(
+            self._almacen_perfiles,
+            self._lanzador,
+            app_version=self._deps.version_app,
+            tema=self._deps.gestor_tema.tema_actual,
+            parent=self,
+        )
+        dialogo.perfiles_cambiados.connect(self._al_cambiar_lista_perfiles)
+        dialogo.usar_pedido.connect(self._usar_perfil_pedido)
+        dialogo.crear_pedido.connect(self._guardar_perfil)
+        dialogo.exec()
+        dialogo.deleteLater()
+
+    def _al_cambiar_lista_perfiles(self, cambiados: object) -> None:
+        """Si el perfil aplicado se eliminó o cambió, el selector pasa a «Personalizado»."""
+        actual = self.selector_perfil.perfil_actual_id
+        ids = cambiados if isinstance(cambiados, (set, frozenset)) else frozenset()
+        self._recargar_selector(None if actual in ids else actual)
+
+    def _usar_perfil_pedido(self, perfil: object) -> None:
+        if isinstance(perfil, PerfilMaquina) and perfil.id:
+            self._al_elegir_perfil(perfil.id)
+
+    # --- Cambios sin guardar (RF-G08) ---
+
+    def _definicion_actual(self) -> DefinicionLote:
+        return self.bloque_lote.definicion(self.formulario.configuracion())
+
+    def _huella_de(self, definicion: DefinicionLote) -> dict[str, object] | None:
+        """Huella de lo que se guardaría (``None`` si no se puede serializar)."""
+        try:
+            return lote_a_dict(LoteGuardado("", definicion))
+        except (ValueError, TypeError, KeyError):
+            return None
+
+    def _hay_cambios_sin_guardar(self) -> bool:
+        """Hay un lote cargado, importado o guardado y el actual ya no coincide con él."""
+        if self._huella_guardada is None or not self._formulario_listo:
+            return False
+        actual = self._huella_de(self._definicion_actual())
+        return actual is None or actual != self._huella_guardada
+
+    def _preguntar_guardar_cambios(self) -> str:
+        """«Guardar / No guardar / Cancelar» con el foco en Cancelar: ``guardar``, ``descartar`` o
+        ``cancelar``."""
+        caja = QMessageBox(self)
+        caja.setIcon(QMessageBox.Icon.Warning)
+        caja.setWindowTitle(self.tr("Cambios sin guardar"))
+        caja.setText(self.tr("¿Guardar el lote antes de continuar?"))
+        caja.setInformativeText(self.tr("Si no lo guardas, se perderán los cambios del lote."))
+        guardar = caja.addButton(self.tr("Guardar"), QMessageBox.ButtonRole.AcceptRole)
+        descartar = caja.addButton(self.tr("No guardar"), QMessageBox.ButtonRole.DestructiveRole)
+        cancelar = caja.addButton(self.tr("Cancelar"), QMessageBox.ButtonRole.RejectRole)
+        caja.setDefaultButton(cancelar)
+        caja.setEscapeButton(cancelar)
+        cancelar.setFocus()
+        caja.exec()
+        elegido = caja.clickedButton()
+        if elegido is guardar:
+            return "guardar"
+        if elegido is descartar:
+            return "descartar"
+        return "cancelar"
+
+    def _confirmar_cambios(self, continuar: Callable[[], None]) -> None:
+        """Ejecuta ``continuar`` si no hay cambios sin guardar o el usuario los descarta; si
+        elige «Guardar», lo ejecuta cuando el archivo ya se escribió; con «Cancelar», nada."""
+        if not self._hay_cambios_sin_guardar():
+            continuar()
+            return
+        respuesta = self._preguntar_guardar_cambios()
+        if respuesta == "descartar":
+            continuar()
+        elif respuesta == "guardar":
+            self._guardar_lote(despues=continuar)
+
+    def _cerrar_confirmado(self) -> None:
+        self._cierre_confirmado = True
+        self.close()
+
+    # --- Guardar un lote (RF-G01, RF-G02, RF-G07) ---
+
+    def _carpeta_lotes(self) -> Path | None:
+        """Carpeta sugerida de lotes, creada con permisos privados al usarla (CA-X03.2)."""
+        carpeta = self._deps.directorio_lotes or Rutas().lotes
+        try:
+            crear_carpeta_privada(carpeta)
+        except OSError:
+            _log.warning("No se pudo crear la carpeta de lotes")
+            return None
+        return carpeta
+
+    def _nombre_sugerido_lote(self, definicion: DefinicionLote) -> str:
+        if definicion.es_por_filas:
+            origen = self._origen_lote
+            return origen.nombre.rsplit(".", 1)[0] if origen is not None else ""
+        if usa_nombre_de_plantilla(definicion):
+            return definicion.plantilla.nombre
+        return definicion.patron.prefijo
+
+    def _version_proxmox_texto(self) -> str | None:
+        sesion = self._sesion
+        return sesion.version.texto if sesion is not None else None
+
+    def _guardar_lote(
+        self, *, como: bool = False, despues: Callable[[], None] | None = None
+    ) -> None:
+        """«Guardar lote…»: errores de reglas no impiden guardar un borrador (CA-G02.1)."""
+        if not self._formulario_listo:
+            return
+        if not self.bloque_lote.es_por_filas:
+            malos = self.formulario.campos_no_numericos()
+            if malos:
+                texto = self.tr(
+                    "No se puede guardar el lote: {campos} no es un número. Corrígelo e inténtalo "
+                    "de nuevo."
+                ).format(campos=", ".join(f"«{m}»" for m in malos))
+                self._errores_sesion = [texto]
+                self._pintar_avisos()
+                self.statusBar().showMessage(texto)
+                return
+        definicion = self._definicion_actual()
+        archivo_origen = self._ruta_lote.name if self._ruta_lote is not None and not como else None
+        dialogo = DialogoGuardarLote(
+            nombre_sugerido=self._nombre_sugerido_lote(definicion),
+            hay_problemas=self._hay_problemas,
+            archivo_origen=archivo_origen,
+            parent=self,
+        )
+        if not dialogo.ejecutar():
+            dialogo.deleteLater()
+            return
+        nombre, accion, sugerido = dialogo.nombre, dialogo.accion, dialogo.nombre_archivo_sugerido
+        dialogo.deleteLater()
+        if accion == AccionGuardarLote.SOBRESCRIBIR and self._ruta_lote is not None:
+            ruta: Path | None = self._ruta_lote
+        else:
+            ruta = elegir_para_guardar(
+                self, TipoArchivo.LOTE, sugerido, carpeta=self._carpeta_lotes()
+            )
+        if ruta is None:
+            return
+        lote = LoteGuardado(nombre, definicion, self._version_proxmox_texto())
+        self._lanzador.lanzar(
+            guardar_lote_guardado,
+            ruta,
+            lote,
+            self._deps.version_app,
+            al_terminar=lambda r: self._lote_guardado(r, lote, despues),
+            al_fallar=self._mostrar_error_archivo,
+        )
+
+    def _lote_guardado(
+        self, ruta: Path, lote: LoteGuardado, despues: Callable[[], None] | None
+    ) -> None:
+        self._ruta_lote = ruta
+        self._huella_guardada = self._huella_de(lote.definicion)
+        self._errores_sesion = []
+        self._pintar_avisos()
+        self.statusBar().showMessage(
+            self.tr("Lote guardado en «{archivo}»").format(archivo=ruta.name)
+        )
+        if despues is not None:
+            despues()
+
+    # --- Abrir un lote guardado (RF-G03..G06) ---
+
+    def _abrir_lote(self) -> None:
+        if not self._formulario_listo or self._lote_en_curso or self._planificando:
+            return
+        self._confirmar_cambios(self._elegir_y_leer_lote)
+
+    def _elegir_y_leer_lote(self) -> None:
+        ruta = elegir_para_abrir(self, TipoArchivo.LOTE)
+        if ruta is None:
+            return
+        self.statusBar().showMessage(self.tr("Leyendo el lote…"))
+        self._lanzador.lanzar(
+            leer_lote_guardado,
+            ruta,
+            al_terminar=lambda archivo: self._lote_leido(archivo, ruta),
+            al_fallar=self._mostrar_error_archivo,  # el formulario no cambia (carga atómica)
+        )
+
+    def _lote_leido(self, archivo: Any, ruta: Path) -> None:
+        """Vuelca el lote leído de una vez en el hilo de la interfaz (RNF-M11). No crea nada."""
+        lote: LoteGuardado = archivo.lote
+        definicion = lote.definicion
+        self._errores_sesion = []
+        self._aplicando = True
+        try:
+            if definicion.es_por_filas:
+                origen = _OrigenLote("guardado", lote.nombre, total_filas=0)
+                self._entrar_por_filas(definicion, origen)
+                self._origen_lote = origen
+            else:
+                self._mostrar_modo_filas(False)
+                self.formulario.aplicar_hardware(definicion.plantilla)
+                if usa_nombre_de_plantilla(definicion) and definicion.plantilla.nombre:
+                    self.formulario.establecer_nombre(definicion.plantilla.nombre)
+                self.bloque_lote.establecer_definicion(definicion)
+                self.resumen_lote.establecer_total_filas_archivo(None)
+                self._origen_lote = _OrigenLote("guardado", lote.nombre)
+        finally:
+            self._aplicando = False
+        self._ruta_lote = ruta
+        self.selector_perfil.marcar_aplicado(None)  # un lote cargado es «Personalizado»
+        self._cfg_ultima_aplicada = self.formulario.configuracion()
+        avisos = [texto_aviso_archivo(a) for a in archivo.avisos]
+        aviso_version = self._aviso_version_lote(lote.version_proxmox)
+        if aviso_version:
+            avisos.append(aviso_version)
+        self.panel_avisos_archivo.mostrar(avisos)
+        self._al_editar_plantilla()  # el resumen anterior ya no vale (CA-G04.2)
+        self._actualizar_desajustes()
+        self._huella_guardada = self._huella_de(self._definicion_actual())
+        self.statusBar().showMessage(self.tr("Lote «{nombre}» cargado").format(nombre=lote.nombre))
+        self._timer_validar.start()
+
+    def _aviso_version_lote(self, version: str | None) -> str:
+        """CA-G04.6: el lote se guardó con una versión de Proxmox mayor que la del servidor."""
+        inv = self._inv
+        m = re.match(r"(\d+)\.(\d+)", version or "")
+        if m is None or inv is None:
+            return ""
+        guardada = (int(m.group(1)), int(m.group(2)))
+        if guardada <= (inv.version.mayor, inv.version.menor):
+            return ""
+        return self.tr(
+            "El lote se guardó con Proxmox {guardada}; este servidor tiene {actual}. Algunas "
+            "opciones podrían no estar disponibles."
+        ).format(guardada=version, actual=f"{inv.version.mayor}.{inv.version.menor}")
+
+    def _actualizar_desajustes(self) -> None:
+        """Valores del lote que el servidor no tiene (E-M15): nunca se sustituyen solos."""
+        inv = self._inv
+        if inv is None or self._origen_lote is None:
+            self.panel_no_encaja.establecer_desajustes(())
+            return
+        self.panel_no_encaja.establecer_desajustes(desajustes(self._definicion_actual(), inv))
+
+    def _sustituir_desajuste(self, desajuste: object, nuevo: object) -> None:
+        """«Usar otro…» o «Pasar a Automático»: acción explícita del usuario."""
+        if not isinstance(desajuste, Desajuste) or not (nuevo is None or isinstance(nuevo, str)):
+            return
+        if self._lote_en_curso:
+            return
+        try:
+            definicion = sustituir(self._definicion_actual(), desajuste, nuevo)
+        except ValueError:
+            return
+        self._aplicando = True
+        try:
+            if definicion.es_por_filas:
+                self.bloque_lote.actualizar_filas(definicion)
+                self.panel_filas.actualizar_filas(definicion, self.panel_filas.titulo)
+            else:
+                self.formulario.aplicar_hardware(definicion.plantilla)
+                self.bloque_lote.establecer_definicion(definicion)
+        finally:
+            self._aplicando = False
+        self._al_editar_plantilla()
+        self._actualizar_desajustes()
+        self._timer_validar.start()
+
+    # --- Lote por filas (D-22) ---
+
+    def _mostrar_modo_filas(self, activo: bool) -> None:
+        """Con un lote por filas la tabla sustituye al formulario y al resumen de una máquina."""
+        self.panel_filas.setVisible(activo)
+        self.formulario.setVisible(not activo)
+        self.selector_perfil.setVisible(not activo)
+        self.resumen.setVisible(not activo)
+        self._actualizar_acciones()
+
+    def _entrar_por_filas(self, definicion: DefinicionLote, origen: _OrigenLote) -> None:
+        """Muestra el lote por filas: bloque reducido y tabla de solo lectura. No crea (INV-M6)."""
+        self.bloque_lote.establecer_por_filas(definicion)
+        self.panel_filas.establecer(
+            definicion,
+            origen=origen.nombre,
+            desde_archivo=origen.tipo == "csv",
+            puede_revisar=origen.tabla is not None,
+        )
+        self.resumen_lote.establecer_total_filas_archivo(origen.total_filas or None)
+        self._mostrar_modo_filas(True)
+
+    def _salir_de_por_filas(self) -> None:
+        if not self.bloque_lote.es_por_filas or self._lote_en_curso:
+            return
+        self.bloque_lote.salir_de_por_filas()
+        self._mostrar_modo_filas(False)
+        self._origen_lote = None
+        self._ruta_lote = None
+        self._huella_guardada = None
+        self.panel_no_encaja.establecer_desajustes(())
+        self.panel_avisos_archivo.mostrar([])
+        self.resumen_lote.establecer_total_filas_archivo(None)
+        self._al_editar_plantilla()
+        self._timer_validar.start()
+
+    def _etiqueta_fila(self, definicion: DefinicionLote, indice: int | None) -> str | None:
+        if indice is None or not 0 <= indice < len(definicion.filas):
+            return None
+        origen = definicion.filas[indice].origen
+        return str(origen if origen is not None else indice + 1)
+
+    def _revalidar_por_filas(self) -> None:
+        """Capa 1 del lote por filas (V-L01, V-M07, V-M10, V-02): se muestra junto a la tabla."""
+        cfg = self.formulario.configuracion()
+        problemas = self.bloque_lote.problemas(cfg)
+        self.bloque_lote.aplicar_problemas(problemas)
+        definicion = self.bloque_lote.definicion(cfg)
+        errores = [p for p in problemas if p.severidad.value == "error"]
+        textos = list(
+            dict.fromkeys(
+                texto_problema_lote(p, fila=self._etiqueta_fila(definicion, p.indice))
+                for p in errores
+            )
+        )
+        self._hay_problemas = bool(errores)
+        self.panel_filas.mostrar_problemas(textos)
+        self.panel_filas.establecer_bloqueo_resumen(
+            self.tr("Corrige los errores marcados para poder ver el resumen.") if textos else None
+        )
+        self.panel_filas.bloquear(self._creando or self._lote_lleno_o_ocupado())
+        if self._origen_lote is not None:
+            self._actualizar_desajustes()
+
+    def _lote_lleno_o_ocupado(self) -> bool:
+        return self._lote_en_curso or self._planificando or self._iniciando_lote
+
+    def _actualizar_filas(self, definicion: DefinicionLote, *, replanificar: bool) -> None:
+        """Cambia las filas del lote (quitar o reasignar VMID) y vuelve a mostrar lo que toque."""
+        if not definicion.filas:
+            self._salir_de_por_filas()
+            return
+        self.bloque_lote.actualizar_filas(definicion)
+        origen = self._origen_lote
+        nombre = origen.nombre if origen is not None else ""
+        self.panel_filas.actualizar_filas(
+            definicion,
+            texto_titulo_filas(
+                len(definicion.filas),
+                nombre,
+                desde_archivo=origen is not None and origen.tipo == "csv",
+            ),
+        )
+        if replanificar:
+            self._ver_resumen_lote()
+        else:
+            self._al_editar_plantilla()
+        self._timer_validar.start()
+
+    def _quitar_filas(self, indices: object) -> None:
+        """«Quitar las filas seleccionadas» de la tabla (el resumen anterior deja de valer)."""
+        if not isinstance(indices, tuple) or self._lote_en_curso:
+            return
+        try:
+            nueva = sin_filas(self._definicion_actual(), indices)
+        except ValueError:
+            return
+        self._actualizar_filas(nueva, replanificar=False)
+
+    def _quitar_filas_que_no_caben(self, indices: object) -> None:
+        """«Quitar las filas que no caben» (CA-C08.6): replanifica con las que sí caben."""
+        plan = self.resumen_lote.plan
+        if plan is None or not isinstance(indices, tuple) or self._lote_lleno_o_ocupado():
+            return
+        try:
+            nueva = sin_filas(plan.definicion, indices)
+        except ValueError:
+            return
+        self._actualizar_filas(nueva, replanificar=True)
+
+    def _asignar_automaticamente(self, indices: object) -> None:
+        """VMID explícito ocupado: «Asignar automáticamente» (acción explícita, CA-C09.3)."""
+        plan = self.resumen_lote.plan
+        if plan is None or not isinstance(indices, tuple) or self._lote_lleno_o_ocupado():
+            return
+        definicion = plan.definicion
+        try:
+            for i in indices:
+                definicion = reemplazar_fila(
+                    definicion, i, dataclasses.replace(definicion.filas[i], vmid=None)
+                )
+        except (ValueError, IndexError):
+            return
+        self._actualizar_filas(definicion, replanificar=True)
+
+    # --- Importar desde CSV (RF-C01..C09, C13, C15) ---
+
+    def _nuevo_dialogo_csv(self) -> DialogoImportarCsv:
+        perfil_base = self.selector_perfil.perfil_actual_id or ID_PREDETERMINADO
+        return DialogoImportarCsv(
+            self,
+            perfiles=self._almacen_perfiles.todos(),
+            perfil_base_id=perfil_base,
+            inv=self._inv,
+            nodo_referencia=self.formulario.nodo_efectivo() or None,
+            lanzador=self._lanzador,
+            avanzado=self.avanzado,
+            alias_extra=alias_columnas_csv(),
+            tema=self._deps.gestor_tema.tema_actual,
+        )
+
+    def _importar_csv(self) -> None:
+        if self._lote_en_curso or self._planificando or self._iniciando_lote:
+            return
+        self._confirmar_cambios(self._importar_csv_ya)
+
+    def _importar_csv_ya(self) -> None:
+        dialogo = self._nuevo_dialogo_csv()
+        elegido = dialogo.ejecutar()
+        try:
+            if elegido is None:
+                return  # el formulario no cambia (carga atómica)
+            resultado, numeros = elegido
+            self._aplicar_importacion(resultado, numeros, dialogo.tabla_csv, dialogo.nombre_archivo)
+        finally:
+            dialogo.deleteLater()
+
+    def _revisar_filas(self) -> None:
+        """«Revisar filas…»: reabre la vista previa del mismo CSV, sin releerlo."""
+        origen = self._origen_lote
+        if origen is None or origen.tabla is None or origen.resultado is None:
+            return
+        if self._lote_lleno_o_ocupado():
+            return
+        dialogo = self._nuevo_dialogo_csv()
+        # Se reinterpreta contra el inventario ACTUAL antes de mostrar: el servidor pudo cambiar
+        # desde la importación (storages, bridges, nodos).
+        resultado_actual = origen.resultado
+        with contextlib.suppress(ErrorProxLaunch):  # si falla se muestra el anterior
+            resultado_actual = interpretar(
+                origen.tabla,
+                perfil_base=dialogo.perfil_base,
+                perfiles=self._almacen_perfiles.todos(),
+                inv=self._inv,
+                nodo_referencia=self.formulario.nodo_efectivo() or None,
+                alias_extra=alias_columnas_csv(),
+            )
+        dialogo.mostrar_resultado(origen.tabla, resultado_actual, origen.nombre)
+        elegido = dialogo.ejecutar()
+        try:
+            if elegido is None:
+                return
+            resultado, numeros = elegido
+            self._aplicar_importacion(resultado, numeros, origen.tabla, origen.nombre)
+        finally:
+            dialogo.deleteLater()
+
+    def _aplicar_importacion(
+        self,
+        resultado: ResultadoImportacion,
+        numeros: tuple[int, ...],
+        tabla: TablaCsv | None,
+        nombre_archivo: str,
+    ) -> None:
+        """Convierte las filas elegidas en un lote por filas. NO habilita «Crear» (INV-M6)."""
+        try:
+            filas = filas_lote(resultado, numeros)
+        except ValueError:
+            self.statusBar().showMessage(self.tr("No se pudieron importar las filas elegidas."))
+            return
+        if not filas:
+            return
+        algoritmo = Algoritmo(self.bloque_lote.combo_algoritmo.currentData())
+        definicion = definicion_por_filas(
+            filas,
+            plantilla_base=copy.deepcopy(filas[0].cfg),
+            algoritmo=algoritmo,
+            vmid_inicial=None,
+            etiquetar=self.bloque_lote.chk_etiquetar.isChecked(),
+        )
+        origen = _OrigenLote("csv", nombre_archivo, tabla, resultado, len(resultado.filas))
+        self._entrar_por_filas(definicion, origen)
+        self._origen_lote = origen
+        self._ruta_lote = None
+        self._huella_guardada = _SIN_GUARDAR  # importado y sin guardar (RF-G08)
+        self.panel_no_encaja.establecer_desajustes(())
+        self.panel_avisos_archivo.mostrar([])
+        self._al_editar_plantilla()
+        self.statusBar().showMessage(
+            self.tr("Se importaron %n máquinas desde «{archivo}»", None, len(filas)).format(
+                archivo=nombre_archivo
+            )
+        )
+        self._timer_validar.start()
+
+    def _descargar_plantilla_csv(self) -> None:
+        descargar_plantilla(
+            self,
+            self._lanzador,
+            al_terminar=lambda ruta: self.statusBar().showMessage(
+                self.tr("Plantilla guardada en «{archivo}»").format(archivo=ruta.name)
+            ),
+            al_fallar=self._mostrar_error_archivo,
+        )
+
+    def _guardar_informe_csv(self) -> None:
+        """«Guardar el informe del lote como CSV…» (RF-C14)."""
+        informe = self._informe_actual() or self._informe_de_simulacion()
+        if informe is None:
+            return
+        ruta = elegir_para_guardar(self, TipoArchivo.CSV, nombre_archivo_csv_sugerido(informe))
+        if ruta is None:
+            return
+        self._lanzador.lanzar(
+            escribir_informe_csv,
+            ruta,
+            informe,
+            al_terminar=lambda r: self.statusBar().showMessage(
+                self.tr("Informe guardado en «{archivo}»").format(archivo=r.name)
+            ),
+            al_fallar=self._mostrar_error_archivo,
+        )
+
     # --- Cierre -----------------------------------------------------------------------
 
     def closeEvent(self, ev: QCloseEvent) -> None:
-        """CA-20.8 y RF-L23: con una tarea o un lote en curso se pide confirmación."""
+        """CA-20.8 y RF-L23: con una tarea o un lote en curso se pide confirmación.
+
+        Con un lote cargado o importado y cambios sin guardar se pregunta antes (RF-G08); si hay
+        un lote en ejecución prevalece la confirmación de RF-L23 (un solo diálogo).
+        """
+        if (
+            not self._cierre_confirmado
+            and not self._lote_en_curso
+            and not self._creando
+            and self._hay_cambios_sin_guardar()
+        ):
+            respuesta = self._preguntar_guardar_cambios()
+            if respuesta == "cancelar":
+                ev.ignore()
+                return
+            if respuesta == "guardar":
+                ev.ignore()
+                self._guardar_lote(despues=self._cerrar_confirmado)
+                return
         lote = self._lote
         if lote is not None and not lote.modo_uno and self._lote_en_curso:
             snap = lote.puente.instantanea()
