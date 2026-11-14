@@ -283,6 +283,22 @@ funcionado en Proxmox y quedan fuera.
 8. **Rol `ProxLaunchCreador` ampliado** (decisión del usuario): `VM.Config.Disk`, `VM.Clone`,
    `Datastore.AllocateTemplate` y `Sys.AccessNetwork` sobre `/nodes`. Sin `Datastore.Allocate`.
 
+## D-25 · Decisiones de los requisitos del MVP 4 — Aprobada (2026-11-14)
+Requisitos en `docs/requisitos/mvp4.md`.
+1. **P-O01 (usuario): clon automático.** Enlazado si el storage lo permite; si no, completo. Se avisa
+   de que la plantilla queda atada a sus clones; en modo avanzado se puede forzar completo.
+2. **P-O02 (usuario): 3 perfiles de fábrica nuevos** (Windows 11, Windows Server 2022/2025,
+   Linux/Red Hat), solo con hardware y sin ISO. Pasan a ser 9 (modifica P-M05 de D-22).
+3. **P-O03 (orquestador): hasta 3 clones enlazados simultáneos por nodo**, condicionado a la
+   medición de LAB-M4-10; si hay problemas de bloqueo, 1 por nodo (D-20.5 en lo demás).
+4. **Decisiones técnicas DT-O1 a DT-O17** del analista (§15 de los requisitos): aprobadas.
+5. **Enmiendas** a M1, M2, M3 y al código según §14 de los requisitos (origen distinto de disco
+   vacío en perfiles, lotes y CSV; escrituras del motor ampliadas con `clone`, `PUT config` y
+   `resize`; `version_formato` 2 solo si hace falta; storages recordados en `PerfilConexion`;
+   rol de 14 privilegios; `capacidades.py` con importación en 8.4).
+6. **Aviso Red Hat 10:** RHEL/Rocky/Alma 10 exigen CPU x86-64-v3; la app avisa al elegir esas ISO
+   (a confirmar en LAB-M4-05).
+
 ## Correcciones técnicas a `prompt.md`
 Errores o imprecisiones de la especificación original que los requisitos deben
 respetar:
