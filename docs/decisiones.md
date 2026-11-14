@@ -123,7 +123,7 @@ confirmar) | **Pospuesta** (se decidirá más adelante).
 **Fuera del alcance por ahora:** contenedores LXC, editar o borrar MVs que ya
 existían, monitoreo, alta disponibilidad (HA).
 
-## D-13 · Origen del sistema operativo — Pospuesta (2026-11-11)
+## D-13 · Origen del sistema operativo — Resuelta por D-24 (2026-11-14)
 - Los casos reales del usuario son variados: **ISO**, **OVA** (convertir o
   extraer el disco qcow2/vmdk) y **migración desde VMware**.
 - Se diseña desde el MVP 1 como **pieza intercambiable** ("Origen del SO"); el
@@ -254,6 +254,19 @@ Tomadas por el orquestador mientras el usuario estaba ausente; el usuario las ap
 8. **Menús:** «Lote» y «Perfiles» como menús de nivel superior (arquitectura §7).
 9. **Avisos de clúster sin número de fila:** solo lleva «Fila N» el aviso de una fila que pidió
    ese nodo de forma fija. `filas_que_exceden` usa la variante voraz.
+
+## D-24 · Alcance del MVP 4: origen del sistema operativo — Aprobada (2026-11-14)
+Resuelve D-13. El usuario trabaja con ISOs (Windows y Red Hat) y discos qcow2; las OVA no le han
+funcionado en Proxmox y quedan fuera.
+1. **Instalar desde ISO:** catálogo de ISOs de los storages; subir desde el equipo o descargar
+   desde URL al storage (si hay permisos). Asistente para Windows: segundo CD con drivers VirtIO
+   y hardware adecuado (q35, UEFI, TPM cuando aplique). La instalación la termina el usuario;
+   la instalación desatendida queda para después.
+2. **Importar disco qcow2 (o vmdk/raw):** subirlo a un storage e importarlo al crear la MV; en
+   lote, cada MV recibe su copia. Donde la API exija `root@pam` o SSH, la app lo explica y no lo hace.
+3. **Clonar una plantilla** de Proxmox, pensado para lotes.
+4. Se integra con perfiles (origen sugerido), lotes guardados y CSV (columna `origen`).
+5. Datos de la API por versión y permisos: a confirmar por el investigador antes de los requisitos.
 
 ## Correcciones técnicas a `prompt.md`
 Errores o imprecisiones de la especificación original que los requisitos deben

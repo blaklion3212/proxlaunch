@@ -32,8 +32,8 @@ Nunca registres contraseñas, tokens ni datos personales.
 - **Laboratorio:** apagado y conservado (PVE 9.2, solo 127.0.0.1); limpio de MVs y ajustes.
   Se destruirá sin rastro al terminar todas las pruebas (D-15).
 - **MVP 3 aprobado** por el usuario (2026-11-14); D-22 y D-23 definitivas.
-- **Próximo paso:** MVP 4 (origen del SO, D-13): el usuario pidió una propuesta de cómo integrar
-  ISOs (Windows, RHEL) y discos qcow2; las OVA no le han funcionado en Proxmox.
+- **Fase en curso (nueva):** MVP 4, origen del SO (D-24 aprobada: ISO con asistente para Windows,
+  importar qcow2, clonar plantilla). Investigación de la API en curso.
 
 ---
 
