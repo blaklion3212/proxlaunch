@@ -20,16 +20,37 @@ ENCABEZADO_PLANTILLA: tuple[str, ...] = (
     "vlan",
     "nodo",
     "vmid",
+    "origen",
+    "fuente",
+    "so",
+    "virtio",
+    "modo_clon",
 )
 SEPARADORES_PLANTILLA = (";", ",")  # «;» Excel en español (por defecto), «,» Excel en inglés
 
 
 def filas_plantilla() -> list[list[str | int]]:
-    """Filas de ejemplo ``ejemplo-01`` y ``ejemplo-02`` (memoria y disco en GiB)."""
-    return [
+    """Filas de ejemplo ``ejemplo-01``… (memoria y disco en GiB): vacía y una por origen.
+
+    ``ejemplo-03`` instala un ISO, ``ejemplo-04`` importa un disco (``disco`` = ampliar a) y
+    ``ejemplo-05`` clona una plantilla (``cpu``, ``memoria`` y ``disco`` = ajustes). Las fuentes
+    son nombres ficticios que el usuario sustituye; nunca URL ni rutas.
+    """
+    filas: list[list[str | int]] = [
         ["ejemplo-01", "fabrica.servidor-mediano", "", "8", 100, "local-lvm", "vmbr0", "", "", ""],
         ["ejemplo-02", "", 2, "4 GiB", 40, "", "vmbr1", 20, "pve2", 250],
+        ["ejemplo-03", "", 2, "4", 32, "", "", "", "", ""],
+        ["ejemplo-04", "", 2, "4", 40, "", "", "", "", ""],
+        ["ejemplo-05", "", 4, "8", 80, "", "", "", "", ""],
     ]
+    origenes: list[list[str | int]] = [
+        ["", "", "", "", ""],
+        ["", "", "", "", ""],
+        ["iso", "ejemplo-instalador.iso", "linux", "", ""],
+        ["importar", "ejemplo-disco.qcow2", "", "", ""],
+        ["clonar", "ejemplo-plantilla", "", "", "auto"],
+    ]
+    return [fila + extra for fila, extra in zip(filas, origenes, strict=True)]
 
 
 def escribir_plantilla(ruta: Path, *, separador: str = ";") -> None:

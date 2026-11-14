@@ -35,6 +35,7 @@ from proxlaunch.nucleo.perfiles_maquina.formato import (
     PerfilLeido,
     leer_perfil_dict,
     perfil_a_dict,
+    version_para,
 )
 from proxlaunch.nucleo.perfiles_maquina.modelos import ConfigPerfil, OrigenPerfil, PerfilMaquina
 from proxlaunch.nucleo.perfiles_maquina.validacion import (
@@ -212,7 +213,12 @@ class AlmacenPerfilesMaquina:
         contenido: dict[str, object] = {
             "perfiles": [perfil_a_dict(p, con_pistas=True, con_id=True) for p in nueva]
         }
-        raiz = crear_envoltura(FORMATO_PERFILES, contenido, app_version=self.app_version)
+        raiz = crear_envoltura(
+            FORMATO_PERFILES,
+            contenido,
+            app_version=self.app_version,
+            version_formato=version_para(nueva),
+        )
         try:
             AlmacenJson(self.ruta, self.ahora).escribir(raiz)
         except OSError as exc:

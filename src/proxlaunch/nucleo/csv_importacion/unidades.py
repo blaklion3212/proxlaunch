@@ -13,7 +13,8 @@ from fractions import Fraction
 from typing import TypeVar
 
 from proxlaunch.nucleo.archivos.esquema import CodigoAvisoArchivo
-from proxlaunch.nucleo.modelos.vm import Firmware, ModeloRed
+from proxlaunch.nucleo.modelos.origen import ModoClon, TipoSO
+from proxlaunch.nucleo.modelos.vm import Firmware, ModeloRed, OrigenSO
 
 _T = TypeVar("_T")
 
@@ -188,3 +189,73 @@ def firmware(texto: str) -> Firmware:
 def modelo_red(texto: str) -> ModeloRed:
     """``virtio`` o ``e1000``, sin distinguir mayúsculas."""
     return _enumeracion(texto, _MODELOS_RED, "virtio, e1000", "virtio")
+
+
+# --- MVP 4: origen del SO (RF-O28). Sin distinguir mayúsculas ni acentos; ``_ - /`` = espacio ---
+
+_ORIGENES = {
+    "vacio": OrigenSO.DISCO_VACIO,
+    "disco vacio": OrigenSO.DISCO_VACIO,
+    "iso": OrigenSO.ISO,
+    "importar": OrigenSO.IMPORTAR_DISCO,
+    "imagen": OrigenSO.IMPORTAR_DISCO,
+    "importar disco": OrigenSO.IMPORTAR_DISCO,
+    "clonar": OrigenSO.CLONAR_PLANTILLA,
+    "plantilla": OrigenSO.CLONAR_PLANTILLA,
+    "clonar plantilla": OrigenSO.CLONAR_PLANTILLA,
+}
+_TIPOS_SO = {
+    "linux": TipoSO.LINUX,
+    "windows 11": TipoSO.WINDOWS_11,
+    "windows11": TipoSO.WINDOWS_11,
+    "windows server 2022 2025": TipoSO.WINDOWS_SERVER_2022_2025,
+    "windows server 2022": TipoSO.WINDOWS_SERVER_2022_2025,
+    "windows server 2025": TipoSO.WINDOWS_SERVER_2022_2025,
+    "windows 10": TipoSO.WINDOWS_10,
+    "windows10": TipoSO.WINDOWS_10,
+    "windows server 2016 2019": TipoSO.WINDOWS_SERVER_2016_2019,
+    "windows server 2016": TipoSO.WINDOWS_SERVER_2016_2019,
+    "windows server 2019": TipoSO.WINDOWS_SERVER_2016_2019,
+    "otro": TipoSO.OTRO,
+    "other": TipoSO.OTRO,
+}
+_SI_NO = {"si": True, "yes": True, "true": True, "1": True, "no": False, "false": False, "0": False}
+_MODOS_CLON = {
+    "auto": ModoClon.AUTOMATICO,
+    "automatico": ModoClon.AUTOMATICO,
+    "enlazado": ModoClon.ENLAZADO,
+    "completo": ModoClon.COMPLETO,
+}
+
+
+def _clave_enum(texto: str) -> str:
+    """Clave de comparación: ``Windows_Server 2022/2025`` → ``windows server 2022 2025``."""
+    t = _clave(_recortar(texto))
+    for sep in "_-/":
+        t = t.replace(sep, " ")
+    return " ".join(t.split())
+
+
+def origen(texto: str) -> OrigenSO:
+    """``vacio``/``disco_vacio``, ``iso``, ``importar``/``imagen`` o ``clonar``/``plantilla``."""
+    return _enumeracion(_clave_enum(texto), _ORIGENES, "vacio, iso, importar, clonar", "iso")
+
+
+def tipo_so(texto: str) -> TipoSO:
+    """``linux``, ``windows 11``, ``windows server 2022/2025``, ``windows 10``, …, ``otro``."""
+    return _enumeracion(
+        _clave_enum(texto),
+        _TIPOS_SO,
+        "linux, windows 11, windows server 2022/2025, windows 10, windows server 2016/2019, otro",
+        "linux",
+    )
+
+
+def si_no(texto: str) -> bool:
+    """``si``/``no`` (también ``yes``/``no``, ``true``/``false``, ``1``/``0``)."""
+    return _enumeracion(_clave_enum(texto), _SI_NO, "si, no", "si")
+
+
+def modo_clon(texto: str) -> ModoClon:
+    """``auto``, ``enlazado`` o ``completo``."""
+    return _enumeracion(_clave_enum(texto), _MODOS_CLON, "auto, enlazado, completo", "auto")

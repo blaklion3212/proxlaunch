@@ -15,6 +15,8 @@ from proxlaunch.nucleo.archivos.constantes import (
     LONG_DESCRIPCION,
     MAX_BYTES_PERFILES,
     MAX_PERFILES_ARCHIVO,
+    VERSION_FORMATO,
+    VERSION_FORMATO_BASE,
 )
 from proxlaunch.nucleo.archivos.envoltura import (
     FORMATO_PERFILES,
@@ -30,7 +32,11 @@ from proxlaunch.nucleo.archivos.esquema import (
     MotivoCampo,
     combinar_avisos,
 )
-from proxlaunch.nucleo.archivos.esquema_config import config_perfil_a_dict, leer_config_perfil
+from proxlaunch.nucleo.archivos.esquema_config import (
+    config_perfil_a_dict,
+    leer_config_perfil,
+    requiere_version_2,
+)
 from proxlaunch.nucleo.archivos.json_estricto import cargar_json_estricto
 from proxlaunch.nucleo.archivos.lector import leer_archivo_limitado
 from proxlaunch.nucleo.archivos.texto import contiene_token, exigir_sin_credencial, texto_seguro
@@ -83,6 +89,12 @@ def perfil_a_dict(
     return datos
 
 
+def version_para(perfiles: Sequence[PerfilMaquina]) -> int:
+    """2 solo si algún perfil usa algo del MVP 4 (DT-O15); 1 en otro caso."""
+    usa = any(requiere_version_2(p.config) for p in perfiles)
+    return VERSION_FORMATO if usa else VERSION_FORMATO_BASE
+
+
 def perfiles_a_bytes(
     perfiles: Sequence[PerfilMaquina], *, con_pistas: bool, app_version: str
 ) -> bytes:
@@ -90,7 +102,14 @@ def perfiles_a_bytes(
     contenido: dict[str, object] = {
         "perfiles": [perfil_a_dict(p, con_pistas=con_pistas) for p in perfiles]
     }
-    return a_bytes_json(crear_envoltura(FORMATO_PERFILES, contenido, app_version=app_version))
+    return a_bytes_json(
+        crear_envoltura(
+            FORMATO_PERFILES,
+            contenido,
+            app_version=app_version,
+            version_formato=version_para(perfiles),
+        )
+    )
 
 
 def leer_perfil_dict(

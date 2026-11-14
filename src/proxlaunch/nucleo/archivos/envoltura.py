@@ -2,6 +2,11 @@
 
 Todo archivo lleva ``formato``, ``version_formato`` (entero ≥ 1) y ``app_version`` (informativa).
 
+VERSIONES (MVP 4, DT-O15): ``VERSION_FORMATO`` (2) es la máxima que se LEE. Al escribir, el
+archivo lleva ``2`` solo si usa algo del MVP 4 (origen distinto de disco vacío o datos de SO) y
+``1`` en otro caso, de modo que un MVP 3 siga abriendo los archivos que no lo necesitan. La
+migración v1 → v2 es la identidad (un v1 ya es un v2 con ``origen = disco_vacio``) y no avisa.
+
 REGLA DE VERSIONADO (CA-X01.7): añadir un campo OPCIONAL con valor por defecto NO sube
 ``VERSION_FORMATO``; cambiar el significado de un campo existente, o volver obligatorio uno
 nuevo, SÍ lo sube y exige registrar aquí una migración pura ``v → v+1``.
@@ -12,7 +17,7 @@ from __future__ import annotations
 import json
 from collections.abc import Callable, Mapping
 
-from proxlaunch.nucleo.archivos.constantes import VERSION_FORMATO
+from proxlaunch.nucleo.archivos.constantes import VERSION_FORMATO, VERSION_FORMATO_BASE
 from proxlaunch.nucleo.archivos.esquema import AvisoArchivo, CodigoAvisoArchivo, Envoltura
 from proxlaunch.nucleo.errores import CodigoError, ErrorProxLaunch
 
@@ -25,8 +30,20 @@ CLAVES_ENVOLTURA = frozenset({"formato", "version_formato", "app_version"})
 # Una migración recibe el contenido (sin la envoltura) de la versión v y devuelve el de v+1.
 Migracion = Callable[[dict[str, object]], dict[str, object]]
 
-# formato → {versión de origen: migración}. En el MVP 3 la cadena está vacía (solo existe v1).
-MIGRACIONES: dict[str, dict[int, Migracion]] = {FORMATO_PERFILES: {}, FORMATO_LOTE: {}}
+
+def _identidad(contenido: dict[str, object]) -> dict[str, object]:
+    """v1 → v2: sin cambios. El origen ausente ya vale ``disco_vacio`` al leer cada config."""
+    return dict(contenido)
+
+
+# formato → {versión de origen: migración}. v1 → v2 es la identidad (MVP 4).
+MIGRACIONES: dict[str, dict[int, Migracion]] = {
+    FORMATO_PERFILES: {1: _identidad},
+    FORMATO_LOTE: {1: _identidad},
+}
+# Pasos de la tabla por defecto que no producen el aviso ``MIGRADO``: un archivo v1 sigue siendo
+# válido tal cual (CA-O03.2: «se cargan sin cambios y sin avisos nuevos»).
+PASOS_SIN_AVISO: frozenset[int] = frozenset({1})
 
 
 def _formato_ajeno(esperado: str, encontrado: object = None) -> ErrorProxLaunch:
@@ -72,6 +89,7 @@ def abrir_envoltura(
     if version < version_soportada:
         pasos = MIGRACIONES.get(formato, {}) if migraciones is None else migraciones
         actual = version
+        con_aviso = migraciones is not None  # tabla por defecto: pasos silenciosos
         while actual < version_soportada:
             migrar = pasos.get(actual)
             if migrar is None:
@@ -80,25 +98,41 @@ def abrir_envoltura(
                     {"campo": "", "detalle": "sin_migracion", "version_archivo": str(actual)},
                 )
             contenido = migrar(contenido)
+            con_aviso = con_aviso or actual not in PASOS_SIN_AVISO
             actual += 1
-        avisos = (
-            AvisoArchivo(
-                CodigoAvisoArchivo.MIGRADO,
-                {"desde": str(version), "hasta": str(version_soportada)},
-            ),
-        )
+        if con_aviso:
+            avisos = (
+                AvisoArchivo(
+                    CodigoAvisoArchivo.MIGRADO,
+                    {"desde": str(version), "hasta": str(version_soportada)},
+                ),
+            )
     return Envoltura(formato=formato, version_original=version, contenido=contenido, avisos=avisos)
 
 
 def crear_envoltura(
-    formato: str, contenido: Mapping[str, object], *, app_version: str
+    formato: str,
+    contenido: Mapping[str, object],
+    *,
+    app_version: str,
+    version_formato: int = VERSION_FORMATO_BASE,
 ) -> dict[str, object]:
-    """Objeto raíz listo para serializar: envoltura + contenido."""
+    """Objeto raíz listo para serializar: envoltura + contenido.
+
+    ``version_formato`` es la versión que se ESCRIBE (1 por defecto; 2 si el contenido usa algo
+    del MVP 4, ver ``esquema_config.requiere_version_2``).
+    """
     if CLAVES_ENVOLTURA & contenido.keys():
         raise ValueError("El contenido no puede usar claves de la envoltura")
+    if (
+        isinstance(version_formato, bool)
+        or not isinstance(version_formato, int)
+        or not VERSION_FORMATO_BASE <= version_formato <= VERSION_FORMATO
+    ):
+        raise ValueError("version_formato fuera de las versiones conocidas")
     raiz: dict[str, object] = {
         "formato": formato,
-        "version_formato": VERSION_FORMATO,
+        "version_formato": version_formato,
         "app_version": app_version,
     }
     raiz.update(contenido)

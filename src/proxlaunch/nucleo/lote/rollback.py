@@ -10,7 +10,7 @@ from __future__ import annotations
 
 import logging
 import threading
-from collections.abc import Callable, Collection
+from collections.abc import Callable, Collection, Mapping
 from concurrent.futures import ThreadPoolExecutor
 from typing import Any
 
@@ -32,6 +32,8 @@ from proxlaunch.nucleo.lote.reconciliacion import (
     AVISO_CREADA_TRAS_COMPROBAR,
     tiene_etiqueta_del_lote,
 )
+from proxlaunch.nucleo.modelos.origen import DetalleClon
+from proxlaunch.nucleo.modelos.vm import OrigenSO
 from proxlaunch.nucleo.registro import enmascarar
 from proxlaunch.nucleo.reloj import Reloj
 from proxlaunch.nucleo.servicios.conexion import Sesion
@@ -53,6 +55,43 @@ ObservadorRollback = Callable[[ResultadoRollback], None]
 
 def _verdadero(valor: Any) -> bool:
     return str(valor).strip().lower() in ("1", "true", "yes", "on")
+
+
+def _vmid_de_plantilla(entrada: EntradaLibro) -> int | None:
+    """VMID de la plantilla de la que se clonó la MV (``None`` si no es un clon)."""
+    detalle = entrada.elemento.cfg.detalle_origen
+    if entrada.elemento.cfg.origen == OrigenSO.CLONAR_PLANTILLA and isinstance(
+        detalle, DetalleClon
+    ):
+        return detalle.plantilla.vmid
+    return None
+
+
+def es_propia(
+    config: Mapping[str, Any], entrada: EntradaLibro, id_lote: str, etiquetado: bool
+) -> bool:
+    """Regla de propiedad antes de borrar (RF-L18, D-21; ampliada en MVP 4, C2).
+
+    - Nunca se borra el VMID de la plantilla de un clon.
+    - Con ``etiquetado``: la MV lleva la etiqueta del lote (y, si tiene nombre, es el del plan).
+      Un CLON sin etiqueta (el ``PUT`` de etiquetas pudo fallar, DT-O14, CA-O22.5) también es
+      propia si la creó una tarea nuestra (UPID propio), no fue rescatada por reconciliación y
+      su ``name`` es exactamente el del plan.
+    - Sin ``etiquetado``: solo la prueba del nombre (str e igual al del plan).
+    """
+    el = entrada.elemento
+    if _vmid_de_plantilla(entrada) == el.vmid:
+        return False
+    nombre = config.get("name")
+    nombre_igual = isinstance(nombre, str) and nombre == el.nombre
+    if not etiquetado:
+        return nombre_igual
+    if tiene_etiqueta_del_lote(dict(config), id_lote):
+        return not (isinstance(nombre, str) and nombre and nombre != el.nombre)
+    if el.cfg.origen == OrigenSO.CLONAR_PLANTILLA:
+        rescatada = AVISO_CREADA_TRAS_COMPROBAR in entrada.avisos
+        return entrada.upid is not None and not rescatada and nombre_igual
+    return False
 
 
 class ServicioRollback:
@@ -274,17 +313,7 @@ class ServicioRollback:
     def _motivo_omision(
         self, config: dict[str, Any], entrada: EntradaLibro, id_lote: str, etiquetado: bool
     ) -> ErrorProxLaunch | None:
-        el = entrada.elemento
-        nombre = config.get("name")
-        if etiquetado:
-            propia = tiene_etiqueta_del_lote(config, id_lote)
-            nombre_distinto = isinstance(nombre, str) and nombre and nombre != el.nombre
-        else:
-            # Sin etiquetas la única prueba es el nombre: debe ser str e igual al del plan
-            # (sin ``name`` no hay demostración de propiedad).
-            propia = True
-            nombre_distinto = not isinstance(nombre, str) or nombre != el.nombre
-        if not propia or nombre_distinto:
+        if not es_propia(config, entrada, id_lote, etiquetado):
             return self._error(CodigoError.ROLLBACK_NO_PROPIA, entrada)
         if _verdadero(config.get("protection", 0)) or config.get("lock"):
             return self._error(CodigoError.ROLLBACK_BLOQUEADA, entrada)

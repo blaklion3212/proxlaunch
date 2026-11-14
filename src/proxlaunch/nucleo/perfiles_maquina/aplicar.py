@@ -7,21 +7,34 @@ nodo efectivo (``actual.nodo``) y nunca se inventa un valor (CA-P06.7).
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from collections.abc import Callable
+from dataclasses import dataclass, replace
 
+from proxlaunch.nucleo.modelos.catalogo import Contenido
 from proxlaunch.nucleo.modelos.inventario import Inventario
+from proxlaunch.nucleo.modelos.origen import (
+    DetalleClon,
+    DetalleImportacion,
+    DetalleIso,
+    DetalleOrigen,
+    RefPlantilla,
+    RefVolumen,
+)
 from proxlaunch.nucleo.modelos.vm import (
     Ballooning,
     ConfiguracionVM,
     Disco,
     Firmware,
     InterfazRed,
+    OrigenSO,
 )
+from proxlaunch.nucleo.origen.nombres import partes_volid
 from proxlaunch.nucleo.perfiles_maquina.modelos import (
     BallooningPerfil,
     ConfigPerfil,
     DiscoPerfil,
     PerfilMaquina,
+    PistaOrigen,
     RedPerfil,
 )
 from proxlaunch.nucleo.validacion import CARACTERES_PROHIBIDOS_ID, TIPOS_BRIDGE
@@ -30,7 +43,7 @@ from proxlaunch.nucleo.valores_defecto import bridge_por_defecto, storage_por_de
 
 @dataclass(frozen=True)
 class AvisoPista:
-    """Una pista que no sirvió. ``recurso``: ``storage``, ``storage_efi`` o ``bridge``.
+    """Una pista que no sirvió. ``recurso``: ``storage``, ``storage_efi``, ``bridge`` o ``fuente``.
 
     ``usado`` es el valor que se puso en su lugar (``None`` si no había ninguno apto).
     """
@@ -57,6 +70,72 @@ class ResumenPerfil:
 
 def _usable(valor: str) -> bool:
     return not any(c in valor for c in CARACTERES_PROHIBIDOS_ID)
+
+
+def _ref_pista(
+    inv: Inventario | None,
+    nodo: str,
+    nombre: str,
+    storage_preferido: str | None,
+    contenido: Contenido,
+    avisar: Callable[[str, str, str | None], None],
+) -> RefVolumen:
+    """Resuelve el nombre de una pista contra el catálogo del nodo (RF-O26, CA-O26.2).
+
+    Existe → ``RefVolumen`` con volid; catálogo no leído o ambiguo → solo el nombre; catálogo
+    leído y no existe → solo el nombre y aviso ``fuente`` (nunca cambia a «Vacía» en silencio).
+    """
+    if not nombre:
+        return RefVolumen()
+    cat = None if inv is None else inv.catalogo
+    if cat is None or not any(
+        lst.nodo == nodo and lst.contenido == contenido for lst in cat.listados
+    ):
+        return RefVolumen(nombre=nombre)
+    coincidentes = [v for v in cat.buscar_nombre(nombre, nodo, contenido) if v.admitido]
+    if storage_preferido:
+        preferidas = [v for v in coincidentes if v.storage == storage_preferido]
+        coincidentes = preferidas or coincidentes
+    if len(coincidentes) == 1:
+        return RefVolumen(nombre=nombre, volid=coincidentes[0].volid)
+    if not coincidentes:
+        avisar("fuente", nombre, None)
+    return RefVolumen(nombre=nombre)
+
+
+def _detalle_desde_pista(
+    config: ConfigPerfil,
+    inv: Inventario | None,
+    nodo: str,
+    avisar: Callable[[str, str, str | None], None],
+) -> DetalleOrigen | None:
+    pista = config.pista_origen or PistaOrigen()
+    if config.origen == OrigenSO.ISO:
+        iso = _ref_pista(
+            inv, nodo, pista.nombre_fuente, pista.storage_preferido, Contenido.ISO, avisar
+        )
+        drivers = (
+            None
+            if pista.drivers is None
+            else _ref_pista(inv, nodo, pista.drivers, None, Contenido.ISO, avisar)
+        )
+        return DetalleIso(iso=iso, drivers=drivers, sin_drivers=pista.sin_drivers)
+    if config.origen == OrigenSO.IMPORTAR_DISCO:
+        imagen = _ref_pista(
+            inv, nodo, pista.nombre_fuente, pista.storage_preferido, Contenido.IMPORT, avisar
+        )
+        return DetalleImportacion(imagen=imagen, ampliar_a_gib=pista.ampliar_a_gib)
+    if config.origen == OrigenSO.CLONAR_PLANTILLA:
+        ref = RefPlantilla(nombre=pista.nombre_fuente)
+        cat = None if inv is None else inv.catalogo
+        if pista.nombre_fuente and cat is not None and cat.plantillas is not None:
+            halladas = cat.plantillas_por_nombre(pista.nombre_fuente)
+            if not halladas:
+                avisar("fuente", pista.nombre_fuente, None)
+            elif len({p.vmid for p in halladas}) == 1:
+                ref = RefPlantilla(nombre=pista.nombre_fuente, vmid=halladas[0].vmid)
+        return DetalleClon(plantilla=ref, modo=pista.modo_clon, ajustes=pista.ajustes)
+    return None
 
 
 def aplicar_config(
@@ -122,6 +201,20 @@ def aplicar_config(
             bridge = br_defecto
         redes.append(InterfazRed(bridge or "", r.modelo, r.vlan))
 
+    detalle = _detalle_desde_pista(config, inv, nodo, avisar)
+    if config.origen == OrigenSO.CLONAR_PLANTILLA:
+        # Un clon hereda hardware de la plantilla: cómputo y discos del perfil no la pisan
+        # (CA-O26.5); solo cuentan los ajustes guardados.
+        clon = replace(
+            actual,
+            origen=config.origen,
+            etiquetas=actual.etiquetas,
+            tipo_so=None,
+            tpm=False,
+            agente_qemu=False,
+            detalle_origen=detalle,
+        )
+        return ResultadoAplicacion(clon, tuple(avisos))
     cfg = ConfiguracionVM(
         vmid=actual.vmid,
         nombre=actual.nombre,
@@ -143,6 +236,10 @@ def aplicar_config(
         redes=redes,
         origen=config.origen,
         etiquetas=actual.etiquetas,
+        tipo_so=config.tipo_so,
+        tpm=config.tpm,
+        agente_qemu=config.agente_qemu,
+        detalle_origen=detalle,
     )
     return ResultadoAplicacion(cfg, tuple(avisos))
 
@@ -154,12 +251,51 @@ def aplicar_perfil(
     return aplicar_config(perfil.config, actual, inv)
 
 
+def _nombre_de(ref: RefVolumen) -> str:
+    if ref.nombre:
+        return ref.nombre
+    partes = partes_volid(ref.volid) if ref.volid else None
+    return partes[2] if partes else ""
+
+
+def _storage_de(ref: RefVolumen) -> str | None:
+    partes = partes_volid(ref.volid) if ref.volid else None
+    return partes[0] if partes else None
+
+
+def _pista_desde_detalle(cfg: ConfiguracionVM) -> PistaOrigen | None:
+    """Origen sugerido a partir del formulario: solo nombres, nunca volids (RF-O26)."""
+    det = cfg.detalle_origen
+    if isinstance(det, DetalleIso):
+        return PistaOrigen(
+            nombre_fuente=_nombre_de(det.iso),
+            storage_preferido=_storage_de(det.iso),
+            drivers=None if det.drivers is None else _nombre_de(det.drivers) or None,
+            sin_drivers=det.sin_drivers,
+        )
+    if isinstance(det, DetalleImportacion):
+        return PistaOrigen(
+            nombre_fuente=_nombre_de(det.imagen),
+            storage_preferido=_storage_de(det.imagen),
+            ampliar_a_gib=det.ampliar_a_gib,
+        )
+    if isinstance(det, DetalleClon):
+        return PistaOrigen(
+            nombre_fuente=det.plantilla.nombre, modo_clon=det.modo, ajustes=det.ajustes
+        )
+    return None
+
+
 def config_desde_configuracion(cfg: ConfiguracionVM, *, con_pistas: bool) -> ConfigPerfil:
     """Perfil a partir del formulario (sin vmid, nombre, nodo ni etiquetas)."""
 
     def pista(valor: str | None) -> str | None:
         return valor if con_pistas and valor else None
 
+    # Sin la casilla de pistas el origen se guarda como «disco vacío» explícito (CA-O26.4).
+    origen = cfg.origen if con_pistas else OrigenSO.DISCO_VACIO
+    pista_origen = _pista_desde_detalle(cfg) if con_pistas else None
+    es_clon = origen == OrigenSO.CLONAR_PLANTILLA
     return ConfigPerfil(
         firmware=cfg.firmware,
         sockets=cfg.sockets,
@@ -181,8 +317,21 @@ def config_desde_configuracion(cfg: ConfiguracionVM, *, con_pistas: bool) -> Con
         storage_efi_preferido=pista(cfg.storage_efi),
         controlador_scsi=cfg.controlador_scsi,
         redes=tuple(RedPerfil(r.modelo, r.vlan, pista(r.bridge)) for r in cfg.redes),
-        origen=cfg.origen,
+        origen=origen,
+        tipo_so=None if es_clon or origen == OrigenSO.DISCO_VACIO else cfg.tipo_so,
+        tpm=False if es_clon or origen == OrigenSO.DISCO_VACIO else cfg.tpm,
+        agente_qemu=False if es_clon or origen == OrigenSO.DISCO_VACIO else cfg.agente_qemu,
+        pista_origen=pista_origen,
     )
+
+
+def _detalle_estable(det: DetalleOrigen | None) -> DetalleOrigen | None:
+    """Detalle sin los datos que fija el plan o la sesión (no son cambios del usuario)."""
+    if isinstance(det, DetalleImportacion):
+        return replace(det, tamano_virtual_bytes=None)
+    if isinstance(det, DetalleClon):
+        return replace(det, plantilla=replace(det.plantilla, nodo=None), modo_efectivo=None)
+    return det
 
 
 def _huella(cfg: ConfiguracionVM) -> tuple[object, ...]:
@@ -202,6 +351,10 @@ def _huella(cfg: ConfiguracionVM) -> tuple[object, ...]:
         cfg.controlador_scsi,
         tuple((r.bridge, r.modelo, r.vlan) for r in cfg.redes),
         cfg.origen,
+        cfg.tipo_so,
+        cfg.tpm,
+        cfg.agente_qemu,
+        _detalle_estable(cfg.detalle_origen),
     )
 
 

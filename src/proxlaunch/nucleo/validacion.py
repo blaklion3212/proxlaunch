@@ -1,4 +1,4 @@
-"""Reglas de validación V-01..V-21 (RF-13 a RF-19).
+"""Reglas de validación V-01..V-24 (RF-13 a RF-19) y puerta de entrada de las V-O del MVP 4.
 
 Todas las funciones son puras y devuelven TODOS los problemas encontrados. Los
 problemas llevan códigos y parámetros, nunca textos para el usuario.
@@ -102,6 +102,16 @@ def nombre_dns_valido(texto: Any) -> bool:
     return all(_RE_ETIQUETA_DNS.fullmatch(e) for e in texto.split("."))
 
 
+def tipo_cpu_valido(texto: Any) -> bool:
+    """Tipo de CPU con la forma de V-22 (va dentro de un parámetro de la API)."""
+    return isinstance(texto, str) and _RE_TIPO_CPU.fullmatch(texto) is not None
+
+
+def etiqueta_valida(texto: Any) -> bool:
+    """Etiqueta con el patrón de Proxmox (V-24)."""
+    return isinstance(texto, str) and _RE_ETIQUETA_PVE.fullmatch(texto) is not None
+
+
 def formatos_permitidos(tipo_storage: str) -> tuple[FormatoDisco, ...]:
     """Formatos elegibles según el backend (V-09, P-06). Nunca ``subvol``."""
     if tipo_storage in TIPOS_STORAGE_QCOW2:
@@ -173,9 +183,7 @@ def validar_vm(cfg: ConfiguracionVM, inv: Inventario, caps: Capacidades) -> list
     # V-22 tipo de CPU (va dentro de un parámetro de la API)
     if not isinstance(cfg.tipo_cpu, str) or not _RE_TIPO_CPU.fullmatch(cfg.tipo_cpu):
         err("tipo_cpu", "V-22")
-    # V-20 origen
-    if cfg.origen != OrigenSO.DISCO_VACIO:
-        err("origen", "V-20")
+    # V-20 (origen solo disco vacío) se retiró en el MVP 4: lo sustituye V-O01 (validacion_origen).
     # V-10 controlador scsi
     if cfg.controlador_scsi not in tuple(ControladorScsi):
         err("controlador_scsi", "V-10")
@@ -185,31 +193,81 @@ def validar_vm(cfg: ConfiguracionVM, inv: Inventario, caps: Capacidades) -> list
         if not isinstance(etiqueta, str) or not _RE_ETIQUETA_PVE.fullmatch(etiqueta):
             err(f"etiquetas[{i}]", "V-24", etiqueta=str(etiqueta))
 
+    if cfg.origen == OrigenSO.CLONAR_PLANTILLA:
+        # Un clon hereda discos, firmware y redes de la plantilla: los del formulario se
+        # ignoran (V-O29) y no se validan.
+        _validar_origen(cfg, inv, caps, p)
+        return p
     discos = cfg.discos if cfg.con_disco else []
     _validar_discos(cfg, inv, discos, p)
     _validar_efi(cfg, inv, discos, p)
     _validar_redes(cfg, inv, p)
+    _validar_origen(cfg, inv, caps, p)
     return p
 
 
-# Reglas de validar_vm que no dependen del servidor (capa 1 de perfiles, lotes y CSV).
-CODIGOS_SIN_SERVIDOR = frozenset(
+def _validar_origen(
+    cfg: ConfiguracionVM, inv: Inventario, caps: Capacidades, p: list[Problema]
+) -> None:
+    """Reglas V-O: capa 1 siempre (incluye avisos de datos ajenos) y capa 2 con origen.
+
+    Importación diferida: ``validacion_origen`` y ``asistente`` importan este módulo.
+    """
+    from proxlaunch.nucleo.origen.validacion_origen import (
+        validar_origen,
+        validar_origen_sin_servidor,
+    )
+
+    nuevos = validar_origen_sin_servidor(cfg)
+    if cfg.origen != OrigenSO.DISCO_VACIO:
+        nuevos += validar_origen(cfg, inv, caps)
+    # Sin duplicados por (código, campo): llamar a varias capas no repite el mismo problema.
+    vistos = {(q.codigo, q.campo) for q in p}
+    for q in nuevos:
+        if (q.codigo, q.campo) not in vistos:
+            vistos.add((q.codigo, q.campo))
+            p.append(q)
+
+
+# Reglas V-O que no dependen del servidor (capa 1), con sus subcódigos. Viven aquí para que
+# ``CODIGOS_SIN_SERVIDOR`` no importe ``validacion_origen`` (que importa este módulo); allí se
+# reexportan con el mismo nombre.
+CODIGOS_ORIGEN_SIN_SERVIDOR = frozenset(
     {
-        "V-05",
-        "V-06",
-        "V-07",
-        "V-07.sindisco",
-        "V-08",
-        "V-10",
-        "V-11",
-        "V-12",
-        "V-13",
-        "V-15",
-        "V-20",
-        "V-22",
-        "V-23",
-        "V-24",
+        "V-O01",
+        "V-O01.ajeno",
+        "V-O05",
+        "V-O05.seabios",
+        "V-O05.rhel10",
+        "V-O06",
+        "V-O07",
+        "V-O23",
+        "V-O24",
+        "V-O29",
+        "V-O29.sindisco",
     }
+)
+
+# Reglas de validar_vm que no dependen del servidor (capa 1 de perfiles, lotes y CSV).
+CODIGOS_SIN_SERVIDOR = (
+    frozenset(
+        {
+            "V-05",
+            "V-06",
+            "V-07",
+            "V-07.sindisco",
+            "V-08",
+            "V-10",
+            "V-11",
+            "V-12",
+            "V-13",
+            "V-15",
+            "V-22",
+            "V-23",
+            "V-24",
+        }
+    )
+    | CODIGOS_ORIGEN_SIN_SERVIDOR
 )
 
 

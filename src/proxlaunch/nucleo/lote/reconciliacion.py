@@ -17,12 +17,16 @@ from proxlaunch.nucleo.lote.constantes import (
     PREFIJO_ETIQUETA_LOTE,
 )
 from proxlaunch.nucleo.lote.modelos import EstadoMV
-from proxlaunch.nucleo.modelos.vm import ConfiguracionVM
+from proxlaunch.nucleo.modelos.origen import DetalleClon
+from proxlaunch.nucleo.modelos.vm import ConfiguracionVM, OrigenSO
 from proxlaunch.nucleo.reloj import Reloj
 
 _log = logging.getLogger("proxlaunch.lote.reconciliacion")
 
 AVISO_CREADA_TRAS_COMPROBAR = "creada_tras_comprobar"
+# Mientras Proxmox crea la MV la config trae ``lock: create``; un clon en curso, ``lock: clone``
+# (MVP 4, I4-§D). En ambos casos la propiedad aún no se puede decidir.
+LOCKS_EN_CREACION = frozenset({"create", "clone"})
 _PASO_CANCELACION_S = 1.0  # las esperas largas se parten para atender la cancelación
 _SEPARADOR_ETIQUETAS = re.compile(r"[;, ]+")
 
@@ -50,14 +54,14 @@ def etiquetas_de_config(config: dict[str, object] | None) -> frozenset[str]:
 
 
 def config_en_creacion(config: dict[str, object] | None) -> bool:
-    """``True`` si la config aún es parcial: ``lock: create`` (D2).
+    """``True`` si la config aún es parcial: ``lock: create`` o ``lock: clone`` (D2).
 
-    Mientras Proxmox crea la MV la config solo trae ``lock: create``; leer entonces las etiquetas
-    no demuestra nada, así que la propiedad todavía no se puede decidir.
+    Mientras Proxmox crea o clona la MV la config solo trae ese bloqueo; leer entonces las
+    etiquetas no demuestra nada, así que la propiedad todavía no se puede decidir.
     """
     if not config:
         return False
-    return config.get("lock") == "create"
+    return config.get("lock") in LOCKS_EN_CREACION
 
 
 def tiene_etiqueta_del_lote(config: dict[str, object] | None, id_lote: str) -> bool:
@@ -135,6 +139,25 @@ def reconciliar_incierta(
     return EstadoMV.NO_CREADA_SEGURA, None, None
 
 
+def _nodo_de_plantilla(cfg: ConfiguracionVM) -> str | None:
+    """Nodo de la plantilla si la MV es un clon (durante un clon con ``target`` la config vive
+    todavía en el nodo de la plantilla)."""
+    detalle = cfg.detalle_origen
+    if cfg.origen == OrigenSO.CLONAR_PLANTILLA and isinstance(detalle, DetalleClon):
+        return detalle.plantilla.nodo
+    return None
+
+
+def _config_de(cliente: _ClienteConfig, cfg: ConfiguracionVM) -> dict[str, object] | None:
+    """Config de la MV en su nodo y, para un clon que aún no llegó a él, en el de la plantilla."""
+    config = cliente.config_vm(cfg.nodo, cfg.vmid)
+    if config is None:
+        otro = _nodo_de_plantilla(cfg)
+        if otro is not None and otro != cfg.nodo:
+            config = cliente.config_vm(otro, cfg.vmid)
+    return config
+
+
 def _propiedad(
     cfg: ConfiguracionVM, id_lote: str, etiquetar: bool, cliente: _ClienteConfig
 ) -> tuple[EstadoMV, str | None, ErrorProxLaunch | None] | None:
@@ -143,7 +166,7 @@ def _propiedad(
     Devuelve ``None`` si la config aún está en creación (``lock: create``): no se decide.
     """
     try:
-        config = cliente.config_vm(cfg.nodo, cfg.vmid)
+        config = _config_de(cliente, cfg)
     except Exception:
         if not etiquetar:
             # Sin etiquetas no hay nada que verificar: existe y basta (como antes).

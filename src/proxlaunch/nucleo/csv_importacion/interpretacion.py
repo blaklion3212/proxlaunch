@@ -42,8 +42,31 @@ from proxlaunch.nucleo.csv_importacion.saneado import sin_control, texto_visible
 from proxlaunch.nucleo.errores import CodigoError, ErrorProxLaunch
 from proxlaunch.nucleo.lote.modelos import Destino, FilaLote
 from proxlaunch.nucleo.lote.reparto import nodos_elegibles
+from proxlaunch.nucleo.modelos.catalogo import Contenido
 from proxlaunch.nucleo.modelos.inventario import Inventario
-from proxlaunch.nucleo.modelos.vm import ConfiguracionVM, Disco, InterfazRed, ModeloRed
+from proxlaunch.nucleo.modelos.origen import (
+    AjustesClon,
+    DetalleClon,
+    DetalleImportacion,
+    DetalleIso,
+    RefPlantilla,
+    RefVolumen,
+)
+from proxlaunch.nucleo.modelos.vm import (
+    ConfiguracionVM,
+    Disco,
+    InterfazRed,
+    ModeloRed,
+    OrigenSO,
+)
+from proxlaunch.nucleo.origen.asistente import aplicar_asistente
+from proxlaunch.nucleo.origen.nombres import (
+    es_ruta_absoluta,
+    parece_url,
+    validar_nombre_archivo,
+    validar_volid,
+)
+from proxlaunch.nucleo.origen.resolucion import resolver_origen
 from proxlaunch.nucleo.perfiles_maquina.aplicar import AvisoPista, aplicar_config
 from proxlaunch.nucleo.perfiles_maquina.modelos import PerfilMaquina
 from proxlaunch.nucleo.validacion import (
@@ -112,6 +135,29 @@ def _columna_de_campo(campo: str) -> str | None:
     }
     if campo in fijos:
         return fijos[campo]
+    # MVP 4: campos del origen del SO.
+    if campo == "detalle_origen":
+        return "origen"
+    if campo in ("tipo_so", "firmware_so"):
+        return "so"
+    if campo.startswith(
+        ("detalle_origen.iso", "detalle_origen.imagen", "detalle_origen.plantilla")
+    ):
+        return "fuente"
+    if campo.startswith("detalle_origen.drivers"):
+        return "virtio"
+    if campo == "detalle_origen.modo":
+        return "modo_clon"
+    if campo in ("detalle_origen.ajustes.cores",):
+        return "cpu"
+    if campo == "detalle_origen.ajustes.sockets":
+        return "sockets"
+    if campo == "detalle_origen.ajustes.memoria_mib":
+        return "memoria"
+    if campo == "detalle_origen.ajustes.tipo_cpu":
+        return "tipo_cpu"
+    if campo in ("detalle_origen.ajustes.disco_gib", "detalle_origen.ampliar_a_gib"):
+        return "disco"
     if campo.startswith("discos["):
         indice, _, resto = campo[len("discos[") :].partition("]")
         if indice.isdigit() and int(indice) < MAX_DISCOS_CSV:
@@ -221,6 +267,8 @@ class _Fila:
     def __init__(self, ctx: _Contexto, fila: FilaCsv) -> None:
         self.ctx = ctx
         self.b = _Borrador(fila)
+        self._ajustes: AjustesClon | None = None  # clon: ajustes leídos de las columnas
+        self._ampliar: int | None = None  # importación: columna ``disco`` = ampliar a
 
     # -- lectura de celdas (solo columnas conocidas y no credenciales) --
 
@@ -308,16 +356,24 @@ class _Fila:
         cfg.nombre = nombre_crudo
         cfg.etiquetas = ()
 
-        cpu = self.entero("cpu")
-        if cpu is not None:
-            cfg.cores = cpu
-        sockets = self.entero("sockets")
-        if sockets is not None:
-            cfg.sockets = sockets
-        self._memoria(cfg)
-        self._firmware_y_cpu(cfg)
-        self._discos(cfg, nodo_ef)
-        self._red(cfg, nodo_ef)
+        self._origen(cfg)
+        cfg = self._asistente(cfg)
+        clon = cfg.origen == OrigenSO.CLONAR_PLANTILLA
+        if clon:
+            self._ajustes_clon(cfg)
+        else:
+            cpu = self.entero("cpu")
+            if cpu is not None:
+                cfg.cores = cpu
+            sockets = self.entero("sockets")
+            if sockets is not None:
+                cfg.sockets = sockets
+            self._memoria(cfg)
+        self._firmware_y_cpu(cfg, aplicar_tipo_cpu=not clon)
+        if not clon:
+            self._discos(cfg, nodo_ef)
+            self._red(cfg, nodo_ef)
+        self._detalle_origen(cfg)
         self._pistas(resultado.avisos, perfil)
 
         # Capa 1 (V-01 solo con nombre; V-02 con el VMID explícito o uno válido de relleno).
@@ -372,7 +428,7 @@ class _Fila:
         cfg.memoria_mib = mib
         self.ctx.registrar_avisos("memoria", avisos)
 
-    def _firmware_y_cpu(self, cfg: ConfiguracionVM) -> None:
+    def _firmware_y_cpu(self, cfg: ConfiguracionVM, *, aplicar_tipo_cpu: bool = True) -> None:
         crudo = self.celda("firmware")
         if crudo:
             try:
@@ -380,8 +436,146 @@ class _Fila:
             except unidades.ValorInvalido as e:
                 self.error_valor("firmware", e)
         tipo = self.texto("tipo_cpu")
-        if tipo is not None:
+        if tipo is not None and aplicar_tipo_cpu:
             cfg.tipo_cpu = tipo
+
+    # -- origen del SO (MVP 4, RF-O28) --
+
+    def _origen(self, cfg: ConfiguracionVM) -> None:
+        """Columna ``origen``: gana sobre el origen sugerido del perfil (CA-O28.5)."""
+        crudo = self.celda("origen")
+        if not crudo:
+            return
+        try:
+            nuevo = unidades.origen(crudo)
+        except unidades.ValorInvalido as e:
+            self.error_valor("origen", e)
+            return
+        if nuevo != cfg.origen:
+            cfg.origen = nuevo
+            cfg.detalle_origen = None  # el detalle del perfil era de otro origen
+            if nuevo in (OrigenSO.DISCO_VACIO, OrigenSO.CLONAR_PLANTILLA):
+                cfg.tipo_so, cfg.tpm, cfg.agente_qemu = None, False, False
+
+    def _asistente(self, cfg: ConfiguracionVM) -> ConfiguracionVM:
+        """Columna ``so``: fija el tipo y aplica el asistente (antes de las columnas de hardware,
+        que por eso siguen ganando)."""
+        crudo = self.celda("so")
+        if not crudo:
+            return cfg
+        try:
+            tipo = unidades.tipo_so(crudo)
+        except unidades.ValorInvalido as e:
+            self.error_valor("so", e)
+            return cfg
+        if cfg.origen in (OrigenSO.ISO, OrigenSO.IMPORTAR_DISCO):
+            return aplicar_asistente(cfg, tipo).cfg
+        cfg.tipo_so = tipo  # origen ajeno: V-O01.ajeno lo avisará
+        return cfg
+
+    def _ajustes_clon(self, cfg: ConfiguracionVM) -> None:
+        """En un clon ``cpu``, ``memoria``, ``disco`` y ``tipo_cpu`` son ajustes (CA-O22.1)."""
+        sockets, cores = self.entero("sockets"), self.entero("cpu")
+        memoria: int | None = None
+        disco: int | None = None
+        crudo = self.celda("memoria")
+        if crudo:
+            try:
+                memoria, avisos = unidades.memoria_mib(crudo, self.ctx.unidad_encabezado("memoria"))
+                self.ctx.registrar_avisos("memoria", avisos)
+            except unidades.ValorInvalido as e:
+                self.error_valor("memoria", e)
+        crudo = self.celda("disco")
+        if crudo:
+            try:
+                disco, avisos = unidades.disco_gib(crudo, self.ctx.unidad_encabezado("disco"))
+                self.ctx.registrar_avisos("disco", avisos)
+            except unidades.ValorInvalido as e:
+                self.error_valor("disco", e)
+        previo = (
+            cfg.detalle_origen if isinstance(cfg.detalle_origen, DetalleClon) else DetalleClon()
+        )
+        base = previo.ajustes
+        self._ajustes = AjustesClon(
+            sockets if sockets is not None else base.sockets,
+            cores if cores is not None else base.cores,
+            self.texto("tipo_cpu") or base.tipo_cpu,
+            memoria if memoria is not None else base.memoria_mib,
+            disco if disco is not None else base.disco_gib,
+        )
+
+    def _ref_fuente(self, crudo: str, contenido: Contenido) -> RefVolumen | None:
+        """``fuente`` de ISO o imagen: volid (con ``:``) o nombre; URL y rutas se rechazan."""
+        regla = "V-O02" if contenido == Contenido.ISO else "V-O03"
+        motivo: str | None
+        if parece_url(crudo):
+            self.b.sin_cfg = True
+            self.problema("fuente", "E-O21", Severidad.ERROR)
+            return None
+        if es_ruta_absoluta(crudo):
+            self.b.sin_cfg = True
+            self.problema("fuente", "E-O14", Severidad.ERROR)
+            return None
+        if ":" in crudo:
+            motivo = validar_volid(crudo, contenido)
+            ref = RefVolumen(nombre=crudo.partition("/")[2], volid=crudo)
+        else:
+            motivo = validar_nombre_archivo(crudo, contenido)
+            ref = RefVolumen(nombre=crudo)
+        if motivo is not None:
+            self.b.sin_cfg = True
+            self.problema("fuente", regla, Severidad.ERROR, {"motivo": motivo})
+            return None
+        return ref
+
+    def _detalle_origen(self, cfg: ConfiguracionVM) -> None:
+        """Construye ``detalle_origen`` con ``fuente``, ``virtio``, ``modo_clon`` y los ajustes."""
+        crudo = self.celda("fuente")
+        virtio = self.celda("virtio")
+        modo_txt = self.celda("modo_clon")
+        con_virtio: bool | None = None
+        if virtio:
+            try:
+                con_virtio = unidades.si_no(virtio)
+            except unidades.ValorInvalido as e:
+                self.error_valor("virtio", e)
+        modo = None
+        if modo_txt:
+            try:
+                modo = unidades.modo_clon(modo_txt)
+            except unidades.ValorInvalido as e:
+                self.error_valor("modo_clon", e)
+        origen = cfg.origen
+        if origen == OrigenSO.DISCO_VACIO:
+            if crudo:
+                self.problema("fuente", "V-O01.ajeno", Severidad.AVISO)
+            return
+        previo = cfg.detalle_origen
+        if origen == OrigenSO.ISO:
+            det = previo if isinstance(previo, DetalleIso) else DetalleIso()
+            ref = self._ref_fuente(crudo, Contenido.ISO) if crudo else det.iso
+            sin = det.sin_drivers if con_virtio is None else not con_virtio
+            cfg.detalle_origen = DetalleIso(
+                iso=ref or RefVolumen(), drivers=det.drivers, sin_drivers=sin
+            )
+        elif origen == OrigenSO.IMPORTAR_DISCO:
+            det_i = previo if isinstance(previo, DetalleImportacion) else DetalleImportacion()
+            ref = self._ref_fuente(crudo, Contenido.IMPORT) if crudo else det_i.imagen
+            cfg.detalle_origen = DetalleImportacion(
+                imagen=ref or RefVolumen(), ampliar_a_gib=self._ampliar
+            )
+        else:
+            det_c = previo if isinstance(previo, DetalleClon) else DetalleClon()
+            plantilla = det_c.plantilla
+            if crudo:
+                texto = self.texto("fuente")
+                plantilla = RefPlantilla(nombre=texto) if texto else RefPlantilla()
+            cfg.detalle_origen = DetalleClon(
+                plantilla=plantilla,
+                modo=modo or det_c.modo,
+                ajustes=self._ajustes or det_c.ajustes,
+                storage_destino=det_c.storage_destino,
+            )
 
     def _discos(self, cfg: ConfiguracionVM, nodo_ef: str) -> None:
         ctx = self.ctx
@@ -402,6 +596,9 @@ class _Fila:
             almacen = self.texto(col_alm)
             if almacen is not None:
                 almacenes[k] = almacen
+        if cfg.origen == OrigenSO.IMPORTAR_DISCO and tamanos.get(0) is not None:
+            # La imagen manda el tamaño; la columna ``disco`` significa «ampliar a» (CA-O28).
+            self._ampliar = tamanos.pop(0)
         if not tamanos and not almacenes:
             return
 
@@ -540,6 +737,11 @@ class _Fila:
         ctx, b = self.ctx, self.b
         inv = ctx.inv
         assert inv is not None and ctx.caps is not None
+        if cfg.origen != OrigenSO.DISCO_VACIO and inv.catalogo is not None:
+            # CA-O28.3: fuente inexistente o ambigua, con alternativas (catálogo ya leído).
+            _, de_origen = resolver_origen(cfg, inv, b.nodo or ctx.nodo_efectivo(None))
+            for p in de_origen:
+                self._de_validacion(p)
         if b.nodo:
             cfg.nodo = b.nodo
             for p in validar_vm(cfg, inv, ctx.caps):

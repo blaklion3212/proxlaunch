@@ -51,6 +51,24 @@ _RE_STORAGE = re.compile(
     r"storage\s+'(?P<id>[^']+)'|volume group\s+[\"'](?P<vg>[^\"']+)[\"']", re.IGNORECASE
 )
 _RE_NODO_EN_RUTA = re.compile(r"/nodes/(?P<nodo>[^/]+)")
+# MVP 4 (docs/arquitectura/mvp4.md §8): textos de clonar, importar, subir y descargar.
+_RE_CLON_NO_COMPARTIDO = re.compile(r"can't clone to non-shared storage", re.IGNORECASE)
+_RE_CLON_SIN_IMAGES = re.compile(r"does not support vm images", re.IGNORECASE)
+_RE_CLON_PARAMETRO = re.compile(r"not allowed for linked clones", re.IGNORECASE)
+_RE_CLON_ENLAZADO = re.compile(r"Linked clone feature is not supported", re.IGNORECASE)
+_RE_CLON_TPM = re.compile(r"cannot clone TPM state while VM is running", re.IGNORECASE)
+_RE_CLON_ID_OCUPADO = re.compile(
+    r"(?:unable to create VM\s+(?P<vmid>\d+)\s*:\s*)?config file already exists", re.IGNORECASE
+)
+_RE_RUTA_ABSOLUTA = re.compile(r"Only root can pass arbitrary filesystem paths", re.IGNORECASE)
+_RE_IMAGEN_BACKING = re.compile(r"backing file not allowed for untrusted image", re.IGNORECASE)
+_RE_NOMBRE_EXTENSION = re.compile(r"invalid filename or wrong extension", re.IGNORECASE)
+_RE_CONTENIDO_NO_ADMITIDO = re.compile(
+    r"does not support '(?P<contenido>[^']*)' content|is not configured for content-type",
+    re.IGNORECASE,
+)
+_RE_MEDIA_CDROM = re.compile(r"explicit 'media=cdrom' is required", re.IGNORECASE)
+_RE_REDUCIR_DISCO = re.compile(r"Shrinking disk size is not supported", re.IGNORECASE)
 
 
 def limpiar_detalle(texto: str) -> str:
@@ -87,6 +105,47 @@ def _analizar_cuerpo(cuerpo: str) -> tuple[str, dict[str, str]]:
     return (str(mensaje) if mensaje else ""), mapa
 
 
+def _clon_no_posible(motivo: str, detalle: str) -> ErrorProxLaunch:
+    return ErrorProxLaunch(CodigoError.CLON_NO_POSIBLE, {"motivo": motivo}, detalle)
+
+
+def _parametro_invalido(campo: str, detalle: str) -> ErrorProxLaunch:
+    return ErrorProxLaunch(
+        CodigoError.PARAMETRO_INVALIDO, {"campo": campo, "mensaje": detalle}, detalle
+    )
+
+
+def _clasificar_texto_origen(texto: str, detalle: str) -> ErrorProxLaunch | None:
+    """Patrones del MVP 4 (clon, importación, subida y descarga). ``None`` si no casa ninguno."""
+    if _RE_CLON_NO_COMPARTIDO.search(texto):
+        return _clon_no_posible("no_compartido", detalle)
+    if _RE_CLON_SIN_IMAGES.search(texto):
+        return _clon_no_posible("sin_images", detalle)
+    if _RE_CLON_PARAMETRO.search(texto):
+        return _clon_no_posible("parametro_enlazado", detalle)
+    if _RE_CLON_ENLAZADO.search(texto):
+        return _clon_no_posible("enlazado_no_soportado", detalle)
+    if _RE_CLON_TPM.search(texto):
+        return _clon_no_posible("tpm_en_marcha", detalle)
+    m = _RE_CLON_ID_OCUPADO.search(texto)
+    if m:
+        params = {"vmid": m.group("vmid")} if m.group("vmid") else {}
+        return ErrorProxLaunch(CodigoError.CLON_ID_OCUPADO, params, detalle)
+    if _RE_RUTA_ABSOLUTA.search(texto):
+        return ErrorProxLaunch(CodigoError.RUTA_ABSOLUTA_NO_PERMITIDA, {}, detalle)
+    if _RE_IMAGEN_BACKING.search(texto):
+        return ErrorProxLaunch(CodigoError.IMAGEN_NO_ADMITIDA, {"motivo": "backing"}, detalle)
+    if _RE_NOMBRE_EXTENSION.search(texto):
+        return _parametro_invalido("filename", detalle)
+    if _RE_CONTENIDO_NO_ADMITIDO.search(texto):
+        return _parametro_invalido("content", detalle)
+    if _RE_MEDIA_CDROM.search(texto):
+        return _parametro_invalido("media", detalle)
+    if _RE_REDUCIR_DISCO.search(texto):
+        return _parametro_invalido("size", detalle)
+    return None
+
+
 def _clasificar_texto(
     texto: str, errores: Mapping[str, str] | None = None, nodo: str | None = None
 ) -> ErrorProxLaunch | None:
@@ -104,6 +163,10 @@ def _clasificar_texto(
             {"privilegio": m.group("priv"), "ruta": m.group("ruta")},
             detalle,
         )
+
+    nuevo = _clasificar_texto_origen(texto, detalle)
+    if nuevo is not None:
+        return nuevo
 
     m = _RE_VMID_EXISTE.search(texto)
     if m:

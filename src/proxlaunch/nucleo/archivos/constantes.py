@@ -4,7 +4,8 @@ Cada valor es la única fuente para núcleo e interfaz. ``MAX_LOTE`` no se redef
 se importa de ``proxlaunch.nucleo.lote.constantes`` (CA-C15.2).
 """
 
-VERSION_FORMATO = 1  # versión actual de los formatos JSON propios
+VERSION_FORMATO = 2  # versión MÁXIMA que se lee de los formatos JSON propios (MVP 4)
+VERSION_FORMATO_BASE = 1  # la que se escribe cuando el archivo no usa nada del MVP 4 (DT-O15)
 LONG_NOMBRE_PERFIL = 60
 LONG_DESCRIPCION = 200
 MAX_LONG_TEXTO = 256

@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import logging
 import threading
+from collections import deque
 from collections.abc import Callable
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass, field
@@ -19,7 +20,13 @@ from typing import Any
 
 from proxlaunch.nucleo.api.traductor_errores import CODIGOS_DE_RED
 from proxlaunch.nucleo.errores import CodigoError, ErrorProxLaunch
-from proxlaunch.nucleo.lote.constantes import MAX_NODOS_PARALELOS, UMBRAL_PAUSA_ERRORES
+from proxlaunch.nucleo.lote.constantes import (
+    CONCURRENCIA_ENLAZADO_POR_NODO,
+    CONCURRENCIA_PESADA_POR_STORAGE,
+    MAX_NODOS_PARALELOS,
+    UMBRAL_PAUSA_ERRORES,
+)
+from proxlaunch.nucleo.lote.cupos import ClaseCarga, CuposEjecucion, clase_de
 from proxlaunch.nucleo.lote.libro import Libro
 from proxlaunch.nucleo.lote.modelos import (
     ESTADOS_DUDOSOS,
@@ -33,8 +40,10 @@ from proxlaunch.nucleo.lote.politica_pausa import PoliticaPausa
 from proxlaunch.nucleo.lote.reconciliacion import reconciliar_incierta
 from proxlaunch.nucleo.modelos.inventario import Inventario
 from proxlaunch.nucleo.modelos.tarea import Desenlace, Etapa, ResultadoCreacion
+from proxlaunch.nucleo.modelos.vm import OrigenSO
 from proxlaunch.nucleo.registro import enmascarar
 from proxlaunch.nucleo.reloj import Reloj
+from proxlaunch.nucleo.servicios.catalogo import con_catalogo
 from proxlaunch.nucleo.servicios.conexion import Sesion
 from proxlaunch.nucleo.servicios.creacion import ServicioCreacion
 
@@ -44,12 +53,32 @@ Observador = Callable[[EntradaLibro], None]
 FabricaCreacion = Callable[[Sesion, Reloj], ServicioCreacion]
 
 _MAX_DETALLE_LOG = 300
+# Aviso de una importación fallida tras el POST: pudo quedar un volumen suelto (E-L21, CA-O30.4).
+AVISO_DISCOS_SUELTOS = "discos_sueltos_posibles"
+# Privilegios de las escrituras del MVP 4: un 403 por cualquiera de ellos a mitad del lote es un
+# error global y pausa de inmediato (D-20.8, CA-O30.7); el resto de 403 no detiene el lote.
+PRIVILEGIOS_DE_ESCRITURA = frozenset(
+    {
+        "VM.Clone",
+        "VM.Config.Disk",
+        "VM.Config.CPU",
+        "VM.Config.Memory",
+        "VM.Config.Options",
+        "VM.Config.CDROM",
+        "VM.Config.Network",
+        "Datastore.AllocateSpace",
+        "Datastore.Audit",
+        "Datastore.AllocateTemplate",
+        "SDN.Use",
+    }
+)
 
 _ESTADO_POR_ETAPA: dict[Etapa, EstadoMV] = {
     Etapa.VALIDANDO: EstadoMV.VALIDANDO,
     Etapa.ENVIANDO: EstadoMV.ENVIANDO,
     Etapa.CREANDO: EstadoMV.CREANDO,
     Etapa.COMPROBANDO: EstadoMV.COMPROBANDO,
+    Etapa.AJUSTANDO: EstadoMV.AJUSTANDO,
 }
 _ESTADO_POR_DESENLACE: dict[Desenlace, EstadoMV] = {
     Desenlace.OK: EstadoMV.OK,
@@ -175,11 +204,21 @@ def _respuesta_2xx_sin_upid(error: ErrorProxLaunch | None) -> bool:
     ).startswith("2")
 
 
+def _es_permiso_de_escritura(error: ErrorProxLaunch) -> bool:
+    """``True`` si es un 403 por un privilegio de las escrituras del MVP 4 (VM.Clone, ajustes
+    de la MV, lectura/escritura de la fuente): el mismo fallo se repetiría en todo el lote."""
+    return (
+        error.codigo == CodigoError.PERMISO_INSUFICIENTE
+        and error.params.get("privilegio", "") in PRIVILEGIOS_DE_ESCRITURA
+    )
+
+
 class _Turno(StrEnum):
     SEGUIR = "seguir"
     CANCELADO = "cancelado"
     PAUSA = "pausa"
     SUSPENDER = "suspender"
+    NODO_CAIDO = "nodo_caido"
 
 
 @dataclass
@@ -191,8 +230,44 @@ class _Corrida:
     observador: Observador
     control: ControlLote
     politica: PoliticaPausa
+    cupos: CuposEjecucion
     cerrojo: threading.Lock = field(default_factory=threading.Lock)
     intentados: set[int] = field(default_factory=set)  # vmids para los que se llamó a crear
+
+
+@dataclass
+class _Cola:
+    """Elementos por procesar de un nodo (o de todos, en modo secuencial) y el estado de sus
+    nodos, compartido entre los carriles que la atienden."""
+
+    pendientes: deque[ElementoPlan]
+    cerrojo: threading.Lock = field(default_factory=threading.Lock)
+    caidos: set[str] = field(default_factory=set)
+    sondeados: set[str] = field(default_factory=set)
+
+    def tomar(self, cupos: CuposEjecucion) -> ElementoPlan | None:
+        """Siguiente elemento en el orden del plan; reserva su turno de cupo al sacarlo para
+        que el orden de llegada sea el del plan aunque haya varios carriles."""
+        with self.cerrojo:
+            if not self.pendientes:
+                return None
+            elemento = self.pendientes.popleft()
+            cupos.encolar(elemento)
+            return elemento
+
+    def vaciar(self) -> list[ElementoPlan]:
+        with self.cerrojo:
+            resto = list(self.pendientes)
+            self.pendientes.clear()
+            return resto
+
+    def esta_caido(self, nodo: str) -> bool:
+        with self.cerrojo:
+            return nodo in self.caidos
+
+    def marcar_caido(self, nodo: str) -> None:
+        with self.cerrojo:
+            self.caidos.add(nodo)
 
 
 class MotorLote:
@@ -206,12 +281,30 @@ class MotorLote:
         fabrica_creacion: FabricaCreacion = ServicioCreacion,
         max_nodos: int = MAX_NODOS_PARALELOS,
         umbral_pausa: int = UMBRAL_PAUSA_ERRORES,
+        concurrencia_enlazado: int = CONCURRENCIA_ENLAZADO_POR_NODO,
+        concurrencia_pesada_storage: int = CONCURRENCIA_PESADA_POR_STORAGE,
     ) -> None:
         self._sesion = sesion
         self._reloj = reloj
         self._fabrica = fabrica_creacion
         self._max_nodos = max(1, max_nodos)
         self._umbral = umbral_pausa
+        self._concurrencia_enlazado = max(1, concurrencia_enlazado)
+        self._concurrencia_pesada = max(1, concurrencia_pesada_storage)
+
+    def _corrida(
+        self, libro: Libro, inv: Inventario, observador: Observador, control: ControlLote
+    ) -> _Corrida:
+        """Estado de una ejecución: el inventario lleva el catálogo leído al planificar
+        (permisos, fuentes, plantillas) para construir las peticiones."""
+        if libro.plan.catalogo is not None:
+            inv = con_catalogo(inv, libro.plan.catalogo)
+        cupos = CuposEjecucion(
+            inv,
+            por_nodo=self._concurrencia_enlazado,
+            pesadas_por_storage=self._concurrencia_pesada,
+        )
+        return _Corrida(libro, inv, observador, control, PoliticaPausa(self._umbral), cupos)
 
     # --- API pública ------------------------------------------------------------------
 
@@ -232,7 +325,7 @@ class MotorLote:
         """
         if libro is None:
             libro = Libro(plan)
-        corrida = _Corrida(libro, inv, observador, control, PoliticaPausa(self._umbral))
+        corrida = self._corrida(libro, inv, observador, control)
         self._correr(corrida, [e.elemento for e in libro.instantanea()])
         return libro
 
@@ -247,7 +340,7 @@ class MotorLote:
 
         Nunca toca una MV ya intentada (INV-L1/INV-L3). Devuelve el mismo libro.
         """
-        corrida = _Corrida(libro, inv, observador, control, PoliticaPausa(self._umbral))
+        corrida = self._corrida(libro, inv, observador, control)
         self._correr(corrida, [e.elemento for e in libro.pendientes()])
         return libro
 
@@ -286,20 +379,39 @@ class MotorLote:
             return
         if self._max_nodos == 1:
             # Modo secuencial (CA-L12.3): un solo hilo y el orden global del plan.
-            self._procesar_cola(c, elementos)
+            self._carril(c, _Cola(deque(elementos)))
             return
         colas: dict[str, list[ElementoPlan]] = {}
         for elemento in elementos:
             colas.setdefault(elemento.nodo, []).append(elemento)
         trabajadores = max(1, min(self._max_nodos, len(colas)))
         with ThreadPoolExecutor(max_workers=trabajadores, thread_name_prefix="lote") as pool:
-            futuros = [pool.submit(self._procesar_cola, c, cola) for cola in colas.values()]
+            futuros = [pool.submit(self._procesar_nodo, c, cola) for cola in colas.values()]
         for futuro in futuros:
             if (exc := futuro.exception()) is not None:
                 raise exc
 
-    def _procesar_cola(self, c: _Corrida, cola: list[ElementoPlan]) -> None:
-        """Procesa de forma secuencial una cola (≤ 1 creación en curso por nodo).
+    def _procesar_nodo(self, c: _Corrida, elementos: list[ElementoPlan]) -> None:
+        """Atiende la cola de un nodo con uno o varios carriles.
+
+        Solo hay más de un carril si la cola tiene clones enlazados (operación ligera, hasta
+        ``concurrencia_enlazado`` a la vez); los cupos garantizan que disco vacío, ISO,
+        importación y clon completo sigan siendo exclusivos por nodo (arquitectura §10).
+        """
+        cola = _Cola(deque(elementos))
+        ligeras = sum(1 for e in elementos if clase_de(e.cfg) == ClaseCarga.LIGERA)
+        carriles = max(1, min(self._concurrencia_enlazado, ligeras, len(elementos)))
+        if carriles == 1:
+            self._carril(c, cola)
+            return
+        with ThreadPoolExecutor(max_workers=carriles, thread_name_prefix="carril") as pool:
+            futuros = [pool.submit(self._carril, c, cola) for _ in range(carriles)]
+        for futuro in futuros:
+            if (exc := futuro.exception()) is not None:
+                raise exc
+
+    def _carril(self, c: _Corrida, cola: _Cola) -> None:
+        """Procesa elementos de la cola, en el orden del plan, hasta vaciarla.
 
         Con ``max_nodos == 1`` la cola mezcla nodos: si uno cae, solo se saltan las MVs de ese nodo.
         Antes de la primera MV de cada nodo, y tras cada fallo dudoso o de conexión en él, se
@@ -307,36 +419,70 @@ class MotorLote:
         (CA-L14.5).
         """
         servicio = self._fabrica(self._sesion, self._reloj)
-        caidos: set[str] = set()
-        sondeados: set[str] = set()
-        for posicion, elemento in enumerate(cola):
-            if elemento.nodo in caidos:
+        while (elemento := cola.tomar(c.cupos)) is not None:
+            if cola.esta_caido(elemento.nodo):
+                c.cupos.descartar(elemento)
                 self._no_enviadas(c, [elemento], MotivoNoEnviada.NODO_CAIDO)
                 continue
-            turno = self._esperar_turno(c.control)
+            turno = self._obtener_turno(c, cola, elemento)
             if turno == _Turno.SUSPENDER:
+                c.cupos.descartar(elemento)
                 return
+            if turno == _Turno.NODO_CAIDO:
+                c.cupos.descartar(elemento)
+                self._no_enviadas(c, [elemento], MotivoNoEnviada.NODO_CAIDO)
+                continue
             if turno != _Turno.SEGUIR:
                 motivo = (
                     MotivoNoEnviada.CANCELADO
                     if turno == _Turno.CANCELADO
                     else MotivoNoEnviada.PAUSA
                 )
-                for resto in cola[posicion:]:
-                    if resto.nodo in caidos:
+                c.cupos.descartar(elemento)
+                for resto in [elemento, *cola.vaciar()]:
+                    c.cupos.descartar(resto)
+                    if cola.esta_caido(resto.nodo):
                         self._no_enviadas(c, [resto], MotivoNoEnviada.NODO_CAIDO)
                     else:
                         self._no_enviadas(c, [resto], motivo)
                 return
-            if elemento.nodo not in sondeados:
-                sondeados.add(elemento.nodo)
-                if self._nodo_caido(elemento.nodo):
-                    caidos.add(elemento.nodo)
+            try:
+                if cola.esta_caido(elemento.nodo):
+                    # Cayó mientras esperaba su cupo: no se envía.
                     self._no_enviadas(c, [elemento], MotivoNoEnviada.NODO_CAIDO)
-                    continue
-            if self._procesar_elemento(c, servicio, elemento):
-                # Nodo caído: solo se vacía la cola de este nodo (CA-L14.5).
-                caidos.add(elemento.nodo)
+                elif self._procesar_elemento(c, servicio, elemento):
+                    # Nodo caído: solo se vacía la cola de este nodo (CA-L14.5).
+                    cola.marcar_caido(elemento.nodo)
+            finally:
+                c.cupos.liberar(elemento)
+
+    def _obtener_turno(self, c: _Corrida, cola: _Cola, elemento: ElementoPlan) -> _Turno:
+        """Espera el turno del lote (pausa, cancelación, suspensión), sondea el nodo la primera
+        vez y adquiere el cupo del elemento. Devuelve ``SEGUIR`` con el cupo ya adquirido."""
+        while True:
+            turno = self._esperar_turno(c.control)
+            if turno != _Turno.SEGUIR:
+                return turno
+            if self._nodo_recien_caido(cola, elemento.nodo):
+                return _Turno.NODO_CAIDO
+            if c.cupos.adquirir(elemento, c.control):
+                return _Turno.SEGUIR
+            # No hubo cupo porque el lote se canceló, suspendió o pausó mientras esperaba:
+            # se vuelve a decidir con el estado del control (sin girar en vacío).
+            c.cupos.encolar(elemento)
+
+    def _nodo_recien_caido(self, cola: _Cola, nodo: str) -> bool:
+        """Sondea el nodo una sola vez (los demás carriles esperan su resultado)."""
+        with cola.cerrojo:
+            if nodo in cola.caidos:
+                return True
+            if nodo in cola.sondeados:
+                return False
+            cola.sondeados.add(nodo)
+            if self._nodo_caido(nodo):
+                cola.caidos.add(nodo)
+                return True
+            return False
 
     def _nodo_caido(self, nodo: str) -> bool:
         """Sonda barata del nodo: ``True`` solo si responde 595/596 (``NODO_NO_DISPONIBLE``).
@@ -451,7 +597,7 @@ class MotorLote:
         enviado = libro.entrada(vmid).post_intentado
         upid = res.upid
         error = res.error
-        avisos: tuple[str, ...] = ()
+        avisos: tuple[str, ...] = tuple(res.avisos)
 
         if res.desenlace == Desenlace.CANCELADO:
             if upid is None and not enviado:
@@ -485,7 +631,7 @@ class MotorLote:
                         etiquetar=libro.plan.definicion.etiquetar,
                         cliente=self._sesion.cliente,
                     )
-                    avisos = (aviso,) if aviso else ()
+                    avisos = (*avisos, *((aviso,) if aviso else ()))
                     if estado == EstadoMV.CONEXION_PERDIDA:
                         error = error_rec
                     elif estado == EstadoMV.OK:
@@ -493,6 +639,16 @@ class MotorLote:
                 else:
                     # Falló la red antes del POST: no se envió nada, la MV no se creó.
                     estado = EstadoMV.ERROR
+
+        if (
+            el.cfg.origen == OrigenSO.IMPORTAR_DISCO
+            and estado in (EstadoMV.ERROR, EstadoMV.PARCIAL)
+            and upid is not None
+            and not any(a.startswith("ajuste_pendiente") for a in avisos)
+        ):
+            # La importación falló tras el POST: pudo quedar un volumen suelto (E-L21, CA-O30.4).
+            # No se busca ni se borra nada: solo se avisa en el informe.
+            avisos = (*avisos, AVISO_DISCOS_SUELTOS)
 
         entrada = libro.finalizar(
             vmid,
@@ -532,6 +688,12 @@ class MotorLote:
             motivo = c.politica.registrar(None)
         elif error is not None and error.codigo != CodigoError.NODO_NO_DISPONIBLE:
             motivo = c.politica.registrar(error)
+            if (
+                motivo is None
+                and error.codigo not in c.control.causas_ignoradas
+                and _es_permiso_de_escritura(error)
+            ):
+                motivo = MotivoPausa.ERROR_GLOBAL  # 403 de una escritura del MVP 4 (CA-O30.7)
         if motivo is not None:
             c.control.pausar(motivo, error)
         elif estado == EstadoMV.CONEXION_PERDIDA and entrada.upid is not None:
@@ -579,6 +741,7 @@ class MotorLote:
                     upid=entrada.upid,
                     error=res.error,
                     log=res.log_tarea,
+                    avisos=tuple(res.avisos),
                 )
             else:
                 estado, aviso, error = reconciliar_incierta(

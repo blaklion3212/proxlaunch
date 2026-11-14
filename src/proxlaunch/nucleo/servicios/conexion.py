@@ -30,6 +30,7 @@ from proxlaunch.nucleo.capacidades import (
     capacidades_para,
 )
 from proxlaunch.nucleo.errores import CodigoError, ErrorProxLaunch
+from proxlaunch.nucleo.modelos.catalogo import PermisosEfectivos
 from proxlaunch.nucleo.modelos.conexion import (
     CredencialContrasena,
     CredencialToken,
@@ -37,6 +38,7 @@ from proxlaunch.nucleo.modelos.conexion import (
     Ticket,
 )
 from proxlaunch.nucleo.modelos.inventario import Version
+from proxlaunch.nucleo.origen.permisos import tiene_privilegio
 from proxlaunch.nucleo.persistencia.huellas import RepositorioHuellas
 from proxlaunch.nucleo.persistencia.secretos import AlmacenSecretos
 from proxlaunch.nucleo.registro import olvidar_secretos, registrar_secreto
@@ -374,37 +376,41 @@ class ServicioConexion:
         return sesion
 
 
-def _tiene_privilegio(permisos: dict[str, dict[str, int]], ruta: str, privilegio: str) -> bool:
-    """Semántica de ``/access/permissions``: ``{ruta: {privilegio: propagate}}``.
+def _tiene_privilegio(
+    permisos: Mapping[str, Mapping[str, int]], ruta: str, privilegio: str
+) -> bool:
+    """Semántica de ``/access/permissions`` (``{ruta: {privilegio: propagate}}``).
 
-    ``1`` = concedido y heredado por las subrutas; ``0`` = solo en esa ruta exacta. Cuenta
-    el privilegio en la propia ruta o en un ancestro con propagate=1. En ``/storage`` también
-    se acepta en un ``/storage/<id>`` concreto (la lista de storages se filtra por id).
+    Delega en ``origen.permisos.tiene_privilegio``, donde vive desde el MVP 4 para que el
+    núcleo de origen y esta comprobación (RF-12) usen exactamente la misma regla.
     """
-    for p, privs in permisos.items():
-        if privilegio not in privs:
-            continue
-        propaga = bool(privs[privilegio])
-        if p == ruta:
-            return True
-        if propaga and (p == "/" or ruta.startswith(p.rstrip("/") + "/")):
-            return True
-        if ruta == "/storage" and p.startswith("/storage/"):
-            return True
-    return False
+    return tiene_privilegio(permisos, ruta, privilegio)
 
 
-def permisos_faltantes_detalle(sesion: Sesion) -> list[tuple[str, str]] | None:
+def leer_permisos(sesion: Sesion) -> PermisosEfectivos | None:
+    """``GET /access/permissions`` como ``PermisosEfectivos``; ``None`` si la consulta falla
+    (permisos desconocidos, CA-O02.6)."""
+    try:
+        return PermisosEfectivos(rutas=sesion.cliente.permisos())
+    except ErrorProxLaunch:
+        return None
+
+
+def permisos_faltantes_detalle(
+    sesion: Sesion, *, permisos: Mapping[str, Mapping[str, int]] | None = None
+) -> list[tuple[str, str]] | None:
     """Pares ``(privilegio, ruta)`` que faltan según ``PERMISOS_POR_RUTA`` (RF-12).
 
-    Devuelve ``None`` si la consulta falla (CA-12.3). Añade el aviso
+    Con ``permisos`` (p. ej. los ya leídos en el descubrimiento) no hace ninguna petición;
+    sin él los consulta. Devuelve ``None`` si la consulta falla (CA-12.3). Añade el aviso
     ``PERMISOS_INCOMPLETOS`` a la sesión si falta alguno, con ``params["privilegios"]``
     (nombres separados por comas; la ruta de cada uno está en el valor devuelto).
     """
-    try:
-        permisos = sesion.cliente.permisos()
-    except ErrorProxLaunch:
-        return None
+    if permisos is None:
+        efectivos = leer_permisos(sesion)
+        if efectivos is None:
+            return None
+        permisos = efectivos.rutas
     # Se recalcula en cada comprobación: se retira el aviso anterior (sin duplicados).
     sesion.avisos[:] = [a for a in sesion.avisos if a.codigo != CodigoAviso.PERMISOS_INCOMPLETOS]
     faltan = [
@@ -426,7 +432,9 @@ def permisos_faltantes_detalle(sesion: Sesion) -> list[tuple[str, str]] | None:
     return faltan
 
 
-def permisos_faltantes(sesion: Sesion) -> list[str] | None:
+def permisos_faltantes(
+    sesion: Sesion, *, permisos: Mapping[str, Mapping[str, int]] | None = None
+) -> list[str] | None:
     """Privilegios que faltan (solo los nombres); ver ``permisos_faltantes_detalle``."""
-    detalle = permisos_faltantes_detalle(sesion)
+    detalle = permisos_faltantes_detalle(sesion, permisos=permisos)
     return None if detalle is None else [p for p, _ in detalle]

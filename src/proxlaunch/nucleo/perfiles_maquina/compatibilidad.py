@@ -9,13 +9,18 @@ from collections.abc import Callable
 
 from proxlaunch.nucleo.capacidades import TABLA, Capacidades, Funcion
 from proxlaunch.nucleo.modelos.inventario import Inventario
-from proxlaunch.nucleo.modelos.vm import ConfiguracionVM
+from proxlaunch.nucleo.modelos.vm import ConfiguracionVM, OrigenSO
 from proxlaunch.nucleo.perfiles_maquina.modelos import ConfigPerfil
 from proxlaunch.nucleo.validacion import Problema, Severidad, validar_vm
 
 
 def funciones_requeridas(config: ConfigPerfil) -> frozenset[Funcion]:
-    """Funciones dependientes de versión que usa el perfil. Vacía en el MVP 3 (CA-P07.2)."""
+    """Funciones dependientes de versión que usa el perfil (CA-P07.2).
+
+    El origen «importar disco» exige ``IMPORTAR_DISCO`` (8.4).
+    """
+    if config.origen == OrigenSO.IMPORTAR_DISCO:
+        return frozenset({Funcion.IMPORTAR_DISCO})
     return frozenset()
 
 

@@ -7,8 +7,9 @@ import logging
 from concurrent.futures import ThreadPoolExecutor
 
 from proxlaunch.nucleo.errores import CodigoError, ErrorProxLaunch
+from proxlaunch.nucleo.modelos.catalogo import CatalogoServidor
 from proxlaunch.nucleo.modelos.inventario import Bridge, Inventario, Nodo, Storage, Topologia
-from proxlaunch.nucleo.servicios.conexion import Aviso, CodigoAviso, Sesion
+from proxlaunch.nucleo.servicios.conexion import Aviso, CodigoAviso, Sesion, leer_permisos
 from proxlaunch.nucleo.validacion import TIPOS_BRIDGE
 
 _log = logging.getLogger("proxlaunch.servicios.descubrimiento")
@@ -25,15 +26,27 @@ _CODIGOS_DE_NODO = frozenset(
 MAX_HILOS = 8  # tope de nodos consultados a la vez
 
 
+def descubrir_nodo_completo(
+    sesion: Sesion, nodo: str
+) -> tuple[list[Storage], list[Storage], list[Bridge]]:
+    """``(con_images, todos, bridges)`` de UN nodo con las mismas peticiones que M3.
+
+    ``todos`` sale de la misma respuesta de ``GET /nodes/{n}/storage`` (cero GET nuevos,
+    MVP 4); ``con_images`` es el filtro histórico y ``bridges`` solo ``bridge`` y ``OVSBridge``.
+    """
+    todos = list(sesion.cliente.storages(nodo))
+    bridges = [b for b in sesion.cliente.bridges(nodo) if b.tipo in TIPOS_BRIDGE]
+    return [s for s in todos if "images" in s.contenido], todos, bridges
+
+
 def descubrir_nodo(sesion: Sesion, nodo: str) -> tuple[list[Storage], list[Bridge]]:
     """Storages con contenido ``images`` y bridges de UN nodo (CA-11.7).
 
     Los storages inactivos se conservan (la interfaz los muestra deshabilitados,
     CA-11.3). De la red solo se devuelven los tipos ``bridge`` y ``OVSBridge`` (CA-11.5).
     """
-    storages = [s for s in sesion.cliente.storages(nodo) if "images" in s.contenido]
-    bridges = [b for b in sesion.cliente.bridges(nodo) if b.tipo in TIPOS_BRIDGE]
-    return storages, bridges
+    con_images, _, bridges = descubrir_nodo_completo(sesion, nodo)
+    return con_images, bridges
 
 
 def _topologia(sesion: Sesion, nodos: list[Nodo]) -> Topologia:
@@ -68,17 +81,19 @@ def descubrir(sesion: Sesion) -> Inventario:
 
     consultables = [n.nombre for n in topologia.nodos if n.en_linea]
     storages: dict[str, tuple[Storage, ...]] = {n.nombre: () for n in topologia.nodos}
+    storages_todos: dict[str, tuple[Storage, ...]] = {n.nombre: () for n in topologia.nodos}
     bridges: dict[str, tuple[Bridge, ...]] = {n.nombre: () for n in topologia.nodos}
     errores: dict[str, ErrorProxLaunch] = {}
 
     if consultables:
         with ThreadPoolExecutor(max_workers=min(len(consultables), MAX_HILOS)) as pool:
             futuros = {
-                nombre: pool.submit(descubrir_nodo, sesion, nombre) for nombre in consultables
+                nombre: pool.submit(descubrir_nodo_completo, sesion, nombre)
+                for nombre in consultables
             }
             for nombre, futuro in futuros.items():
                 try:
-                    st, br = futuro.result()
+                    st, todos, br = futuro.result()
                 except ErrorProxLaunch as e:
                     if e.codigo not in _CODIGOS_DE_NODO:
                         # Un error de sesión o de permisos no es un nodo caído: se propaga.
@@ -87,6 +102,7 @@ def descubrir(sesion: Sesion) -> Inventario:
                     _log.warning("Nodo %s no disponible en el descubrimiento: %s", nombre, e.codigo)
                 else:
                     storages[nombre] = tuple(st)
+                    storages_todos[nombre] = tuple(todos)
                     bridges[nombre] = tuple(br)
 
     if errores and len(errores) == len(consultables):
@@ -104,6 +120,9 @@ def descubrir(sesion: Sesion) -> Inventario:
                 for n in topologia.nodos
             ),
         )
+    # Los permisos efectivos se leen UNA vez aquí (antes los pedía RF-12 por su cuenta). El
+    # resto del catálogo (listados, plantillas, formatos) se lee bajo demanda con
+    # ``ServicioCatalogo``. Si la consulta falla quedan como desconocidos (``None``).
     return Inventario(
         version=sesion.version,
         topologia=topologia,
@@ -111,4 +130,6 @@ def descubrir(sesion: Sesion) -> Inventario:
         storages=storages,
         bridges=bridges,
         errores_por_nodo=errores,
+        storages_todos=storages_todos,
+        catalogo=CatalogoServidor(permisos=leer_permisos(sesion)),
     )

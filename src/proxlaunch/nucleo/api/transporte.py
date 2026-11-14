@@ -2,16 +2,21 @@
 
 from __future__ import annotations
 
+import contextvars
 import http.client
 import logging
+import ssl
+import threading
+import time
 from collections.abc import Iterator, Mapping, Sequence
-from typing import TYPE_CHECKING, Any, Protocol
+from typing import TYPE_CHECKING, Any, Protocol, runtime_checkable
 
 import requests
 import urllib3
 from requests.adapters import HTTPAdapter
 
 from proxlaunch.nucleo.api.autenticacion import AutenticadorTicket
+from proxlaunch.nucleo.api.multipart import CuerpoMultipart, SubidaCancelada
 from proxlaunch.nucleo.api.traductor_errores import (
     ESTADOS_NODO_CAIDO,
     es_huella_distinta,
@@ -20,7 +25,12 @@ from proxlaunch.nucleo.api.traductor_errores import (
     traducir_http,
 )
 from proxlaunch.nucleo.errores import CodigoError, ErrorProxLaunch
-from proxlaunch.nucleo.lote.constantes import MAX_NODOS_PARALELOS, MAX_PETICIONES_SIMULTANEAS
+from proxlaunch.nucleo.lote.constantes import (
+    CONCURRENCIA_ENLAZADO_POR_NODO,
+    MAX_NODOS_PARALELOS,
+    MAX_PETICIONES_SIMULTANEAS,
+)
+from proxlaunch.nucleo.origen.constantes import PARO_SIN_PROGRESO_S
 
 if TYPE_CHECKING:
     from proxlaunch.nucleo.api.autenticacion import Autenticador
@@ -30,8 +40,9 @@ TIMEOUT_CONEXION = 10  # segundos por host (RNF-03)
 TIMEOUT_LECTURA = 30  # segundos por petición (RNF-03)
 PREFIJO_API = "/api2/json"
 _METODOS_SEGUROS = frozenset({"GET", "HEAD"})
-# Conexiones simultáneas por host: sondeos del lote + una creación por nodo en paralelo.
-POOL_MAXSIZE = MAX_PETICIONES_SIMULTANEAS + MAX_NODOS_PARALELOS
+# Conexiones simultáneas por host: sondeos del lote + creaciones en paralelo (hasta
+# ``CONCURRENCIA_ENLAZADO_POR_NODO`` clones enlazados por nodo) + 1 transferencia (8 + 12 + 1).
+POOL_MAXSIZE = MAX_PETICIONES_SIMULTANEAS + MAX_NODOS_PARALELOS * CONCURRENCIA_ENLAZADO_POR_NODO + 1
 
 _log = logging.getLogger("proxlaunch.api.transporte")
 
@@ -60,6 +71,80 @@ class Transporte(Protocol):
         ...
 
 
+@runtime_checkable
+class TransporteSubida(Protocol):
+    """Contrato adicional para subir archivos (no amplía ``Transporte``: los dobles de prueba
+    existentes siguen valiendo)."""
+
+    def subir(self, ruta: str, cuerpo: CuerpoMultipart, *, timeout_lectura: float) -> Any:
+        """``POST`` multipart en streaming; devuelve el campo ``data`` de la respuesta."""
+        ...
+
+
+# Envío de una subida: el socket usa un timeout corto por intento de escritura y se reintenta
+# mientras haya avance (CA-O12.6: 120 s sin avance), comprobando la cancelación en cada vuelta.
+TIMEOUT_ESCRITURA_S = 2.0
+
+
+class _ControlEnvio:
+    """Estado de la subida en curso del hilo actual (lo lee la conexión al enviar)."""
+
+    def __init__(self, cancelado: threading.Event | None, paro_s: float) -> None:
+        self.cancelado = cancelado
+        self.paro_s = paro_s
+        self.ultimo_avance = time.monotonic()
+
+
+_ENVIO_ACTUAL: contextvars.ContextVar[_ControlEnvio | None] = contextvars.ContextVar(
+    "proxlaunch_envio_actual", default=None
+)
+
+
+class _ConexionHttps(urllib3.connection.HTTPSConnection):
+    """Conexión HTTPS que, durante una subida, escribe con timeout corto y reintento.
+
+    Fuera de una subida se comporta como la de urllib3. La huella y el TLS no cambian.
+    """
+
+    def send(self, data: Any) -> None:
+        control = _ENVIO_ACTUAL.get()
+        if control is None or self.sock is None or not isinstance(data, bytes | bytearray):
+            super().send(data)
+            return
+        sock = self.sock
+        anterior = sock.gettimeout()
+        vista = memoryview(data)
+        try:
+            sock.settimeout(TIMEOUT_ESCRITURA_S)
+            while len(vista) > 0:
+                if control.cancelado is not None and control.cancelado.is_set():
+                    raise SubidaCancelada
+                try:
+                    n = sock.send(vista)
+                except (TimeoutError, BlockingIOError):
+                    if time.monotonic() - control.ultimo_avance > control.paro_s:
+                        raise TimeoutError("sin avance en el envío") from None
+                    continue
+                except ssl_wants_retry():
+                    if time.monotonic() - control.ultimo_avance > control.paro_s:
+                        raise TimeoutError("sin avance en el envío") from None
+                    continue
+                if n:
+                    control.ultimo_avance = time.monotonic()
+                vista = vista[n:]
+        finally:
+            sock.settimeout(anterior)
+
+
+def ssl_wants_retry() -> tuple[type[BaseException], ...]:
+    """Excepciones de TLS que significan «reintenta»: la escritura quedó a la espera."""
+    return (ssl.SSLWantWriteError, ssl.SSLWantReadError)
+
+
+class _PoolHttps(urllib3.HTTPSConnectionPool):
+    ConnectionCls = _ConexionHttps
+
+
 class AdaptadorHuella(HTTPAdapter):
     """Adaptador que fija la huella SHA-256 del certificado del servidor.
 
@@ -80,6 +165,11 @@ class AdaptadorHuella(HTTPAdapter):
 
     def init_poolmanager(self, *args: Any, **kwargs: Any) -> None:
         super().init_poolmanager(*args, **self._con_huella(kwargs))
+        # Pool propio para HTTPS: solo cambia cómo se escribe el cuerpo de una subida.
+        self.poolmanager.pool_classes_by_scheme = {
+            **self.poolmanager.pool_classes_by_scheme,
+            "https": _PoolHttps,
+        }
 
     def proxy_manager_for(self, proxy: str, **proxy_kwargs: Any) -> Any:
         return super().proxy_manager_for(proxy, **self._con_huella(proxy_kwargs))
@@ -316,16 +406,56 @@ class TransporteHttp:
             return self._procesar(resp, metodo, ruta)
         raise self._error_agotado(motivos, ruta)
 
+    def subir(
+        self,
+        ruta: str,
+        cuerpo: CuerpoMultipart,
+        *,
+        timeout_lectura: float = PARO_SIN_PROGRESO_S,
+    ) -> Any:
+        """``POST`` multipart en streaming por la MISMA sesión (huella fija, sin proxy).
+
+        Sin failover ni reintento (método no seguro, el cuerpo no se puede rebobinar). El
+        ``Content-Length`` sale de ``len(cuerpo)``. Un fallo tras empezar el envío es
+        ``SERVIDOR_NO_RESPONDE`` con ``incierto="1"``; cancelar es ``TRANSFERENCIA_CANCELADA``.
+        """
+        if not self._hosts:
+            raise ErrorProxLaunch(CodigoError.SERVIDOR_NO_RESPONDE, {"host": ""}, "sin hosts")
+        host = self._hosts[self._activo]
+        if not self._ignorar_ssl and host not in self._huellas:
+            raise ErrorProxLaunch(CodigoError.HUELLA_NO_CONFIADA, {"host": host})
+        try:
+            resp = self._enviar_subida(host, ruta, cuerpo, timeout_lectura)
+        except SubidaCancelada:
+            raise ErrorProxLaunch(
+                CodigoError.TRANSFERENCIA_CANCELADA, {"quedo_archivo": "desconocido"}
+            ) from None
+        except requests.exceptions.SSLError as e:
+            if es_huella_distinta(e):
+                raise ErrorProxLaunch(
+                    CodigoError.HUELLA_CAMBIADA,
+                    {"host": host, "puerto": str(self._puerto)},
+                    limpiar_detalle(f"{type(e).__name__}: {e}"),
+                ) from None
+            raise self._envio_incierto(host, "ssl", e) from None
+        except requests.exceptions.RequestException as e:
+            if isinstance(e, _ERRORES_LOCALES):
+                raise ErrorProxLaunch(
+                    CodigoError.DESCONOCIDO,
+                    {"host": host},
+                    limpiar_detalle(f"{type(e).__name__}: {e}"),
+                ) from None
+            raise self._envio_incierto(host, "error", e) from None
+        if resp.status_code in ESTADOS_NODO_CAIDO:
+            raise self._envio_incierto(host, str(resp.status_code), None)
+        return self._procesar(resp, "POST", ruta)
+
     # --- Internos -------------------------------------------------------------------
 
-    def _enviar(
-        self,
-        host: str,
-        metodo: str,
-        ruta: str,
-        params: dict[str, Any] | None,
-        datos: dict[str, Any] | None,
-    ) -> requests.Response:
+    def _preparar(
+        self, host: str, metodo: str, ruta: str
+    ) -> tuple[str, dict[str, str], dict[str, str]]:
+        """URL, cabeceras y cookies de una petición; comprueba que el destino tenga huella."""
         url = f"https://{_netloc(host, self._puerto)}{PREFIJO_API}{ruta}"
         if not isinstance(self._sesion.get_adapter(url), AdaptadorHuella):
             raise ErrorProxLaunch(
@@ -337,6 +467,17 @@ class TransporteHttp:
         cookies: dict[str, str] = {}
         if self._auth is not None:
             self._auth.aplicar(metodo, cabeceras, cookies)
+        return url, cabeceras, cookies
+
+    def _enviar(
+        self,
+        host: str,
+        metodo: str,
+        ruta: str,
+        params: dict[str, Any] | None,
+        datos: dict[str, Any] | None,
+    ) -> requests.Response:
+        url, cabeceras, cookies = self._preparar(host, metodo, ruta)
         cuerpo = {k: str(v) for k, v in datos.items()} if datos is not None else None
         consulta = {k: str(v) for k, v in params.items()} if params else None
         try:
@@ -356,6 +497,29 @@ class TransporteHttp:
             )
         finally:
             # Nada de cookies persistentes en la sesión.
+            self._sesion.cookies.clear()
+
+    def _enviar_subida(
+        self, host: str, ruta: str, cuerpo: CuerpoMultipart, timeout_lectura: float
+    ) -> requests.Response:
+        url, cabeceras, cookies = self._preparar(host, "POST", ruta)
+        cabeceras["Content-Type"] = cuerpo.tipo_contenido
+        marca = _ENVIO_ACTUAL.set(_ControlEnvio(cuerpo.cancelado, timeout_lectura))
+        try:
+            # ``data`` con ``__len__`` e ``__iter__``: requests fija Content-Length (sin
+            # chunked) y envía iterando, sin cargar el archivo en memoria.
+            return self._sesion.request(
+                "POST",
+                url,
+                data=cuerpo,
+                headers=cabeceras,
+                cookies=cookies or None,
+                timeout=(self._timeout[0], timeout_lectura),
+                verify=False,
+                allow_redirects=False,
+            )
+        finally:
+            _ENVIO_ACTUAL.reset(marca)
             self._sesion.cookies.clear()
 
     def _procesar(self, resp: requests.Response, metodo: str, ruta: str) -> Any:

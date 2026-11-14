@@ -26,6 +26,7 @@ from proxlaunch.nucleo.lote.modelos import (
     ResultadoRollback,
 )
 from proxlaunch.nucleo.reloj import Reloj
+from proxlaunch.nucleo.transferencias.modelos import RegistroTransferencia
 
 _CON_PROBLEMA = frozenset({EstadoMV.CON_AVISOS, EstadoMV.ERROR, EstadoMV.PARCIAL})
 
@@ -132,6 +133,21 @@ def _problema_saneado(p: Problema, ocultar: Sequence[str]) -> Problema:
     return p if params == p.params else dataclasses.replace(p, params=params)
 
 
+def _transferencia_saneada(
+    t: RegistroTransferencia, ocultar: Sequence[str] = ()
+) -> RegistroTransferencia:
+    """Registro de una subida o descarga sin host, IP ni usuario en sus textos (CA-O30.6).
+
+    El modelo ya no tiene URL, ruta local ni checksum (INV-O6); aquí se sanea además el texto
+    libre (nombre de archivo y volid) igual que el resto del informe.
+    """
+    return dataclasses.replace(
+        t,
+        nombre_archivo=_sanear_texto(t.nombre_archivo, ocultar),
+        volid=None if t.volid is None else _sanear_texto(t.volid, ocultar),
+    )
+
+
 def _recortada(entrada: EntradaLibro) -> EntradaLibro:
     """Conserva el log de la tarea (últimas ``LINEAS_LOG_TAREA`` líneas) solo si la MV
     tiene avisos o error."""
@@ -151,6 +167,7 @@ def construir_informe(
     rollback: Sequence[ResultadoRollback] = (),
     reloj: Reloj,
     ocultar: Sequence[str] = (),
+    transferencias: Sequence[RegistroTransferencia] = (),
 ) -> InformeLote:
     """Construye el informe a partir del libro (única fuente de verdad, CA-L12.10).
 
@@ -160,6 +177,9 @@ def construir_informe(
 
     ``duraciones_s`` incluye las MVs terminadas (``t_fin - t_inicio``) y, en un informe
     parcial (cierre de la aplicación), las que siguen en curso medidas hasta ``reloj.ahora()``.
+
+    ``transferencias`` son los archivos subidos o descargados en la sesión (RF-O25); el
+    informe los lista aparte y dice que no se eliminan al deshacer (CA-O30.3).
     """
     return informe_desde_entradas(
         plan,
@@ -168,6 +188,7 @@ def construir_informe(
         tuple(rollback),
         reloj.ahora(),
         ocultar,
+        transferencias,
     )
 
 
@@ -178,6 +199,7 @@ def informe_desde_entradas(
     rollback: Sequence[ResultadoRollback],
     ahora: float,
     ocultar: Sequence[str] = (),
+    transferencias: Sequence[RegistroTransferencia] = (),
 ) -> InformeLote:
     """Informe a partir de una instantánea (también para el cierre de la aplicación o un fallo
     del motor), con el mismo saneado que ``construir_informe``."""
@@ -207,4 +229,5 @@ def informe_desde_entradas(
         problemas_plan=tuple(_problema_saneado(p, ocultar) for p in plan.problemas),
         permisos_verificados=plan.permisos_verificados,
         por_filas=plan.definicion.es_por_filas,
+        transferencias=tuple(_transferencia_saneada(t, ocultar) for t in transferencias),
     )

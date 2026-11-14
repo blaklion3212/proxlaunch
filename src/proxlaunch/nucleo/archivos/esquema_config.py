@@ -11,6 +11,12 @@ Dos modos con las mismas claves de hardware:
 
 Los serializadores escriben campo a campo (sin volcado genérico) y nunca incluyen ``vmid``,
 ``nombre``, ``nodo`` ni ``etiquetas``.
+
+MVP 4: ``tipo_so``, ``tpm``, ``agente_qemu`` y ``detalle_origen`` se escriben SOLO si no tienen su
+valor por defecto (un archivo del MVP 3 queda idéntico). Los volids y nombres de fuentes se
+leen y escriben con la lista blanca de ``origen.nombres`` (texto no válido → ``TEXTO_NO_VALIDO``;
+nunca se interpreta como ruta). Nunca se guardan URL, rutas locales, checksums, tamaños virtuales
+ni el modo efectivo del clon (INV-O6, INV-M5).
 """
 
 from __future__ import annotations
@@ -18,8 +24,21 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 from proxlaunch.nucleo.archivos.constantes import MAX_LONG_TEXTO
-from proxlaunch.nucleo.archivos.esquema import LectorEsquema
+from proxlaunch.nucleo.archivos.esquema import LectorEsquema, MotivoCampo
 from proxlaunch.nucleo.archivos.texto import exigir_sin_credencial
+from proxlaunch.nucleo.errores import CodigoError, ErrorProxLaunch
+from proxlaunch.nucleo.modelos.catalogo import Contenido
+from proxlaunch.nucleo.modelos.origen import (
+    AjustesClon,
+    DetalleClon,
+    DetalleImportacion,
+    DetalleIso,
+    DetalleOrigen,
+    ModoClon,
+    RefPlantilla,
+    RefVolumen,
+    TipoSO,
+)
 from proxlaunch.nucleo.modelos.vm import (
     Ballooning,
     Bus,
@@ -32,10 +51,17 @@ from proxlaunch.nucleo.modelos.vm import (
     ModeloRed,
     OrigenSO,
 )
+from proxlaunch.nucleo.origen.nombres import (
+    MAX_LONG_STORAGE,
+    partes_volid,
+    validar_nombre_archivo,
+    validar_volid,
+)
 from proxlaunch.nucleo.perfiles_maquina.modelos import (
     BallooningPerfil,
     ConfigPerfil,
     DiscoPerfil,
+    PistaOrigen,
     RedPerfil,
 )
 from proxlaunch.nucleo.validacion import (
@@ -73,6 +99,10 @@ _CLAVES_BASE = frozenset(
         "controlador_scsi",
         "redes",
         "origen",
+        "tipo_so",
+        "tpm",
+        "agente_qemu",
+        "detalle_origen",
     }
 )
 CLAVES_CONFIG_PERFIL = _CLAVES_BASE | {"storage_efi_preferido"}
@@ -84,6 +114,173 @@ _CLAVES_RED = frozenset({"modelo", "vlan"})
 CLAVES_RED_PERFIL = _CLAVES_RED | {"bridge_preferido"}
 CLAVES_RED_LOTE = _CLAVES_RED | {"bridge"}
 _CLAVES_BALLOONING = frozenset({"activo", "minimo_mib"})
+_CLAVES_AJUSTES = frozenset({"sockets", "cores", "tipo_cpu", "memoria_mib", "disco_gib"})
+_CLAVES_REF_LOTE = frozenset({"nombre", "volid"})
+_CLAVES_REF_PERFIL = frozenset({"nombre", "storage_preferido"})
+_CLAVES_PLANTILLA_LOTE = frozenset({"nombre", "vmid"})
+_CLAVES_PLANTILLA_PERFIL = frozenset({"nombre"})
+_MAX_LONG_NOMBRE_PLANTILLA = 253
+
+
+# --- Origen del SO (MVP 4) ------------------------------------------------------------------
+
+
+def requiere_version_2(cfg: ConfiguracionVM | ConfigPerfil) -> bool:
+    """¿La configuración usa algo del MVP 4? Entonces el archivo se escribe como v2 (DT-O15)."""
+    if cfg.origen != OrigenSO.DISCO_VACIO or cfg.tipo_so is not None or cfg.tpm or cfg.agente_qemu:
+        return True
+    return isinstance(cfg, ConfigPerfil) and cfg.pista_origen is not None
+
+
+def _no_guardable(campo: str) -> ErrorProxLaunch:
+    return ErrorProxLaunch(
+        CodigoError.ARCHIVO_NO_GUARDABLE, {"motivo": "caracteres", "campo": campo}
+    )
+
+
+def _nombre_para_escribir(nombre: str, contenido: Contenido, campo: str) -> str:
+    """Nombre de archivo del servidor listo para escribir (lista blanca; vacío = sin elegir)."""
+    exigir_sin_credencial(nombre, campo)
+    if nombre and validar_nombre_archivo(nombre, contenido) is not None:
+        raise _no_guardable(campo)
+    return nombre
+
+
+def _ref_a_dict(ref: RefVolumen, contenido: Contenido, campo: str) -> dict[str, object]:
+    """Modo lote: ``{"nombre", "volid"}`` (el volid pasa la lista blanca o no se guarda)."""
+    nombre = _nombre_para_escribir(ref.nombre, contenido, f"{campo}.nombre")
+    if ref.volid is not None:
+        exigir_sin_credencial(ref.volid, f"{campo}.volid")
+        if validar_volid(ref.volid, contenido) is not None:
+            raise _no_guardable(f"{campo}.volid")
+    return {"nombre": nombre, "volid": ref.volid}
+
+
+def _storage_para_escribir(storage: str | None, campo: str) -> str | None:
+    if storage is None:
+        return None
+    exigir_sin_credencial(storage, campo)
+    if not _storage_valido(storage):
+        raise _no_guardable(campo)
+    return storage
+
+
+def _storage_valido(texto: str) -> bool:
+    return 0 < len(texto) <= MAX_LONG_STORAGE and all(
+        c.isascii() and (c.isalnum() or c in "._-") for c in texto
+    )
+
+
+def _ajustes_a_dict(a: AjustesClon) -> dict[str, object]:
+    if a.tipo_cpu is not None:
+        exigir_sin_credencial(a.tipo_cpu, "ajustes.tipo_cpu")
+    return {
+        "sockets": a.sockets,
+        "cores": a.cores,
+        "tipo_cpu": a.tipo_cpu,
+        "memoria_mib": a.memoria_mib,
+        "disco_gib": a.disco_gib,
+    }
+
+
+def detalle_origen_a_dict(cfg: ConfiguracionVM) -> dict[str, object] | None:
+    """Detalle del origen de un lote (modo lote): con volids y VMID de pista, ``None`` si no hay.
+
+    Nunca: URL, ruta, checksum, ``tamano_virtual_bytes``, ``modo_efectivo`` ni el nodo de la
+    plantilla.
+    """
+    det = cfg.detalle_origen
+    if isinstance(det, DetalleIso):
+        return {
+            "iso": _ref_a_dict(det.iso, Contenido.ISO, "iso"),
+            "drivers": None
+            if det.drivers is None
+            else _ref_a_dict(det.drivers, Contenido.ISO, "drivers"),
+            "sin_drivers": det.sin_drivers,
+        }
+    if isinstance(det, DetalleImportacion):
+        return {
+            "imagen": _ref_a_dict(det.imagen, Contenido.IMPORT, "imagen"),
+            "ampliar_a_gib": det.ampliar_a_gib,
+        }
+    if isinstance(det, DetalleClon):
+        exigir_sin_credencial(det.plantilla.nombre, "plantilla")
+        return {
+            "plantilla": {"nombre": det.plantilla.nombre, "vmid": det.plantilla.vmid},
+            "modo": str(det.modo),
+            "ajustes": _ajustes_a_dict(det.ajustes),
+            "storage_destino": _storage_para_escribir(det.storage_destino, "storage_destino"),
+        }
+    return None
+
+
+def _pista_ref_a_dict(
+    nombre: str, storage: str | None, contenido: Contenido, campo: str
+) -> dict[str, object]:
+    return {
+        "nombre": _nombre_para_escribir(nombre, contenido, f"{campo}.nombre"),
+        "storage_preferido": _storage_para_escribir(storage, f"{campo}.storage_preferido"),
+    }
+
+
+def pista_origen_a_dict(config: ConfigPerfil, *, con_pistas: bool) -> dict[str, object] | None:
+    """``detalle_origen`` de un perfil. Sin ``con_pistas`` se omiten los nombres de fuente.
+
+    Los ajustes, el modo de clon y «ampliar a» son parte del perfil (no pistas): se escriben
+    siempre. ISO sin pistas no deja nada que escribir.
+    """
+    pista = config.pista_origen
+    if pista is None:
+        return None
+    if config.origen == OrigenSO.ISO:
+        if not con_pistas:
+            return None
+        if pista.drivers is not None:
+            exigir_sin_credencial(pista.drivers, "drivers")
+            if validar_nombre_archivo(pista.drivers, Contenido.ISO) is not None:
+                raise _no_guardable("drivers")
+        return {
+            "iso": _pista_ref_a_dict(
+                pista.nombre_fuente, pista.storage_preferido, Contenido.ISO, "iso"
+            ),
+            "drivers": pista.drivers,
+            "sin_drivers": pista.sin_drivers,
+        }
+    if config.origen == OrigenSO.IMPORTAR_DISCO:
+        datos: dict[str, object] = {"ampliar_a_gib": pista.ampliar_a_gib}
+        if con_pistas:
+            datos["imagen"] = _pista_ref_a_dict(
+                pista.nombre_fuente, pista.storage_preferido, Contenido.IMPORT, "imagen"
+            )
+        elif pista.ampliar_a_gib is None:
+            return None
+        return datos
+    if config.origen == OrigenSO.CLONAR_PLANTILLA:
+        clon: dict[str, object] = {
+            "modo": str(pista.modo_clon),
+            "ajustes": _ajustes_a_dict(pista.ajustes),
+        }
+        if con_pistas:
+            exigir_sin_credencial(pista.nombre_fuente, "plantilla")
+            clon["plantilla"] = {"nombre": pista.nombre_fuente}
+        return clon
+    return None
+
+
+def _claves_origen_a_dict(
+    tipo_so: TipoSO | None, tpm: bool, agente_qemu: bool, detalle: dict[str, object] | None
+) -> dict[str, object]:
+    """Claves del MVP 4 de una config: solo las que no valen su valor por defecto."""
+    extra: dict[str, object] = {}
+    if tipo_so is not None:
+        extra["tipo_so"] = str(tipo_so)
+    if tpm:
+        extra["tpm"] = True
+    if agente_qemu:
+        extra["agente_qemu"] = True
+    if detalle is not None:
+        extra["detalle_origen"] = detalle
+    return extra
 
 
 # --- Serializadores (lista blanca por construcción) ---------------------------------------
@@ -141,6 +338,14 @@ def config_perfil_a_dict(config: ConfigPerfil, *, con_pistas: bool) -> dict[str,
     }
     if con_pistas:
         datos["storage_efi_preferido"] = config.storage_efi_preferido
+    datos.update(
+        _claves_origen_a_dict(
+            config.tipo_so,
+            config.tpm,
+            config.agente_qemu,
+            pista_origen_a_dict(config, con_pistas=con_pistas),
+        )
+    )
     return datos
 
 
@@ -156,7 +361,7 @@ def configuracion_a_dict(cfg: ConfiguracionVM) -> dict[str, object]:
         exigir_sin_credencial(d.storage, "storage")
     for r in cfg.redes:
         exigir_sin_credencial(r.bridge, "bridge")
-    return {
+    datos: dict[str, object] = {
         "firmware": str(cfg.firmware),
         "sockets": cfg.sockets,
         "cores": cfg.cores,
@@ -185,6 +390,10 @@ def configuracion_a_dict(cfg: ConfiguracionVM) -> dict[str, object]:
         "redes": [{"bridge": r.bridge, "modelo": str(r.modelo), "vlan": r.vlan} for r in cfg.redes],
         "origen": str(cfg.origen),
     }
+    datos.update(
+        _claves_origen_a_dict(cfg.tipo_so, cfg.tpm, cfg.agente_qemu, detalle_origen_a_dict(cfg))
+    )
+    return datos
 
 
 # --- Lectura estricta ---------------------------------------------------------------------
@@ -203,6 +412,9 @@ class _Hardware:
     con_disco: bool
     controlador_scsi: ControladorScsi
     origen: OrigenSO
+    tipo_so: TipoSO | None = None
+    tpm: bool = False
+    agente_qemu: bool = False
 
 
 def _limites(perfil: bool, minimo: int, maximo: int) -> tuple[int, int]:
@@ -261,6 +473,9 @@ def _leer_hardware(
     origen = lector.enumerado(
         obj, "origen", ruta, OrigenSO, requerido=False, defecto=OrigenSO.DISCO_VACIO
     )
+    tipo_so = lector.enumerado(obj, "tipo_so", ruta, TipoSO, requerido=False)
+    tpm = lector.booleano(obj, "tpm", ruta, requerido=False, defecto=False)
+    agente_qemu = lector.booleano(obj, "agente_qemu", ruta, requerido=False, defecto=False)
     if (
         len(lector.errores) > n0
         or firmware is None
@@ -271,10 +486,23 @@ def _leer_hardware(
         or con_disco is None
         or controlador is None
         or origen is None
+        or tpm is None
+        or agente_qemu is None
     ):
         return None
     return _Hardware(
-        firmware, sockets, cores, tipo_cpu, memoria, ballooning, con_disco, controlador, origen
+        firmware,
+        sockets,
+        cores,
+        tipo_cpu,
+        memoria,
+        ballooning,
+        con_disco,
+        controlador,
+        origen,
+        tipo_so,
+        tpm,
+        agente_qemu,
     )
 
 
@@ -332,6 +560,273 @@ def _pista(lector: LectorEsquema, obj: dict[str, object], clave: str, ruta: str)
     )
 
 
+# --- Lectura del origen del SO (MVP 4) -----------------------------------------------------
+
+
+def _nombre_archivo(
+    lector: LectorEsquema, obj: dict[str, object], clave: str, ruta: str, contenido: Contenido
+) -> str | None:
+    """Nombre de archivo del servidor (lista blanca). ``""`` = sin elegir; inválido → error."""
+    nombre = lector.texto(
+        obj, clave, ruta, maximo=MAX_LONG_TEXTO,
+        requerido=False, defecto="", sin_token=True,
+    )  # fmt: skip
+    if nombre and validar_nombre_archivo(nombre, contenido) is not None:
+        lector.error(f"{ruta}.{clave}" if ruta else clave, MotivoCampo.TEXTO_NO_VALIDO)
+        return None
+    return nombre
+
+
+def _volid(
+    lector: LectorEsquema, obj: dict[str, object], ruta: str, contenido: Contenido
+) -> str | None:
+    """``volid`` opcional: ausente, ``null`` o ``""`` → ``None``; no admitido → error."""
+    volid = lector.texto(
+        obj, "volid", ruta, maximo=MAX_LONG_TEXTO, nulo=True, requerido=False, sin_token=True
+    )
+    if volid and validar_volid(volid, contenido) is not None:
+        lector.error(f"{ruta}.volid" if ruta else "volid", MotivoCampo.TEXTO_NO_VALIDO)
+        return None
+    return volid or None
+
+
+def _storage_texto(
+    lector: LectorEsquema, obj: dict[str, object], clave: str, ruta: str
+) -> str | None:
+    """Nombre de storage (pista o destino): ``[A-Za-z0-9._-]``, hasta 64; ``null`` → ``None``."""
+    valor = lector.texto(
+        obj, clave, ruta, maximo=MAX_LONG_TEXTO, nulo=True, requerido=False, sin_token=True
+    )
+    if valor is not None and not _storage_valido(valor):
+        lector.error(f"{ruta}.{clave}" if ruta else clave, MotivoCampo.TEXTO_NO_VALIDO)
+        return None
+    return valor
+
+
+def _leer_ref_volumen(
+    lector: LectorEsquema, valor: object, ruta: str, contenido: Contenido
+) -> RefVolumen | None:
+    obj = lector.objeto(valor, ruta, _CLAVES_REF_LOTE)
+    if obj is None:
+        return None
+    n0 = len(lector.errores)
+    nombre = _nombre_archivo(lector, obj, "nombre", ruta, contenido)
+    volid = _volid(lector, obj, ruta, contenido)
+    if len(lector.errores) > n0 or nombre is None:
+        return None
+    if volid is not None and not nombre:
+        partes = partes_volid(volid)
+        nombre = partes[2] if partes is not None else ""
+    return RefVolumen(nombre=nombre, volid=volid)
+
+
+def _leer_ajustes(
+    lector: LectorEsquema, valor: object, ruta: str, *, perfil: bool
+) -> AjustesClon | None:
+    if valor is None:
+        return AjustesClon()
+    obj = lector.objeto(valor, ruta, _CLAVES_AJUSTES)
+    if obj is None:
+        return None
+    n0 = len(lector.errores)
+    sockets = _entero(
+        lector, obj, "sockets", ruta, _limites(perfil, SOCKETS_MIN, SOCKETS_MAX),
+        nulo=True, requerido=False,
+    )  # fmt: skip
+    cores = _entero(
+        lector, obj, "cores", ruta, _limites(perfil, CORES_MIN, CORES_MAX),
+        nulo=True, requerido=False,
+    )  # fmt: skip
+    memoria = _entero(
+        lector, obj, "memoria_mib", ruta, _limites(perfil, MEMORIA_MIN_MIB, _TOPE_CORDURA),
+        nulo=True, requerido=False,
+    )  # fmt: skip
+    disco = _entero(
+        lector, obj, "disco_gib", ruta, _limites(perfil, DISCO_MIN_GIB, DISCO_MAX_GIB),
+        nulo=True, requerido=False,
+    )  # fmt: skip
+    tipo_cpu = lector.texto(
+        obj, "tipo_cpu", ruta, minimo=1 if perfil else 0,
+        maximo=MAX_LONG_TIPO_CPU if perfil else _MAX_TEXTO_LOTE,
+        nulo=True, requerido=False, sin_token=True,
+    )  # fmt: skip
+    if len(lector.errores) > n0:
+        return None
+    return AjustesClon(sockets, cores, tipo_cpu, memoria, disco)
+
+
+def _ruta_hija(ruta: str, clave: str) -> str:
+    return f"{ruta}.{clave}" if ruta else clave
+
+
+def _leer_plantilla(
+    lector: LectorEsquema, valor: object, ruta: str, *, perfil: bool
+) -> RefPlantilla | None:
+    obj = lector.objeto(valor, ruta, _CLAVES_PLANTILLA_PERFIL if perfil else _CLAVES_PLANTILLA_LOTE)
+    if obj is None:
+        return None
+    n0 = len(lector.errores)
+    nombre = lector.texto(
+        obj, "nombre", ruta, maximo=_MAX_LONG_NOMBRE_PLANTILLA, requerido=False, defecto="",
+        sin_token=True,
+    )  # fmt: skip
+    vmid = (
+        None
+        if perfil
+        else lector.entero(
+            obj, "vmid", ruta, minimo=0, maximo=_TOPE_CORDURA, nulo=True, requerido=False
+        )
+    )
+    if len(lector.errores) > n0 or nombre is None:
+        return None
+    return RefPlantilla(nombre=nombre, vmid=vmid)
+
+
+def leer_detalle_origen(
+    lector: LectorEsquema, valor: object, ruta: str, origen: OrigenSO
+) -> DetalleOrigen | None:
+    """Lee ``detalle_origen`` de un lote (modo lote) según el ``origen`` de su config.
+
+    ``None`` con errores anotados en ``lector``. Un detalle con ``origen = disco_vacio`` es ajeno
+    y se rechaza. Los volids pasan la lista blanca; nunca se leen URL, rutas ni checksums.
+    """
+    if origen == OrigenSO.DISCO_VACIO:
+        lector.error(ruta, MotivoCampo.TIPO)
+        return None
+    if origen == OrigenSO.ISO:
+        obj = lector.objeto(valor, ruta, frozenset({"iso", "drivers", "sin_drivers"}))
+        if obj is None:
+            return None
+        n0 = len(lector.errores)
+        iso = (
+            _leer_ref_volumen(lector, obj["iso"], _ruta_hija(ruta, "iso"), Contenido.ISO)
+            if "iso" in obj
+            else RefVolumen()
+        )
+        drivers = (
+            None
+            if obj.get("drivers") is None
+            else _leer_ref_volumen(
+                lector, obj["drivers"], _ruta_hija(ruta, "drivers"), Contenido.ISO
+            )
+        )
+        sin_drivers = lector.booleano(obj, "sin_drivers", ruta, requerido=False, defecto=False)
+        if len(lector.errores) > n0 or iso is None or sin_drivers is None:
+            return None
+        return DetalleIso(iso=iso, drivers=drivers, sin_drivers=sin_drivers)
+    if origen == OrigenSO.IMPORTAR_DISCO:
+        obj = lector.objeto(valor, ruta, frozenset({"imagen", "ampliar_a_gib"}))
+        if obj is None:
+            return None
+        n0 = len(lector.errores)
+        imagen = (
+            _leer_ref_volumen(lector, obj["imagen"], _ruta_hija(ruta, "imagen"), Contenido.IMPORT)
+            if "imagen" in obj
+            else RefVolumen()
+        )
+        ampliar = _entero(
+            lector, obj, "ampliar_a_gib", ruta, (0, _TOPE_CORDURA), nulo=True, requerido=False
+        )
+        if len(lector.errores) > n0 or imagen is None:
+            return None
+        return DetalleImportacion(imagen=imagen, ampliar_a_gib=ampliar)
+    obj = lector.objeto(valor, ruta, frozenset({"plantilla", "modo", "ajustes", "storage_destino"}))
+    if obj is None:
+        return None
+    n0 = len(lector.errores)
+    plantilla = (
+        _leer_plantilla(lector, obj["plantilla"], _ruta_hija(ruta, "plantilla"), perfil=False)
+        if "plantilla" in obj
+        else RefPlantilla()
+    )
+    modo = lector.enumerado(
+        obj, "modo", ruta, ModoClon, requerido=False, defecto=ModoClon.AUTOMATICO
+    )
+    ajustes = _leer_ajustes(lector, obj.get("ajustes"), _ruta_hija(ruta, "ajustes"), perfil=False)
+    destino = _storage_texto(lector, obj, "storage_destino", ruta)
+    if len(lector.errores) > n0 or plantilla is None or modo is None or ajustes is None:
+        return None
+    return DetalleClon(plantilla=plantilla, modo=modo, ajustes=ajustes, storage_destino=destino)
+
+
+def _leer_pista_ref(
+    lector: LectorEsquema, valor: object, ruta: str, contenido: Contenido
+) -> tuple[str, str | None] | None:
+    obj = lector.objeto(valor, ruta, _CLAVES_REF_PERFIL)
+    if obj is None:
+        return None
+    n0 = len(lector.errores)
+    nombre = _nombre_archivo(lector, obj, "nombre", ruta, contenido)
+    storage = _storage_texto(lector, obj, "storage_preferido", ruta)
+    if len(lector.errores) > n0 or nombre is None:
+        return None
+    return nombre, storage
+
+
+def leer_pista_origen(
+    lector: LectorEsquema, valor: object, ruta: str, origen: OrigenSO
+) -> PistaOrigen | None:
+    """Lee el ``detalle_origen`` de un perfil (pista) según el ``origen`` de su config."""
+    if origen == OrigenSO.DISCO_VACIO:
+        lector.error(ruta, MotivoCampo.TIPO)
+        return None
+    n0 = len(lector.errores)
+    if origen == OrigenSO.ISO:
+        obj = lector.objeto(valor, ruta, frozenset({"iso", "drivers", "sin_drivers"}))
+        if obj is None:
+            return None
+        ref = (
+            _leer_pista_ref(lector, obj["iso"], _ruta_hija(ruta, "iso"), Contenido.ISO)
+            if "iso" in obj
+            else ("", None)
+        )
+        drivers = lector.texto(
+            obj, "drivers", ruta, maximo=MAX_LONG_TEXTO, nulo=True, requerido=False, sin_token=True
+        )
+        if drivers and validar_nombre_archivo(drivers, Contenido.ISO) is not None:
+            lector.error(_ruta_hija(ruta, "drivers"), MotivoCampo.TEXTO_NO_VALIDO)
+        sin_drivers = lector.booleano(obj, "sin_drivers", ruta, requerido=False, defecto=False)
+        if len(lector.errores) > n0 or ref is None or sin_drivers is None:
+            return None
+        return PistaOrigen(
+            nombre_fuente=ref[0],
+            storage_preferido=ref[1],
+            drivers=drivers or None,
+            sin_drivers=sin_drivers,
+        )
+    if origen == OrigenSO.IMPORTAR_DISCO:
+        obj = lector.objeto(valor, ruta, frozenset({"imagen", "ampliar_a_gib"}))
+        if obj is None:
+            return None
+        ref = (
+            _leer_pista_ref(lector, obj["imagen"], _ruta_hija(ruta, "imagen"), Contenido.IMPORT)
+            if "imagen" in obj
+            else ("", None)
+        )
+        ampliar = _entero(
+            lector, obj, "ampliar_a_gib", ruta, (DISCO_MIN_GIB, DISCO_MAX_GIB),
+            nulo=True, requerido=False,
+        )  # fmt: skip
+        if len(lector.errores) > n0 or ref is None:
+            return None
+        return PistaOrigen(nombre_fuente=ref[0], storage_preferido=ref[1], ampliar_a_gib=ampliar)
+    obj = lector.objeto(valor, ruta, frozenset({"plantilla", "modo", "ajustes"}))
+    if obj is None:
+        return None
+    plantilla = (
+        _leer_plantilla(lector, obj["plantilla"], _ruta_hija(ruta, "plantilla"), perfil=True)
+        if "plantilla" in obj
+        else RefPlantilla()
+    )
+    modo = lector.enumerado(
+        obj, "modo", ruta, ModoClon, requerido=False, defecto=ModoClon.AUTOMATICO
+    )
+    ajustes = _leer_ajustes(lector, obj.get("ajustes"), _ruta_hija(ruta, "ajustes"), perfil=True)
+    if len(lector.errores) > n0 or plantilla is None or modo is None or ajustes is None:
+        return None
+    return PistaOrigen(nombre_fuente=plantilla.nombre, modo_clon=modo, ajustes=ajustes)
+
+
 def leer_config_perfil(lector: LectorEsquema, valor: object, ruta: str) -> ConfigPerfil | None:
     """Lee y valida la configuración de un perfil (modo perfil). ``None`` si hay errores."""
     obj = lector.objeto(valor, ruta, CLAVES_CONFIG_PERFIL)
@@ -362,6 +857,11 @@ def leer_config_perfil(lector: LectorEsquema, valor: object, ruta: str) -> Confi
         pista = _pista(lector, red, "bridge_preferido", r)
         if campos_r is not None:
             redes.append(RedPerfil(campos_r[0], campos_r[1], pista))
+    pista_org: PistaOrigen | None = None
+    if "detalle_origen" in obj and hw is not None:
+        pista_org = leer_pista_origen(
+            lector, obj["detalle_origen"], _ruta_hija(ruta, "detalle_origen"), hw.origen
+        )
     if len(lector.errores) > n0 or hw is None:
         return None
     return ConfigPerfil(
@@ -377,6 +877,10 @@ def leer_config_perfil(lector: LectorEsquema, valor: object, ruta: str) -> Confi
         controlador_scsi=hw.controlador_scsi,
         redes=tuple(redes),
         origen=hw.origen,
+        tipo_so=hw.tipo_so,
+        tpm=hw.tpm,
+        agente_qemu=hw.agente_qemu,
+        pista_origen=pista_org,
     )
 
 
@@ -415,6 +919,11 @@ def leer_configuracion(lector: LectorEsquema, valor: object, ruta: str) -> Confi
         bridge = lector.texto(red, "bridge", r, minimo=0, maximo=MAX_LONG_TEXTO, sin_token=True)
         if campos_r is not None and bridge is not None:
             redes.append(InterfazRed(bridge, campos_r[0], campos_r[1]))
+    detalle: DetalleOrigen | None = None
+    if "detalle_origen" in obj and hw is not None:
+        detalle = leer_detalle_origen(
+            lector, obj["detalle_origen"], _ruta_hija(ruta, "detalle_origen"), hw.origen
+        )
     if len(lector.errores) > n0 or hw is None:
         return None
     return ConfiguracionVM(
@@ -433,4 +942,8 @@ def leer_configuracion(lector: LectorEsquema, valor: object, ruta: str) -> Confi
         controlador_scsi=hw.controlador_scsi,
         redes=redes,
         origen=hw.origen,
+        tipo_so=hw.tipo_so,
+        tpm=hw.tpm,
+        agente_qemu=hw.agente_qemu,
+        detalle_origen=detalle,
     )

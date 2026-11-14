@@ -13,7 +13,11 @@ import logging
 from enum import StrEnum
 from pathlib import Path
 
-from proxlaunch.nucleo.archivos.constantes import MAX_BYTES_LOTE
+from proxlaunch.nucleo.archivos.constantes import (
+    MAX_BYTES_LOTE,
+    VERSION_FORMATO,
+    VERSION_FORMATO_BASE,
+)
 from proxlaunch.nucleo.archivos.envoltura import (
     FORMATO_LOTE,
     a_bytes_json,
@@ -22,7 +26,11 @@ from proxlaunch.nucleo.archivos.envoltura import (
 )
 from proxlaunch.nucleo.archivos.escritura import escribir_atomico
 from proxlaunch.nucleo.archivos.esquema import LectorEsquema, MotivoCampo, combinar_avisos
-from proxlaunch.nucleo.archivos.esquema_config import configuracion_a_dict, leer_configuracion
+from proxlaunch.nucleo.archivos.esquema_config import (
+    configuracion_a_dict,
+    leer_configuracion,
+    requiere_version_2,
+)
 from proxlaunch.nucleo.archivos.json_estricto import cargar_json_estricto
 from proxlaunch.nucleo.archivos.lector import leer_archivo_limitado
 from proxlaunch.nucleo.archivos.texto import contiene_token, exigir_sin_credencial, texto_seguro
@@ -116,8 +124,22 @@ def lote_a_dict(lote: LoteGuardado) -> dict[str, object]:
     return datos
 
 
+def version_para(lote: LoteGuardado) -> int:
+    """2 solo si alguna MV del lote usa algo del MVP 4 (DT-O15, CA-O27.5); 1 en otro caso."""
+    d = lote.definicion
+    cfgs = [f.cfg for f in d.filas] if d.es_por_filas else [d.plantilla]
+    return VERSION_FORMATO if any(requiere_version_2(c) for c in cfgs) else VERSION_FORMATO_BASE
+
+
 def lote_a_bytes(lote: LoteGuardado, *, app_version: str) -> bytes:
-    return a_bytes_json(crear_envoltura(FORMATO_LOTE, lote_a_dict(lote), app_version=app_version))
+    return a_bytes_json(
+        crear_envoltura(
+            FORMATO_LOTE,
+            lote_a_dict(lote),
+            app_version=app_version,
+            version_formato=version_para(lote),
+        )
+    )
 
 
 # --- Lectura -----------------------------------------------------------------------------

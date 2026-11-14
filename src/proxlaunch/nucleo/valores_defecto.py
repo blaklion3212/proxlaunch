@@ -59,6 +59,21 @@ def storage_por_defecto(storages: Sequence[Storage]) -> str | None:
     return max(candidatos, key=lambda s: s.libre_bytes).id
 
 
+def storage_disco_por_defecto(storages: Sequence[Storage], recordado: str | None) -> str | None:
+    """Storage inicial de un disco (CA-O05.5): el recordado del servidor si sigue vigente; si no,
+    el de mayor espacio libre (MVP 1). La pista del perfil de MV y el valor de un lote o CSV
+    se aplican por encima, en ese orden.
+
+    Un recordado que ya no sirve no se sustituye en silencio en el resto de flujos (INV-O11): aquí
+    solo se propone un valor de partida y el aviso E-O04 lo da ``origen.storages.decidir_storage``.
+    """
+    if recordado is not None and any(
+        s.id == recordado and s.activo and "images" in s.contenido for s in storages
+    ):
+        return recordado
+    return storage_por_defecto(storages)
+
+
 def configuracion_por_defecto(
     vmid: int,
     nombre: str,

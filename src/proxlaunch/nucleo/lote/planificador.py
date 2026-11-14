@@ -38,8 +38,12 @@ from proxlaunch.nucleo.lote.modelos import (
 from proxlaunch.nucleo.lote.nombres import validar_patron
 from proxlaunch.nucleo.lote.reparto import repartir_filas
 from proxlaunch.nucleo.modelos.inventario import Inventario, VMRemota
+from proxlaunch.nucleo.modelos.vm import OrigenSO
+from proxlaunch.nucleo.origen.resolucion import necesidades_catalogo, resolver_origen
 from proxlaunch.nucleo.reloj import Reloj
+from proxlaunch.nucleo.servicios.catalogo import ServicioCatalogo, con_catalogo
 from proxlaunch.nucleo.servicios.conexion import Sesion, permisos_faltantes_detalle
+from proxlaunch.nucleo.validacion import Problema as ProblemaM1
 from proxlaunch.nucleo.validacion import Severidad as SeveridadM1
 from proxlaunch.nucleo.validacion import validar_vm
 
@@ -234,6 +238,12 @@ def _avisos_nombres_existentes(
     return p
 
 
+def _problema_de_m1(pm: ProblemaM1, indice: int) -> Problema:
+    """Convierte un problema de validación de formulario (M1 / V-O) en uno del lote."""
+    sev = Severidad.ERROR if pm.severidad == SeveridadM1.ERROR else Severidad.AVISO
+    return Problema(pm.codigo, sev, pm.campo, dict(pm.params), indice)
+
+
 def construir_plan(
     definicion: DefinicionLote,
     inv: Inventario,
@@ -317,10 +327,17 @@ def construir_plan(
         )
 
     elementos: list[ElementoPlan] = []
+    de_origen: list[Problema] = []
+    hay_origen = False
     for i, fila in enumerate(filas):
         cfg = copy.deepcopy(fila.cfg)
         cfg.vmid, cfg.nombre, cfg.nodo = vmids[i], fila.nombre, nodos[i]
         cfg.etiquetas = _etiquetas(fila.cfg.etiquetas, definicion.etiquetar, id_lote)
+        if cfg.origen != OrigenSO.DISCO_VACIO:
+            # MVP 4 (§4.4): fuente, drivers, plantilla y modo del clon, resueltos en el nodo.
+            hay_origen = True
+            cfg, resueltos = resolver_origen(cfg, inv, nodos[i])
+            de_origen.extend(_problema_de_m1(pm, i) for pm in resueltos)
         elementos.append(ElementoPlan(i, fila.nombre, vmids[i], nodos[i], cfg))
 
     nombres = [fila.nombre for fila in filas]
@@ -354,12 +371,15 @@ def construir_plan(
         for pm in validar_vm(e.cfg, inv, caps):
             if pm.codigo in _REGLAS_M1_SUBSUMIDAS:
                 continue
-            sev = Severidad.ERROR if pm.severidad == SeveridadM1.ERROR else Severidad.AVISO
-            de_m1.append(Problema(pm.codigo, sev, pm.campo, dict(pm.params), e.indice))
+            de_m1.append(_problema_de_m1(pm, e.indice))
     # Por filas cada problema conserva su fila (``indice``): no se agrupan.
     problemas.extend(de_m1 if por_filas else _agrupar_m1(de_m1))
+    # Los problemas de resolución del origen llevan siempre su fila (V-O02, V-O03, V-O04...).
+    problemas.extend(de_origen)
 
-    return plan(elementos, problemas, dict(reparto), uso, capacidad, excedentes)
+    resultado = plan(elementos, problemas, dict(reparto), uso, capacidad, excedentes)
+    # El catálogo viaja con el plan solo si hubo orígenes: sin ellos el plan es el de M3.
+    return replace(resultado, catalogo=inv.catalogo) if hay_origen else resultado
 
 
 # --- Planificador (con E/S) ----------------------------------------------------------
@@ -479,6 +499,31 @@ class Planificador:
         vmids = [f.vmid if f.vmid is not None else next(siguiente) for f in filas]
         return vmids, saltados, problemas
 
+    def _con_catalogo_fresco(self, definicion: DefinicionLote, inv: Inventario) -> Inventario:
+        """Lee el catálogo del servidor (solo GET) si hay filas con origen distinto de disco
+        vacío; si no, devuelve ``inv`` intacto sin ninguna lectura nueva (CA-O03.1, INV-O8)."""
+        necesidades = necesidades_catalogo(filas_efectivas(definicion))
+        if necesidades.vacias:
+            return inv
+        catalogo = ServicioCatalogo(self._sesion, self._reloj).leer_para(
+            inv, necesidades, self._nodos_del_catalogo(definicion, inv)
+        )
+        previo = inv.catalogo
+        if catalogo.permisos is None and previo is not None and previo.permisos is not None:
+            catalogo = replace(catalogo, permisos=previo.permisos)  # se reutiliza la respuesta
+        return con_catalogo(inv, catalogo)
+
+    @staticmethod
+    def _nodos_del_catalogo(definicion: DefinicionLote, inv: Inventario) -> list[str]:
+        """Nodos en línea donde puede caer una MV: los candidatos del destino y los fijos."""
+        en_linea = {n.nombre for n in inv.topologia.nodos if n.en_linea}
+        if definicion.es_por_filas or definicion.destino.modo == ModoDestino.AUTOMATICO:
+            candidatos = set(en_linea)
+        else:
+            candidatos = en_linea & set(definicion.destino.nodos)
+        candidatos |= {f.nodo for f in definicion.filas if f.nodo and f.nodo in en_linea}
+        return sorted(candidatos)
+
     def planificar(
         self,
         definicion: DefinicionLote,
@@ -536,9 +581,10 @@ class Planificador:
                     )
                 )
 
+        inv_trabajo = self._con_catalogo_fresco(definicion, inv)
         plan = construir_plan(
             definicion,
-            inv,
+            inv_trabajo,
             vmids,
             saltados,
             id_lote=id_lote,

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import logging
 import uuid
 from dataclasses import fields
 from pathlib import Path
@@ -13,6 +14,9 @@ from proxlaunch.nucleo.persistencia.almacen_json import AlmacenJson
 from proxlaunch.nucleo.persistencia.huellas import RepositorioHuellas, clave_huella
 
 VERSION_ESQUEMA = 1
+
+_log = logging.getLogger("proxlaunch.persistencia.perfiles")
+_CAMPOS_STORAGE = ("storage_mv", "storage_iso", "storage_import")
 
 
 class _BorraSecretos(Protocol):
@@ -67,6 +71,12 @@ def _desde_dict(d: dict[str, Any]) -> PerfilConexion | None:
             _es_booleano(datos.get(k, False)) for k in ("recordar_credenciales", "ignorar_ssl")
         ):
             return None
+        # MVP 4 (RF-O05): storage recordado = texto o None; si no, None (se conserva el perfil).
+        for campo in _CAMPOS_STORAGE:
+            valor = datos.get(campo)
+            if valor is not None and (not isinstance(valor, str) or not valor.strip()):
+                _log.warning("Perfil de conexión: %s con tipo inválido; se ignora", campo)
+                datos[campo] = None
         return PerfilConexion(**datos)
     except (TypeError, ValueError):
         return None

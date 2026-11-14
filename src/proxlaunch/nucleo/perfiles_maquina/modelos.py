@@ -5,9 +5,10 @@ nombre de MV, nodo ni etiquetas (CA-P01.1, CA-P06.8). Las pistas de storage/brid
 solo sugerencias (RF-P06).
 """
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from enum import StrEnum
 
+from proxlaunch.nucleo.modelos.origen import AjustesClon, ModoClon, TipoSO
 from proxlaunch.nucleo.modelos.vm import (
     Bus,
     ControladorScsi,
@@ -52,6 +53,23 @@ class BallooningPerfil:
 
 
 @dataclass(frozen=True)
+class PistaOrigen:
+    """«Origen sugerido» de un perfil (RF-O26): solo nombres, nunca volids de otro servidor.
+
+    ``nombre_fuente`` es el ISO, la imagen o la plantilla (``""`` = sin fuente). Se resuelve
+    contra el servidor al aplicar el perfil. Nunca URL, ruta local ni checksum (INV-O6).
+    """
+
+    nombre_fuente: str = ""
+    storage_preferido: str | None = None  # ISO/imagen: pista del storage
+    drivers: str | None = None  # nombre del ISO de virtio-win; None = detectar
+    sin_drivers: bool = False
+    modo_clon: ModoClon = ModoClon.AUTOMATICO
+    ajustes: AjustesClon = field(default_factory=AjustesClon)
+    ampliar_a_gib: int | None = None
+
+
+@dataclass(frozen=True)
 class ConfigPerfil:
     """Lista blanca de campos de hardware de un perfil (§2 de los requisitos)."""
 
@@ -67,6 +85,11 @@ class ConfigPerfil:
     controlador_scsi: ControladorScsi = ControladorScsi.VIRTIO_SINGLE
     redes: tuple[RedPerfil, ...] = ()
     origen: OrigenSO = OrigenSO.DISCO_VACIO
+    # MVP 4 (al final y con valor por defecto)
+    tipo_so: TipoSO | None = None
+    tpm: bool = False
+    agente_qemu: bool = False
+    pista_origen: PistaOrigen | None = None
 
 
 @dataclass(frozen=True)

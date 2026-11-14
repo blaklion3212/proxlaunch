@@ -44,6 +44,12 @@ COLUMNAS: tuple[DefColumna, ...] = (
     DefColumna("modelo_red", ("tarjeta_red",), avanzada=True),
     DefColumna("firmware", ("bios",)),
     DefColumna("tipo_cpu", ("cpu_tipo",), avanzada=True),
+    # MVP 4 (RF-O28): origen del sistema operativo de la fila.
+    DefColumna("origen", ("source",)),
+    DefColumna("fuente", ("origen_archivo", "iso", "plantilla", "imagen")),
+    DefColumna("so", ("sistema",)),
+    DefColumna("virtio", ("drivers",)),
+    DefColumna("modo_clon", ("clon",), avanzada=True),
 )
 
 _SEPARADORES = re.compile(r"[\s\-_]+")

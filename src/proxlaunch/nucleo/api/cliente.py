@@ -8,14 +8,18 @@ from __future__ import annotations
 import logging
 import re
 import threading
+from collections.abc import Callable
+from dataclasses import dataclass
 from typing import Any
 from urllib.parse import quote
 
 from proxlaunch.nucleo.api.autenticacion import Autenticador
+from proxlaunch.nucleo.api.multipart import CuerpoMultipart, ParteArchivo
 from proxlaunch.nucleo.api.solo_lectura import TransporteSoloLectura
-from proxlaunch.nucleo.api.transporte import Transporte
+from proxlaunch.nucleo.api.transporte import Transporte, TransporteSubida
 from proxlaunch.nucleo.capacidades import interpretar_version
 from proxlaunch.nucleo.errores import CodigoError, ErrorProxLaunch
+from proxlaunch.nucleo.modelos.catalogo import Contenido, Plantilla, Volumen
 from proxlaunch.nucleo.modelos.inventario import (
     Bridge,
     Nodo,
@@ -25,7 +29,10 @@ from proxlaunch.nucleo.modelos.inventario import (
     VMRemota,
 )
 from proxlaunch.nucleo.modelos.tarea import EstadoTarea
+from proxlaunch.nucleo.origen.constantes import PARO_SIN_PROGRESO_S
+from proxlaunch.nucleo.origen.nombres import validar_volid
 from proxlaunch.nucleo.reloj import Reloj
+from proxlaunch.nucleo.transferencias.url import ChecksumTransferencia, UrlDescarga, ocultar_url
 
 _log = logging.getLogger("proxlaunch.api.cliente")
 
@@ -53,6 +60,44 @@ def _como_bool(valor: Any, defecto: bool = False) -> bool:
     if valor is None:
         return defecto
     return str(valor).strip().lower() in ("1", "true", "yes", "on")
+
+
+def _formatos_de(valor: Any) -> frozenset[str] | None:
+    """Formatos de disco de un storage según ``?format=1`` (tolerante); ``None`` si no constan.
+
+    La API los devuelve como ``[{"raw": 1, "qcow2": 1}, "raw"]`` (permitidos y por defecto);
+    también se aceptan un mapa, una lista de textos o una cadena separada por comas.
+    """
+    if isinstance(valor, list) and valor and isinstance(valor[0], dict):
+        valor = valor[0]
+    if isinstance(valor, dict):
+        nombres = [str(k) for k in valor]
+    elif isinstance(valor, list):
+        nombres = [str(x) for x in valor]
+    elif isinstance(valor, str):
+        nombres = valor.split(",")
+    else:
+        return None
+    formatos = frozenset(n.strip() for n in nombres if n.strip())
+    return formatos or None
+
+
+def _nombre_en_storage(volid: str) -> str | None:
+    """Parte del volid tras ``storage:contenido/`` (``x.iso``); ``None`` si no tiene forma."""
+    _, separador, resto = volid.partition(":")
+    if not separador or not resto:
+        return None
+    _, barra, nombre = resto.partition("/")
+    return nombre if barra and nombre else None
+
+
+@dataclass(frozen=True)
+class MetadatosUrl:
+    """Lo que el SERVIDOR ve de una URL (``query-url-metadata``, CA-O11.1)."""
+
+    nombre: str | None
+    tamano: int | None
+    tipo_mime: str | None
 
 
 class ClienteProxmox:
@@ -112,6 +157,16 @@ class ClienteProxmox:
 
     # --- Base -------------------------------------------------------------------------
 
+    def _preparar_credencial(self) -> None:
+        """Comprueba que la sesión siga abierta y renueva la credencial si hace falta."""
+        if self._cerrada.is_set():
+            # Sesión cerrada: no se renueva con una credencial ya olvidada (hallazgo B1).
+            raise ErrorProxLaunch(CodigoError.SESION_EXPIRADA)
+        if self._auth.necesita_renovar():
+            with self._cerrojo_renovacion:
+                if self._auth.necesita_renovar():
+                    self._auth.renovar(self._transporte_renovacion)
+
     def _llamar(
         self,
         metodo: str,
@@ -120,13 +175,7 @@ class ClienteProxmox:
         params: dict[str, Any] | None = None,
         datos: dict[str, Any] | None = None,
     ) -> Any:
-        if self._cerrada.is_set():
-            # Sesión cerrada: no se renueva con una credencial ya olvidada (hallazgo B1).
-            raise ErrorProxLaunch(CodigoError.SESION_EXPIRADA)
-        if self._auth.necesita_renovar():
-            with self._cerrojo_renovacion:
-                if self._auth.necesita_renovar():
-                    self._auth.renovar(self._transporte_renovacion)
+        self._preparar_credencial()
         return self._transporte.peticion(metodo, ruta, params=params, datos=datos)
 
     # --- Lecturas ---------------------------------------------------------------------
@@ -180,9 +229,17 @@ class ClienteProxmox:
             )
         return resultado
 
-    def storages(self, nodo: str) -> list[Storage]:
-        """``GET /nodes/{n}/storage``: todos; el filtro ``images`` va en descubrimiento."""
-        data = self._llamar("GET", f"/nodes/{_seg(nodo)}/storage")
+    def storages(self, nodo: str, *, con_formatos: bool = False) -> list[Storage]:
+        """``GET /nodes/{n}/storage``: todos; el filtro ``images`` va en descubrimiento.
+
+        ``?format=1`` solo se pide con ``con_formatos`` (CA-O04.6): el descubrimiento de la
+        conexión no lo usa, para no cambiar la secuencia de peticiones del MVP 3.
+        """
+        data = self._llamar(
+            "GET",
+            f"/nodes/{_seg(nodo)}/storage",
+            params={"format": 1} if con_formatos else None,
+        )
         resultado: list[Storage] = []
         for e in data if isinstance(data, list) else []:
             if not isinstance(e, dict) or not e.get("storage"):
@@ -198,6 +255,9 @@ class ClienteProxmox:
                     activo=_como_bool(e.get("active"), True) and _como_bool(e.get("enabled"), True),
                     total_bytes=_entero(e.get("total")) or 0,
                     libre_bytes=_entero(e.get("avail")) or 0,
+                    formatos=_formatos_de(e.get("formats", e.get("format")))
+                    if con_formatos
+                    else None,
                 )
             )
         return resultado
@@ -277,6 +337,61 @@ class ClienteProxmox:
             if isinstance(privs, dict)
         }
 
+    def contenido_storage(self, nodo: str, storage: str, contenido: Contenido) -> list[Volumen]:
+        """``GET /nodes/{n}/storage/{s}/content?content=…``: volúmenes de un tipo (I4-§A, §C).
+
+        El nombre y el volid son texto no confiable: ``admitido`` indica si pasan la lista
+        blanca (V-O02/V-O03, INV-O7); los no admitidos se devuelven igualmente para poder
+        mostrarlos deshabilitados, pero nunca deben llegar a un parámetro de la API.
+        """
+        data = self._llamar(
+            "GET",
+            f"/nodes/{_seg(nodo)}/storage/{_seg(storage)}/content",
+            params={"content": contenido.value},
+        )
+        resultado: list[Volumen] = []
+        for e in data if isinstance(data, list) else []:
+            if not isinstance(e, dict):
+                continue
+            volid = e.get("volid")
+            nombre = _nombre_en_storage(volid) if isinstance(volid, str) else None
+            if not isinstance(volid, str) or nombre is None:
+                continue
+            resultado.append(
+                Volumen(
+                    volid=volid,
+                    storage=storage,
+                    contenido=contenido,
+                    nombre=nombre,
+                    tamano_bytes=_entero(e.get("size")),
+                    creado=_entero(e.get("ctime")),
+                    admitido=validar_volid(volid, contenido) is None,
+                )
+            )
+        return resultado
+
+    def plantillas_visibles(self) -> list[Plantilla]:
+        """``GET /cluster/resources?type=vm``, solo las plantillas (``template = 1``, I4-§D)."""
+        data = self._llamar("GET", "/cluster/resources", params={"type": "vm"})
+        resultado: list[Plantilla] = []
+        for e in data if isinstance(data, list) else []:
+            if not isinstance(e, dict) or not _como_bool(e.get("template")):
+                continue
+            vmid = _entero(e.get("vmid"))
+            if vmid is None or str(e.get("type", "qemu")) != "qemu":
+                continue
+            bloqueo = e.get("lock")
+            resultado.append(
+                Plantilla(
+                    vmid=vmid,
+                    nombre=str(e.get("name", "")),
+                    nodo=str(e.get("node", "")),
+                    bloqueo=str(bloqueo) if bloqueo else None,
+                    disco_total_bytes=_entero(e.get("maxdisk")),
+                )
+            )
+        return resultado
+
     # --- Creación y seguimiento -------------------------------------------------------
 
     def crear_vm(self, nodo: str, parametros: dict[str, str]) -> str:
@@ -355,6 +470,152 @@ class ClienteProxmox:
         )
         if not isinstance(data, str) or not _RE_UPID.match(data):
             raise ErrorProxLaunch(CodigoError.UPID_INVALIDO, {}, f"respuesta: {data!r}")
+        return data
+
+    def clonar_vm(self, nodo: str, vmid: int, parametros: dict[str, str]) -> str:
+        """``POST /nodes/{n}/qemu/{vmid}/clone`` (``vmid`` = plantilla). Devuelve el UPID.
+
+        Raises:
+            ErrorProxLaunch: ``UPID_INVALIDO`` si la respuesta no trae un UPID válido.
+        """
+        data = self._llamar(
+            "POST", f"/nodes/{_seg(nodo)}/qemu/{_seg(vmid)}/clone", datos=parametros
+        )
+        if not isinstance(data, str) or not _RE_UPID.match(data):
+            raise ErrorProxLaunch(CodigoError.UPID_INVALIDO, {}, f"respuesta: {data!r}")
+        return data
+
+    def configurar_vm(self, nodo: str, vmid: int, parametros: dict[str, str]) -> None:
+        """``PUT /nodes/{n}/qemu/{vmid}/config`` (ajustes tras un clon)."""
+        self._llamar("PUT", f"/nodes/{_seg(nodo)}/qemu/{_seg(vmid)}/config", datos=parametros)
+
+    def ampliar_disco(self, nodo: str, vmid: int, disco: str, tamano_gib: int) -> str | None:
+        """``PUT /nodes/{n}/qemu/{vmid}/resize`` con ``size=<n>G`` (valor absoluto, idempotente).
+
+        Devuelve el UPID si el servidor lanza una tarea o ``None`` si responde sin ella
+        (por confirmar en LAB-M4-12).
+        """
+        data = self._llamar(
+            "PUT",
+            f"/nodes/{_seg(nodo)}/qemu/{_seg(vmid)}/resize",
+            datos={"disk": disco, "size": f"{int(tamano_gib)}G"},
+        )
+        return data if isinstance(data, str) and _RE_UPID.match(data) else None
+
+    def subir_archivo(
+        self,
+        nodo: str,
+        storage: str,
+        contenido: Contenido,
+        parte: ParteArchivo,
+        checksum_sha256: str,
+        *,
+        al_progresar: Callable[[int, int], None] | None = None,
+        cancelado: threading.Event | None = None,
+        al_leer: Callable[[bytes], None] | None = None,
+    ) -> str:
+        """``POST /nodes/{n}/storage/{s}/upload`` en streaming (I4-§B). Devuelve el UPID.
+
+        Envía ``content``, ``checksum``, ``checksum-algorithm=sha256`` y, al final, la parte
+        ``filename`` con ``Content-Type: application/octet-stream``. Sin reintento ni
+        failover. Nunca se envía ``tmpfilename``.
+
+        Raises:
+            TypeError: si el transporte no admite subidas (``TransporteSubida``).
+            ErrorProxLaunch: ``UPID_INVALIDO``, ``TRANSFERENCIA_CANCELADA`` y los de red.
+        """
+        if contenido == Contenido.IMAGENES:
+            raise ValueError("solo se suben archivos de contenido iso o import")
+        transporte = self._transporte
+        if not isinstance(transporte, TransporteSubida):
+            raise TypeError("el transporte no admite subidas (TransporteSubida)")
+        self._preparar_credencial()
+        cuerpo = CuerpoMultipart(
+            {
+                "content": contenido.value,
+                "checksum": checksum_sha256,
+                "checksum-algorithm": "sha256",
+            },
+            parte,
+            al_progresar=al_progresar,
+            cancelado=cancelado,
+            al_leer=al_leer,
+        )
+        data = transporte.subir(
+            f"/nodes/{_seg(nodo)}/storage/{_seg(storage)}/upload",
+            cuerpo,
+            timeout_lectura=PARO_SIN_PROGRESO_S,
+        )
+        if not isinstance(data, str) or not _RE_UPID.match(data):
+            raise ErrorProxLaunch(CodigoError.UPID_INVALIDO, {}, f"respuesta: {data!r}")
+        return data
+
+    @staticmethod
+    def _sin_url(error: ErrorProxLaunch, url: UrlDescarga) -> ErrorProxLaunch:
+        """Quita la URL del detalle técnico y de los parámetros del error (INV-O6)."""
+        error.detalle_tecnico = ocultar_url(error.detalle_tecnico, url)
+        error.params = {k: ocultar_url(v, url) for k, v in error.params.items()}
+        return error
+
+    def metadatos_url(
+        self, nodo: str, url: UrlDescarga, *, verificar_certificados: bool = True
+    ) -> MetadatosUrl:
+        """``GET /nodes/{n}/query-url-metadata``: nombre, tamaño y tipo que ve el SERVIDOR.
+
+        La app no se conecta a la URL (RNF-O05).
+        """
+        try:
+            data = self._llamar(
+                "GET",
+                f"/nodes/{_seg(nodo)}/query-url-metadata",
+                params={"url": url.texto, "verify-certificates": int(verificar_certificados)},
+            )
+        except ErrorProxLaunch as e:
+            raise self._sin_url(e, url) from None
+        info = data if isinstance(data, dict) else {}
+        nombre = info.get("filename")
+        tipo = info.get("mimetype")
+        return MetadatosUrl(
+            nombre=str(nombre) if nombre else None,
+            tamano=_entero(info.get("size")),
+            tipo_mime=str(tipo) if tipo else None,
+        )
+
+    def descargar_url(
+        self,
+        nodo: str,
+        storage: str,
+        *,
+        url: UrlDescarga,
+        contenido: Contenido,
+        nombre: str,
+        checksum: ChecksumTransferencia | None,
+        verificar_certificados: bool = True,
+    ) -> str:
+        """``POST /nodes/{n}/storage/{s}/download-url``: el nodo descarga la URL. Devuelve el UPID.
+
+        Sin ``compression`` (los archivos se guardan tal cual). El ``detalle_tecnico`` y los
+        parámetros de cualquier error pasan por ``ocultar_url`` (INV-O6).
+        """
+        if contenido == Contenido.IMAGENES:
+            raise ValueError("solo se descargan archivos de contenido iso o import")
+        datos: dict[str, Any] = {
+            "url": url.texto,
+            "content": contenido.value,
+            "filename": nombre,
+            "verify-certificates": int(verificar_certificados),
+        }
+        if checksum is not None:
+            datos["checksum"] = checksum.valor
+            datos["checksum-algorithm"] = checksum.algoritmo.value
+        try:
+            data = self._llamar(
+                "POST", f"/nodes/{_seg(nodo)}/storage/{_seg(storage)}/download-url", datos=datos
+            )
+        except ErrorProxLaunch as e:
+            raise self._sin_url(e, url) from None
+        if not isinstance(data, str) or not _RE_UPID.match(data):
+            raise ErrorProxLaunch(CodigoError.UPID_INVALIDO, {}, "respuesta sin UPID")
         return data
 
 

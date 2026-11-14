@@ -32,7 +32,8 @@ from proxlaunch.nucleo.lote.modelos import (
 )
 from proxlaunch.nucleo.lote.presupuesto import libre_de_clave, libres_iniciales, pedido_vm
 from proxlaunch.nucleo.modelos.inventario import Inventario, Nodo
-from proxlaunch.nucleo.modelos.vm import ConfiguracionVM, Firmware
+from proxlaunch.nucleo.modelos.vm import ConfiguracionVM, Firmware, OrigenSO
+from proxlaunch.nucleo.origen.resolucion import firma_origen, motivos_nodo_origen
 from proxlaunch.nucleo.validacion import TIPOS_BRIDGE, storage_efi_efectivo
 
 
@@ -67,6 +68,10 @@ def _motivos_nodo(plantilla: ConfiguracionVM, inv: Inventario, nombre: str) -> l
         )
 
     cfg = replace(plantilla, nodo=nombre)
+    if cfg.origen == OrigenSO.CLONAR_PLANTILLA:
+        # Clon: los discos, el efidisk y las redes son los de la plantilla; las reglas de M1
+        # sobre ellos no se evalúan (arquitectura §4.3). Solo cuenta la plantilla (V-O25).
+        return motivos_nodo_origen(cfg, inv, nombre)
     storages = {s.id: s for s in inv.storages.get(nombre, ())}
     discos = cfg.discos if cfg.con_disco else []
 
@@ -88,6 +93,8 @@ def _motivos_nodo(plantilla: ConfiguracionVM, inv: Inventario, nombre: str) -> l
         if r.bridge not in bridges:
             falta("bridge", bridge=str(r.bridge))
             bridges.add(r.bridge)  # un solo motivo por bridge
+    if cfg.origen != OrigenSO.DISCO_VACIO:
+        motivos.extend(motivos_nodo_origen(cfg, inv, nombre))  # fuente (ISO, imagen) en el nodo
     return motivos
 
 
@@ -134,6 +141,8 @@ def _firma(cfg: ConfiguracionVM) -> _Firma:
         cfg.firmware,
         cfg.storage_efi,
         tuple(r.bridge for r in cfg.redes),
+        cfg.tpm,
+        firma_origen(cfg),
     )
 
 

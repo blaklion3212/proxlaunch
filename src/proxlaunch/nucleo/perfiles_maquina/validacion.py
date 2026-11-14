@@ -17,7 +17,22 @@ from proxlaunch.nucleo.archivos.texto import (
     texto_seguro,
     validar_nombre,
 )
-from proxlaunch.nucleo.modelos.vm import Ballooning, ConfiguracionVM, Disco, InterfazRed
+from proxlaunch.nucleo.modelos.origen import (
+    DetalleClon,
+    DetalleImportacion,
+    DetalleIso,
+    DetalleOrigen,
+    RefPlantilla,
+    RefVolumen,
+    TipoSO,
+)
+from proxlaunch.nucleo.modelos.vm import (
+    Ballooning,
+    ConfiguracionVM,
+    Disco,
+    InterfazRed,
+    OrigenSO,
+)
 from proxlaunch.nucleo.perfiles_maquina.modelos import PREFIJO_FABRICA, ConfigPerfil, PerfilMaquina
 from proxlaunch.nucleo.validacion import Problema, Severidad, validar_sin_servidor
 
@@ -84,8 +99,29 @@ def nombre_libre(base: str, existentes: Iterable[PerfilMaquina]) -> str:
         n += 1
 
 
+def _detalle_ficticio(config: ConfigPerfil) -> DetalleOrigen | None:
+    """Detalle con fuente ficticia: un perfil sin fuente es válido (solo sugiere el origen)."""
+    pista = config.pista_origen
+    if config.origen == OrigenSO.ISO:
+        return DetalleIso(iso=RefVolumen(_PISTA_FICTICIA), sin_drivers=True)
+    if config.origen == OrigenSO.IMPORTAR_DISCO:
+        ampliar = None if pista is None else pista.ampliar_a_gib
+        return DetalleImportacion(imagen=RefVolumen(_PISTA_FICTICIA), ampliar_a_gib=ampliar)
+    if config.origen == OrigenSO.CLONAR_PLANTILLA:
+        return DetalleClon(
+            plantilla=RefPlantilla(_PISTA_FICTICIA),
+            modo=pista.modo_clon if pista else DetalleClon().modo,
+            ajustes=pista.ajustes if pista else DetalleClon().ajustes,
+        )
+    return None
+
+
 def cfg_ficticia(config: ConfigPerfil) -> ConfiguracionVM:
     """``ConfiguracionVM`` con storage y bridge ficticios, solo para validar la capa 1."""
+    # Un perfil ISO sin tipo de SO es válido (solo sugiere): se valida como «otro».
+    tipo_so = (
+        TipoSO.OTRO if config.origen == OrigenSO.ISO and config.tipo_so is None else config.tipo_so
+    )
     return ConfiguracionVM(
         vmid=0,
         nombre="",
@@ -109,6 +145,10 @@ def cfg_ficticia(config: ConfigPerfil) -> ConfiguracionVM:
         controlador_scsi=config.controlador_scsi,
         redes=[InterfazRed(_PISTA_FICTICIA, r.modelo, r.vlan) for r in config.redes],
         origen=config.origen,
+        tipo_so=tipo_so,
+        tpm=config.tpm,
+        agente_qemu=config.agente_qemu,
+        detalle_origen=_detalle_ficticio(config),
     )
 
 
@@ -125,6 +165,12 @@ def validar_config_perfil(config: ConfigPerfil) -> list[Problema]:
     pistas += [
         (f"redes[{i}].bridge_preferido", r.bridge_preferido) for i, r in enumerate(config.redes)
     ]
+    if config.pista_origen is not None:
+        pistas += [
+            ("detalle_origen.nombre_fuente", config.pista_origen.nombre_fuente or None),
+            ("detalle_origen.storage_preferido", config.pista_origen.storage_preferido),
+            ("detalle_origen.drivers", config.pista_origen.drivers),
+        ]
     for campo, pista in pistas:
         if pista is not None and texto_seguro(pista, maximo=MAX_LONG_TEXTO) is None:
             problemas.append(_error(campo, "V-M04"))
