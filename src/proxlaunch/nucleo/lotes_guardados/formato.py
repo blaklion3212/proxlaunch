@@ -226,7 +226,7 @@ def _leer_patron(
     if obj is None:
         return None
     n0 = len(lector.errores)
-    prefijo = lector.texto(obj, "prefijo", ruta, minimo=0, maximo=253)
+    prefijo = lector.texto(obj, "prefijo", ruta, minimo=0, maximo=1024)
     separador = lector.texto(
         obj, "separador", ruta, minimo=0, maximo=16, requerido=False, defecto="-"
     )
@@ -250,7 +250,7 @@ def _leer_fila(lector: LectorEsquema, valor: object, ruta: str) -> FilaLote | No
     if obj is None:
         return None
     n0 = len(lector.errores)
-    nombre = lector.texto(obj, "nombre", ruta, minimo=0, maximo=253)
+    nombre = lector.texto(obj, "nombre", ruta, minimo=0, maximo=1024)
     vmid = lector.entero(obj, "vmid", ruta, minimo=0, maximo=_TOPE, nulo=True, requerido=False)
     nodo = lector.texto(obj, "nodo", ruta, minimo=1, maximo=253, nulo=True, requerido=False)
     origen = lector.entero(obj, "origen", ruta, minimo=0, maximo=_TOPE, nulo=True, requerido=False)

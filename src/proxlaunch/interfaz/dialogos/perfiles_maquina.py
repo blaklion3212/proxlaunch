@@ -292,7 +292,7 @@ class DialogoPerfilesMaquina(QDialog):
         self.boton_duplicar.clicked.connect(self.duplicar)
         self.boton_renombrar.clicked.connect(self.renombrar)
         self.boton_eliminar.clicked.connect(self.eliminar)
-        self.boton_importar.clicked.connect(self.importar)
+        self.boton_importar.clicked.connect(lambda: self.importar())
         self.boton_exportar.clicked.connect(self.exportar)
         self.boton_cerrar.clicked.connect(self.accept)
         self.tabla.selectionModel().selectionChanged.connect(self._al_seleccionar)

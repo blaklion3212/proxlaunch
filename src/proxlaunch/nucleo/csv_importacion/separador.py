@@ -48,7 +48,7 @@ def detectar_separador(texto: str) -> DeteccionSeparador:
 
     Una primera línea ``sep=X`` manda y se omite. Si no, gana el separador que da el mismo
     número de columnas (≥ 2) en más líneas de las primeras 20; en un empate gana ``;`` si
-    aparece un decimal con coma y, si no, el resultado es ambiguo (``ambiguo=True``,
+    aparece un decimal con coma y, si no, gana ``,`` y el resultado es ambiguo (``ambiguo=True``,
     ``candidatos`` = los empatados). Sin ninguna candidata con ≥ 2 columnas (una sola columna)
     devuelve ``;`` sin ambigüedad ni candidatos.
     """
@@ -66,4 +66,6 @@ def detectar_separador(texto: str) -> DeteccionSeparador:
         return DeteccionSeparador(empatados[0], False, empatados, False)
     if ";" in empatados and _DECIMAL_COMA.search(muestra):
         return DeteccionSeparador(";", False, empatados, False)
-    return DeteccionSeparador(empatados[0], True, empatados, False)
+    # CA-C02.4: ante un empate sin decimal con coma se elige ',' (ambiguo).
+    elegido = "," if "," in empatados else empatados[0]
+    return DeteccionSeparador(elegido, True, empatados, False)

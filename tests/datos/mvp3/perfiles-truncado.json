@@ -1,0 +1,9 @@
+{
+  "app_version": "0.3.0",
+  "formato": "proxlaunch.perfiles",
+  "perfiles": [
+    {
+      "config": {
+        "ballooning": null,
+        "con_disco": true,
+        "controlador_scsi": "virtio-scsi-

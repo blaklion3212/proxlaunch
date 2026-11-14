@@ -55,8 +55,9 @@ class Destino:
 class FilaLote:
     """Una MV de un lote por filas (D-22).
 
-    El hardware, storage y bridge son los de ``cfg``; ``cfg.vmid``, ``cfg.nombre``,
-    ``cfg.nodo`` y ``cfg.etiquetas`` se ignoran (los fija el plan). ``cfg`` es mutable
+    El hardware, storage y bridge son los de ``cfg``; ``cfg.vmid``, ``cfg.nombre``
+    y ``cfg.nodo`` se ignoran (los fija el plan); ``cfg.etiquetas`` se conserva y el plan
+    le suma las del lote. ``cfg`` es mutable
     (M1): no se muta nunca dentro de este modelo; se copia con ``copy.deepcopy``.
     """
 

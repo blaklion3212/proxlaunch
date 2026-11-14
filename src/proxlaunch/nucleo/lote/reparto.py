@@ -249,9 +249,9 @@ def repartir_filas(
             for m in motivos[nombre]:
                 # Aviso mientras quede algún nodo; si no queda ninguno, error (con E-L01).
                 sev = Severidad.AVISO if hay_elegibles else Severidad.ERROR
-                nuevo = replace(
-                    m, severidad=sev, indice=primero_por_firma[f] if por_filas else None
-                )
+                # Aviso de clúster: va sin índice de fila (arquitectura §4.4); los motivos de
+                # una fila con nodo fijo se emiten arriba con su índice.
+                nuevo = replace(m, severidad=sev, indice=None)
                 clave_vista = (nuevo.regla, sev.value, tuple(sorted(nuevo.params.items())))
                 if clave_vista in vistos:  # dos firmas pueden compartir el mismo motivo
                     continue

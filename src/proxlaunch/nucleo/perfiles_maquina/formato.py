@@ -33,7 +33,7 @@ from proxlaunch.nucleo.archivos.esquema import (
 from proxlaunch.nucleo.archivos.esquema_config import config_perfil_a_dict, leer_config_perfil
 from proxlaunch.nucleo.archivos.json_estricto import cargar_json_estricto
 from proxlaunch.nucleo.archivos.lector import leer_archivo_limitado
-from proxlaunch.nucleo.archivos.texto import texto_seguro
+from proxlaunch.nucleo.archivos.texto import contiene_token, texto_seguro
 from proxlaunch.nucleo.errores import CodigoError, ErrorProxLaunch
 from proxlaunch.nucleo.perfiles_maquina.modelos import ConfigPerfil, PerfilMaquina
 from proxlaunch.nucleo.perfiles_maquina.validacion import validar_config_perfil
@@ -165,6 +165,8 @@ def leer_perfiles(datos: bytes) -> ArchivoPerfiles:
             nombre = (
                 texto_seguro(nombre_crudo, maximo=60) if isinstance(nombre_crudo, str) else None
             )
+            if nombre is not None and contiene_token(nombre):
+                nombre = None  # un nombre que parece un token no se devuelve (INV-M2)
             invalidos.append(PerfilInvalido(i, nombre, tuple(sub.errores)))
     return ArchivoPerfiles(tuple(validos), tuple(invalidos), combinar_avisos(avisos))
 

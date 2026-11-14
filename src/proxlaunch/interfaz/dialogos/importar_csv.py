@@ -609,6 +609,8 @@ class DialogoImportarCsv(QDialog):
         self.boton_copiar.setEnabled(con_errores)
         if not con_errores:
             texto_continuar = self.tr("Continuar")
+        elif elegidas == 0:
+            texto_continuar = self.tr("No hay filas correctas para importar")
         elif elegidas == 1:
             texto_continuar = self.tr("Importar solo la fila correcta")
         else:

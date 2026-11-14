@@ -458,132 +458,132 @@
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../../interfaz/vistas/bloque_lote.py" line="104"/>
+        <location filename="../../interfaz/vistas/bloque_lote.py" line="105"/>
         <source>Cantidad</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../../interfaz/vistas/bloque_lote.py" line="108"/>
+        <location filename="../../interfaz/vistas/bloque_lote.py" line="109"/>
         <source>Cantidad de máquinas</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../../interfaz/vistas/bloque_lote.py" line="119"/>
+        <location filename="../../interfaz/vistas/bloque_lote.py" line="120"/>
         <source>por ejemplo srv-web</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../../interfaz/vistas/bloque_lote.py" line="122"/>
+        <location filename="../../interfaz/vistas/bloque_lote.py" line="123"/>
         <source>Prefijo de los nombres</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../../interfaz/vistas/bloque_lote.py" line="126"/>
+        <location filename="../../interfaz/vistas/bloque_lote.py" line="127"/>
         <source>Prefijo</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../../interfaz/vistas/bloque_lote.py" line="132"/>
+        <location filename="../../interfaz/vistas/bloque_lote.py" line="133"/>
         <source>Vista previa de los nombres</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../../interfaz/vistas/bloque_lote.py" line="135"/>
+        <location filename="../../interfaz/vistas/bloque_lote.py" line="136"/>
         <source>Guion (-)</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../../interfaz/vistas/bloque_lote.py" line="136"/>
+        <location filename="../../interfaz/vistas/bloque_lote.py" line="137"/>
         <source>Ninguno</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../../interfaz/vistas/bloque_lote.py" line="139"/>
+        <location filename="../../interfaz/vistas/bloque_lote.py" line="140"/>
         <source>Separador</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../../interfaz/vistas/bloque_lote.py" line="147"/>
+        <location filename="../../interfaz/vistas/bloque_lote.py" line="148"/>
         <source>Número inicial</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../../interfaz/vistas/bloque_lote.py" line="155"/>
+        <location filename="../../interfaz/vistas/bloque_lote.py" line="156"/>
         <source>Relleno (dígitos)</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../../interfaz/vistas/bloque_lote.py" line="161"/>
+        <location filename="../../interfaz/vistas/bloque_lote.py" line="162"/>
         <source>automático</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../../interfaz/vistas/bloque_lote.py" line="164"/>
+        <location filename="../../interfaz/vistas/bloque_lote.py" line="165"/>
         <source>Número de máquina inicial (VMID)</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../../interfaz/vistas/bloque_lote.py" line="186"/>
+        <location filename="../../interfaz/vistas/bloque_lote.py" line="187"/>
         <source>Automático</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../../interfaz/vistas/bloque_lote.py" line="187"/>
+        <location filename="../../interfaz/vistas/bloque_lote.py" line="188"/>
         <source>Un nodo</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../../interfaz/vistas/bloque_lote.py" line="189"/>
+        <location filename="../../interfaz/vistas/bloque_lote.py" line="190"/>
         <source>Nodos elegidos</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../../interfaz/vistas/bloque_lote.py" line="198"/>
+        <location filename="../../interfaz/vistas/bloque_lote.py" line="199"/>
         <source>Nodo de destino</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../../interfaz/vistas/bloque_lote.py" line="207"/>
+        <location filename="../../interfaz/vistas/bloque_lote.py" line="208"/>
         <source>Equilibrado</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../../interfaz/vistas/bloque_lote.py" line="210"/>
+        <location filename="../../interfaz/vistas/bloque_lote.py" line="211"/>
         <source>Por turnos</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../../interfaz/vistas/bloque_lote.py" line="213"/>
+        <location filename="../../interfaz/vistas/bloque_lote.py" line="214"/>
         <source>Algoritmo de reparto</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../../interfaz/vistas/bloque_lote.py" line="229"/>
+        <location filename="../../interfaz/vistas/bloque_lote.py" line="230"/>
         <source>Dónde crearlas</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../../interfaz/vistas/bloque_lote.py" line="234"/>
+        <location filename="../../interfaz/vistas/bloque_lote.py" line="235"/>
         <source>Reparto</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../../interfaz/vistas/bloque_lote.py" line="249"/>
+        <location filename="../../interfaz/vistas/bloque_lote.py" line="250"/>
         <source>Etiquetar las máquinas</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../../interfaz/vistas/bloque_lote.py" line="358"/>
+        <location filename="../../interfaz/vistas/bloque_lote.py" line="359"/>
         <source>Sin conexión</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../../interfaz/vistas/bloque_lote.py" line="385"/>
+        <location filename="../../interfaz/vistas/bloque_lote.py" line="397"/>
         <source>{nodo} (no existe)</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../../interfaz/vistas/bloque_lote.py" line="624"/>
+        <location filename="../../interfaz/vistas/bloque_lote.py" line="638"/>
         <source>Se llamarán: {nombres}</source>
         <translation type="unfinished"></translation>
     </message>
@@ -1478,7 +1478,7 @@
     </message>
     <message>
         <location filename="../../interfaz/dialogos/importar_csv.py" line="342"/>
-        <location filename="../../interfaz/dialogos/importar_csv.py" line="784"/>
+        <location filename="../../interfaz/dialogos/importar_csv.py" line="786"/>
         <source>Cancelar</source>
         <translation type="unfinished"></translation>
     </message>
@@ -1528,11 +1528,16 @@
     </message>
     <message>
         <location filename="../../interfaz/dialogos/importar_csv.py" line="613"/>
+        <source>No hay filas correctas para importar</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <location filename="../../interfaz/dialogos/importar_csv.py" line="615"/>
         <source>Importar solo la fila correcta</source>
         <translation type="unfinished"></translation>
     </message>
     <message numerus="yes">
-        <location filename="../../interfaz/dialogos/importar_csv.py" line="615"/>
+        <location filename="../../interfaz/dialogos/importar_csv.py" line="617"/>
         <source>Importar solo las %n filas correctas</source>
         <translation type="unfinished">
             <numerusform></numerusform>
@@ -1540,32 +1545,32 @@
         </translation>
     </message>
     <message>
-        <location filename="../../interfaz/dialogos/importar_csv.py" line="628"/>
+        <location filename="../../interfaz/dialogos/importar_csv.py" line="630"/>
         <source>Conéctate a un servidor para poder continuar.</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../../interfaz/dialogos/importar_csv.py" line="631"/>
+        <location filename="../../interfaz/dialogos/importar_csv.py" line="633"/>
         <source>No queda ninguna fila para importar.</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../../interfaz/dialogos/importar_csv.py" line="663"/>
+        <location filename="../../interfaz/dialogos/importar_csv.py" line="665"/>
         <source>Se guardó la plantilla.</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../../interfaz/dialogos/importar_csv.py" line="679"/>
+        <location filename="../../interfaz/dialogos/importar_csv.py" line="681"/>
         <source>{base}-errores</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../../interfaz/dialogos/importar_csv.py" line="693"/>
+        <location filename="../../interfaz/dialogos/importar_csv.py" line="695"/>
         <source>Se guardó el archivo con las filas con error.</source>
         <translation type="unfinished"></translation>
     </message>
     <message numerus="yes">
-        <location filename="../../interfaz/dialogos/importar_csv.py" line="703"/>
+        <location filename="../../interfaz/dialogos/importar_csv.py" line="705"/>
         <source>Se copiaron %n errores.</source>
         <translation type="unfinished">
             <numerusform></numerusform>
@@ -1573,47 +1578,47 @@
         </translation>
     </message>
     <message>
-        <location filename="../../interfaz/dialogos/importar_csv.py" line="720"/>
+        <location filename="../../interfaz/dialogos/importar_csv.py" line="722"/>
         <source>Fila {n} · {nombre} · {estado}</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../../interfaz/dialogos/importar_csv.py" line="728"/>
+        <location filename="../../interfaz/dialogos/importar_csv.py" line="730"/>
         <source>Sin problemas.</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../../interfaz/dialogos/importar_csv.py" line="731"/>
+        <location filename="../../interfaz/dialogos/importar_csv.py" line="733"/>
         <source>{columna}: Valor del archivo: «{valor}»</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../../interfaz/dialogos/importar_csv.py" line="748"/>
+        <location filename="../../interfaz/dialogos/importar_csv.py" line="750"/>
         <source>tiene un error</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../../interfaz/dialogos/importar_csv.py" line="750"/>
+        <location filename="../../interfaz/dialogos/importar_csv.py" line="752"/>
         <source>la excluiste tú</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../../interfaz/dialogos/importar_csv.py" line="753"/>
+        <location filename="../../interfaz/dialogos/importar_csv.py" line="755"/>
         <source>Fila {n} · {nombre} ({motivo})</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../../interfaz/dialogos/importar_csv.py" line="769"/>
+        <location filename="../../interfaz/dialogos/importar_csv.py" line="771"/>
         <source>Se importarán {n} de {total} filas del archivo.</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../../interfaz/dialogos/importar_csv.py" line="772"/>
+        <location filename="../../interfaz/dialogos/importar_csv.py" line="774"/>
         <source>No se importarán estas filas:</source>
         <translation type="unfinished"></translation>
     </message>
     <message numerus="yes">
-        <location filename="../../interfaz/dialogos/importar_csv.py" line="775"/>
+        <location filename="../../interfaz/dialogos/importar_csv.py" line="777"/>
         <source>y %n más (míralas en «Mostrar detalles»)</source>
         <translation type="unfinished">
             <numerusform></numerusform>
@@ -1621,12 +1626,12 @@
         </translation>
     </message>
     <message>
-        <location filename="../../interfaz/dialogos/importar_csv.py" line="778"/>
+        <location filename="../../interfaz/dialogos/importar_csv.py" line="780"/>
         <source>Importar solo una parte del archivo</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../../interfaz/dialogos/importar_csv.py" line="783"/>
+        <location filename="../../interfaz/dialogos/importar_csv.py" line="785"/>
         <source>Importar esas filas</source>
         <translation type="unfinished"></translation>
     </message>
@@ -2792,27 +2797,32 @@
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../../interfaz/modelos_tabla_csv.py" line="376"/>
+        <location filename="../../interfaz/modelos_tabla_csv.py" line="372"/>
+        <source>Incluir la fila {n}: no se puede, tiene un error</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <location filename="../../interfaz/modelos_tabla_csv.py" line="380"/>
         <source>Incluir la fila {n}</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../../interfaz/modelos_tabla_csv.py" line="381"/>
+        <location filename="../../interfaz/modelos_tabla_csv.py" line="385"/>
         <source>sí</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../../interfaz/modelos_tabla_csv.py" line="383"/>
+        <location filename="../../interfaz/modelos_tabla_csv.py" line="387"/>
         <source>no</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../../interfaz/modelos_tabla_csv.py" line="398"/>
+        <location filename="../../interfaz/modelos_tabla_csv.py" line="402"/>
         <source>Fila {n}: {estado}</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../../interfaz/modelos_tabla_csv.py" line="404"/>
+        <location filename="../../interfaz/modelos_tabla_csv.py" line="408"/>
         <source>Fila {n}, {columna}: {valor}</source>
         <translation type="unfinished"></translation>
     </message>
@@ -2929,22 +2939,22 @@
     <name>PanelLoteNoEncaja</name>
     <message>
         <location filename="../../interfaz/dialogos/lote_no_encaja.py" line="46"/>
-        <location filename="../../interfaz/dialogos/lote_no_encaja.py" line="51"/>
+        <location filename="../../interfaz/dialogos/lote_no_encaja.py" line="52"/>
         <source>Este lote no encaja en este servidor</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../../interfaz/dialogos/lote_no_encaja.py" line="58"/>
+        <location filename="../../interfaz/dialogos/lote_no_encaja.py" line="59"/>
         <source>Algunos valores guardados en el lote no existen aquí. Elige otros para poder continuar: ProxLaunch no cambia nada por su cuenta.</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../../interfaz/dialogos/lote_no_encaja.py" line="110"/>
+        <location filename="../../interfaz/dialogos/lote_no_encaja.py" line="123"/>
         <source>Afecta a 1 máquina</source>
         <translation type="unfinished"></translation>
     </message>
     <message numerus="yes">
-        <location filename="../../interfaz/dialogos/lote_no_encaja.py" line="110"/>
+        <location filename="../../interfaz/dialogos/lote_no_encaja.py" line="123"/>
         <source>Afecta a %n máquinas</source>
         <translation type="unfinished">
             <numerusform></numerusform>
@@ -2952,57 +2962,57 @@
         </translation>
     </message>
     <message>
-        <location filename="../../interfaz/dialogos/lote_no_encaja.py" line="112"/>
+        <location filename="../../interfaz/dialogos/lote_no_encaja.py" line="125"/>
         <source>(n.º {lista}).</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../../interfaz/dialogos/lote_no_encaja.py" line="116"/>
+        <location filename="../../interfaz/dialogos/lote_no_encaja.py" line="129"/>
         <source>Usar otro valor</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../../interfaz/dialogos/lote_no_encaja.py" line="118"/>
+        <location filename="../../interfaz/dialogos/lote_no_encaja.py" line="131"/>
         <source>Almacenamiento que reemplaza a «{valor}»:</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../../interfaz/dialogos/lote_no_encaja.py" line="122"/>
+        <location filename="../../interfaz/dialogos/lote_no_encaja.py" line="135"/>
         <source>Red que reemplaza a «{valor}»:</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../../interfaz/dialogos/lote_no_encaja.py" line="123"/>
+        <location filename="../../interfaz/dialogos/lote_no_encaja.py" line="136"/>
         <source>Nodo que reemplaza a «{valor}»:</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../../interfaz/dialogos/lote_no_encaja.py" line="137"/>
+        <location filename="../../interfaz/dialogos/lote_no_encaja.py" line="150"/>
         <source>Usar otro…</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../../interfaz/dialogos/lote_no_encaja.py" line="138"/>
+        <location filename="../../interfaz/dialogos/lote_no_encaja.py" line="151"/>
         <source>Usar otro en lugar de «{valor}»</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../../interfaz/dialogos/lote_no_encaja.py" line="142"/>
+        <location filename="../../interfaz/dialogos/lote_no_encaja.py" line="155"/>
         <source>Disponibles en este servidor: {lista}</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../../interfaz/dialogos/lote_no_encaja.py" line="147"/>
+        <location filename="../../interfaz/dialogos/lote_no_encaja.py" line="160"/>
         <source>Este servidor no tiene ninguna alternativa.</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../../interfaz/dialogos/lote_no_encaja.py" line="152"/>
+        <location filename="../../interfaz/dialogos/lote_no_encaja.py" line="165"/>
         <source>Pasar a Automático</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../../interfaz/dialogos/lote_no_encaja.py" line="154"/>
+        <location filename="../../interfaz/dialogos/lote_no_encaja.py" line="167"/>
         <source>Pasar a Automático en lugar del nodo «{valor}»</source>
         <translation type="unfinished"></translation>
     </message>
@@ -5180,7 +5190,7 @@
     </message>
     <message>
         <location filename="../../interfaz/textos.py" line="1433"/>
-        <source>Parece un archivo de perfiles de máquina.</source>
+        <source>Parece un archivo de perfiles de máquina; usa «Importar perfiles».</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
@@ -5959,8 +5969,8 @@
         <location filename="../../interfaz/ventana_principal.py" line="1655"/>
         <location filename="../../interfaz/ventana_principal.py" line="1809"/>
         <location filename="../../interfaz/ventana_principal.py" line="2526"/>
-        <location filename="../../interfaz/ventana_principal.py" line="2612"/>
-        <location filename="../../interfaz/ventana_principal.py" line="2684"/>
+        <location filename="../../interfaz/ventana_principal.py" line="2613"/>
+        <location filename="../../interfaz/ventana_principal.py" line="2686"/>
         <source>Cancelar</source>
         <translation type="unfinished"></translation>
     </message>
@@ -6079,92 +6089,92 @@
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../../interfaz/ventana_principal.py" line="2592"/>
+        <location filename="../../interfaz/ventana_principal.py" line="2593"/>
         <source>Perfil «{nombre}» guardado</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../../interfaz/ventana_principal.py" line="2607"/>
+        <location filename="../../interfaz/ventana_principal.py" line="2608"/>
         <source>Guardar cambios en el perfil</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../../interfaz/ventana_principal.py" line="2608"/>
+        <location filename="../../interfaz/ventana_principal.py" line="2609"/>
         <source>Se reemplazará el hardware guardado en el perfil «{nombre}».</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../../interfaz/ventana_principal.py" line="2611"/>
+        <location filename="../../interfaz/ventana_principal.py" line="2612"/>
         <source>Guardar cambios</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../../interfaz/ventana_principal.py" line="2625"/>
+        <location filename="../../interfaz/ventana_principal.py" line="2627"/>
         <source>Perfil «{nombre}» actualizado</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../../interfaz/ventana_principal.py" line="2679"/>
+        <location filename="../../interfaz/ventana_principal.py" line="2681"/>
         <source>Cambios sin guardar</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../../interfaz/ventana_principal.py" line="2680"/>
+        <location filename="../../interfaz/ventana_principal.py" line="2682"/>
         <source>¿Guardar el lote antes de continuar?</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../../interfaz/ventana_principal.py" line="2681"/>
+        <location filename="../../interfaz/ventana_principal.py" line="2683"/>
         <source>Si no lo guardas, se perderán los cambios del lote.</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../../interfaz/ventana_principal.py" line="2682"/>
+        <location filename="../../interfaz/ventana_principal.py" line="2684"/>
         <source>Guardar</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../../interfaz/ventana_principal.py" line="2683"/>
+        <location filename="../../interfaz/ventana_principal.py" line="2685"/>
         <source>No guardar</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../../interfaz/ventana_principal.py" line="2746"/>
+        <location filename="../../interfaz/ventana_principal.py" line="2748"/>
         <source>No se puede guardar el lote: {campos} no es un número. Corrígelo e inténtalo de nuevo.</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../../interfaz/ventana_principal.py" line="2792"/>
+        <location filename="../../interfaz/ventana_principal.py" line="2794"/>
         <source>Lote guardado en «{archivo}»</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../../interfaz/ventana_principal.py" line="2808"/>
+        <location filename="../../interfaz/ventana_principal.py" line="2810"/>
         <source>Leyendo el lote…</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../../interfaz/ventana_principal.py" line="2848"/>
+        <location filename="../../interfaz/ventana_principal.py" line="2850"/>
         <source>Lote «{nombre}» cargado</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../../interfaz/ventana_principal.py" line="2861"/>
+        <location filename="../../interfaz/ventana_principal.py" line="2863"/>
         <source>El lote se guardó con Proxmox {guardada}; este servidor tiene {actual}. Algunas opciones podrían no estar disponibles.</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../../interfaz/ventana_principal.py" line="2955"/>
+        <location filename="../../interfaz/ventana_principal.py" line="2960"/>
         <source>Corrige los errores marcados para poder ver el resumen.</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../../interfaz/ventana_principal.py" line="3095"/>
+        <location filename="../../interfaz/ventana_principal.py" line="3100"/>
         <source>No se pudieron importar las filas elegidas.</source>
         <translation type="unfinished"></translation>
     </message>
     <message numerus="yes">
-        <location filename="../../interfaz/ventana_principal.py" line="3116"/>
+        <location filename="../../interfaz/ventana_principal.py" line="3121"/>
         <source>Se importaron %n máquinas desde «{archivo}»</source>
         <translation type="unfinished">
             <numerusform></numerusform>
@@ -6172,59 +6182,59 @@
         </translation>
     </message>
     <message>
-        <location filename="../../interfaz/ventana_principal.py" line="3127"/>
+        <location filename="../../interfaz/ventana_principal.py" line="3132"/>
         <source>Plantilla guardada en «{archivo}»</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../../interfaz/ventana_principal.py" line="3145"/>
+        <location filename="../../interfaz/ventana_principal.py" line="3150"/>
         <source>Informe guardado en «{archivo}»</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../../interfaz/ventana_principal.py" line="3194"/>
+        <location filename="../../interfaz/ventana_principal.py" line="3204"/>
         <source>Hay un «Deshacer» en curso</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../../interfaz/ventana_principal.py" line="3195"/>
+        <location filename="../../interfaz/ventana_principal.py" line="3205"/>
         <source>Se están eliminando máquinas. Si cierras, ProxLaunch dejará de esperar: las eliminaciones ya enviadas seguirán en Proxmox y el resto no se hará.</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../../interfaz/ventana_principal.py" line="3173"/>
+        <location filename="../../interfaz/ventana_principal.py" line="3183"/>
         <source>Hay un lote en curso</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../../interfaz/ventana_principal.py" line="3174"/>
+        <location filename="../../interfaz/ventana_principal.py" line="3184"/>
         <source>Hay un lote en curso ({x} de {n} terminadas). Si cierras, las tareas ya enviadas seguirán en Proxmox, pero ProxLaunch no enviará el resto ni podrá deshacer lo creado.</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../../interfaz/ventana_principal.py" line="3180"/>
-        <location filename="../../interfaz/ventana_principal.py" line="3200"/>
+        <location filename="../../interfaz/ventana_principal.py" line="3190"/>
+        <location filename="../../interfaz/ventana_principal.py" line="3210"/>
         <source>Cerrar de todos modos</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../../interfaz/ventana_principal.py" line="3181"/>
-        <location filename="../../interfaz/ventana_principal.py" line="3201"/>
+        <location filename="../../interfaz/ventana_principal.py" line="3191"/>
+        <location filename="../../interfaz/ventana_principal.py" line="3211"/>
         <source>Seguir en ProxLaunch</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../../interfaz/ventana_principal.py" line="3214"/>
+        <location filename="../../interfaz/ventana_principal.py" line="3224"/>
         <source>Hay una máquina en creación</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../../interfaz/ventana_principal.py" line="3216"/>
+        <location filename="../../interfaz/ventana_principal.py" line="3226"/>
         <source>Se está creando una máquina. Si cierras ProxLaunch, la tarea sigue ejecutándose en el servidor Proxmox, pero ya no verás su resultado. ¿Cerrar de todos modos?</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../../interfaz/ventana_principal.py" line="3230"/>
+        <location filename="../../interfaz/ventana_principal.py" line="3240"/>
         <source>Cerrando...</source>
         <translation type="unfinished"></translation>
     </message>

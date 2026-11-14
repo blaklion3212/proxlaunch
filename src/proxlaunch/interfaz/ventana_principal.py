@@ -2588,6 +2588,7 @@ class VentanaPrincipal(QMainWindow):
             return
         self._cfg_ultima_aplicada = self.formulario.configuracion()
         self._recargar_selector(perfil.id)
+        self.selector_perfil.marcar_aplicado(perfil.id)
         self.statusBar().showMessage(
             self.tr("Perfil «{nombre}» guardado").format(nombre=perfil.nombre)
         )
@@ -2621,6 +2622,7 @@ class VentanaPrincipal(QMainWindow):
             return
         self._cfg_ultima_aplicada = self.formulario.configuracion()
         self._recargar_selector(id_perfil)
+        self.selector_perfil.marcar_aplicado(id_perfil)
         self.statusBar().showMessage(
             self.tr("Perfil «{nombre}» actualizado").format(nombre=perfil.nombre)
         )
@@ -2868,7 +2870,10 @@ class VentanaPrincipal(QMainWindow):
         if inv is None or self._origen_lote is None:
             self.panel_no_encaja.establecer_desajustes(())
             return
-        self.panel_no_encaja.establecer_desajustes(desajustes(self._definicion_actual(), inv))
+        definicion = self._definicion_actual()
+        self.panel_no_encaja.establecer_desajustes(
+            desajustes(definicion, inv), [f.origen for f in definicion.filas]
+        )
 
     def _sustituir_desajuste(self, desajuste: object, nuevo: object) -> None:
         """«Usar otro…» o «Pasar a Automático»: acción explícita del usuario."""

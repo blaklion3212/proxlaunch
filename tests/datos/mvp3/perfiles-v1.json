@@ -1,0 +1,75 @@
+{
+  "app_version": "0.3.0",
+  "formato": "proxlaunch.perfiles",
+  "perfiles": [
+    {
+      "config": {
+        "ballooning": null,
+        "con_disco": true,
+        "controlador_scsi": "virtio-scsi-single",
+        "cores": 4,
+        "discos": [
+          {
+            "bus": "scsi",
+            "discard": true,
+            "formato": "auto",
+            "iothread": true,
+            "ssd": true,
+            "storage_preferido": "local-lvm",
+            "tamano_gib": 64
+          }
+        ],
+        "firmware": "seabios",
+        "memoria_mib": 4096,
+        "origen": "disco_vacio",
+        "redes": [
+          {
+            "bridge_preferido": "vmbr0",
+            "modelo": "virtio",
+            "vlan": null
+          }
+        ],
+        "sockets": 1,
+        "storage_efi_preferido": null,
+        "tipo_cpu": "x86-64-v2-AES"
+      },
+      "descripcion": "Para aplicaciones web. Sin sistema operativo.",
+      "nombre": "Servidor mediano"
+    },
+    {
+      "config": {
+        "ballooning": null,
+        "con_disco": true,
+        "controlador_scsi": "virtio-scsi-single",
+        "cores": 1,
+        "discos": [
+          {
+            "bus": "scsi",
+            "discard": true,
+            "formato": "auto",
+            "iothread": true,
+            "ssd": true,
+            "storage_preferido": "local-lvm",
+            "tamano_gib": 64
+          }
+        ],
+        "firmware": "seabios",
+        "memoria_mib": 512,
+        "origen": "disco_vacio",
+        "redes": [
+          {
+            "bridge_preferido": "vmbr0",
+            "modelo": "virtio",
+            "vlan": null
+          }
+        ],
+        "sockets": 1,
+        "storage_efi_preferido": null,
+        "tipo_cpu": "x86-64-v2-AES"
+      },
+      "descripcion": "",
+      "nombre": "Mínimo"
+    }
+  ],
+  "version_formato": 1
+}

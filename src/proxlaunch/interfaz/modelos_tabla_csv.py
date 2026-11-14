@@ -368,6 +368,10 @@ class ModeloVistaPreviaCsv(QAbstractTableModel):
                     "ModelosTablaCsv",
                     "Una fila con error no se puede importar. Corrígela en el archivo.",
                 )
+            if role == Qt.ItemDataRole.AccessibleTextRole:
+                return QCoreApplication.translate(
+                    "ModelosTablaCsv", "Incluir la fila {n}: no se puede, tiene un error"
+                ).format(n=f.numero)
             return None
         if role == Qt.ItemDataRole.CheckStateRole:
             return Qt.CheckState.Checked if f.numero in self._incluidas else Qt.CheckState.Unchecked

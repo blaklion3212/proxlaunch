@@ -45,6 +45,7 @@ class PanelLoteNoEncaja(QFrame):
         self.setFrameShape(QFrame.Shape.StyledPanel)
         self.setAccessibleName(self.tr("Este lote no encaja en este servidor"))
         self._desajustes: tuple[Desajuste, ...] = ()
+        self._numeros: tuple[int | None, ...] = ()
         self.botones_usar_otro: list[QPushButton] = []
         self.botones_automatico: list[QPushButton] = []
         self._capa = QVBoxLayout(self)
@@ -75,9 +76,16 @@ class PanelLoteNoEncaja(QFrame):
     def desajustes(self) -> tuple[Desajuste, ...]:
         return self._desajustes
 
-    def establecer_desajustes(self, desajustes: Sequence[Desajuste]) -> None:
-        """Reconstruye los renglones. Sin desajustes el panel se oculta."""
+    def establecer_desajustes(
+        self, desajustes: Sequence[Desajuste], numeros: Sequence[int | None] = ()
+    ) -> None:
+        """Reconstruye los renglones. Sin desajustes el panel se oculta.
+
+        ``numeros``: número de origen de cada fila (el que muestra la tabla); si falta
+        para una posición se usa la posición + 1.
+        """
         self._desajustes = tuple(desajustes)
+        self._numeros = tuple(numeros)
         self.botones_usar_otro = []
         self.botones_automatico = []
         while self._zona.count():
@@ -98,11 +106,16 @@ class PanelLoteNoEncaja(QFrame):
         """Descripción llana del valor que no existe (única fuente: ``textos``)."""
         return texto_desajuste(d)
 
+    def _numero_fila(self, posicion: int) -> str:
+        """Número con el que la tabla nombra la fila: su origen o su posición (1..N)."""
+        origen = self._numeros[posicion] if 0 <= posicion < len(self._numeros) else None
+        return str(origen if origen is not None else posicion + 1)
+
     def texto_afectadas(self, d: Desajuste) -> str:
         """«Afecta a 3 máquinas (n.º 2, 5, 7)». Vacío en un lote homogéneo."""
         if not d.indices:
             return ""
-        numeros = [str(i + 1) for i in d.indices[:MAX_AFECTADAS_VISIBLES]]
+        numeros = [self._numero_fila(i) for i in d.indices[:MAX_AFECTADAS_VISIBLES]]
         resto = len(d.indices) - len(numeros)
         lista = ", ".join(numeros) + (f" +{resto}" if resto > 0 else "")
         n = len(d.indices)

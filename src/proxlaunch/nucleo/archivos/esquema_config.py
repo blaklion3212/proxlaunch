@@ -54,6 +54,10 @@ from proxlaunch.nucleo.validacion import (
 _TOPE_CORDURA = 10**9  # en modo lote: valores absurdos se rechazan por tipo/rango, no por regla
 MAX_DISCOS = sum(MAX_DISPOSITIVOS.values())
 MAX_LONG_TIPO_CPU = 64
+# Topes del lector de lotes guardados: un lote se lee como borrador (sin reglas de M1) y el
+# lector debe aceptar todo lo que el escritor guarda; solo frenan abusos.
+_MAX_LISTA_LOTE = 256
+_MAX_TEXTO_LOTE = 1024
 
 _CLAVES_BASE = frozenset(
     {
@@ -212,7 +216,8 @@ def _leer_hardware(
     sockets = _entero(lector, obj, "sockets", ruta, _limites(perfil, SOCKETS_MIN, SOCKETS_MAX))
     cores = _entero(lector, obj, "cores", ruta, _limites(perfil, CORES_MIN, CORES_MAX))
     tipo_cpu = lector.texto(
-        obj, "tipo_cpu", ruta, minimo=1, maximo=MAX_LONG_TIPO_CPU, requerido=False,
+        obj, "tipo_cpu", ruta, minimo=1 if perfil else 0,
+        maximo=MAX_LONG_TIPO_CPU if perfil else _MAX_TEXTO_LOTE, requerido=False,
         defecto=ConfigPerfil.tipo_cpu,
     )  # fmt: skip
     memoria = _entero(
@@ -364,7 +369,7 @@ def leer_configuracion(lector: LectorEsquema, valor: object, ruta: str) -> Confi
     ruta_d = f"{ruta}.discos" if ruta else "discos"
     ruta_r = f"{ruta}.redes" if ruta else "redes"
     discos: list[Disco] = []
-    for i, item in enumerate(lector.lista(obj, "discos", ruta, maximo=MAX_DISCOS) or []):
+    for i, item in enumerate(lector.lista(obj, "discos", ruta, maximo=_MAX_LISTA_LOTE) or []):
         r = f"{ruta_d}[{i}]"
         d = lector.objeto(item, r, CLAVES_DISCO_LOTE)
         if d is None:
@@ -375,7 +380,7 @@ def leer_configuracion(lector: LectorEsquema, valor: object, ruta: str) -> Confi
             tamano, bus, formato, discard, ssd, iothread = campos
             discos.append(Disco(storage, tamano, bus, formato, discard, ssd, iothread))
     redes: list[InterfazRed] = []
-    for i, item in enumerate(lector.lista(obj, "redes", ruta, maximo=MAX_INTERFACES_RED) or []):
+    for i, item in enumerate(lector.lista(obj, "redes", ruta, maximo=_MAX_LISTA_LOTE) or []):
         r = f"{ruta_r}[{i}]"
         red = lector.objeto(item, r, CLAVES_RED_LOTE)
         if red is None:

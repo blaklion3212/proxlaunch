@@ -7,7 +7,8 @@ una línea ``sep=;`` inicial no se cuenta). Los límites nunca recortan en silen
 """
 
 import csv
-import io
+import re
+from collections.abc import Iterator
 from pathlib import Path
 
 from proxlaunch.nucleo.archivos.constantes import (
@@ -50,6 +51,17 @@ def _recortar_cola(celdas: list[str]) -> tuple[str, ...]:
         fin -= 1
     return tuple(celdas[:fin])
 
+_LINEA = re.compile(r"[^\r\n]*(?:\r\n|\r|\n)|[^\r\n]+")
+
+
+def _lineas(texto: str) -> Iterator[str]:
+    """Líneas con su terminador (``\\n``, ``\\r`` o ``\\r\\n``), como ``StringIO(newline="")``.
+
+    Genera una a una, sin duplicar el texto completo en memoria (RNF de rendimiento).
+    """
+    for m in _LINEA.finditer(texto):
+        yield m.group()
+
 
 def leer_tabla(datos: bytes, opciones: OpcionesCsv = OPCIONES_AUTOMATICAS) -> TablaCsv:
     """Decodifica, detecta el separador y lee la tabla.
@@ -82,7 +94,7 @@ def leer_tabla(datos: bytes, opciones: OpcionesCsv = OPCIONES_AUTOMATICAS) -> Ta
         if explicita is not None:
             texto = texto[explicita[1] :]
 
-    lector = csv.reader(io.StringIO(texto, newline=""), delimiter=deteccion.separador, strict=True)
+    lector = csv.reader(_lineas(texto), delimiter=deteccion.separador, strict=True)
     encabezado: tuple[str, ...] | None = None
     filas: list[FilaCsv] = []
     n_filas = 0

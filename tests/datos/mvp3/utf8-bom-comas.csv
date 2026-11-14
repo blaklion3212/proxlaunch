@@ -1,0 +1,3 @@
+﻿nombre,perfil,cpu,memoria,disco
+web-01,Servidor mediano,,"1,5",20
+web-02,,2,4 GiB,40

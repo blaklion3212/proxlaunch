@@ -1,0 +1,5 @@
+﻿nombre;perfil;cpu;comentario
+=HYPERLINK("http://x","y");servidor-pequeno;2;@SUM(1)
+web-ok;=cmd|' /C calc'!A0;2;+1
+web-ok2;;2;-1
+	=1;;2;" =1"

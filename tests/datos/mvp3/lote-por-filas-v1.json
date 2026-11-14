@@ -1,0 +1,87 @@
+{
+  "app_version": "0.3.0",
+  "formato": "proxlaunch.lote",
+  "nombre": "Heterogéneo",
+  "por_filas": {
+    "destino": {
+      "algoritmo": "equilibrado"
+    },
+    "etiquetar": true,
+    "filas": [
+      {
+        "config": {
+          "ballooning": null,
+          "con_disco": true,
+          "controlador_scsi": "virtio-scsi-single",
+          "cores": 2,
+          "discos": [
+            {
+              "bus": "scsi",
+              "discard": true,
+              "formato": "auto",
+              "iothread": true,
+              "ssd": true,
+              "storage": "datos",
+              "tamano_gib": 32
+            }
+          ],
+          "firmware": "seabios",
+          "memoria_mib": 2048,
+          "origen": "disco_vacio",
+          "redes": [
+            {
+              "bridge": "vmbr0",
+              "modelo": "virtio",
+              "vlan": null
+            }
+          ],
+          "sockets": 1,
+          "storage_efi": null,
+          "tipo_cpu": "x86-64-v2-AES"
+        },
+        "nodo": null,
+        "nombre": "pg-01",
+        "vmid": null
+      },
+      {
+        "config": {
+          "ballooning": null,
+          "con_disco": true,
+          "controlador_scsi": "virtio-scsi-single",
+          "cores": 4,
+          "discos": [
+            {
+              "bus": "scsi",
+              "discard": true,
+              "formato": "auto",
+              "iothread": true,
+              "ssd": true,
+              "storage": "datos",
+              "tamano_gib": 32
+            }
+          ],
+          "firmware": "seabios",
+          "memoria_mib": 8192,
+          "origen": "disco_vacio",
+          "redes": [
+            {
+              "bridge": "vmbr0",
+              "modelo": "virtio",
+              "vlan": null
+            }
+          ],
+          "sockets": 1,
+          "storage_efi": null,
+          "tipo_cpu": "x86-64-v2-AES"
+        },
+        "nodo": "pve2",
+        "nombre": "pg-02",
+        "origen": 3,
+        "vmid": 150
+      }
+    ],
+    "vmid_inicial": null
+  },
+  "tipo": "por_filas",
+  "version_formato": 1
+}

@@ -82,6 +82,7 @@ class BloqueLote(QGroupBox):
         self._base_por_filas: DefinicionLote | None = None
         # Nodos de un lote cargado que el servidor no tiene (se muestran, no se descartan).
         self._nodos_ausentes: list[str] = []
+        self._destino_de_archivo = False  # el destino viene de un lote cargado o importado
 
         capa = QVBoxLayout(self)
         capa.setSpacing(4)
@@ -370,6 +371,17 @@ class BloqueLote(QGroupBox):
                     modelo.item(self.combo_nodo.count() - 1).setEnabled(False)
             existentes = {n.nombre for n in inv.topologia.nodos}
             self._nodos_ausentes = [n for n in self._nodos_ausentes if n not in existentes]
+            if self._destino_de_archivo:
+                # Un lote cargado nunca cambia de nodo en silencio: el nodo que el servidor
+                # nuevo no tiene queda visible como ausente y se informa como desajuste.
+                pedidos = (
+                    [previo]
+                    if self._radio_un_nodo.isChecked() and previo
+                    else sorted(marcados) if self._radio_elegidos.isChecked() else []
+                )
+                for nodo in pedidos:
+                    if nodo not in existentes and nodo not in self._nodos_ausentes:
+                        self._nodos_ausentes.append(nodo)
             for nodo in self._nodos_ausentes:
                 self._agregar_nodo_ausente(nodo, marcado=True)
             idx = self.combo_nodo.findData(previo) if previo else -1
@@ -405,6 +417,7 @@ class BloqueLote(QGroupBox):
             self.establecer_por_filas(definicion)
             return
         self._base_por_filas = None
+        self._destino_de_archivo = True
         self._ocupado = True
         try:
             self.cantidad.setText(str(definicion.cantidad))
@@ -490,6 +503,7 @@ class BloqueLote(QGroupBox):
         if self._base_por_filas is None:
             return
         self._base_por_filas = None
+        self._destino_de_archivo = False
         self.cantidad.setText("1")
         self._aplicar_visibilidad()
         self.destino_cambiado.emit()

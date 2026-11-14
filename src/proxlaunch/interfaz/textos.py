@@ -1431,7 +1431,7 @@ def _texto_error_archivo(error: ErrorProxLaunch) -> str | None:
         encontrado = p.get("encontrado", "")
         if encontrado == "proxlaunch.perfiles":
             texto += " " + QCoreApplication.translate(
-                "Textos", "Parece un archivo de perfiles de máquina."
+                "Textos", "Parece un archivo de perfiles de máquina; usa «Importar perfiles»."
             )
         elif encontrado == "proxlaunch.lote":
             texto += " " + QCoreApplication.translate(

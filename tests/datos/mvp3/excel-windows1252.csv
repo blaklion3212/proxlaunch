@@ -1,0 +1,5 @@
+nombre;cpu;memoria;disco;almacenamiento;red;vlan;nodo;vmid;descripción
+pg-01;1;1 GiB;8;datos;vmbr0;;;;peña
+pg-02;4;8 GiB;64;datos;vmbr0;20;;150;Ñandú
+pg-03;2;4,5;32;datos;vmbr0;;pve2;;ración
+pg-04;8;16;128;datos;vmbr0;;;151;ñoño
