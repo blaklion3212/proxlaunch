@@ -224,8 +224,8 @@ indica revisarlos en Proxmox si se sospecha que quedó alguno.
    confirmación, un informe y un «Deshacer». Amplía D-20 (11) y P-L12: el lote homogéneo
    sigue existiendo; el lote por filas es una segunda forma de definir el mismo lote. Todas
    las garantías del MVP 2 (INV-L1..L5) se mantienen y se vuelven a probar.
-2. Adoptadas con la recomendación del analista mientras el usuario estaba ausente (pendientes
-   de su revisión, se pueden cambiar): P-M02 B (importar solo las filas válidas, con
+2. Adoptadas con la recomendación del analista mientras el usuario estaba ausente y aprobadas
+   como definitivas por el usuario (2026-11-14): P-M02 B (importar solo las filas válidas, con
    confirmación y las excluidas visibles), P-M03 A (lote guardado autocontenido), P-M04 A
    (storage y bridge como pistas opcionales con reemplazo avisado), P-M05 A (6 perfiles de
    fábrica, sin Windows 11), P-M06 A (GiB sin unidad), P-M07 A (archivos elegidos por el
@@ -233,8 +233,8 @@ indica revisarlos en Proxmox si se sospecha que quedó alguno.
    (rechazar más de 100 filas), P-M11 A (columna `perfil` por fila), P-M12 A («Perfil de
    máquina»).
 
-## D-23 · Decisiones técnicas del MVP 3 tomadas por el orquestador — Provisional (2026-11-14)
-Tomadas mientras el usuario estaba ausente; son técnicas y se pueden cambiar si el usuario lo pide.
+## D-23 · Decisiones técnicas del MVP 3 — Aprobada (2026-11-14)
+Tomadas por el orquestador mientras el usuario estaba ausente; el usuario las aprobó como definitivas.
 1. **Lote leído como borrador:** un lote guardado se abre aunque no cumpla las reglas del
    formulario (M1); el lector solo aplica topes anti-abuso (256 elementos, 1024 caracteres).
    Las reglas M1 se aplican al validar antes de crear. Los perfiles conservan los topes estrictos.
