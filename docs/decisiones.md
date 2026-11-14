@@ -267,6 +267,11 @@ funcionado en Proxmox y quedan fuera.
 3. **Clonar una plantilla** de Proxmox, pensado para lotes.
 4. Se integra con perfiles (origen sugerido), lotes guardados y CSV (columna `origen`).
 5. Datos de la API por versión y permisos: a confirmar por el investigador antes de los requisitos.
+6. **Storage por servidor (detectar y recordar):** en cada sitio los storages para MVs, ISOs y
+   discos importados tienen nombres sin convención. La app los detecta por su tipo de contenido
+   (`images`, `iso`, `import`), nunca por el nombre; si hay varios candidatos pregunta una vez
+   cuál usar y lo guarda en el perfil de conexión de ese servidor (editable). Si el storage
+   recordado desaparece o deja de admitir ese contenido, avisa y no sustituye en silencio.
 
 ## Correcciones técnicas a `prompt.md`
 Errores o imprecisiones de la especificación original que los requisitos deben
