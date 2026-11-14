@@ -269,6 +269,7 @@ class VentanaPrincipal(QMainWindow):
         self._reintento: tuple[ElementoPlan, ...] | None = None
         self._nodo_reintento: str | None = None
         self._fin_uno_inicial = False
+        self._sin_etiquetas_forzado = False
         self._aviso_informe_parcial: str | None = None
         self._tomar_aviso_informe_parcial()
 
@@ -309,6 +310,7 @@ class VentanaPrincipal(QMainWindow):
         self._timer_lote.setInterval(max(1, 1000 // ACTUALIZACIONES_POR_S))
         self._timer_lote.timeout.connect(self._tick_lote)
         self.progreso.crear_otra.connect(self._crear_otra)
+        self.progreso.crear_sin_etiquetas.connect(self._preparar_sin_etiquetas)
         self.progreso.seguir_esperando.connect(lambda: self._reanudar(una_vez=False))
         self.progreso.comprobar_ahora.connect(lambda: self._reanudar(una_vez=True))
         self.progreso.volver.connect(self._volver_al_formulario)
@@ -551,6 +553,7 @@ class VentanaPrincipal(QMainWindow):
         cambio_perfil = perfil.id != self._perfil_id
         self._sesion = sesion
         self._perfil_id = perfil.id
+        self._restaurar_etiquetado()
         if dialogo.version_forzada != self._prefs.version_forzada:
             self._prefs.version_forzada = dialogo.version_forzada
             self._guardar_preferencias()
@@ -622,6 +625,7 @@ class VentanaPrincipal(QMainWindow):
             except ErrorProxLaunch:
                 _log.warning("No se pudo cerrar la sesión limpiamente")
         self._sesion = None
+        self._restaurar_etiquetado()
         self._inv = None
         self._formulario_listo = False
         self._perfil_id = None
@@ -965,6 +969,7 @@ class VentanaPrincipal(QMainWindow):
     def _al_terminar_creacion(self, resultado: ResultadoCreacion, aviso: str = "") -> None:
         cfg = self._cfg_creacion
         self._creando = False
+        self._restaurar_etiquetado()  # el desmarcado forzado vale para una sola creación
         self._refrescar_botones_red()
         self._ultimo_resultado = resultado
         self._sincronizar_libro_uno(resultado)
@@ -993,8 +998,24 @@ class VentanaPrincipal(QMainWindow):
             texto_detalles(resultado.error, resultado),
             desplegar=d == Desenlace.CON_AVISOS and bool(resultado.log_tarea),
         )
-        self.statusBar().showMessage(texto.splitlines()[0] if texto else "")
         error = resultado.error
+        lote_uno = self._lote
+        if (
+            error is not None
+            and error.codigo == CodigoError.ETIQUETA_RECHAZADA
+            and d == Desenlace.ERROR
+            and lote_uno is not None
+            and lote_uno.modo_uno
+            and lote_uno.plan.definicion.etiquetar
+        ):
+            # Un solo equipo: la tarea falló de forma definitiva, así que se puede ofrecer otra vez.
+            texto += "\n" + self.tr(
+                "El servidor no permite poner etiquetas a las máquinas. Puedes crearla sin "
+                "etiquetas; después, «Deshacer» solo podrá eliminarla si el nombre coincide."
+            )
+            self.progreso.mostrar_resultado(texto, d, resultado.upid)
+            self.progreso.ofrecer_sin_etiquetas(True)
+        self.statusBar().showMessage(texto.splitlines()[0] if texto else "")
         if d in (Desenlace.OK, Desenlace.CON_AVISOS, Desenlace.TIEMPO_AGOTADO):
             pass  # el formulario sigue bloqueado hasta «Crear otra» o «Volver»
         elif d == Desenlace.CONEXION_PERDIDA:
@@ -1014,6 +1035,29 @@ class VentanaPrincipal(QMainWindow):
         self.formulario.bloquear(False)
         self.bloque_lote.bloquear(False)
         self.resumen.liberar()
+
+    def _restaurar_etiquetado(self) -> None:
+        """Devuelve la casilla a «marcada» si solo estaba desmarcada por el rechazo (un uso)."""
+        if self._sin_etiquetas_forzado:
+            self._sin_etiquetas_forzado = False
+            self.bloque_lote.chk_etiquetar.setChecked(True)
+
+    def _preparar_sin_etiquetas(self) -> None:
+        """Vuelve al formulario con «Etiquetar las máquinas» desmarcada y datos frescos.
+
+        La creación pasa por el flujo normal (validación, VMID reconsultado y «Crear»).
+        """
+        if self._creando:
+            return
+        self._sin_etiquetas_forzado = True
+        self.bloque_lote.chk_etiquetar.setChecked(False)
+        self.progreso.reiniciar()
+        self._desbloquear()
+        self._descubrir()  # refresca VMID libre y permisos antes de volver a crear
+        self.statusBar().showMessage(
+            self.tr("Etiquetas desactivadas. Pulsa «Crear» para crear la máquina sin ellas.")
+        )
+        self._timer_validar.start()
 
     def _volver_al_formulario(self) -> None:
         if self._creando:
@@ -1036,6 +1080,7 @@ class VentanaPrincipal(QMainWindow):
             )
             if respuesta != QMessageBox.StandardButton.Yes:
                 return
+        self._restaurar_etiquetado()
         self.progreso.reiniciar()
         self._desbloquear()
         self._timer_validar.start()
@@ -1045,6 +1090,7 @@ class VentanaPrincipal(QMainWindow):
             return
         self.progreso.reiniciar()
         self._desbloquear()
+        self._restaurar_etiquetado()
         self.formulario.preparar_otra()
         self._descubrir()  # refresca VMID y espacio libre
         self._timer_validar.start()

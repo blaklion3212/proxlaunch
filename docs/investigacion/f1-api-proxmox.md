@@ -90,6 +90,81 @@ de los roles integrados.
   → respaldo oscuro (P-14). En Windows se lee `AppsUseLightTheme` y se escucha
   `WM_SETTINGCHANGE`.
 
+## 8. Verificado en laboratorio (MVP 2)
+
+Entorno: Proxmox VE **9.2.26** anidado, un solo nodo (`127.0.0.1`), pruebas
+`tests/integracion/test_lab_lotes.py` (LAB-L01 a LAB-L13). Los hechos se observaron en el
+laboratorio; las inferencias se derivan de ellos y **no** se comprobaron. Todo lo multinodo y
+lo de Proxmox 8.x sigue siendo **[LAB] pendiente**: no hay laboratorio para ello.
+
+### 8.1 Hechos [H] (observados en PVE 9.2.26)
+
+**Borrar una MV (`DELETE /nodes/{n}/qemu/{vmid}`)**
+- [H] Los parámetros (`destroy-unreferenced-disks`, `purge`) deben ir en la **cadena de
+  consulta**. En el cuerpo del formulario la API responde **501**.
+- [H] Solo exige `VM.Allocate` en `/vms/{vmid}`: el rol de 10 privilegios no cambia. Sin ese
+  privilegio, el 403 nombra privilegio y ruta.
+- [H] Con `protection=1` responde **500** «protection mode enabled».
+- [H] Con la MV encendida responde **500** «is running - destroy failed».
+- [H] Con la MV bloqueada (`lock`) la petición se acepta y la **tarea** falla: «VM is locked».
+- [H] **Sin** `destroy-unreferenced-disks` se borran los discos referenciados en la
+  configuración, pero un volumen suelto (`vm-<vmid>-disk-N` que la MV no tiene asignado)
+  **sobrevive**. Es la razón de D-21: ProxLaunch envía `destroy-unreferenced-disks=0` y sin
+  `purge`, así que nunca borra un volumen suelto.
+- [H] Las creaciones de ProxLaunch no dejaron discos sueltos (LAB-L05, D-21).
+
+**Etiquetas (`tags`)**
+- [H] Se aceptan como separadores `;`, `,` y espacio. Proxmox las **normaliza**: minúsculas,
+  ordenadas, y las devuelve separadas por `;`.
+- [H] Los caracteres `/`, `@`, `ñ` o un `-` inicial dan **400**.
+- [H] Con `user-tag-access` del datacenter **restringido**, el `POST` responde **200** y la
+  **tarea** falla con **403** «Sys.Modify for modifying tag».
+- [H] Crear con `tags` sin `VM.Config.Options` también falla **en la tarea**, no en el `POST`.
+- [H] La app pausa el lote ante ese error y ofrece «Seguir sin etiquetas».
+
+**Números de MV (VMID) y nombres**
+- [H] `GET /cluster/nextid` (sin parámetro) devuelve **el mismo número** a peticiones
+  simultáneas.
+- [H] `GET /cluster/nextid?vmid=<n>` marca el número como ocupado **desde el primer GET
+  posterior al `POST`**, no desde que el `POST` responde (ventana de carrera real, LAB-L03).
+- [H] Proxmox **permite nombres duplicados** (el VMID es lo único que no se repite).
+- [H] Justo tras el `POST`, durante ~**250 ms**, la configuración de la MV solo contiene
+  `lock: create`. Mientras tanto no se puede leer su etiqueta: la app no decide la propiedad
+  hasta que la configuración termina de crearse.
+- [H] Una MV recién creada aparece **sin nombre ~4 s** en `GET /cluster/resources`.
+
+**Visibilidad (`/cluster/resources?type=vm`)**
+- [H] Con `VM.Audit` en `/` lista **todas** las MV. Con una ACL parcial lista **solo las
+  visibles** para ese usuario (LAB-L11).
+
+**Espacio y simulación**
+- [H] El `efidisk` (OVMF) ocupa **4 MiB** tanto en LVM como en lvmthin (LAB-L04). Es el valor
+  de `TAM_EFIDISK_MIB`.
+- [H] Durante la simulación, el registro de acceso de `pveproxy` solo muestra `GET` (LAB-L12,
+  con un control positivo que sí muestra un `POST` real).
+
+**Rendimiento**
+- [H] Lote de **30 MV**: creación **46,5 s** y deshacer **46,7 s** (≈ 1,6 s por MV) (LAB-L13).
+
+### 8.2 Inferencias [I] (derivadas, sin comprobar)
+
+- [I] El aviso de nombre duplicado (V-L06) puede **no saltar** con MV creadas hace pocos
+  segundos, porque `/cluster/resources` las devuelve sin nombre durante ~4 s. Es una
+  limitación del aviso, no un fallo: Proxmox acepta el duplicado igualmente.
+- [I] Como `nextid?vmid=` solo marca el número tras el primer GET posterior, dos lotes que
+  planifican a la vez el mismo rango pueden ver libre un número que ya se envió. Por eso la
+  app reconsulta antes de cada `POST` y trata un `already exists` del `POST` como «lo usó otra
+  persona».
+- [I] Que la `lock: create` inicial exista en **8.x** y con el mismo ritmo no se ha probado;
+  la app no asume una duración (relee en cada comprobación).
+- [I] Que una restricción de etiquetas dé el mismo 403 en **8.0 a 8.x** se infiere del código
+  (`PVE/GuestHelpers.pm`), no de un servidor 8.x.
+- [I] Que el reparto entre nodos, el almacenamiento compartido y la concurrencia de varios
+  nodos funcionen igual que en un solo nodo no está verificado: solo hay pruebas con
+  respuestas simuladas.
+- [I] Los ~1,6 s por MV dependen del almacenamiento y de la máquina del laboratorio; no son
+  una garantía de rendimiento.
+
 Fuentes completas: informe del investigador en la bitácora (entrada F1); código de
 proxmoxer, pve-access-control, pve-common, proxmox-tfa, qemu-server, pve-manager,
 pve-storage, urllib3, requests y Qt, todas leídas el 2026-11-11.

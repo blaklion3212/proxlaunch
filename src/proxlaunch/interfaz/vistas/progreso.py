@@ -31,6 +31,7 @@ class PanelProgreso(QGroupBox):
     comprobar_ahora = Signal()
     volver = Signal()
     deshacer_solicitado = Signal()
+    crear_sin_etiquetas = Signal()
 
     def __init__(self, parent: QWidget | None = None) -> None:
         super().__init__(QCoreApplication.translate("PanelProgreso", "Progreso"), parent)
@@ -76,6 +77,10 @@ class PanelProgreso(QGroupBox):
         )
         self.boton_deshacer = QPushButton(QCoreApplication.translate("PanelProgreso", "Deshacer…"))
         self.boton_deshacer.clicked.connect(self.deshacer_solicitado)
+        self.boton_sin_etiquetas = QPushButton(
+            QCoreApplication.translate("PanelProgreso", "Crear sin etiquetas")
+        )
+        self.boton_sin_etiquetas.clicked.connect(self.crear_sin_etiquetas)
         self.boton_crear_otra.clicked.connect(self.crear_otra)
         self.boton_seguir.clicked.connect(self.seguir_esperando)
         self.boton_comprobar.clicked.connect(self.comprobar_ahora)
@@ -90,6 +95,7 @@ class PanelProgreso(QGroupBox):
             self.boton_comprobar,
             self.boton_volver,
             self.boton_deshacer,
+            self.boton_sin_etiquetas,
         ):
             fila_botones.addWidget(b)
         fila_botones.addStretch(1)
@@ -123,6 +129,7 @@ class PanelProgreso(QGroupBox):
         self.boton_comprobar.setVisible(comprobar)
         self.boton_volver.setVisible(volver)
         self.boton_deshacer.setVisible(False)
+        self.boton_sin_etiquetas.setVisible(False)
 
     def iniciar(self) -> None:
         """Comienza el seguimiento de una creación."""
@@ -188,6 +195,10 @@ class PanelProgreso(QGroupBox):
         self.boton_deshacer.setVisible(
             desenlace in (Desenlace.OK, Desenlace.CON_AVISOS, Desenlace.PARCIAL)
         )
+
+    def ofrecer_sin_etiquetas(self, visible: bool) -> None:
+        """Muestra «Crear sin etiquetas» (el servidor rechazó la etiqueta de una sola máquina)."""
+        self.boton_sin_etiquetas.setVisible(visible)
 
     def mostrar_progreso_mensaje(self, texto: str) -> None:
         """Mensaje intermedio (por ejemplo, mientras se vuelve a comprobar)."""

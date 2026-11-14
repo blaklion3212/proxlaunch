@@ -301,8 +301,19 @@ def test_etiquetar_viene_marcado_por_defecto(bloque):
 
 def test_con_cantidad_uno_el_modo_avanzado_tampoco_muestra_campos_de_lote(bloque):
     bloque.establecer_modo(True)
+    # «Etiquetar las máquinas» sí aplica con una sola máquina; el resto son solo de lote.
     for nombre in AVANZADOS:
+        if nombre == "chk_etiquetar":
+            continue
         assert not getattr(bloque, nombre).isVisible(), nombre
+
+
+def test_la_casilla_etiquetar_se_ve_con_cantidad_uno_en_avanzado_y_no_en_basico(bloque):
+    assert not bloque.chk_etiquetar.isVisible()  # básico
+    bloque.establecer_modo(True)
+    assert bloque.chk_etiquetar.isVisible()  # avanzado, cantidad 1
+    bloque.establecer_modo(False)
+    assert not bloque.chk_etiquetar.isVisible()
 
 
 def test_ca_22_4_cada_campo_nuevo_tiene_un_boton_de_ayuda_con_su_texto(bloque):

@@ -1,6 +1,13 @@
 # Arquitectura del MVP 2 — Lotes (ProxLaunch)
 
-Versión 1.0 (2026-11-13) · Autor: orquestador · Estado: propuesta para aprobación
+Versión 1.1 (2026-11-13) · Autor: orquestador · Estado: diseño original + diferencias del
+código final (sección 11)
+
+> **Nota de actualización.** Este documento recoge el diseño previo a la implementación. Donde el
+> código final difiere, manda el código y lo anotado en la **sección 11** (D-21, sondeo de
+> nodo, `puede_enviar`, `Libro` creado por la interfaz, reconciliación con `lock: create`,
+> cliente de solo lectura, informe saneado, reintento de GET). Los hechos del laboratorio
+> están en `docs/investigacion/f1-api-proxmox.md` §8.
 
 Fuentes: `docs/requisitos/mvp2.md` (RF-L, CA-L, V-L, E-L, INV-L), `docs/decisiones.md`
 (D-20), `docs/arquitectura/mvp1.md` (capas, servicios, trabajadores). Se mantiene la
@@ -17,9 +24,10 @@ separación de M1: **núcleo sin Qt** (devuelve códigos) e **interfaz PySide6**
   sitio la restringe, poner etiquetas nuevas exige `Sys.Modify` en `/` → 403
   "Sys.Modify for modifying tag" (`PVE/GuestHelpers.pm:341-359`). El diseño trata ese 403
   como E-L15 y ofrece crear el lote sin etiquetas (decisión explícita del usuario).
-- Pendientes de laboratorio (los cubre el probador en F4, no bloquean el diseño):
-  LAB-L05 (parámetros del DELETE en la consulta, textos de error), LAB-L06 (patrón de
-  etiquetas), LAB-L07 (nombres duplicados), LAB-L11 (visibilidad de `/cluster/resources`).
+- ~~Pendientes de laboratorio~~ **Resueltos en F4** (ver `f1-api-proxmox.md` §8): LAB-L05
+  (los parámetros del DELETE van en la consulta; en el cuerpo da 501), LAB-L06 (separadores y
+  normalización de etiquetas), LAB-L07 (nombres duplicados permitidos), LAB-L11 (visibilidad
+  de `/cluster/resources`).
 
 ## 2. Módulos nuevos y cambios
 
@@ -214,7 +222,9 @@ usuario (CA-L19.3). Al cerrar con lote en curso se guarda en
 | `vmid_libre(vmid) -> bool` | `GET /cluster/nextid?vmid=` | 400 con `errors.vmid` → False; otros errores se propagan |
 | `vms_visibles() -> list[VMRemota]` | `GET /cluster/resources?type=vm` | solo para el aviso V-L06 (LAB-L11) |
 | `estado_actual_vm(nodo, vmid) -> dict` | `GET /nodes/{n}/qemu/{vmid}/status/current` | `VM.Audit`; `status`, `lock` |
-| `eliminar_vm(nodo, vmid) -> str` | `DELETE /nodes/{n}/qemu/{vmid}` con `params={"destroy-unreferenced-disks": 1, "purge": 0}` **en la consulta** | UPID; método no seguro → sin failover (envío incierto si falla tras enviar) |
+| `eliminar_vm(nodo, vmid) -> str` | `DELETE /nodes/{n}/qemu/{vmid}` con `params={"destroy-unreferenced-disks": 0}` **en la consulta**, sin `purge` (**D-21**; el diseño decía `=1`) | UPID; método no seguro → sin failover (envío incierto si falla tras enviar) |
+| `estado_nodo(nodo) -> dict` (**nuevo**) | `GET /nodes/{n}/status` | Sonda barata de que el nodo responde (ver 11.1) |
+| `solo_lectura() -> ClienteProxmox` (**nuevo**) | — | Cliente para la simulación (ver 11.6) |
 
 `TransporteSoloLectura`: implementa `Transporte`; delega GET/HEAD y rechaza el resto.
 
@@ -277,3 +287,94 @@ usuario (CA-L19.3). Al cerrar con lote en curso se guarda en
 3. Clúster multinodo solo con mocks (laboratorio de un nodo).
 4. N=1 por el motor del lote: hay que conservar el comportamiento de M1 (CA-L04.1) —
    prueba de equivalencia de peticiones y de desenlaces.
+
+## 11. Diferencias entre el diseño y el código final
+
+Cambios surgidos de las pruebas de laboratorio (F4) y de la revisión QA y la auditoría de
+seguridad (F5). Prevalecen sobre lo descrito en las secciones 3 a 8.
+
+### 11.1 Sondeo de nodo antes de enviar (`motor.py`, §4.3)
+El diseño solo vaciaba la cola de un nodo al recibir `NODO_NO_DISPONIBLE` de un POST. Ahora
+`MotorLote._nodo_caido` sondea el nodo con `GET /nodes/{n}/status` (`cliente.estado_nodo`):
+antes de la **primera** MV de cada nodo y tras cada fallo dudoso o de conexión en él. Solo un
+595/596 (`NODO_NO_DISPONIBLE`) cuenta como nodo caído; cualquier otro error (por ejemplo falta
+de `Sys.Audit`) no prueba nada y se sigue adelante. Las MV de un nodo caído quedan
+`NO_ENVIADA` (`MotivoNoEnviada.NODO_CAIDO`).
+
+### 11.2 `puede_enviar` antes del POST (§4.3)
+`ServicioCreacion.crear` recibe el callback `puede_enviar`. Es la **última puerta antes del
+POST**: si entre el inicio de la validación y el envío llegó una cancelación (`CANCELADO`) o
+una pausa (`PAUSA`), la MV no se envía y queda `NO_ENVIADA` con ese motivo. Una suspensión
+(`suspender()`, usada al reconectar o al «Comprobar y continuar») no la bloquea: deja
+terminar lo ya iniciado. Además de `Libro`, el propio motor lleva un conjunto `intentados` y
+lanza `AssertionError` ante un segundo intento del mismo VMID (INV-L1).
+
+### 11.3 El `Libro` lo crea la interfaz
+El diseño decía `ejecutar(...) -> Libro`. Ahora la interfaz crea `Libro(plan)` **antes** de
+lanzar el motor y se lo pasa (`ejecutar(..., libro=libro)`), de modo que existe aunque el
+motor falle y «Deshacer» y «Comprobar» siguen disponibles sobre lo ya creado. El motor
+devuelve el mismo objeto. Con el mismo libro se reanuda (`continuar_lote`), se comprueban las
+dudosas (`comprobar_dudosas_lote`) y se deshace (`deshacer_lotes`, que agrupa varios lotes
+de la sesión con su id y su política de etiquetas).
+
+### 11.4 Reconciliación con `lock: create` (`reconciliacion.py`, §4.3)
+Tras el POST, la configuración de la MV solo contiene `lock: create` durante ~250 ms (hecho
+de laboratorio). Leer entonces las etiquetas no demuestra nada. Por eso `reconciliar_incierta`
+**no decide** la propiedad mientras `config_en_creacion` sea verdadero: relee en la siguiente
+comprobación (t = 0, +5 s, +15 s) y, si tras todas sigue en creación, deja la MV
+`CONEXION_PERDIDA` con `LOTE_EXISTENCIA_INDETERMINADA` (nunca `OK` sin la etiqueta propia).
+Si `etiquetar` es falso, existe y la configuración ya no está en creación → `OK` con el aviso
+`creada_tras_comprobar`. Si no se puede leer la configuración con etiquetas activas →
+`EXISTE_SIN_CONFIRMAR_PROPIEDAD` (no elegible).
+
+### 11.5 Deshacer sin discos sueltos (D-21, §4.4 y §5)
+`eliminar_vm` envía `destroy-unreferenced-disks=0` y sin `purge`: borra la MV y los discos
+que su configuración referencia, y nunca un volumen suelto. Antes de cada DELETE, el
+rollback lee `config_vm` (existe; con etiquetas, lleva la del lote; sin etiquetas, el
+**nombre** es el del plan; sin `protection` ni `lock`) y `estado_actual_vm` (no `running`,
+sin `lock`). El 403 detiene el rollback tras el primer caso. `ROLLBACK_DISCOS_SUELTOS`
+(E-L21) existe en `CodigoError` y en `textos.py`, pero el rollback **no lo emite** hoy:
+D-21 prevé el aviso, y queda pendiente de implementar o de retirar de la decisión.
+
+### 11.6 Cliente de solo lectura que renueva el ticket y sesión cerrada que no renueva
+- `ClienteProxmox.solo_lectura()` devuelve un cliente cuyo transporte es
+  `TransporteSoloLectura(transporte_real)` (rechaza todo lo que no sea GET/HEAD, INV-L5) pero
+  que **renueva el ticket con el transporte real**: es el único POST permitido
+  (`/access/ticket`, lo hace el autenticador). Sin esto, la simulación fallaría al intentar
+  renovar un ticket por caducar.
+  Su `cerrar()` no hace nada: no suelta la credencial compartida.
+- Todos los clientes derivados comparten un `threading.Event` `_cerrada`. Tras `cerrar()`,
+  `_llamar` lanza `SESION_EXPIRADA` **sin renovar**: ninguna petición tardía de otro hilo
+  pide un ticket nuevo con una credencial ya olvidada (hallazgo B1 de F5). Por la misma razón,
+  `closeEvent` no cierra la sesión si algún hilo sigue vivo tras la espera de 3 s.
+
+### 11.7 Informe saneado con `ocultar` (§4.5)
+`construir_informe(..., ocultar=[...])` recibe los valores literales a quitar (hosts del
+perfil, host activo, usuario del perfil y usuario efectivo). Todo texto libre del informe
+(parámetros y detalle técnico de errores, registro de tareas, avisos del plan y nombre del
+perfil) pasa por `_sanear_texto`: quita los UPID (deja el campo del usuario como «…»), los
+`usuario@realm[!token]`, los valores de `ocultar` (también codificados como URL y sin
+distinguir mayúsculas) y las IPv4 e IPv6. Se descartan las claves de parámetros `host`, `ip`,
+`usuario`, `user`, `servidor`, `direccion` y `url`. La interfaz construye los metadatos
+(`_metadatos_informe`) solo con el nombre del perfil, la versión y la topología.
+
+### 11.8 Reintento único de GET (`transporte.py`)
+Pveproxy cierra las conexiones inactivas (~5 s) y una conexión reutilizada puede fallar al
+usarla. Una **lectura** (GET/HEAD) que falla por desconexión de una conexión reutilizada se
+reintenta **una vez** en el mismo host. No se reintenta una conexión rechazada, un timeout
+de conexión ni un error SSL, y **nunca** se reintenta un método no seguro (POST, DELETE): su
+fallo sigue siendo envío incierto (INV-L1).
+
+### 11.9 Otras diferencias menores
+- **Hechos de laboratorio incorporados al diseño:** los parámetros del DELETE van en la
+  consulta (en el cuerpo da 501); el POST con etiquetas bajo `user-tag-access` restringido
+  responde 200 y la tarea falla con 403 (E-L15 se detecta al terminar la tarea, no en el
+  POST); `TAM_EFIDISK_MIB = 4` confirmado.
+- **Reintento (RF-L21):** `armar_reintento` conserva nombres y VMIDs (no salta ocupados: un
+  VMID ocupado es un error del plan), genera un id de lote nuevo y admite un nodo de
+  destino único.
+- **Confirmación doble:** se aplica cuando N **>** `UMBRAL_CONFIRMACION_DOBLE` (10), es decir, desde 11.
+- **Una máquina (N = 1):** pasa por el motor con un libro de una entrada (`modo_uno`), con
+  etiquetas y «Deshacer», y se muestra con el panel de progreso de M1. No tiene resumen ni
+  simulación.
+- **Menú:** *Archivo > Ver el último lote* reabre el progreso del último lote.

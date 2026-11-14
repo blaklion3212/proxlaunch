@@ -254,8 +254,8 @@ class BloqueLote(QGroupBox):
         h.addWidget(self._boton_etiqueta)
         h.addStretch(1)
         capa.addWidget(contenedor)
-        self._solo_lote.append(contenedor)
-        self._avanzados.append((contenedor, lambda: True))
+        # Visible también con una máquina, solo en modo avanzado (ver _aplicar_visibilidad).
+        self._fila_etiquetar = contenedor
 
     @staticmethod
     def _ayuda(clave: str) -> str:
@@ -296,6 +296,9 @@ class BloqueLote(QGroupBox):
             w.setVisible(lote)
         for w, cond in self._avanzados:
             w.setVisible(lote and self._avanzado and cond())
+        # «Etiquetar las máquinas» también aplica con una sola máquina (servidores que
+        # restringen las etiquetas).
+        self._fila_etiquetar.setVisible(self._avanzado and self.cantidad_valor() >= 1)
         # En un servidor individual no hay selector de destino ni de reparto (CA-L05).
         self.fila_destino.setVisible(lote and cluster)
         if not (lote and cluster):

@@ -1,13 +1,14 @@
-# Guía de usuario de ProxLaunch (MVP 1)
+# Guía de usuario de ProxLaunch (MVP 1 y MVP 2)
 
-ProxLaunch te ayuda a crear una máquina virtual en un servidor Proxmox sin tener que
-conocer todos sus detalles. Esta guía te lleva paso a paso. No necesitas saber de
-Proxmox: cada término se explica la primera vez que aparece.
+ProxLaunch te ayuda a crear una o varias máquinas virtuales en un servidor Proxmox sin
+tener que conocer todos sus detalles. Esta guía te lleva paso a paso. No necesitas saber
+de Proxmox: cada término se explica la primera vez que aparece.
 
 Los nombres de botones, menús y mensajes de esta guía son los que ves en la aplicación.
 
 > ProxLaunch se probó contra un Proxmox VE 9.2 real (servidor individual). Los clústeres
-> de varios nodos y Proxmox 8.x se han probado solo con respuestas simuladas.
+> de varios nodos y Proxmox 8.x se han probado solo con respuestas simuladas. Eso incluye
+> el reparto de un lote entre varios nodos.
 
 ## Contenido
 
@@ -17,9 +18,10 @@ Los nombres de botones, menús y mensajes de esta guía son los que ves en la ap
 4. [Crear una máquina en modo básico](#crear-una-máquina-en-modo-básico)
 5. [Modo avanzado](#modo-avanzado)
 6. [Entender el progreso y los resultados](#entender-el-progreso-y-los-resultados)
-7. [Mensajes de error frecuentes](#mensajes-de-error-frecuentes)
-8. [Privacidad y seguridad](#privacidad-y-seguridad)
-9. [Preguntas frecuentes](#preguntas-frecuentes)
+7. [Crear varias máquinas de una vez (lotes)](#crear-varias-máquinas-de-una-vez-lotes)
+8. [Mensajes de error frecuentes](#mensajes-de-error-frecuentes)
+9. [Privacidad y seguridad](#privacidad-y-seguridad)
+10. [Preguntas frecuentes](#preguntas-frecuentes)
 
 ---
 
@@ -40,6 +42,8 @@ Los nombres de botones, menús y mensajes de esta guía son los que ves en la ap
 | **2FA (segundo factor)** | Un segundo paso de seguridad al iniciar sesión: normalmente un código de 6 números que muestra una aplicación en tu teléfono. |
 | **Tarea (UPID)** | Cuando pides crear una máquina, Proxmox abre una «tarea». El UPID es el identificador de esa tarea. |
 | **Firmware (tipo de arranque)** | El programa con el que arranca la máquina: SeaBIOS (clásico) o UEFI (moderno). |
+| **Lote** | Un grupo de máquinas iguales que se crean de una vez. Solo cambian el nombre, el número y, si hay clúster, el nodo. |
+| **Etiqueta** | Una marca de texto que Proxmox muestra junto a la máquina. ProxLaunch usa dos para reconocer lo que creó. |
 
 ---
 
@@ -71,7 +75,10 @@ SDN.Use
 Sys.Audit
 ```
 
-Esta lista se comprobó en un Proxmox real: son los 10 privilegios mínimos.
+Esta lista se comprobó en un Proxmox real: son los 10 privilegios mínimos. **Crear lotes,
+etiquetar las máquinas y deshacer un lote no piden ningún permiso más**: borrar una máquina
+solo exige `VM.Allocate`, que ya está en la lista. Hay una excepción, que depende de cómo
+configuró tu administrador Proxmox (ver [Etiquetas](#etiquetas-qué-son-y-para-qué-sirven)).
 - Sin `VM.Audit`, la máquina se crea, pero ProxLaunch no puede confirmar cómo quedó y lo
   verás como «creada con avisos».
 - Sin `Sys.Audit`, la máquina se crea, pero no verás la memoria y los procesadores libres de
@@ -400,6 +407,449 @@ modos?» La tarea **no se detiene**. Al volver, revisa en Proxmox si la máquina
 
 ---
 
+## Crear varias máquinas de una vez (lotes)
+
+Un **lote** crea de 1 a 100 máquinas iguales con un solo clic. Todas comparten la
+configuración del formulario (procesadores, memoria, discos, red...) y solo cambian el
+**nombre**, el **número** y, si tienes un clúster, el **nodo**. Como en el resto de
+ProxLaunch, las máquinas se crean **detenidas** y con el disco **vacío**.
+
+Un lote es de verdad más delicado que crear una sola máquina, así que ProxLaunch te enseña
+un resumen antes de enviar nada, te deja **simular** primero y te permite **deshacer** lo que
+crea. Si algo no sale bien en una máquina, las demás siguen.
+
+> **En el laboratorio** (Proxmox VE 9.2, un solo nodo) un lote de 30 máquinas se creó en
+> unos 47 segundos y se deshizo en otros 47 (algo más de un segundo y medio por máquina).
+> Tu servidor puede ir más rápido o más lento.
+
+### Paso a paso, en resumen
+
+1. En el bloque **Lote**, escribe la **Cantidad de máquinas** (2 o más) y el **Prefijo**.
+2. Rellena el resto del formulario como siempre: es la configuración de **todas** las
+   máquinas.
+3. Pulsa **Ver resumen** y revisa la lista.
+4. (Opcional, recomendado la primera vez) Pulsa **Simular**.
+5. Pulsa **Crear N máquinas** y sigue el progreso.
+6. Al terminar, mira el estado de cada una. Si hace falta, usa **Comprobar**, **Reintentar
+   pendientes**, **Deshacer…** o **Informe**.
+
+### Cantidad y nombres
+
+El bloque **Lote** está encima del formulario. Con **Cantidad de máquinas** en `1` (el valor
+inicial) no ves nada más: el formulario funciona como siempre, con su botón **Crear máquina**.
+En cuanto escribes **2 o más**, el bloque muestra el resto de los campos, el formulario deja
+de pedir el nombre, el número y el nodo de una máquina (los fija el lote) y el botón
+**Crear máquina** pasa a llamarse **Ver resumen**.
+
+- **Cantidad de máquinas:** de 1 a 100. Si pasas de 100 verás: «El máximo por lote es 100
+  máquinas. Divide el trabajo en varios lotes.» ProxLaunch nunca recorta la cantidad por su
+  cuenta.
+- **Prefijo:** el principio del nombre de todas las máquinas. Con `srv-web` se crean
+  `srv-web-01`, `srv-web-02`, `srv-web-03`... Solo letras sin acentos, números y guiones. Es
+  obligatorio: si lo dejas vacío, verás «Escribe un prefijo para los nombres.»
+- **Vista previa:** debajo del prefijo, ProxLaunch escribe cómo se llamarán las máquinas, por
+  ejemplo «Se llamarán: srv-web-01, srv-web-02, srv-web-03 … srv-web-12». Muestra los tres
+  primeros y el último (si son cuatro o menos, los muestra todos). Si algo no es válido, en
+  lugar de la vista previa ves el motivo junto al campo, por ejemplo «El nombre «web_01» no
+  es válido: tiene el carácter «_», que no se admite.»
+
+**Relleno de ceros.** El número del nombre lleva ceros a la izquierda: con relleno 2 es `01`,
+`02`... `10`. Si hacen falta más dígitos, **todos** los nombres usan los mismos para que se
+ordenen bien: un lote de 120 con relleno 2 se llama `srv-web-001` ... `srv-web-120`, no
+`srv-web-01` ... `srv-web-120`.
+
+**Modo avanzado** (**Ajustes > Modo > Avanzado**): añade estos campos al bloque.
+
+| Campo | Para qué sirve |
+|---|---|
+| **Separador** | Lo que va entre el prefijo y el número: **Guion (-)** (`srv-01`) o **Ninguno** (`srv01`). |
+| **Número inicial** | Con qué número empieza la numeración de los nombres (por defecto 1). Con 5, las máquinas se llaman `srv-05`, `srv-06`... |
+| **Relleno (dígitos)** | Cuántos dígitos mínimos lleva el número (por defecto 2, de 0 a 8). |
+| **Número de máquina inicial (VMID)** | Ver [Números de máquina](#números-de-máquina-vmid). |
+| **Nodos elegidos** y **Reparto** | Ver [Dónde se crean](#dónde-se-crean). |
+| **Etiquetar las máquinas** | Ver [Etiquetas](#etiquetas-qué-son-y-para-qué-sirven). |
+
+### Números de máquina (VMID)
+
+Cada máquina necesita un **número** propio en todo el servidor (VMID). En el lote:
+
+- **Automático:** si dejas **Número de máquina inicial (VMID)** vacío (dice «automático»),
+  ProxLaunch toma el siguiente número libre del servidor y asigna los siguientes en orden.
+- **Saltos:** si alguno de esos números ya lo usa otra máquina (aunque tú no puedas verla),
+  ProxLaunch **lo salta** y te lo dice en el resumen: «Se saltaron los números 101 (ya los
+  usa otra máquina).» Los números se agrupan en rangos (`101–103, 110`).
+- **Manual** (solo modo avanzado): escribe un número inicial entre 100 y 999999999. Si ya
+  está ocupado, el lote empieza en el siguiente libre. Si no encuentra suficientes números
+  libres, avisa: «No encontré N números de máquina libres a partir del X. Prueba con otro
+  número inicial o con menos máquinas.»
+- **Si alguien se te adelanta:** otra persona puede usar uno de tus números entre el resumen
+  y el envío. Esa máquina **no se crea** («El número N lo usó otra persona mientras tanto.
+  Esta máquina no se creó.») y el lote sigue con las demás. Luego puedes usar
+  [Reintentar pendientes](#reintentar-pendientes).
+
+### Dónde se crean
+
+En un **servidor individual** no hay nada que elegir: todas van al único nodo.
+
+En un **clúster**, el campo **Dónde crearlas** ofrece:
+
+| Opción | Qué hace |
+|---|---|
+| **Automático** | ProxLaunch reparte las máquinas entre los nodos que pueden alojarlas (que estén encendidos y tengan el almacenamiento y la red que pides). Es lo normal. |
+| **Un nodo** | Todas van al nodo que elijas en la lista. Si no caben ahí, ProxLaunch avisa; no las manda a otro por su cuenta. |
+| **Nodos elegidos** (modo avanzado) | Marcas los nodos entre los que se reparte. |
+
+Los nodos apagados aparecen como «Sin conexión» y no se pueden elegir.
+
+En modo avanzado, con **Automático** o **Nodos elegidos**, aparece **Reparto**:
+
+- **Equilibrado** (el normal): cada máquina va al nodo que en ese momento tiene más memoria
+  libre, contando las que ya le tocaron, para que ninguno se llene antes que los demás.
+- **Por turnos:** una a cada nodo, en orden alfabético, y vuelta a empezar. Es predecible,
+  pero no mira cuánta memoria le queda a cada nodo.
+
+El resumen te dice cuántas máquinas recibe cada nodo y por qué («Equilibrado: más memoria
+libre», «lo elegiste tú», «es el único nodo disponible»...). En ProxLaunch el reparto entre
+varios nodos solo se ha probado con respuestas simuladas.
+
+### Etiquetas: qué son y para qué sirven
+
+Una **etiqueta** es una marca de texto que Proxmox muestra junto a la máquina. Por defecto,
+ProxLaunch pone dos a cada máquina que crea:
+
+- `proxlaunch`: indica que la creó ProxLaunch. Es la misma en todos tus lotes.
+- `lote-` seguido de un código (por ejemplo `lote-3fa9c21b`): identifica **este** lote. El
+  mismo código aparece en el informe.
+
+Sirven para tres cosas:
+
+1. **Encontrar** en Proxmox lo que creó un lote (filtrando por etiqueta o por número).
+2. **Demostrar que una máquina es del lote** cuando hubo un corte de conexión y no se sabe si
+   se creó (ver [«No sabemos si se creó»](#estados-de-cada-máquina)).
+3. **Deshacer con seguridad:** ProxLaunch comprueba la etiqueta antes de borrar, para no
+   tocar nunca una máquina que no sea suya.
+
+Proxmox guarda las etiquetas en minúsculas, ordenadas y separadas por `;`. No tienes que
+hacer nada: el nombre de la etiqueta lo pone ProxLaunch.
+
+**Cómo desactivarlas.** En **modo avanzado**, la casilla **Etiquetar las máquinas** (dentro
+del bloque **Lote**, que solo se ve con cantidad 2 o más) viene marcada. Si la desmarcas, las
+máquinas se crean sin etiquetas. El valor se conserva si bajas la cantidad a 1.
+
+**Qué se pierde sin etiquetas:**
+
+- ProxLaunch ya no puede demostrar de quién es una máquina que apareció tras un corte. En
+  ese caso la deja como «Existe, sin confirmar de quién es» y no la ofrece para deshacer.
+- «Deshacer…» solo borra las máquinas que ProxLaunch confirmó que creó él mismo, con el
+  nombre y el número del lote.
+- Te costará más encontrar el lote en Proxmox (tendrás que buscar por nombre o por número).
+
+**Cuándo conviene desactivarlas.** Si tu administrador restringió en Proxmox quién puede
+crear etiquetas nuevas, Proxmox acepta la orden pero la tarea falla con un error de permiso
+(«Sys.Modify for modifying tag»). ProxLaunch lo detecta: **pausa el lote** y te ofrece
+**Seguir sin etiquetas** (ver [Pausas](#pausas-el-lote-se-detiene-y-te-pregunta)). Esta
+restricción es poco habitual: por defecto Proxmox permite cualquier etiqueta.
+
+### El resumen y la confirmación
+
+Al pulsar **Ver resumen**, ProxLaunch consulta el servidor (no crea nada) y muestra:
+
+- El título «Vas a crear N máquinas».
+- Una tabla con una fila por máquina: **N.º**, **Nombre**, **VMID**, **Nodo**,
+  **Almacenamiento** y **Discos (GiB)**.
+- Los totales («Totales: 12 máquinas, 24 procesadores virtuales, 24 GiB de memoria»), el
+  espacio que pide cada almacenamiento («Espacio en «local-lvm» en pve1: 96 GiB de 150 GiB
+  libres»), el **Reparto** por nodo y los números saltados.
+- Los **errores** (con ✕) y los **avisos** (con ⚠), siempre **antes** de los botones.
+
+Los **errores** impiden crear. Mientras haya alguno, **Crear N máquinas** está desactivado y
+debajo ves «Corrige los errores marcados para poder crear las máquinas.» El error más
+habitual es que no quepan los discos: «Las 5 máquinas necesitan 160 GiB en «local» y solo hay
+150 GiB libres. Caben 4.» En ese caso aparece el botón **Reducir a 4**, que baja la cantidad
+y vuelve a generar el resumen. ProxLaunch nunca crea un lote a medias por su cuenta.
+
+Los **avisos** no bloquean. Los más frecuentes:
+
+- **Nombre repetido:** «Ya existe una máquina llamada «srv-web-01» (número 105).» Proxmox
+  permite dos máquinas con el mismo nombre, pero luego cuesta distinguirlas. Junto al aviso
+  ves: «Puede haber otras máquinas con esos nombres que tú no puedes ver.» Además, una
+  máquina creada hace pocos segundos puede tardar unos 4 segundos en aparecer con su nombre,
+  y en ese intervalo el aviso no salta.
+- **Memoria:** «En «pve2» pides 96 GiB de memoria y hay 64 GiB libres. Las máquinas se crean
+  apagadas; el problema aparecerá al encenderlas.»
+- **Memoria de un nodo desconocida:** «No se pudo leer la memoria libre de «pve2»; el reparto
+  usa el espacio.» (falta el permiso `Sys.Audit`).
+- **Permisos sin verificar:** «Permisos no verificados: no se pudieron leer los permisos del
+  usuario, así que Proxmox pudo rechazar alguna máquina.»
+- **Espacio sobreasignado.** Algunos almacenamientos «solo ocupan el espacio a medida que se
+  usa». Con ellos puedes pedir más discos de los que caben: «Estás pidiendo 300 GiB y solo
+  hay 150 GiB libres en «local-lvm». Funciona mientras las máquinas no usen todo su disco; si
+  se llena, todas las máquinas de ese almacenamiento pueden fallar.» Para continuar debes
+  marcar la casilla **Entiendo el riesgo de sobreasignar espacio** (no se recuerda: se pide
+  cada vez). Si pides **más de 3 veces** lo que hay libre, ya es un error.
+
+El resumen se puede copiar con **Copiar resumen**. Con **Volver al formulario** vuelves a
+editar; cualquier cambio en el formulario invalida el resumen y hay que generarlo otra vez.
+
+**Confirmar.** Pulsa **Crear N máquinas**. Si el lote tiene **más de 10 máquinas**, ProxLaunch
+te pregunta una vez más (**Confirmar el envío**): «Se enviarán N máquinas a Proxmox.
+¿Continuar?», con **Crear las máquinas** o **Cancelar**.
+
+Si desde que generaste el resumen pasaron **más de 5 minutos**, ProxLaunch vuelve a leer el
+servidor antes de enviar. Si algo cambió (un número ya no está libre, un nodo cayó, hay menos
+espacio) no envía nada: te enseña el resumen nuevo con «Los datos del servidor cambiaron: ...
+Revisa el resumen y confirma otra vez.»
+
+### Simulación
+
+**Simular** hace **todo lo que haría el lote de verdad, menos crear**:
+
+- Vuelve a leer el servidor (nodos, almacenamientos, redes y números ocupados).
+- Planifica el lote y comprueba todo (espacio, nombres, nodos, memoria, permisos...).
+- Muestra el mismo resumen, marcado como «SIMULACIÓN — no se creó nada», y en detalles
+  técnicos la orden exacta (`POST /nodes/<nodo>/qemu` con sus parámetros) que se enviaría
+  por cada máquina. No lleva claves ni cabeceras.
+- **Informe de la simulación…** lo exporta como informe (ver [Informe](#informe)).
+
+**Qué garantiza:** durante la simulación ProxLaunch solo **lee** del servidor. Se verificó en
+el laboratorio: en el registro de acceso de Proxmox solo quedan consultas de lectura (`GET`).
+Puedes simularlas todas las veces que quieras, también con un usuario sin permiso para crear.
+
+**Qué no puede garantizar.** Simular no prueba que Proxmox vaya a aceptar cada máquina. Por
+ejemplo, no detecta que otra persona use un número entre la simulación y el envío, que el
+espacio cambie, que falten permisos sobre un número concreto o que Proxmox rechace las
+etiquetas (ese fallo solo aparece al crear). Por eso, al pulsar **Crear de verdad estas N
+máquinas**, ProxLaunch vuelve a planificar y a validar todo antes de enviar.
+
+**Simulación con otra versión de Proxmox.** En modo avanzado puedes forzar una versión de
+compatibilidad. La simulación valida contra esa versión y lo indica: «Simulado con
+compatibilidad de Proxmox 9.2 (el servidor es 9.0)». Si forzaste una versión **más nueva**
+que la del servidor, no podrás crear de verdad: «Has forzado una versión más nueva que la del
+servidor (9.0); solo puedes simular.»
+
+**Cantidad 1.** Con una sola máquina no hay resumen ni simulación: el botón **Crear máquina**
+funciona como en la sección [Crear una máquina en modo básico](#crear-una-máquina-en-modo-básico).
+La máquina sí lleva etiquetas y puedes deshacerla.
+
+### Mientras se crea: el progreso
+
+Al confirmar, el formulario se bloquea y aparece el progreso del lote, con el título
+«Creando N máquinas»:
+
+- Una **barra** con el texto «7 de 20 terminadas · 1 con error · 2 en curso». Solo cuenta
+  máquinas terminadas: no inventa porcentajes ni tiempos estimados. Si hay máquinas sin
+  confirmar o sin enviar, el texto añade «N sin confirmar» y «N sin enviar».
+- Una **tabla** con una fila por máquina: **Estado**, **Nombre**, **VMID**, **Nodo** y
+  **Detalle**. El estado lleva siempre un símbolo y un texto, para que no dependa solo del
+  color.
+- **Mostrar solo problemas** filtra la tabla.
+- Al seleccionar una fila aparece su **Identificador de la tarea (UPID)** con **Copiar UPID**
+  y sus detalles técnicos (texto original de Proxmox y registro de la tarea).
+
+ProxLaunch crea **una máquina a la vez por nodo** y hasta **4 nodos en paralelo**, para no
+cargar el servidor. No cierres la ventana mientras tanto (ver
+[Cerrar ProxLaunch con un lote en curso](#cerrar-proxlaunch-con-un-lote-en-curso)).
+
+### Estados de cada máquina
+
+| Símbolo y estado | Qué significa | Qué hacer |
+|---|---|---|
+| ○ **Pendiente** | Está en la cola. Todavía no se envió. | Esperar. |
+| ● **Validando datos**, **Enviando a Proxmox**, **Creando la máquina**, **Comprobando el resultado** | Las etapas de una máquina, igual que al crear una sola. | Esperar. |
+| ✓ **Lista** | Se creó y ProxLaunch lo comprobó. | Nada. Si el detalle dice «Se creó aunque Proxmox tardó en responder.», hubo un corte, pero la máquina existe. |
+| ⚠ **Lista, con avisos** | Se creó, pero Proxmox dejó algún aviso. «Se creó, pero hay avisos.» | Lee los detalles técnicos. |
+| ✕ **Con error** | No se creó (el detalle dice por qué, con el mismo lenguaje de la [tabla de errores](#mensajes-de-error-frecuentes)). | Corrige la causa y usa **Reintentar pendientes**. |
+| ◐ **Quedó a medias** | Falló, pero quedó algo creado. «Quedó a medias; elimínala con «Deshacer…» o desde Proxmox.» | Usa **Deshacer…** o bórrala en Proxmox. |
+| ? **Sin confirmar (sigue en Proxmox)** | ProxLaunch esperó 10 minutos y la tarea sigue en marcha. No es un fallo. | Pulsa **Comprobar ahora** más tarde. |
+| ? **No sabemos si se creó** | Se cortó la conexión justo al enviar o mientras se esperaba, y no se sabe si Proxmox la creó. «No sabemos si «srv-01» se creó. No se volverá a enviar: pulsa «Comprobar» para verlo.» | **No la crees otra vez.** Pulsa **Comprobar ahora** (ver más abajo). |
+| – **No enviada** | Nunca salió hacia Proxmox, así que **no existe**. El detalle dice el motivo: «cancelaste el lote», «el lote se detuvo», «hubo un error que afectaba a todo el lote» o «el nodo no respondió». | Puedes usar **Reintentar pendientes**. |
+| – **No se creó** | Hubo un corte, pero ProxLaunch comprobó tres veces que no existe. «Se comprobó y no existe en Proxmox. Puedes reintentarla.» | Puedes usar **Reintentar pendientes**. |
+| ? **Existe, sin confirmar de quién es** | La máquina existe, pero no hay prueba de que la creara este lote (no tiene su etiqueta). Podría ser de otra persona con el mismo número. | Verifícala en Proxmox. ProxLaunch no la borrará ni la ofrece en «Deshacer…». |
+
+**«No sabemos si se creó» y «Comprobar ahora».** ProxLaunch **nunca vuelve a enviar** una
+máquina que pudo haberse creado: podría duplicarla. Antes de rendirse, ya comprueba por su
+cuenta hasta tres veces (al instante, a los 5 y a los 15 segundos). Si sigue sin saberlo, la
+deja así. Cuando el lote termina:
+
+- Selecciona la fila dudosa y pulsa **Comprobar ahora**, o
+- pulsa **Comprobar la dudosa** / **Comprobar las N dudosas** para revisarlas todas.
+
+La comprobación **solo lee**: pregunta a Proxmox y nunca envía nada nuevo. Según el resultado,
+la máquina pasa a «Lista» o a «No se creó».
+
+### Pausas: el lote se detiene y te pregunta
+
+A veces seguir enviando sería inútil o peligroso. ProxLaunch **pausa el lote** (no envía
+ninguna máquina más) y abre un diálogo. Si lo cierras sin decidir, el lote sigue pausado y el
+botón **Decidir qué hacer…** vuelve a abrirlo. Hay tres tipos:
+
+| Título | Cuándo | Botones |
+|---|---|---|
+| **El lote se detuvo por un problema general** | Un error que afectaría a todas las máquinas: la sesión caducó, las credenciales dejaron de valer, cambió la huella del servidor, falta el permiso `VM.Allocate` o Proxmox no aceptó la etiqueta. Se detiene al **primer** caso. | **Reconectar…** (errores de sesión), **Seguir sin etiquetas** (etiqueta rechazada), **Reintentar**, **Cancelar lote**. |
+| **El lote se detuvo: el mismo error se repite** | Fallaron **3 máquinas seguidas por la misma causa**. «Fallaron 3 máquinas seguidas por la misma causa: ... ¿Continuar o detener?» | **Continuar** (y no vuelve a preguntar por esa causa en este lote), **Detener el lote**. |
+| **El lote se detuvo: se perdió la conexión** | La conexión estuvo cortada más de 60 segundos. «Se perdió la conexión. Hay N máquinas sin confirmar.» | **Comprobar y continuar**, **Cancelar lote**. |
+
+El botón seguro (**Cancelar lote** o **Detener el lote**) es el que tiene el foco al abrirse.
+
+- **Comprobar y continuar:** mira qué pasó con las máquinas sin confirmar y después envía
+  **solo las que faltaban**. Nunca vuelve a enviar una máquina que ya salió.
+- **Reconectar…:** abre la ventana de conexión. Si vuelves a entrar al **mismo perfil**, el
+  lote continúa con las máquinas que faltan. Si eliges otro servidor, el lote anterior queda
+  cerrado: ya no se puede continuar ni deshacer contra el servidor nuevo.
+- **Seguir sin etiquetas:** te pide confirmar («Se detendrá este lote y se armará uno nuevo
+  con las máquinas que faltan, sin etiquetas...»). Si aceptas con **Preparar el lote sin
+  etiquetas**, se cancela este lote, se arma uno nuevo con lo que faltaba y ves su resumen
+  antes de crear nada. Recuerda lo que se pierde ([Etiquetas](#etiquetas-qué-son-y-para-qué-sirven)).
+- **Si un solo nodo deja de responder**, no se pausa todo el lote: sus máquinas quedan «No
+  enviada» («el nodo no respondió») y los demás nodos siguen.
+
+### Cancelar y «Dejar de esperar»
+
+**Cancelar lote** detiene los envíos:
+
+1. Si ya salió alguna máquina, ProxLaunch pregunta (**Cancelar el lote**): «Las máquinas que
+   ya se enviaron seguirán creándose en Proxmox y se esperará su resultado. Las demás no se
+   enviarán.» Elige **Cancelar el lote** o **Seguir creando**.
+2. Las máquinas pendientes pasan a «No enviada» («cancelaste el lote»).
+3. ProxLaunch **sigue esperando** el resultado de las que ya estaban en marcha, para decirte
+   con certeza qué pasó. **No detiene ninguna tarea en Proxmox.** Mientras espera, el botón
+   pasa a llamarse **Dejar de esperar**.
+4. Si no quieres esperar, pulsa **Dejar de esperar**: esas máquinas quedan como «No sabemos
+   si se creó» y la tarea sigue en Proxmox. Más tarde puedes usar **Comprobar ahora**.
+
+Al terminar, **Deshacer…** te permite borrar lo que ya se había creado.
+
+### Al terminar el lote
+
+Cuando todas las máquinas tienen un resultado, el título pasa a «Lote terminado (N
+máquinas)» y aparecen los botones que tienen sentido:
+
+| Botón | Cuándo aparece |
+|---|---|
+| **Comprobar la dudosa** / **Comprobar las N dudosas**, **Comprobar ahora** | Hay máquinas «No sabemos si se creó» o «Sin confirmar». |
+| **Deshacer…** | Siempre; se activa si hay algo que ProxLaunch pueda borrar. |
+| **Reintentar pendientes** | Hay máquinas «No enviada», «No se creó» o «Con error». |
+| **Informe** | Siempre. |
+| **Volver al formulario** | Siempre. Si hay máquinas sin confirmar te avisa: «No sabemos si algunas máquinas se crearon. Si vuelves y repites el lote, podrías duplicarlas. ¿Volver de todos modos?» |
+
+En **Archivo > Ver el último lote** puedes volver a ver el último lote mientras no abras otro.
+
+### Reintentar pendientes
+
+**Reintentar pendientes** arma un **lote nuevo** con las máquinas que **no se crearon** («No
+enviada», «No se creó» y «Con error»). Conserva sus nombres y sus números, y pasa por el
+resumen y la confirmación como cualquier lote (también puedes **Simular**). Es un lote
+distinto, con su propio código de etiqueta.
+
+- **Con cambio de nodo:** en el resumen aparece **Nodo de destino para el reintento**.
+  **Los mismos nodos de antes** conserva el reparto; elegir un nodo lleva todas las máquinas
+  a ese. Es útil si un nodo cayó o no tenía sitio.
+- **Nunca** incluye máquinas «Lista», «Lista, con avisos», «Quedó a medias», «No sabemos si
+  se creó», «Sin confirmar» ni «Existe, sin confirmar de quién es»: podrían existir.
+  Compruébalas primero.
+- Antes de enviar se vuelve a comprobar que cada número siga libre. Si otra persona lo
+  ocupó, ves el error en el resumen y debes resolverlo antes de crear.
+- El **Deshacer…** del lote anterior sigue disponible mientras no cambies de servidor.
+
+### Deshacer
+
+**Deshacer…** elimina de Proxmox las máquinas que creó **este lote** en **esta sesión**.
+Nunca ocurre solo y siempre pide confirmación.
+
+1. Pulsa **Deshacer…**. Se abre **Deshacer lo creado por el lote**.
+2. Elige el alcance: **Todo lo que creó el lote** o **Solo las incompletas** (las que
+   quedaron «a medias», las «Lista, con avisos» y las que se rescataron tras un corte de
+   conexión).
+3. Revisa la lista de máquinas marcadas. Las que ProxLaunch no puede borrar aparecen
+   desactivadas con el motivo, por ejemplo «No se envió: no existe en Proxmox.», «Falló y no
+   se creó nada.» o «Existe, pero no podemos asegurar que la creó este lote.»
+4. Lee la advertencia: «Se eliminarán estas N máquinas y sus discos de Proxmox. Esta acción
+   no se puede deshacer.»
+5. Pulsa **Eliminar N máquinas** (o **Cancelar**, que tiene el foco al abrirse).
+
+Mientras borra ves el título «Deshaciendo el lote» y una tabla con el estado de cada
+máquina: **Pendiente**, **Comprobando**, **Eliminando**, **Eliminada**, **Ya no existía**,
+**No se pudo eliminar**, **No se tocó**, **No sabemos si se eliminó** y **No se procesó**. El
+botón **Detener lo que falta** interrumpe el resto. Al terminar, ProxLaunch actualiza los
+datos del servidor (números libres y espacio) y el informe incluye la sección «Deshacer».
+
+**Qué borra:** la máquina y los discos que tiene asignados (incluido el de UEFI).
+
+**Qué NO borra nunca:**
+
+- **Máquinas ajenas.** Solo las del lote, con su nombre y su número, y con la etiqueta del lote
+  si usaste etiquetas. Si no puede demostrar que son suyas, no las toca: «No eliminamos «x»
+  porque no podemos asegurar que la creó este lote.»
+- **Máquinas protegidas o bloqueadas.** ««x» está protegida o bloqueada. Quita la protección
+  en Proxmox.»
+- **Máquinas encendidas.** ««x» está encendida. Apágala en Proxmox y vuelve a intentarlo.»
+- **Discos sueltos.** Solo se borran los discos que la máquina tiene asignados. Un disco
+  suelto en el almacenamiento (por ejemplo, de una máquina antigua que tuvo el mismo número)
+  **no se toca**, porque podría ser de otra persona. Si crees que quedó alguno, revísalo en
+  Proxmox.
+- **Lo que no está en el lote:** máquinas «No enviada», «No se creó», «Con error» sin máquina
+  creada, ni las «Existe, sin confirmar de quién es».
+
+Si una eliminación falla, sigue con las demás y el informe lista las que quedaron: «No se
+pudo eliminar «x»: ... Elimínala desde Proxmox.» Si Proxmox no deja borrar por falta de
+permiso, se detiene tras el primer caso y no toca el resto. Si se corta la conexión al
+borrar: «No sabemos si se eliminó «x». Comprueba antes de reintentar.»
+
+**Hasta cuándo se puede deshacer.** Solo mientras ProxLaunch siga abierto y conectado al
+**mismo servidor**. Si lo cierras o cambias de perfil, ya no podrás deshacer desde aquí. El
+informe te dice cómo encontrar las máquinas en Proxmox para borrarlas a mano.
+
+### Informe
+
+**Informe** abre una ventana con el resultado completo del lote, en texto plano:
+
+- **Copiar informe** lo pone en el portapapeles.
+- **Guardar informe…** lo guarda como archivo `.txt` (UTF-8) donde elijas. El nombre sugerido
+  es `informe-lote-<código>.txt` (`simulacion-<código>.txt` para una simulación).
+
+Copiar y guardar dan **exactamente el mismo texto**. Contiene: el código del lote, la fecha,
+el nombre del perfil, la versión de Proxmox y si es servidor individual o clúster; un
+**Resumen** (Pedidas, Creadas, Creadas con avisos, Con error, Sin confirmar, No enviadas); la
+tabla de **Máquinas** (N.º, Nombre, VMID, Nodo, Resultado, Duración, UPID); el **Detalle de
+las máquinas con problemas** (mensaje, código y detalles técnicos); la **Configuración de las
+máquinas**; los avisos del plan; la sección **Deshacer**, si la hubo; y al final **Cómo
+encontrar estas máquinas en Proxmox**, con las etiquetas y el rango de números.
+
+**Qué no contiene,** para que puedas compartirlo con tu administrador: ni la dirección ni la
+IP del servidor, ni tu nombre de usuario, ni claves, tokens, contraseñas o tickets. Del UPID
+se oculta el campo del usuario, y si algún texto de Proxmox los menciona se sustituyen por
+«…». El informe sí contiene los nombres de las máquinas y de los nodos y el nombre de tu
+perfil. Revísalo antes de enviarlo fuera de tu organización.
+
+Un informe de **simulación** lleva el título «ProxLaunch — Simulación del lote ...» y la
+línea «SIMULACIÓN — no se creó nada.»
+
+### Cerrar ProxLaunch con un lote en curso
+
+Si cierras la ventana con un lote en marcha (o deshaciendo), ProxLaunch pregunta (**Hay un lote
+en curso**): «Hay un lote en curso (X de N terminadas). Si cierras, las tareas ya enviadas
+seguirán en Proxmox, pero ProxLaunch no enviará el resto ni podrá deshacer lo creado.» Las
+opciones son **Seguir en ProxLaunch** y **Cerrar de todos modos**.
+
+Si cierras de todos modos:
+
+- No se envía ninguna máquina más y ProxLaunch deja de esperar a las que están en marcha.
+  **Las tareas ya enviadas no se detienen:** siguen en Proxmox.
+- Se guarda un **informe parcial** en la carpeta de datos de tu usuario, en `informes/`, con
+  el nombre `parcial-<código>.txt`. Para ver la ruta exacta, ejecuta desde la carpeta del
+  repositorio:
+
+  ```bash
+  .venv/bin/python -c "import platformdirs; print(platformdirs.user_data_dir('ProxLaunch'))"
+  ```
+
+  (En Windows, cambia `.venv/bin/python` por `.venv\Scripts\python`.)
+- La próxima vez que abras ProxLaunch verás: «El último lote se cerró sin terminar. Informe:
+  <ruta>». El lote **no se restaura** y ya no puedes deshacerlo desde ProxLaunch: revisa en
+  Proxmox qué se creó (por la etiqueta `lote-<código>` o por el rango de números).
+
+---
+
 ## Mensajes de error frecuentes
 
 Los textos de la columna «Mensaje» son los que muestra ProxLaunch. El mensaje original de
@@ -456,6 +906,7 @@ carpeta de datos; la segunda, la del registro.
 | `huellas.json` | Las huellas de los servidores en los que confiaste, por servidor y puerto. |
 | `preferencias.json` | Tema, modo (básico o avanzado) y versión forzada. |
 | `proxlaunch.log` (carpeta de registro) | Registro de lo que hace la aplicación. Se rota solo (hasta 5 copias de 1 MB). |
+| `informes/` (carpeta de datos del usuario) | Carpeta que **sugiere** ProxLaunch al guardar un informe de lote (puedes elegir otra) y donde deja el informe parcial (`parcial-<código>.txt`) si cierras con un lote en curso. No llevan host, IP, usuario ni secretos, pero sí nombres de máquinas y nodos. |
 
 En Linux y otros sistemas tipo Unix, el registro se crea con permisos solo para tu usuario.
 
@@ -498,11 +949,23 @@ desde VMware) se tratará en una versión futura. Mientras tanto, hazlo desde Pr
 No. Se crea detenida.
 
 **¿Puedo crear varias máquinas a la vez?**
-Todavía no. En esta versión se crea una por vez. Después de crear una, **Crear otra** te
-prepara el formulario para la siguiente. Los lotes llegan en una versión futura.
+Sí, hasta 100 por lote. Ver [Crear varias máquinas de una vez (lotes)](#crear-varias-máquinas-de-una-vez-lotes).
+Todas comparten la configuración y solo cambian el nombre, el número y el nodo. No se puede
+editar una máquina suelta dentro del lote: si necesitas otra configuración, haz otro lote.
 
 **¿Puedo editar o borrar máquinas existentes?**
-No. ProxLaunch solo crea. Tampoco gestiona contenedores (LXC) ni alta disponibilidad.
+No, salvo una cosa: **Deshacer…** borra las máquinas que **creó el lote que acabas de
+hacer** (y solo mientras ProxLaunch siga abierto). Editar o borrar cualquier otra máquina se
+hace desde Proxmox. ProxLaunch tampoco gestiona contenedores (LXC) ni alta disponibilidad.
+
+**¿Qué pasa si se corta la luz o se cierra ProxLaunch en mitad de un lote?**
+Las tareas que ya se enviaron siguen en Proxmox y terminan solas. ProxLaunch no puede
+retomar el lote ni deshacerlo después. Busca en Proxmox las máquinas por la etiqueta
+`proxlaunch` (o `lote-<código>`) o por el rango de números. Si cerraste con el aviso normal,
+guardó un informe parcial (ver [Cerrar ProxLaunch con un lote en curso](#cerrar-proxlaunch-con-un-lote-en-curso)).
+
+**¿Puedo probar un lote sin crear nada?**
+Sí: con **Simular**. Solo lee del servidor. Ver [Simulación](#simulación).
 
 **¿Qué versiones de Proxmox funcionan?**
 De la 8.0 a la 9.2. Una versión más nueva se admite con un aviso.

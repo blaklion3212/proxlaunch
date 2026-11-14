@@ -9,8 +9,8 @@ Solutions GmbH. La aplicación solo se presenta como «Compatible con Proxmox VE
 
 ## Estado del proyecto
 
-**MVP 1** (versión `0.1.0`). Por ahora se ejecuta desde el código fuente. Los
-instaladores llegan en el MVP 5.
+**MVP 2** (creación por lotes) sobre la base del MVP 1 (versión `0.1.0`). Por ahora se
+ejecuta desde el código fuente. Los instaladores llegan en el MVP 5.
 
 Qué hace el MVP 1:
 
@@ -26,14 +26,50 @@ Qué hace el MVP 1:
 - Modo básico y avanzado. Tema claro y oscuro, según el sistema o a elección.
 - La MV se crea **detenida**: ProxLaunch no la enciende.
 
-Fuera del MVP 1: lotes, perfiles predefinidos de MV, ISO/OVA/migración desde VMware,
-contenedores LXC, alta disponibilidad, editar o borrar MV existentes, instaladores,
-interfaz en otros idiomas y macOS. El plan completo está en
+Qué añade el MVP 2 (**creación por lotes**, D-20 y D-21):
+
+- Crea de **1 a 100 MV iguales** de una vez, con un patrón de nombres (`srv-web-01`,
+  `srv-web-02`...) y números de MV (VMID) consecutivos que **salta los ocupados**.
+- **Reparto entre nodos** de un clúster: Automático (equilibrado por memoria y espacio libres),
+  un nodo o nodos elegidos, y reparto por turnos en modo avanzado.
+- **Validación previa de todo el lote** (espacio acumulado por almacenamiento y nodo,
+  sobreasignación en almacenamientos *thin* con confirmación explícita, nombres y números),
+  con **resumen y confirmación** (doble confirmación con más de 10 MV).
+- **Simulación**: hace todas las comprobaciones y muestra lo que se enviaría, leyendo solo del
+  servidor (en el laboratorio solo quedaron consultas `GET` en el registro de acceso).
+- **Progreso por MV**, pausa ante errores globales o repetidos, cancelación y **envío
+  incierto**: una MV de la que no se sabe si se creó nunca se vuelve a enviar sola; se
+  comprueba con consultas de solo lectura.
+- **Etiquetas** `proxlaunch` y `lote-<id>` en las MV creadas (activadas por defecto y
+  desactivables en modo avanzado) para demostrar de quién es cada MV.
+- **Deshacer** (manual, con confirmación): elimina solo las MV que creó el lote, nunca MV
+  ajenas, protegidas, encendidas o bloqueadas, ni discos sueltos (D-21).
+- **Informe** del lote en texto plano (copiar o guardar `.txt`), sin host, IP, usuario ni
+  secretos, e informe parcial si se cierra la aplicación con un lote en curso.
+
+Fuera del MVP 2: perfiles predefinidos de MV y guardar o cargar lotes (MVP 3), ISO/OVA/migración
+desde VMware (MVP 4), contenedores LXC, alta disponibilidad, editar o borrar MV que no creó un
+lote, instaladores (MVP 5), interfaz en otros idiomas y macOS. El plan completo está en
 [`docs/decisiones.md`](docs/decisiones.md) (D-12).
 
-> Validado contra Proxmox VE 9.2 real en laboratorio (rol mínimo, parámetros, 2FA y
-> mensajes de error; ver `tests/integracion/`). Clústeres multinodo y Proxmox 8.x solo
-> con respuestas simuladas. Ver [`docs/bitacora.md`](docs/bitacora.md).
+> Validado contra Proxmox VE 9.2 real en laboratorio (rol mínimo, parámetros, 2FA, mensajes
+> de error, y en el MVP 2 lotes de hasta 30 MV con deshacer; ver `tests/integracion/`).
+> Clústeres multinodo (incluido el reparto entre nodos) y Proxmox 8.x solo con respuestas
+> simuladas. Ver [`docs/bitacora.md`](docs/bitacora.md).
+
+### Permisos de Proxmox
+
+El **rol mínimo no cambia**: son los mismos 10 privilegios del MVP 1 (`VM.Allocate`, `VM.Audit`,
+`VM.Config.Options`, `VM.Config.HWType`, `VM.Config.CPU`, `VM.Config.Memory`,
+`VM.Config.Network`, `Datastore.AllocateSpace`, `SDN.Use` y `Sys.Audit`; lista y pasos en la
+[guía de usuario](docs/guia-usuario.md#permisos-que-hacen-falta)). Crear lotes, etiquetar y
+deshacer no piden ninguno más:
+
+- Borrar una MV (`DELETE /nodes/{n}/qemu/{vmid}`) solo exige `VM.Allocate` (verificado en PVE 9.2).
+- Las etiquetas al crear usan `VM.Config.Options`, que ya está en el rol.
+- Excepción: si el administrador restringió la política `user-tag-access` del datacenter,
+  Proxmox acepta la orden pero la tarea falla por falta de `Sys.Modify`. ProxLaunch pausa
+  el lote y ofrece «Seguir sin etiquetas».
 
 ## Requisitos
 
@@ -143,7 +179,9 @@ permitas sockets:
 PROXLAUNCH_LAB=1 .venv/bin/python -m pytest -m integracion --force-enable-socket
 ```
 
-Nunca ejecutes pruebas que creen o borren MV contra un servidor de producción (D-15).
+Nunca ejecutes pruebas que creen o borren MV contra un servidor de producción (D-15). Las
+pruebas de lotes del laboratorio (`tests/integracion/test_lab_lotes.py`) crean y borran MV de
+verdad: úsalas solo contra el laboratorio.
 Más detalle en [`.claude/proyecto/pruebas.md`](.claude/proyecto/pruebas.md).
 
 ## Estructura del proyecto
@@ -161,12 +199,15 @@ recursos/marca/  Logos originales y el generador (generador/generar_logo.py)
 
 ## Documentación
 
-- [Guía de usuario](docs/guia-usuario.md): paso a paso, sin jerga.
-- [Decisiones](docs/decisiones.md): decisiones del proyecto (D-01 a D-18).
-- [Requisitos del MVP 1](docs/requisitos/mvp1.md): requisitos, reglas de validación y errores.
-- [Arquitectura del MVP 1](docs/arquitectura/mvp1.md): módulos e interfaces.
+- [Guía de usuario](docs/guia-usuario.md): paso a paso, sin jerga (incluye los
+  [lotes](docs/guia-usuario.md#crear-varias-máquinas-de-una-vez-lotes)).
+- [Decisiones](docs/decisiones.md): decisiones del proyecto (D-01 a D-21).
+- [Requisitos del MVP 1](docs/requisitos/mvp1.md) y [del MVP 2](docs/requisitos/mvp2.md):
+  requisitos, reglas de validación y errores.
+- [Arquitectura del MVP 1](docs/arquitectura/mvp1.md) y [del MVP 2](docs/arquitectura/mvp2.md):
+  módulos e interfaces.
 - [Investigación de la API de Proxmox](docs/investigacion/f1-api-proxmox.md): permisos,
-  2FA y parámetros de creación.
+  2FA, parámetros de creación y hechos verificados en laboratorio.
 - [Bitácora](docs/bitacora.md): historial y estado actual.
 
 ## Seguridad en resumen

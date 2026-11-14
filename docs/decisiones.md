@@ -215,7 +215,8 @@ Al deshacer, el `DELETE` se envía con `destroy-unreferenced-disks=0` (sin `purg
 borra la MV con sus discos referenciados y nunca un volumen suelto, que podría ser de
 otra MV antigua con el mismo VMID (hallazgo M2 de la auditoría F5). LAB-L05 comprobó que
 las creaciones de ProxLaunch no dejan discos sueltos. Sustituye lo propuesto en
-CA-L18.5. Si quedara alguno, el informe avisa para revisarlo en Proxmox (E-L21).
+CA-L18.5. La app no busca discos sueltos tras borrar (E-L21 queda sin uso); la guía
+indica revisarlos en Proxmox si se sospecha que quedó alguno.
 
 ## Correcciones técnicas a `prompt.md`
 Errores o imprecisiones de la especificación original que los requisitos deben
