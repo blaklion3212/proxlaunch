@@ -8,9 +8,7 @@ escribe al cerrar la aplicación con un lote en curso (RF-L23).
 
 from __future__ import annotations
 
-import contextlib
 import logging
-import os
 from collections.abc import Iterable
 from dataclasses import dataclass
 from pathlib import Path
@@ -28,6 +26,8 @@ from proxlaunch.interfaz.textos import (
     texto_problema_lote,
 )
 from proxlaunch.nucleo.archivos.csv_seguro import escribir_csv
+from proxlaunch.nucleo.archivos.escritura import escribir_atomico
+from proxlaunch.nucleo.errores import ErrorProxLaunch
 from proxlaunch.nucleo.lote.constantes import ETIQUETA_APP, PREFIJO_ETIQUETA_LOTE
 from proxlaunch.nucleo.lote.informe import upid_sin_usuario as _upid_sin_usuario
 from proxlaunch.nucleo.lote.modelos import (
@@ -441,18 +441,20 @@ def nombre_archivo_sugerido(informe: InformeLote) -> str:
 
 
 def _escribir_privado(ruta: Path, texto: str) -> None:
-    """Escribe el texto UTF-8 con permisos 0o600 (como el registro); en Windows se hereda."""
-    descriptor = os.open(ruta, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
-    with os.fdopen(descriptor, "w", encoding="utf-8") as f:
-        f.write(texto)
-    if os.name == "posix":
-        with contextlib.suppress(OSError):
-            os.chmod(ruta, 0o600)  # el archivo ya existía con otros permisos
+    """Escribe el texto UTF-8 de forma atómica y con permisos 0o600 (en Windows se heredan).
+
+    Lanza ``ErrorProxLaunch`` (E-M08) si no se puede escribir; el destino anterior queda intacto.
+    """
+    escribir_atomico(ruta, texto.encode("utf-8"))
 
 
 def escribir_informe(ruta: Path, texto: str) -> None:
     """Escribe el informe como texto UTF-8 con permisos 0o600."""
-    ruta.parent.mkdir(parents=True, exist_ok=True)
+    carpeta = ruta.parent
+    if not carpeta.exists():
+        # Solo se crea (privada) la carpeta que falta; una carpeta ya existente que eligió el
+        # usuario no se toca.
+        crear_carpeta_privada(carpeta)
     _escribir_privado(ruta, texto)
 
 
@@ -492,7 +494,7 @@ def guardar_informe_parcial(informe: InformeLote, carpeta: Path | None = None) -
         ruta = carpeta / f"parcial-{informe.id_lote}.txt"
         _escribir_privado(ruta, texto_informe(informe))
         _escribir_privado(carpeta / _ARCHIVO_AVISO, str(ruta))
-    except OSError:
+    except (OSError, ErrorProxLaunch):
         _log.warning("No se pudo guardar el informe parcial", exc_info=True)
         return None
     return ruta

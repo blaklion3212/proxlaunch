@@ -17,6 +17,8 @@ from PySide6.QtWidgets import (
 )
 
 from proxlaunch.interfaz.informe_lote import guardar_con_dialogo, texto_informe
+from proxlaunch.interfaz.textos import texto_fallo
+from proxlaunch.nucleo.errores import ErrorProxLaunch
 from proxlaunch.nucleo.lote.modelos import InformeLote
 
 
@@ -71,7 +73,11 @@ class DialogoInforme(QDialog):
         self._estado.setText(QCoreApplication.translate("DialogoInforme", "Informe copiado."))
 
     def _guardar(self) -> None:
-        ruta = guardar_con_dialogo(self, self._informe, self._carpeta)
+        try:
+            ruta = guardar_con_dialogo(self, self._informe, self._carpeta)
+        except ErrorProxLaunch as error:
+            self._estado.setText(texto_fallo(error))
+            return
         if ruta is not None:
             self._estado.setText(
                 QCoreApplication.translate("DialogoInforme", "Guardado en {ruta}").format(

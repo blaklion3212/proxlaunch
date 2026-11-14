@@ -66,6 +66,14 @@ def enmascarar(texto: str) -> str:
     return texto
 
 
+_RE_CONTROL = re.compile(r"[\x00-\x1f\x7f-\x9f]")
+
+
+def _escapar_control(texto: str) -> str:
+    """Sustituye los caracteres de control (``Cc``, incluidos ``\\r`` y ``\\n``) por ``\\xNN``."""
+    return _RE_CONTROL.sub(lambda m: f"\\x{ord(m.group()):02x}", texto)
+
+
 class FiltroSecretos(logging.Filter):
     """Enmascara secretos en el mensaje ya formateado, sus argumentos, el texto de las
     excepciones y la traza de pila. Nunca descarta registros."""
@@ -75,7 +83,8 @@ class FiltroSecretos(logging.Filter):
             mensaje = record.getMessage()
         except Exception:
             mensaje = str(record.msg)
-        record.msg = enmascarar(mensaje)
+        # Los nombres de archivo u otros datos externos no pueden inyectar líneas falsas (S5).
+        record.msg = _escapar_control(enmascarar(mensaje))
         record.args = None
         if record.exc_info and not record.exc_text:
             record.exc_text = logging.Formatter().formatException(record.exc_info)

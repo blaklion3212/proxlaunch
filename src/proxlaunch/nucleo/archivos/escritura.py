@@ -15,6 +15,17 @@ _log = logging.getLogger("proxlaunch.archivos.escritura")
 
 _LIMITE_RUTA_WINDOWS = 260
 _WINERROR_BLOQUEADO = (32, 33)  # violación de uso compartido / de bloqueo (archivo abierto)
+_WINERROR_ACCESO_DENEGADO = 5
+_PREFIJO_TEMPORAL = ".proxlaunch-"
+_MAX_CARS_NOMBRE_TEMPORAL = 8  # del nombre destino; mantiene el temporal muy por debajo de NAME_MAX
+_SUFIJO_TEMPORAL = ".tmp"
+_ALEATORIOS_MKSTEMP = 8  # mkstemp añade 8 caracteres aleatorios
+
+
+def _prefijo_temporal(nombre: str) -> str:
+    """Prefijo corto y fijo (``.proxlaunch-`` + hasta 8 caracteres seguros del nombre)."""
+    seguros = "".join(c for c in nombre if c.isascii() and (c.isalnum() or c in "-_"))
+    return _PREFIJO_TEMPORAL + seguros[:_MAX_CARS_NOMBRE_TEMPORAL]
 
 
 def motivo_oserror(exc: OSError) -> str:
@@ -47,19 +58,42 @@ def escribir_atomico(ruta: Path, datos: bytes) -> None:
     anterior y lanza ``ARCHIVO_NO_GUARDABLE``. No crea la carpeta ni cambia sus permisos.
     """
     ruta = Path(ruta)
-    if os.name == "nt" and len(str(ruta)) > _LIMITE_RUTA_WINDOWS:
-        raise _no_guardable("ruta_larga", ruta)
+    prefijo = _prefijo_temporal(ruta.name)
+    if os.name == "nt":
+        # Se mide el destino y también el temporal más largo posible (S7).
+        largo_tmp = (
+            len(os.path.dirname(str(ruta)))
+            + 1
+            + len(prefijo)
+            + _ALEATORIOS_MKSTEMP
+            + len(_SUFIJO_TEMPORAL)
+        )
+        if max(len(str(ruta)), largo_tmp) > _LIMITE_RUTA_WINDOWS:
+            raise _no_guardable("ruta_larga", ruta)
     tmp: str | None = None
+    reemplazando = False
     try:
-        fd, tmp = tempfile.mkstemp(dir=ruta.parent, prefix=ruta.name + ".", suffix=".tmp")
+        fd, tmp = tempfile.mkstemp(dir=ruta.parent, prefix=prefijo, suffix=_SUFIJO_TEMPORAL)
         with os.fdopen(fd, "wb") as f:
             f.write(datos)
             f.flush()
             os.fsync(f.fileno())
+        reemplazando = True
         os.replace(tmp, ruta)
         tmp = None
     except OSError as exc:
-        raise _no_guardable(motivo_oserror(exc), ruta) from exc
+        motivo = motivo_oserror(exc)
+        if (
+            reemplazando
+            and motivo == "sin_permiso"
+            and os.name == "nt"
+            and getattr(exc, "winerror", None) == _WINERROR_ACCESO_DENEGADO
+            and ruta.exists()
+        ):
+            # El temporal se creó y el destino existe: lo más probable es que otra aplicación
+            # lo tenga abierto (S8).
+            motivo = "bloqueado"
+        raise _no_guardable(motivo, ruta) from exc
     except Exception as exc:  # fallo inesperado: el destino anterior sigue intacto
         raise _no_guardable("otro", ruta) from exc
     finally:

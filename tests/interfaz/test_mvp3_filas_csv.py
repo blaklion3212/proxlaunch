@@ -8,6 +8,8 @@ CA-C10.x, CA-C14.x) y docs/arquitectura/mvp3.md §6.6 y §13.
 
 from __future__ import annotations
 
+import csv
+import io
 import time
 from dataclasses import replace
 from pathlib import Path
@@ -754,8 +756,11 @@ def test_ca_c10_descargar_la_plantilla_funciona_sin_conexion_y_respeta_el_separa
     qtbot.waitUntil(
         lambda: v.statusBar().currentMessage().startswith("Plantilla guardada"), timeout=3000
     )
-    primera = destino.read_text(encoding="utf-8-sig").splitlines()[0]
-    assert primera.split(separador)[0] == "nombre" and len(primera.split(separador)) > 3
+    # Todo el CSV va entre comillas (QUOTE_ALL): se lee con csv, respetando el separador elegido.
+    texto = destino.read_text(encoding="utf-8-sig")
+    primera = next(csv.reader(io.StringIO(texto), delimiter=separador))
+    assert primera[0] == "nombre" and len(primera) > 3
+    assert texto.splitlines()[0].startswith(f'"nombre"{separador}"')
     assert v.statusBar().currentMessage() == "Plantilla guardada en «plantilla.csv»"
 
 

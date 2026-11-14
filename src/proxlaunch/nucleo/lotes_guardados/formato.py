@@ -25,7 +25,7 @@ from proxlaunch.nucleo.archivos.esquema import LectorEsquema, MotivoCampo, combi
 from proxlaunch.nucleo.archivos.esquema_config import configuracion_a_dict, leer_configuracion
 from proxlaunch.nucleo.archivos.json_estricto import cargar_json_estricto
 from proxlaunch.nucleo.archivos.lector import leer_archivo_limitado
-from proxlaunch.nucleo.archivos.texto import texto_seguro
+from proxlaunch.nucleo.archivos.texto import contiene_token, exigir_sin_credencial, texto_seguro
 from proxlaunch.nucleo.errores import CodigoError, ErrorProxLaunch
 from proxlaunch.nucleo.lote.constantes import MAX_LOTE
 from proxlaunch.nucleo.lote.modelos import (
@@ -56,6 +56,9 @@ def _es_nombre_de_plantilla(d: DefinicionLote) -> bool:
 
 
 def _fila_a_dict(f: FilaLote) -> dict[str, object]:
+    exigir_sin_credencial(f.nombre, "nombre_fila")
+    if f.nodo is not None:
+        exigir_sin_credencial(f.nodo, "nodo")
     datos: dict[str, object] = {
         "nombre": f.nombre,
         "vmid": f.vmid,
@@ -70,8 +73,10 @@ def _fila_a_dict(f: FilaLote) -> dict[str, object]:
 def lote_a_dict(lote: LoteGuardado) -> dict[str, object]:
     """Contenido del lote SIN la envoltura (sirve también de «huella» para RF-G08)."""
     d = lote.definicion
+    exigir_sin_credencial(lote.nombre, "nombre")  # INV-M2: ningún texto libre lleva un token
     datos: dict[str, object] = {"nombre": lote.nombre}
     if lote.version_proxmox is not None:
+        exigir_sin_credencial(lote.version_proxmox, "version_proxmox")
         datos["version_proxmox"] = lote.version_proxmox
     if d.es_por_filas:
         datos["tipo"] = str(TipoLote.POR_FILAS)
@@ -82,6 +87,10 @@ def lote_a_dict(lote: LoteGuardado) -> dict[str, object]:
             "etiquetar": d.etiquetar,
         }
         return datos
+    exigir_sin_credencial(d.patron.prefijo, "prefijo")
+    exigir_sin_credencial(d.patron.separador, "separador")
+    for nodo in d.destino.nodos:
+        exigir_sin_credencial(nodo, "nodos")
     homogeneo: dict[str, object] = {
         "config": configuracion_a_dict(d.plantilla),
         "cantidad": d.cantidad,
@@ -100,6 +109,7 @@ def lote_a_dict(lote: LoteGuardado) -> dict[str, object]:
         "etiquetar": d.etiquetar,
     }
     if _es_nombre_de_plantilla(d):
+        exigir_sin_credencial(d.plantilla.nombre, "nombre_maquina")
         homogeneo["nombre_maquina"] = d.plantilla.nombre
     datos["tipo"] = str(TipoLote.HOMOGENEO)
     datos["homogeneo"] = homogeneo
@@ -143,7 +153,9 @@ def _leer_destino(
                 lector.error(campo, MotivoCampo.TIPO)
                 continue
             seguro = texto_seguro(nodo, maximo=253)
-            if seguro:
+            if seguro and contiene_token(seguro):
+                lector.error(campo, MotivoCampo.TOKEN)
+            elif seguro:
                 lista.append(seguro)
             else:
                 lector.error(campo, MotivoCampo.TEXTO_NO_VALIDO)
@@ -193,7 +205,9 @@ def _leer_homogeneo(lector: LectorEsquema, valor: object, ruta: str) -> Definici
         else Destino()
     )
     vmid_inicial, etiquetar = _leer_comunes(lector, obj, ruta)
-    nombre_maquina = lector.texto(obj, "nombre_maquina", ruta, requerido=False, defecto="")
+    nombre_maquina = lector.texto(
+        obj, "nombre_maquina", ruta, requerido=False, defecto="", sin_token=True
+    )
     if (
         len(lector.errores) > n0
         or cfg is None
@@ -226,9 +240,9 @@ def _leer_patron(
     if obj is None:
         return None
     n0 = len(lector.errores)
-    prefijo = lector.texto(obj, "prefijo", ruta, minimo=0, maximo=1024)
+    prefijo = lector.texto(obj, "prefijo", ruta, minimo=0, maximo=1024, sin_token=True)
     separador = lector.texto(
-        obj, "separador", ruta, minimo=0, maximo=16, requerido=False, defecto="-"
+        obj, "separador", ruta, minimo=0, maximo=16, requerido=False, defecto="-", sin_token=True
     )
     inicio = lector.entero(obj, "inicio", ruta, minimo=0, maximo=_TOPE, requerido=False, defecto=1)
     relleno = lector.entero(
@@ -250,9 +264,11 @@ def _leer_fila(lector: LectorEsquema, valor: object, ruta: str) -> FilaLote | No
     if obj is None:
         return None
     n0 = len(lector.errores)
-    nombre = lector.texto(obj, "nombre", ruta, minimo=0, maximo=1024)
+    nombre = lector.texto(obj, "nombre", ruta, minimo=0, maximo=1024, sin_token=True)
     vmid = lector.entero(obj, "vmid", ruta, minimo=0, maximo=_TOPE, nulo=True, requerido=False)
-    nodo = lector.texto(obj, "nodo", ruta, minimo=1, maximo=253, nulo=True, requerido=False)
+    nodo = lector.texto(
+        obj, "nodo", ruta, minimo=1, maximo=253, nulo=True, requerido=False, sin_token=True
+    )
     origen = lector.entero(obj, "origen", ruta, minimo=0, maximo=_TOPE, nulo=True, requerido=False)
     cfg = leer_configuracion(lector, obj.get("config"), _ruta(ruta, "config"))
     if "config" not in obj:
@@ -326,6 +342,7 @@ def leer_lote(datos: bytes) -> ArchivoLote:
             maximo=MAX_LONG_VERSION,
             nulo=True,
             requerido=False,
+            sin_token=True,
         )
         if tipo == TipoLote.HOMOGENEO:
             if "homogeneo" not in raiz:

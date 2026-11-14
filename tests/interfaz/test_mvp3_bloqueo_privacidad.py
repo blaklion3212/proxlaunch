@@ -8,6 +8,8 @@ los flujos de archivos se busca ese valor en todo lo que la aplicación emitió.
 
 from __future__ import annotations
 
+import csv
+import io
 import logging
 import threading
 from dataclasses import replace
@@ -313,11 +315,13 @@ def test_rnf_m03_el_csv_de_errores_no_lleva_las_columnas_de_credenciales_y_es_re
     env, _ = entorno_centinela
     _recorrer_flujos(qtbot, env, modales, archivos, tmp_path, monkeypatch)
     texto = (tmp_path / "salidas" / "errores.csv").read_text(encoding="utf-8-sig")
-    encabezado = texto.splitlines()[0].lower()
+    # El núcleo escribe todo entre comillas (QUOTE_ALL): se lee con el módulo csv, no a mano.
+    filas_csv = list(csv.reader(io.StringIO(texto), delimiter=";"))
+    encabezado = ";".join(filas_csv[0]).lower()
     for prohibida in ("token", "contraseña", "password", "clave"):
         assert prohibida not in encabezado
-    lineas = texto.splitlines()
-    assert len(lineas) == 2 and lineas[1].startswith("c-mala;")  # solo la fila con error
+    assert len(filas_csv) == 2 and filas_csv[1][0] == "c-mala"  # solo la fila con error
+    assert texto.splitlines()[1].startswith('"c-mala";')  # formato real: todo entrecomillado
     visto: dict[str, object] = {}
 
     def _ver(d: DialogoImportarCsv) -> None:

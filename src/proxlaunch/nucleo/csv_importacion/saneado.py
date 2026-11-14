@@ -2,17 +2,18 @@
 
 import unicodedata
 
-LONG_VALOR_MOSTRADO = 40  # CA-C05.1
+from proxlaunch.nucleo.archivos.texto import es_formato_invisible
 
-# Marcas de dirección de texto (categoría Cf): se quitan además de los caracteres de control.
-_BIDI = frozenset("‪‫‬‭‮⁦⁧⁨⁩‎‏؜​‌‍﻿")
+LONG_VALOR_MOSTRADO = 40  # CA-C05.1
 
 
 def sin_control(texto: str) -> str:
     """Quita caracteres de control (``Cc``, incluidos tab y saltos) y de dirección de texto."""
     if texto.isascii() and texto.isprintable():
         return texto
-    return "".join(c for c in texto if c not in _BIDI and unicodedata.category(c) != "Cc")
+    return "".join(
+        c for c in texto if not es_formato_invisible(c) and unicodedata.category(c) != "Cc"
+    )
 
 
 def texto_visible(texto: str, maximo: int = LONG_VALOR_MOSTRADO) -> str:

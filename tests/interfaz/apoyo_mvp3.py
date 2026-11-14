@@ -176,7 +176,11 @@ def hubo_escritura(cliente: ClienteLoteFalso) -> bool:
 
 
 def csv_texto(filas: Iterable[Iterable[Any]], *, sep: str = ";") -> str:
-    """Texto CSV (CRLF, como Excel) a partir de filas de valores."""
+    """Texto CSV (CRLF, como Excel) a partir de filas de valores.
+
+    Es la ENTRADA que simula un archivo de usuario (comillas solo donde hacen falta). La aplicación
+    escribe sus propios CSV con ``QUOTE_ALL``: las pruebas de salida lo comprueban aparte.
+    """
     salida = io.StringIO()
     csv.writer(salida, delimiter=sep, lineterminator="\r\n").writerows(filas)
     return salida.getvalue()

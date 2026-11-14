@@ -33,7 +33,7 @@ from proxlaunch.nucleo.archivos.esquema import (
 from proxlaunch.nucleo.archivos.esquema_config import config_perfil_a_dict, leer_config_perfil
 from proxlaunch.nucleo.archivos.json_estricto import cargar_json_estricto
 from proxlaunch.nucleo.archivos.lector import leer_archivo_limitado
-from proxlaunch.nucleo.archivos.texto import contiene_token, texto_seguro
+from proxlaunch.nucleo.archivos.texto import contiene_token, exigir_sin_credencial, texto_seguro
 from proxlaunch.nucleo.errores import CodigoError, ErrorProxLaunch
 from proxlaunch.nucleo.perfiles_maquina.modelos import ConfigPerfil, PerfilMaquina
 from proxlaunch.nucleo.perfiles_maquina.validacion import validar_config_perfil
@@ -71,6 +71,8 @@ def perfil_a_dict(
     perfil: PerfilMaquina, *, con_pistas: bool, con_id: bool = False
 ) -> dict[str, object]:
     """Lista blanca de un perfil. ``con_id`` solo para el almacén propio."""
+    exigir_sin_credencial(perfil.nombre, "nombre")  # INV-M2
+    exigir_sin_credencial(perfil.descripcion, "descripcion")
     datos: dict[str, object] = {
         "nombre": perfil.nombre,
         "descripcion": perfil.descripcion,

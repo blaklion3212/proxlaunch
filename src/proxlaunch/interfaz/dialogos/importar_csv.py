@@ -15,6 +15,7 @@ from collections.abc import Callable, Mapping, Sequence
 from pathlib import Path
 
 from PySide6.QtCore import QItemSelection, Qt
+from PySide6.QtGui import QShowEvent
 from PySide6.QtWidgets import (
     QApplication,
     QCheckBox,
@@ -143,6 +144,7 @@ class DialogoImportarCsv(QDialog):
         avanzado: bool = False,
         alias_extra: Mapping[str, str] | None = None,
         tema: str = "oscuro",
+        al_resultado_tardio: Callable[[str, bool], None] | None = None,
     ) -> None:
         super().__init__(parent)
         self.setWindowTitle(self.tr("Importar desde CSV"))
@@ -163,6 +165,10 @@ class DialogoImportarCsv(QDialog):
         self._ocupado = False
         self._trabajo: Trabajador | None = None
         self._cargando_combos = False
+        # Resultado de una escritura que termina con el diálogo ya cerrado: (texto, es_error)
+        # se entrega a quien abrió el diálogo y no se toca ningún widget.
+        self._al_resultado_tardio = al_resultado_tardio
+        self._cerrado = False
         self._perfil_base = self._buscar_perfil(perfil_base_id)
         self._construir(tema)
         self._actualizar_estado()
@@ -661,14 +667,20 @@ class DialogoImportarCsv(QDialog):
         descargar_plantilla(
             self,
             self._lanzador,
-            al_terminar=lambda _r: self.estado_operacion.setText(
-                self.tr("Se guardó la plantilla.")
-            ),
+            al_terminar=lambda _r: self._informar_operacion(self.tr("Se guardó la plantilla.")),
             al_fallar=self._mostrar_error_operacion,
         )
 
     def _mostrar_error_operacion(self, error: ErrorProxLaunch) -> None:
-        self.estado_operacion.setText(texto_fallo(error))
+        self._informar_operacion(texto_fallo(error), es_error=True)
+
+    def _informar_operacion(self, texto: str, *, es_error: bool = False) -> None:
+        """Resultado de una escritura: en el diálogo, o en la ventana principal si ya se cerró."""
+        if self._cerrado:
+            if self._al_resultado_tardio is not None:
+                self._al_resultado_tardio(texto, es_error)
+            return
+        self.estado_operacion.setText(texto)
 
     def _descargar_errores(self) -> None:
         resultado, tabla = self._resultado, self._tabla
@@ -691,7 +703,7 @@ class DialogoImportarCsv(QDialog):
             resultado,
             traductor_para_archivo(resultado.columnas),
             separador=separador,
-            al_terminar=lambda _r: self.estado_operacion.setText(
+            al_terminar=lambda _r: self._informar_operacion(
                 self.tr("Se guardó el archivo con las filas con error.")
             ),
             al_fallar=self._mostrar_error_operacion,
@@ -799,9 +811,14 @@ class DialogoImportarCsv(QDialog):
 
     # --- Cierre -----------------------------------------------------------------------------
 
+    def showEvent(self, evento: QShowEvent) -> None:
+        self._cerrado = False
+        super().showEvent(evento)
+
     def done(self, resultado: int) -> None:
         """Al cerrar se invalidan los trabajos pendientes (patrón de generación)."""
         self._generacion += 1
+        self._cerrado = True
         if self._trabajo is not None:
             self._trabajo.cancelar()
             self._trabajo = None

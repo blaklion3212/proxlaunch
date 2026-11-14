@@ -16,8 +16,8 @@ import re
 from proxlaunch.nucleo.archivos.constantes import PROFUNDIDAD_JSON_MAX
 from proxlaunch.nucleo.errores import CodigoError, ErrorProxLaunch
 
-# Cadenas JSON (para no contar corchetes dentro de ellas) o un delimitador estructural.
-_RE_ESTRUCTURA = re.compile(r'"[^"\\]*(?:\\.[^"\\]*)*"|[\[\]{}]', re.DOTALL)
+# Solo los caracteres que cambian de estado el recorrido: comilla, barra y delimitadores.
+_RE_SIGNIFICATIVOS = re.compile(r'["\\\[\]{}]')
 
 
 def _danado(detalle: str) -> ErrorProxLaunch:
@@ -46,10 +46,27 @@ def _sin_claves_repetidas(pares: list[tuple[str, object]]) -> dict[str, object]:
 
 
 def _comprobar_profundidad(texto: str, maximo: int) -> None:
+    """Recorrido lineal de un paso: cuenta ``[``/``{`` fuera de cadenas y corta al pasar ``maximo``.
+
+    Una cadena sin cerrar deja el resto como contenido de cadena (el análisis posterior la
+    rechaza como JSON inválido); así el coste es siempre O(n).
+    """
     profundidad = 0
-    for m in _RE_ESTRUCTURA.finditer(texto):
+    en_cadena = False
+    saltar_hasta = 0  # posición hasta la que el siguiente carácter está escapado
+    for m in _RE_SIGNIFICATIVOS.finditer(texto):
+        pos = m.start()
+        if pos < saltar_hasta:
+            continue
         c = m.group()
-        if c in "[{":
+        if en_cadena:
+            if c == "\\":
+                saltar_hasta = pos + 2  # el carácter siguiente queda escapado
+            elif c == '"':
+                en_cadena = False
+        elif c == '"':
+            en_cadena = True
+        elif c in "[{":
             profundidad += 1
             if profundidad > maximo:
                 raise _danado("profundidad")

@@ -41,6 +41,7 @@ from proxlaunch.interfaz.textos import (
     texto_error_campo,
     texto_regla_perfil,
     texto_resumen_perfil,
+    tooltip_plano,
 )
 from proxlaunch.interfaz.vistas.campos import etiqueta, mensaje, poner_mensaje
 from proxlaunch.nucleo.archivos.constantes import MAX_PERFILES_USUARIO
@@ -189,7 +190,7 @@ class ModeloRevisionPerfiles(QAbstractTableModel):
                 return QColor(self._tokens["aviso"])
             return QColor(self._tokens["exito"] if f.marcada else self._tokens["texto_secundario"])
         if role == Qt.ItemDataRole.ToolTipRole and not f.valida and f.invalido is not None:
-            return "\n".join(texto_error_campo(e) for e in f.invalido.errores[:10])
+            return tooltip_plano("\n".join(texto_error_campo(e) for e in f.invalido.errores[:10]))
         return None
 
 

@@ -19,6 +19,7 @@ from dataclasses import dataclass
 
 from proxlaunch.nucleo.archivos.constantes import MAX_LONG_TEXTO
 from proxlaunch.nucleo.archivos.esquema import LectorEsquema
+from proxlaunch.nucleo.archivos.texto import exigir_sin_credencial
 from proxlaunch.nucleo.modelos.vm import (
     Ballooning,
     Bus,
@@ -94,8 +95,14 @@ def _ballooning_a_dict(activo: bool, minimo_mib: int) -> dict[str, object]:
 
 def config_perfil_a_dict(config: ConfigPerfil, *, con_pistas: bool) -> dict[str, object]:
     """Configuración de un perfil. Sin ``con_pistas`` se omiten TODAS las claves ``*_preferido``."""
+    # INV-M2: ningún texto libre lleva un token (solo se serializan las pistas si se piden).
+    exigir_sin_credencial(config.tipo_cpu, "tipo_cpu")
+    if con_pistas and config.storage_efi_preferido is not None:
+        exigir_sin_credencial(config.storage_efi_preferido, "storage_efi_preferido")
     discos: list[dict[str, object]] = []
     for d in config.discos:
+        if con_pistas and d.storage_preferido is not None:
+            exigir_sin_credencial(d.storage_preferido, "storage_preferido")
         disco: dict[str, object] = {
             "tamano_gib": d.tamano_gib,
             "bus": str(d.bus),
@@ -109,6 +116,8 @@ def config_perfil_a_dict(config: ConfigPerfil, *, con_pistas: bool) -> dict[str,
         discos.append(disco)
     redes: list[dict[str, object]] = []
     for r in config.redes:
+        if con_pistas and r.bridge_preferido is not None:
+            exigir_sin_credencial(r.bridge_preferido, "bridge_preferido")
         red: dict[str, object] = {"modelo": str(r.modelo), "vlan": r.vlan}
         if con_pistas:
             red["bridge_preferido"] = r.bridge_preferido
@@ -136,7 +145,17 @@ def config_perfil_a_dict(config: ConfigPerfil, *, con_pistas: bool) -> dict[str,
 
 
 def configuracion_a_dict(cfg: ConfiguracionVM) -> dict[str, object]:
-    """Configuración de un lote, con storage y bridge reales. Sin vmid/nombre/nodo/etiquetas."""
+    """Configuración de un lote, con storage y bridge reales. Sin vmid/nombre/nodo/etiquetas.
+
+    INV-M2: si algún texto libre parece un token lanza E-M08 (motivo ``credencial``).
+    """
+    exigir_sin_credencial(cfg.tipo_cpu, "tipo_cpu")
+    if cfg.storage_efi is not None:
+        exigir_sin_credencial(cfg.storage_efi, "storage_efi")
+    for d in cfg.discos:
+        exigir_sin_credencial(d.storage, "storage")
+    for r in cfg.redes:
+        exigir_sin_credencial(r.bridge, "bridge")
     return {
         "firmware": str(cfg.firmware),
         "sockets": cfg.sockets,
@@ -218,7 +237,7 @@ def _leer_hardware(
     tipo_cpu = lector.texto(
         obj, "tipo_cpu", ruta, minimo=1 if perfil else 0,
         maximo=MAX_LONG_TIPO_CPU if perfil else _MAX_TEXTO_LOTE, requerido=False,
-        defecto=ConfigPerfil.tipo_cpu,
+        defecto=ConfigPerfil.tipo_cpu, sin_token=True,
     )  # fmt: skip
     memoria = _entero(
         lector, obj, "memoria_mib", ruta, _limites(perfil, MEMORIA_MIN_MIB, _TOPE_CORDURA)
@@ -302,7 +321,14 @@ def _campos_red(
 def _pista(lector: LectorEsquema, obj: dict[str, object], clave: str, ruta: str) -> str | None:
     """Texto opcional (pista o storage/bridge efi): ausente o ``null`` → ``None``."""
     return lector.texto(
-        obj, clave, ruta, minimo=1, maximo=MAX_LONG_TEXTO, nulo=True, requerido=False
+        obj,
+        clave,
+        ruta,
+        minimo=1,
+        maximo=MAX_LONG_TEXTO,
+        nulo=True,
+        requerido=False,
+        sin_token=True,
     )
 
 
@@ -375,7 +401,7 @@ def leer_configuracion(lector: LectorEsquema, valor: object, ruta: str) -> Confi
         if d is None:
             continue
         campos = _campos_disco(lector, d, r, perfil=False)
-        storage = lector.texto(d, "storage", r, minimo=0, maximo=MAX_LONG_TEXTO)
+        storage = lector.texto(d, "storage", r, minimo=0, maximo=MAX_LONG_TEXTO, sin_token=True)
         if campos is not None and storage is not None:
             tamano, bus, formato, discard, ssd, iothread = campos
             discos.append(Disco(storage, tamano, bus, formato, discard, ssd, iothread))
@@ -386,7 +412,7 @@ def leer_configuracion(lector: LectorEsquema, valor: object, ruta: str) -> Confi
         if red is None:
             continue
         campos_r = _campos_red(lector, red, r, perfil=False)
-        bridge = lector.texto(red, "bridge", r, minimo=0, maximo=MAX_LONG_TEXTO)
+        bridge = lector.texto(red, "bridge", r, minimo=0, maximo=MAX_LONG_TEXTO, sin_token=True)
         if campos_r is not None and bridge is not None:
             redes.append(InterfazRed(bridge, campos_r[0], campos_r[1]))
     if len(lector.errores) > n0 or hw is None:

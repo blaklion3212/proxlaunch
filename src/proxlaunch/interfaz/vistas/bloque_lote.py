@@ -83,6 +83,7 @@ class BloqueLote(QGroupBox):
         # Nodos de un lote cargado que el servidor no tiene (se muestran, no se descartan).
         self._nodos_ausentes: list[str] = []
         self._destino_de_archivo = False  # el destino viene de un lote cargado o importado
+        self._en_linea: set[str] = set()  # nodos del inventario en línea (checks habilitables)
 
         capa = QVBoxLayout(self)
         capa.setSpacing(4)
@@ -224,6 +225,16 @@ class BloqueLote(QGroupBox):
         fila.addWidget(self.combo_nodo, 1)
         cc.addLayout(fila)
         cc.addWidget(self._radio_elegidos)
+        # Nota del modo básico cuando el lote cargado usa nodos elegidos (solo lectura).
+        self._nota_elegidos = etiqueta(
+            QCoreApplication.translate(
+                "BloqueLote",
+                "Este lote usa nodos elegidos; cámbialo en modo avanzado.",
+            ),
+            secundario=True,
+        )
+        self._nota_elegidos.hide()
+        cc.addWidget(self._nota_elegidos)
         cc.addWidget(self._nodos_elegidos)
         self.fila_destino = self._fila(
             "destino",
@@ -322,10 +333,22 @@ class BloqueLote(QGroupBox):
         if not (lote and cluster):
             self.fila_algoritmo.setVisible(False)
             self._nodos_elegidos.setVisible(False)
+            self._nota_elegidos.setVisible(False)
         else:
             self.fila_algoritmo.setVisible(self._avanzado and not self._radio_un_nodo.isChecked())
-            self._nodos_elegidos.setVisible(self._avanzado and self._radio_elegidos.isChecked())
-        self._radio_elegidos.setVisible(lote and cluster and self._avanzado)
+            # Con nodos elegidos marcados (lote cargado) se muestran siempre; en básico en
+            # solo lectura y con una nota, porque el destino los respeta (CA-G03.5).
+            elegidos = self._radio_elegidos.isChecked()
+            self._nodos_elegidos.setVisible(elegidos)
+            self._nota_elegidos.setVisible(elegidos and not self._avanzado)
+        self._radio_elegidos.setVisible(
+            lote and cluster and (self._avanzado or self._radio_elegidos.isChecked())
+        )
+        self._radio_elegidos.setEnabled(self._avanzado)
+        for nombre, check in self._checks_nodos.items():
+            check.setEnabled(
+                self._avanzado and (nombre in self._en_linea or nombre in self._nodos_ausentes)
+            )
         self.combo_nodo.setEnabled(self._radio_un_nodo.isChecked())
         self._actualizar_vista_previa()
 
@@ -356,12 +379,13 @@ class BloqueLote(QGroupBox):
                 if item is not None and item.widget() is not None:
                     item.widget().deleteLater()
             self._checks_nodos = {}
+            self._en_linea = {n.nombre for n in inv.topologia.nodos if n.en_linea}
             sin_conexion = QCoreApplication.translate("BloqueLote", "Sin conexión")
             for n in inv.topologia.nodos:
                 texto = n.nombre if n.en_linea else f"{n.nombre} — {sin_conexion}"
                 self.combo_nodo.addItem(texto, n.nombre)
                 check = QCheckBox(texto)
-                check.setEnabled(n.en_linea)
+                check.setEnabled(n.en_linea and self._avanzado)
                 check.setChecked(n.en_linea and (not marcados or n.nombre in marcados))
                 check.toggled.connect(lambda _c: self._al_editar("destino"))
                 self._capa_nodos.addWidget(check)
@@ -377,7 +401,9 @@ class BloqueLote(QGroupBox):
                 pedidos = (
                     [previo]
                     if self._radio_un_nodo.isChecked() and previo
-                    else sorted(marcados) if self._radio_elegidos.isChecked() else []
+                    else sorted(marcados)
+                    if self._radio_elegidos.isChecked()
+                    else []
                 )
                 for nodo in pedidos:
                     if nodo not in existentes and nodo not in self._nodos_ausentes:
@@ -398,10 +424,17 @@ class BloqueLote(QGroupBox):
         self.combo_nodo.addItem(texto, nodo)
         self.combo_nodo.model().item(self.combo_nodo.count() - 1).setEnabled(False)
         check = QCheckBox(texto)
-        check.setEnabled(False)
+        check.setEnabled(self._avanzado)  # en avanzado se puede quitar de la lista
         check.setChecked(marcado)
+        check.toggled.connect(lambda c, n=nodo: self._al_alternar_ausente(n, c))
         self._capa_nodos.addWidget(check)
         self._checks_nodos[nodo] = check
+
+    def _al_alternar_ausente(self, nodo: str, marcado: bool) -> None:
+        """Quitar de la lista un nodo que el servidor no tiene resuelve su desajuste."""
+        if not marcado and nodo in self._nodos_ausentes:
+            self._nodos_ausentes.remove(nodo)
+        self._al_editar("destino")
 
     # --- Carga de una definición (lote guardado, RF-G03) ------------------------------
 
@@ -498,6 +531,38 @@ class BloqueLote(QGroupBox):
         self._aplicar_visibilidad()
         self.cambiado.emit()
 
+    def reiniciar(self) -> None:
+        """Deja el bloque como recién creado: una máquina, sin prefijo y reparto automático.
+
+        Lo usa la ventana cuando reinicia el formulario (el lote cargado o armado a mano no
+        sobrevive a un cambio de servidor o a «Cerrar sesión»).
+        """
+        self._ocupado = True
+        try:
+            self._base_por_filas = None
+            self._destino_de_archivo = False
+            self._nodos_ausentes = []
+            self.cantidad.setText("1")
+            self.prefijo.setText("")
+            self.combo_separador.setCurrentIndex(0)
+            self.inicio.setText("1")
+            self.relleno.setText("2")
+            self.vmid_inicial.setText("")
+            self.chk_etiquetar.setChecked(True)
+            self.combo_algoritmo.setCurrentIndex(0)
+            self._radio_auto.setChecked(True)
+        finally:
+            self._ocupado = False
+        for fila in self._filas.values():
+            fila.tocado = False
+            fila.mostrar_error(None)
+        if self._inv is not None:
+            self.establecer_inventario(self._inv)
+        else:
+            self._aplicar_visibilidad()
+        self.destino_cambiado.emit()
+        self.cambiado.emit()
+
     def salir_de_por_filas(self) -> None:
         """Vuelve al lote homogéneo (cantidad 1) con los demás valores como estaban."""
         if self._base_por_filas is None:
@@ -524,7 +589,7 @@ class BloqueLote(QGroupBox):
         if self._radio_un_nodo.isChecked():
             nodo = str(self.combo_nodo.currentData() or "")
             return Destino(ModoDestino.UN_NODO, (nodo,) if nodo else (), algoritmo)
-        if self._radio_elegidos.isChecked() and self._avanzado:
+        if self._radio_elegidos.isChecked():
             nodos = tuple(n for n, c in self._checks_nodos.items() if c.isChecked())
             return Destino(ModoDestino.NODOS_ELEGIDOS, nodos, algoritmo)
         return Destino(ModoDestino.AUTOMATICO, (), algoritmo)

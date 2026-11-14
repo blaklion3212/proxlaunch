@@ -25,7 +25,7 @@ from PySide6.QtWidgets import (
 )
 
 from proxlaunch.interfaz.ayuda import ayuda
-from proxlaunch.interfaz.textos import texto_resumen_perfil
+from proxlaunch.interfaz.textos import texto_resumen_perfil, tooltip_plano
 from proxlaunch.interfaz.vistas.campos import boton_ayuda, etiqueta, poner_mensaje
 from proxlaunch.nucleo.perfiles_maquina.modelos import OrigenPerfil, PerfilMaquina
 
@@ -183,7 +183,9 @@ class SelectorPerfil(QGroupBox):
             tip = texto_resumen_perfil(p.config)
             if p.descripcion:
                 tip += "\n" + p.descripcion
-            self.combo.setItemData(self.combo.count() - 1, tip, Qt.ItemDataRole.ToolTipRole)
+            self.combo.setItemData(
+                self.combo.count() - 1, tooltip_plano(tip), Qt.ItemDataRole.ToolTipRole
+            )
         self.combo.blockSignals(False)
         self._refrescar()
 

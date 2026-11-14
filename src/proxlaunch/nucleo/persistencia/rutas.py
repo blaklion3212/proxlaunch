@@ -4,19 +4,52 @@ from __future__ import annotations
 
 import contextlib
 import os
+import stat
 from pathlib import Path
 
 import platformdirs
 
+from proxlaunch.nucleo.errores import CodigoError, ErrorProxLaunch
+
 NOMBRE_APP = "ProxLaunch"
 
 
+def _niveles_propios(ruta: Path) -> list[Path]:
+    """Carpetas de la app: desde la que se llama ``NOMBRE_APP`` hacia abajo (o solo la última)."""
+    partes = ruta.parts
+    if NOMBRE_APP in partes:
+        n = partes.index(NOMBRE_APP) + 1
+        return [Path(*partes[:k]) for k in range(n, len(partes) + 1)]
+    return [ruta]
+
+
+def _asegurar_privada(nivel: Path) -> None:
+    """POSIX: crea (0700) o endurece un nivel propio, sin seguir enlaces ni tocar ajenos."""
+    try:
+        nivel.mkdir(exist_ok=True, mode=0o700)
+        info = os.lstat(nivel)
+    except OSError as exc:
+        raise ErrorProxLaunch(CodigoError.ARCHIVO_NO_GUARDABLE, {"motivo": "sin_permiso"}) from exc
+    if stat.S_ISLNK(info.st_mode) or not stat.S_ISDIR(info.st_mode) or info.st_uid != os.geteuid():
+        raise ErrorProxLaunch(CodigoError.ARCHIVO_NO_GUARDABLE, {"motivo": "sin_permiso"})
+    with contextlib.suppress(OSError):
+        os.chmod(nivel, 0o700)
+
+
 def crear_carpeta_privada(ruta: Path) -> None:
-    """Crea la carpeta (y sus padres) y, en POSIX, la deja con permisos 0o700."""
-    ruta.mkdir(parents=True, exist_ok=True, mode=0o700)
-    if os.name == "posix":
-        with contextlib.suppress(OSError):
-            os.chmod(ruta, 0o700)
+    """Crea la carpeta (y sus padres) y, en POSIX, deja con 0o700 cada nivel propio de la app.
+
+    Los niveles propios van desde la carpeta ``NOMBRE_APP`` hacia abajo (si la ruta no la
+    contiene, solo el último). Se rechaza (E-M08, ``sin_permiso``) un nivel que sea enlace
+    simbólico o de otro usuario. Los ancestros ajenos a la app no se modifican.
+    """
+    if os.name != "posix":
+        ruta.mkdir(parents=True, exist_ok=True, mode=0o700)
+        return
+    propios = _niveles_propios(ruta)
+    propios[0].parent.mkdir(parents=True, exist_ok=True)
+    for nivel in propios:
+        _asegurar_privada(nivel)
 
 
 class Rutas:

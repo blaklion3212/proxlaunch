@@ -28,6 +28,7 @@ from proxlaunch.interfaz.textos import (
     texto_estado_con_simbolo,
     texto_estado_fila,
     texto_linea_problema,
+    tooltip_plano,
 )
 from proxlaunch.nucleo.csv_importacion.modelos import (
     EstadoFila,
@@ -345,7 +346,7 @@ class ModeloVistaPreviaCsv(QAbstractTableModel):
         if role == Qt.ItemDataRole.ForegroundRole and severidad is not None:
             return self._color("error" if severidad == Severidad.ERROR else "aviso")
         if role == Qt.ItemDataRole.ToolTipRole and severidad is not None:
-            return "\n".join(self._textos_columna(f, canonica))
+            return tooltip_plano("\n".join(self._textos_columna(f, canonica)))
         if role == Qt.ItemDataRole.TextAlignmentRole and clave in ("fila", "vmid"):
             return int(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
         if role == Qt.ItemDataRole.AccessibleTextRole:
@@ -397,7 +398,7 @@ class ModeloVistaPreviaCsv(QAbstractTableModel):
             return self._color(_TOKEN_ESTADO[estado])
         if role == Qt.ItemDataRole.ToolTipRole:
             lineas = self.lineas_de_problema(fila)
-            return "\n".join(lineas) if lineas else None
+            return tooltip_plano("\n".join(lineas)) if lineas else None
         if role == Qt.ItemDataRole.AccessibleTextRole:
             return QCoreApplication.translate("ModelosTablaCsv", "Fila {n}: {estado}").format(
                 n=f.numero, estado=texto_estado_fila(estado)

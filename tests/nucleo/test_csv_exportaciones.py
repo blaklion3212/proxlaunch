@@ -82,7 +82,7 @@ def test_la_plantilla_usa_punto_y_coma_por_defecto_bom_y_crlf(tmp_path):
     escribir_plantilla(ruta)
     datos = ruta.read_bytes()
     assert datos.startswith(BOM) and datos.count(BOM) == 1
-    assert b"nombre;perfil;cpu" in datos
+    assert b'"nombre";"perfil";"cpu"' in datos
     assert (
         datos.count(b"\r\n") == 3
         and datos.replace(b"\r\n", b"").count(b"\n") == 0

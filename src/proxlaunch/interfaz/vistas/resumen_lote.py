@@ -124,6 +124,9 @@ class ResumenLote(QWidget):
         self._enviado = False
         self._ocupado = False
         self._total_filas_archivo: int | None = None  # filas del CSV (para «N de N+M»)
+        # Plan de un reintento: sus filas no son el lote del formulario, así que no se ofrece
+        # reasignar ni quitar filas (cambiarían el formulario por las filas del reintento).
+        self._es_reintento = False
 
         self._titulo = QLabel()
         fuente = self._titulo.font()
@@ -513,6 +516,10 @@ class ResumenLote(QWidget):
         """Filas que traía el archivo (para decir «N de N+M»); ``None`` si no viene de un CSV."""
         self._total_filas_archivo = total
 
+    def establecer_reintento(self, es_reintento: bool) -> None:
+        """Marca que el plan mostrado es el de un reintento (sin botones de reasignar/quitar)."""
+        self._es_reintento = es_reintento
+
     def _limpiar_asignar(self) -> None:
         while self._capa_asignar.count():
             item = self._capa_asignar.takeAt(0)
@@ -523,7 +530,9 @@ class ResumenLote(QWidget):
         """Filas que no caben (con «Quitar las filas que no caben») y VMID ocupados."""
         self._limpiar_asignar()
         excedentes = plan.filas_excedentes if plan.definicion.es_por_filas else ()
-        self.boton_quitar_excedentes.setVisible(bool(excedentes) and plan.bloqueado)
+        self.boton_quitar_excedentes.setVisible(
+            bool(excedentes) and plan.bloqueado and not self._es_reintento
+        )
         if excedentes:
             etiquetas = ", ".join(self.modelo.etiqueta_fila_de(i) for i in excedentes)
             poner_mensaje(
@@ -539,6 +548,8 @@ class ResumenLote(QWidget):
             ocupadas = sorted(
                 {p.indice for p in plan.problemas if p.regla == "V-03" and p.indice is not None}
             )
+        if self._es_reintento:
+            ocupadas = []  # sin botones; el aviso general de VMID ocupado sigue en los problemas
         for i in ocupadas[:_MAX_AVISOS_VISIBLES]:
             fila = QWidget()
             h = QHBoxLayout(fila)

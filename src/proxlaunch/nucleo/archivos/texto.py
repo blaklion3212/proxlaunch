@@ -10,6 +10,7 @@ import re
 import unicodedata
 
 from proxlaunch.nucleo.archivos.constantes import LONG_NOMBRE_PERFIL, MAX_LONG_TEXTO
+from proxlaunch.nucleo.errores import CodigoError, ErrorProxLaunch
 
 # Caracteres de dirección de texto que pueden engañar a quien lee (V-M04).
 CARACTERES_BIDI = frozenset(
@@ -17,6 +18,19 @@ CARACTERES_BIDI = frozenset(
     | {chr(c) for c in range(0x2066, 0x206A)}  # U+2066..U+2069
     | {"‎", "‏", "؜"}
 )
+
+# Caracteres de formato invisibles (categoría Cf) que no se ven pero engañan: además de la
+# dirección de texto, espacios de ancho cero, unión de palabras y BOM. Constante compartida
+# por el CSV seguro y el saneado de mensajes (S3).
+CARACTERES_FORMATO_INVISIBLES = CARACTERES_BIDI | frozenset(
+    {"\u200b", "\u200c", "\u200d", "\u2060", "\ufeff"}
+)
+
+
+def es_formato_invisible(c: str) -> bool:
+    """Indica si ``c`` es un carácter de formato invisible (lista fija o categoría ``Cf``)."""
+    return c in CARACTERES_FORMATO_INVISIBLES or unicodedata.category(c) == "Cf"
+
 
 # Patrón de API Token (V-18 de M1) buscado dentro de un texto libre, y cabecera PVEAPIToken.
 _RE_TOKEN_EN_TEXTO = re.compile(r"[^@!=\s]+@[^@!=\s]+![A-Za-z0-9._-]+=\S+")
@@ -79,6 +93,17 @@ def contiene_token(texto: str) -> bool:
     if not isinstance(texto, str):
         return False
     return bool(_RE_CABECERA_TOKEN.search(texto) or _RE_TOKEN_EN_TEXTO.search(texto))
+
+
+def exigir_sin_credencial(texto: str, campo: str) -> None:
+    """INV-M2 al serializar: lanza E-M08 (motivo ``credencial``) si el texto parece un token.
+
+    Los ``params`` llevan solo el nombre técnico del campo, nunca el valor.
+    """
+    if contiene_token(texto):
+        raise ErrorProxLaunch(
+            CodigoError.ARCHIVO_NO_GUARDABLE, {"motivo": "credencial", "campo": campo}
+        )
 
 
 def validar_nombre(texto: str, *, maximo: int = LONG_NOMBRE_PERFIL) -> tuple[str, str | None]:

@@ -153,7 +153,12 @@ from proxlaunch.nucleo.lote.reconciliacion import AVISO_CREADA_TRAS_COMPROBAR
 from proxlaunch.nucleo.lote.rollback import ServicioRollback
 from proxlaunch.nucleo.lotes_guardados.formato import lote_a_dict
 from proxlaunch.nucleo.lotes_guardados.modelos import LoteGuardado
-from proxlaunch.nucleo.lotes_guardados.revalidacion import Desajuste, desajustes, sustituir
+from proxlaunch.nucleo.lotes_guardados.revalidacion import (
+    Desajuste,
+    TipoDesajuste,
+    desajustes,
+    sustituir,
+)
 from proxlaunch.nucleo.modelos.inventario import Inventario
 from proxlaunch.nucleo.modelos.tarea import Desenlace, Etapa, ResultadoCreacion
 from proxlaunch.nucleo.modelos.vm import ConfiguracionVM
@@ -358,6 +363,7 @@ class VentanaPrincipal(QMainWindow):
         self._huella_guardada: dict[str, object] | None = None  # None = nada que proteger
         self._hay_problemas = False
         self._cierre_confirmado = False
+        self._guardando_para_cerrar = False  # escritura asíncrona de «Guardar y cerrar» en curso
 
         self._construir()
         self._crear_menus()
@@ -775,6 +781,12 @@ class VentanaPrincipal(QMainWindow):
     def _cerrar_sesion(self) -> None:
         if self._creando or self._lote_en_curso:
             return
+        # Un lote importado o editado no se pierde sin preguntar (RF-G08).
+        self._confirmar_cambios(self._cerrar_sesion_confirmada)
+
+    def _cerrar_sesion_confirmada(self) -> None:
+        if self._creando or self._lote_en_curso:
+            return  # pudo cambiar mientras se guardaba el lote
         sesion = self._sesion
         if sesion is not None:
             try:
@@ -784,7 +796,10 @@ class VentanaPrincipal(QMainWindow):
         self._sesion = None
         self._restaurar_etiquetado()
         self._inv = None
-        self._formulario_listo = False
+        if self._origen_lote is None:
+            # Un lote cargado o importado se conserva: al reconectar no se reinicia el
+            # formulario (igual que al cambiar de servidor).
+            self._formulario_listo = False
         self._perfil_id = None
         self._ultimo_resultado = None
         self.barra.limpiar()
@@ -897,6 +912,8 @@ class VentanaPrincipal(QMainWindow):
             )
         self._mostrar_nodos_fallidos()
         reiniciar = not self._formulario_listo
+        if reiniciar:
+            self._reiniciar_lote()
         self.bloque_lote.establecer_inventario(inv)
         self.formulario.establecer_inventario(inv, reiniciar=reiniciar)
         self._formulario_listo = True
@@ -904,6 +921,21 @@ class VentanaPrincipal(QMainWindow):
             self._fijar_perfil_inicial(inv)
         self._pintar_avisos()
         self._timer_validar.start()
+
+    def _reiniciar_lote(self) -> None:
+        """Deja el lote como recién abierto: sin archivo de origen y con el bloque por defecto.
+
+        Va siempre que se reinicia el formulario, para que un lote armado a mano o cargado de
+        antes no sobreviva (ni se sobrescriba luego con el hardware por defecto).
+        """
+        self._ruta_lote = None
+        self._origen_lote = None
+        self._huella_guardada = None
+        self.bloque_lote.reiniciar()  # cantidad 1, sin prefijo, automático, sin nodos ausentes
+        self._mostrar_modo_filas(False)
+        self.panel_no_encaja.establecer_desajustes(())
+        self.panel_avisos_archivo.mostrar([])
+        self.resumen_lote.establecer_total_filas_archivo(None)
 
     def _mostrar_nodos_fallidos(self) -> None:
         inv = self._inv
@@ -1023,8 +1055,16 @@ class VentanaPrincipal(QMainWindow):
             p.severidad.value == "error" for p in problemas_lote
         )
         self._actualizar_compatibilidad(cfg, en_lote=en_lote)
+        desajuste_nodo = False
         if self._origen_lote is not None:
             self._actualizar_desajustes()
+            # Un nodo elegido que el servidor no tiene bloquea igual que storage y bridge
+            # (CA-G04.3) hasta quitarlo de la lista o pasar a Automático.
+            desajuste_nodo = any(
+                d.tipo == TipoDesajuste.NODO for d in desajustes(self._definicion_actual(), inv)
+            )
+            if desajuste_nodo:
+                self._hay_problemas = True
         self.formulario.aplicar_problemas(problemas)
         motivo = (
             texto_motivo_nodo(self.formulario.motivo_nodo)
@@ -1036,6 +1076,11 @@ class VentanaPrincipal(QMainWindow):
         errores_lote = [p for p in problemas_lote if p.severidad.value == "error"]
         if errores_lote:
             bloqueo = texto_problema_lote(errores_lote[0])
+        elif desajuste_nodo:
+            bloqueo = self.tr(
+                "Este servidor no tiene uno de los nodos del lote. Quítalo de la lista o pasa a "
+                "Automático para continuar."
+            )
         self.resumen.actualizar(
             cfg,
             self.formulario.etiquetas_discos(),
@@ -1434,6 +1479,7 @@ class VentanaPrincipal(QMainWindow):
         if sesion is None or inv is None or self._planificando:
             return
         self._planificando = True
+        self.resumen_lote.establecer_reintento(self._reintento is not None)
         self.resumen_lote.mostrar_planificando()
         self._pila_derecha.setCurrentIndex(1)
         vf = self._version_forzada(sesion)
@@ -2485,7 +2531,8 @@ class VentanaPrincipal(QMainWindow):
         cfg = self.formulario.configuracion()
         self._cfg_ultima_aplicada = cfg
         # Formulario pristino: base de «cambios sin guardar» (RF-G08, §6.8).
-        self._huella_guardada = self._huella_de(self._definicion_actual())
+        if self._origen_lote is None:
+            self._huella_guardada = self._huella_de(self._definicion_actual())
         try:
             predeterminado = self._almacen_perfiles.obtener(ID_PREDETERMINADO)
         except ErrorProxLaunch:
@@ -2636,6 +2683,7 @@ class VentanaPrincipal(QMainWindow):
             self._lanzador,
             app_version=self._deps.version_app,
             tema=self._deps.gestor_tema.tema_actual,
+            al_resultado_tardio=self._mostrar_resultado_tardio,
             parent=self,
         )
         dialogo.perfiles_cambiados.connect(self._al_cambiar_lista_perfiles)
@@ -2663,7 +2711,7 @@ class VentanaPrincipal(QMainWindow):
         """Huella de lo que se guardaría (``None`` si no se puede serializar)."""
         try:
             return lote_a_dict(LoteGuardado("", definicion))
-        except (ValueError, TypeError, KeyError):
+        except (ValueError, TypeError, KeyError, ErrorProxLaunch):
             return None
 
     def _hay_cambios_sin_guardar(self) -> bool:
@@ -2736,7 +2784,11 @@ class VentanaPrincipal(QMainWindow):
         return sesion.version.texto if sesion is not None else None
 
     def _guardar_lote(
-        self, *, como: bool = False, despues: Callable[[], None] | None = None
+        self,
+        *,
+        como: bool = False,
+        despues: Callable[[], None] | None = None,
+        para_cerrar: bool = False,
     ) -> None:
         """«Guardar lote…»: errores de reglas no impiden guardar un borrador (CA-G02.1)."""
         if not self._formulario_listo:
@@ -2774,19 +2826,36 @@ class VentanaPrincipal(QMainWindow):
         if ruta is None:
             return
         lote = LoteGuardado(nombre, definicion, self._version_proxmox_texto())
+        if para_cerrar:
+            # Mientras se escribe, otro intento de cerrar se ignora y la ventana no se toca.
+            self._guardando_para_cerrar = True
+            self.setEnabled(False)
         self._lanzador.lanzar(
             guardar_lote_guardado,
             ruta,
             lote,
             self._deps.version_app,
             al_terminar=lambda r: self._lote_guardado(r, lote, despues),
-            al_fallar=self._mostrar_error_archivo,
+            al_fallar=lambda e: self._fallo_guardar_lote(e),
         )
+
+    def _liberar_cierre_en_guardado(self) -> None:
+        if self._guardando_para_cerrar:
+            self._guardando_para_cerrar = False
+            self.setEnabled(True)
+
+    def _fallo_guardar_lote(self, error: ErrorProxLaunch) -> None:
+        self._liberar_cierre_en_guardado()
+        self._mostrar_error_archivo(error)
 
     def _lote_guardado(
         self, ruta: Path, lote: LoteGuardado, despues: Callable[[], None] | None
     ) -> None:
+        self._liberar_cierre_en_guardado()
         self._ruta_lote = ruta
+        if self._origen_lote is None:
+            # Un lote guardado cuenta como lote de archivo: cambiar de servidor no lo reinicia.
+            self._origen_lote = _OrigenLote("guardado", lote.nombre)
         self._huella_guardada = self._huella_de(lote.definicion)
         self._errores_sesion = []
         self._pintar_avisos()
@@ -2924,15 +2993,21 @@ class VentanaPrincipal(QMainWindow):
     def _salir_de_por_filas(self) -> None:
         if not self.bloque_lote.es_por_filas or self._lote_en_curso:
             return
+        self._confirmar_cambios(self._salir_de_por_filas_confirmado)
+
+    def _salir_de_por_filas_confirmado(self) -> None:
+        if not self.bloque_lote.es_por_filas or self._lote_en_curso:
+            return  # pudo cambiar mientras se guardaba el lote
         self.bloque_lote.salir_de_por_filas()
         self._mostrar_modo_filas(False)
         self._origen_lote = None
         self._ruta_lote = None
-        self._huella_guardada = None
         self.panel_no_encaja.establecer_desajustes(())
         self.panel_avisos_archivo.mostrar([])
         self.resumen_lote.establecer_total_filas_archivo(None)
         self._al_editar_plantilla()
+        # Base de «cambios sin guardar»: el formulario tal como queda al salir.
+        self._huella_guardada = self._huella_de(self._definicion_actual())
         self._timer_validar.start()
 
     def _etiqueta_fila(self, definicion: DefinicionLote, indice: int | None) -> str | None:
@@ -2969,7 +3044,7 @@ class VentanaPrincipal(QMainWindow):
     def _actualizar_filas(self, definicion: DefinicionLote, *, replanificar: bool) -> None:
         """Cambia las filas del lote (quitar o reasignar VMID) y vuelve a mostrar lo que toque."""
         if not definicion.filas:
-            self._salir_de_por_filas()
+            self._salir_de_por_filas_confirmado()  # acción explícita: sin segunda pregunta
             return
         self.bloque_lote.actualizar_filas(definicion)
         origen = self._origen_lote
@@ -3001,6 +3076,8 @@ class VentanaPrincipal(QMainWindow):
     def _quitar_filas_que_no_caben(self, indices: object) -> None:
         """«Quitar las filas que no caben» (CA-C08.6): replanifica con las que sí caben."""
         plan = self.resumen_lote.plan
+        if self._reintento is not None:
+            return  # el plan es el de un reintento: no es el lote del formulario
         if plan is None or not isinstance(indices, tuple) or self._lote_lleno_o_ocupado():
             return
         try:
@@ -3012,6 +3089,8 @@ class VentanaPrincipal(QMainWindow):
     def _asignar_automaticamente(self, indices: object) -> None:
         """VMID explícito ocupado: «Asignar automáticamente» (acción explícita, CA-C09.3)."""
         plan = self.resumen_lote.plan
+        if self._reintento is not None:
+            return  # el plan es el de un reintento: no es el lote del formulario
         if plan is None or not isinstance(indices, tuple) or self._lote_lleno_o_ocupado():
             return
         definicion = plan.definicion
@@ -3038,7 +3117,15 @@ class VentanaPrincipal(QMainWindow):
             avanzado=self.avanzado,
             alias_extra=alias_columnas_csv(),
             tema=self._deps.gestor_tema.tema_actual,
+            al_resultado_tardio=self._mostrar_resultado_tardio,
         )
+
+    def _mostrar_resultado_tardio(self, texto: str, es_error: bool) -> None:
+        """Resultado de una escritura que terminó cuando su diálogo ya estaba cerrado."""
+        if es_error:
+            self._errores_sesion = [texto]
+            self._pintar_avisos()
+        self.statusBar().showMessage(texto.splitlines()[0] if texto else "")
 
     def _importar_csv(self) -> None:
         if self._lote_en_curso or self._planificando or self._iniciando_lote:
@@ -3155,6 +3242,15 @@ class VentanaPrincipal(QMainWindow):
     # --- Cierre -----------------------------------------------------------------------
 
     def closeEvent(self, ev: QCloseEvent) -> None:
+        """Cierra la ventana; si el cierre acaba ignorado, la confirmación previa se descarta."""
+        if self._guardando_para_cerrar:
+            ev.ignore()  # ya hay un cierre esperando a que termine el guardado
+            return
+        self._evaluar_cierre(ev)
+        if not ev.isAccepted():
+            self._cierre_confirmado = False
+
+    def _evaluar_cierre(self, ev: QCloseEvent) -> None:
         """CA-20.8 y RF-L23: con una tarea o un lote en curso se pide confirmación.
 
         Con un lote cargado o importado y cambios sin guardar se pregunta antes (RF-G08); si hay
@@ -3172,7 +3268,7 @@ class VentanaPrincipal(QMainWindow):
                 return
             if respuesta == "guardar":
                 ev.ignore()
-                self._guardar_lote(despues=self._cerrar_confirmado)
+                self._guardar_lote(despues=self._cerrar_confirmado, para_cerrar=True)
                 return
         lote = self._lote
         if lote is not None and not lote.modo_uno and self._lote_en_curso:

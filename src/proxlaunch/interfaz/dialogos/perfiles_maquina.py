@@ -22,6 +22,7 @@ from PySide6.QtCore import (
     Qt,
     Signal,
 )
+from PySide6.QtGui import QShowEvent
 from PySide6.QtWidgets import (
     QCheckBox,
     QDialog,
@@ -206,6 +207,7 @@ class DialogoPerfilesMaquina(QDialog):
         *,
         app_version: str = __version__,
         tema: str = "oscuro",
+        al_resultado_tardio: Callable[[str, bool], None] | None = None,
         parent: QWidget | None = None,
     ) -> None:
         super().__init__(parent)
@@ -218,6 +220,10 @@ class DialogoPerfilesMaquina(QDialog):
         self._tema = tema
         self._ocupado = False
         self._generacion = 0
+        # Resultado de una escritura que termina con el diálogo ya cerrado: (texto, es_error)
+        # se entrega a quien abrió el diálogo y no se toca ningún widget.
+        self._al_resultado_tardio = al_resultado_tardio
+        self._cerrado = False
         self._construir()
         self.recargar()
 
@@ -519,14 +525,26 @@ class DialogoPerfilesMaquina(QDialog):
         )
 
     def _al_exportar(self, n: int) -> None:
-        self._poner_ocupado(False)
-        self.estado.setText(
+        texto = (
             self.tr("Se exportó 1 perfil.")
             if n == 1
             else self.tr("Se exportaron %n perfiles.", None, n)
         )
+        if self._cerrado:
+            self._entregar_tardio(texto, False)
+            return
+        self._poner_ocupado(False)
+        self.estado.setText(texto)
+
+    def _entregar_tardio(self, texto: str, es_error: bool) -> None:
+        """El diálogo ya se cerró: el resultado va a la ventana principal, no a los widgets."""
+        if self._al_resultado_tardio is not None:
+            self._al_resultado_tardio(texto, es_error)
 
     def _al_fallar_archivo(self, error: ErrorProxLaunch) -> None:
+        if self._cerrado:
+            self._entregar_tardio(texto_fallo(error), True)
+            return
         self._poner_ocupado(False)
         self.estado.setText("")
         self._fallo(error)
@@ -586,7 +604,12 @@ class DialogoPerfilesMaquina(QDialog):
         self.recargar(creados[-1].id if creados else None)
         self.perfiles_cambiados.emit(afectados)
 
+    def showEvent(self, evento: QShowEvent) -> None:
+        self._cerrado = False
+        super().showEvent(evento)
+
     def done(self, resultado: int) -> None:
-        """Al cerrar se descartan las lecturas en curso."""
+        """Al cerrar se descartan las lecturas en curso; las escrituras avisan a la ventana."""
         self._generacion += 1
+        self._cerrado = True
         super().done(resultado)

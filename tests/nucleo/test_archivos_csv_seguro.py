@@ -126,7 +126,7 @@ def test_un_tipo_no_admitido_en_el_encabezado_es_type_error():
 def test_utf8_con_bom_crlf_y_separador_por_defecto_punto_y_coma():
     datos = texto_csv(["nombre", "cpu"], [["web", 2]])
     assert datos.startswith(BOM)
-    assert datos[len(BOM) :] == b"nombre;cpu\r\nweb;2\r\n"
+    assert datos[len(BOM) :] == b'"nombre";"cpu"\r\n"web";"2"\r\n'
 
 
 def test_el_bom_aparece_una_sola_vez():
@@ -157,9 +157,9 @@ def test_entrecomillado_rfc_4180_ida_y_vuelta_con_csv(valor):
         assert _releer(texto_csv(["c"], [[valor]], separador=sep), sep)[1] == [esperado]
 
 
-def test_quote_minimal_no_entrecomilla_lo_innecesario():
-    assert texto_csv(["a"], [["simple"]])[len(BOM) :] == b"a\r\nsimple\r\n"
-    assert b'"' not in texto_csv(["a", "b"], [["x", "y"]])
+def test_quote_all_entrecomilla_todas_las_celdas_aunque_sean_simples():
+    assert texto_csv(["a"], [["simple"]])[len(BOM) :] == b'"a"\r\n"simple"\r\n'
+    assert texto_csv(["a", "b"], [["x", "y"]])[len(BOM) :] == b'"a";"b"\r\n"x";"y"\r\n'
 
 
 def test_el_encabezado_tambien_se_sanea():
@@ -168,7 +168,7 @@ def test_el_encabezado_tambien_se_sanea():
 
 
 def test_solo_encabezado_sin_filas():
-    assert texto_csv(["a", "b"], [])[len(BOM) :] == b"a;b\r\n"
+    assert texto_csv(["a", "b"], [])[len(BOM) :] == b'"a";"b"\r\n'
 
 
 # --- CA-C11.9: 10 000 valores aleatorios -----------------------------------------------------

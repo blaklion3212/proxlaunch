@@ -51,6 +51,7 @@ def _recortar_cola(celdas: list[str]) -> tuple[str, ...]:
         fin -= 1
     return tuple(celdas[:fin])
 
+
 _LINEA = re.compile(r"[^\r\n]*(?:\r\n|\r|\n)|[^\r\n]+")
 
 

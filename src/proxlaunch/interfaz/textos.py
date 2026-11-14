@@ -7,6 +7,7 @@ genérico de CA-21.2 (los detalles técnicos los muestra la vista aparte).
 
 from __future__ import annotations
 
+import html
 from collections.abc import Callable, Mapping
 
 from PySide6.QtCore import QCoreApplication
@@ -80,6 +81,15 @@ class _Seguro(dict[str, str]):
     def __missing__(self, clave: str) -> str:
         # Un marcador sin valor nunca debe verse: se usa un valor neutro traducible.
         return _valor_neutro(clave)
+
+
+def tooltip_plano(texto: str) -> str:
+    """Texto de un tooltip con datos de terceros: se escapa para que Qt no lo lea como HTML.
+
+    El prefijo ``<qt>`` fuerza texto enriquecido (con saltos ``<br>``) y ``html.escape``
+    neutraliza cualquier etiqueta del archivo o del servidor.
+    """
+    return "<qt>" + html.escape(texto).replace("\n", "<br>") + "</qt>"
 
 
 def _fmt(texto: str, params: Mapping[str, str] | None = None, **extra: str) -> str:
@@ -1385,8 +1395,53 @@ def _texto_e_m06(p: Mapping[str, str]) -> str:
     )
 
 
+def _campo_legible_credencial(campo: str) -> str:
+    """Nombre en lenguaje llano del campo de texto libre; el técnico si no hay mapeo."""
+    if campo == "tipo_cpu":
+        return QCoreApplication.translate("Textos", "tipo de CPU")
+    if campo == "storage_efi":
+        return QCoreApplication.translate("Textos", "almacenamiento del disco EFI")
+    if campo == "storage":
+        return QCoreApplication.translate("Textos", "almacenamiento")
+    if campo == "bridge":
+        return QCoreApplication.translate("Textos", "puente de red")
+    if campo == "nombre_fila":
+        return QCoreApplication.translate("Textos", "nombre de la máquina")
+    if campo == "nodo":
+        return QCoreApplication.translate("Textos", "nodo")
+    if campo == "prefijo":
+        return QCoreApplication.translate("Textos", "prefijo")
+    if campo == "separador":
+        return QCoreApplication.translate("Textos", "separador")
+    if campo == "nodos":
+        return QCoreApplication.translate("Textos", "nodos")
+    if campo == "nombre_maquina":
+        return QCoreApplication.translate("Textos", "nombre de la máquina")
+    if campo == "version_proxmox":
+        return QCoreApplication.translate("Textos", "versión de Proxmox")
+    if campo == "descripcion":
+        return QCoreApplication.translate("Textos", "descripción")
+    if campo == "storage_preferido":
+        return QCoreApplication.translate("Textos", "almacenamiento preferido")
+    if campo == "bridge_preferido":
+        return QCoreApplication.translate("Textos", "puente de red preferido")
+    if campo == "storage_efi_preferido":
+        return QCoreApplication.translate("Textos", "almacenamiento EFI preferido")
+    if campo == "nombre":
+        return QCoreApplication.translate("Textos", "nombre")
+    return campo
+
+
 def _texto_e_m08(p: Mapping[str, str]) -> str:
     motivo = p.get("motivo", "")
+    if motivo == "credencial":
+        # Nunca se muestra el valor, solo el campo que lo contiene.
+        campo = _campo_legible_credencial(p.get("campo", ""))
+        return QCoreApplication.translate(
+            "Textos",
+            "No se guardó: el campo «{campo}» parece contener una credencial "
+            "(usuario@realm!token). Bórrala y vuelve a guardar.",
+        ).format(campo=campo)
     if motivo == "sin_espacio":
         causa = QCoreApplication.translate("Textos", "no hay espacio en el disco")
     elif motivo == "sin_permiso":
