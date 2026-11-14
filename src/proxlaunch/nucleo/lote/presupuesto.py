@@ -15,6 +15,7 @@ from proxlaunch.nucleo.lote.modelos import (
     ClavePresupuesto,
     DefinicionLote,
     ElementoPlan,
+    FilaLote,
     PoliticaThin,
     Problema,
     Severidad,
@@ -123,11 +124,62 @@ def uso_por_clave(
     return _acumular((e.cfg for e in elementos), inv)
 
 
+def uso_de_filas(
+    filas: Sequence[FilaLote], nodos: Sequence[str], inv: Inventario
+) -> dict[ClavePresupuesto, UsoStorage]:
+    """Igual que ``uso_por_clave`` a partir de las filas y el nodo de cada una ("" se omite).
+
+    Cada fila aporta SUS discos (CA-C08.5); ``len(nodos)`` debe ser ``len(filas)``.
+    """
+    return _acumular((replace(f.cfg, nodo=n) for f, n in zip(filas, nodos, strict=True) if n), inv)
+
+
 def uso_de_nodos(
     plantilla: ConfiguracionVM, nodos: Sequence[str], inv: Inventario
 ) -> dict[ClavePresupuesto, UsoStorage]:
-    """Igual que ``uso_por_clave`` a partir de la plantilla y el nodo de cada MV ("" se omite)."""
-    return _acumular((replace(plantilla, nodo=n) for n in nodos if n), inv)
+    """Igual que ``uso_de_filas`` con la misma plantilla en todas las MVs (lote homogéneo)."""
+    return uso_de_filas([FilaLote("", plantilla)] * len(nodos), nodos, inv)
+
+
+def filas_que_exceden(
+    elementos: Sequence[ElementoPlan], inv: Inventario, politica: PoliticaThin
+) -> tuple[int, ...]:
+    """Índices (``ElementoPlan.indice``) de los elementos que no caben (CA-C08.6).
+
+    Recorre el plan en orden con totales acumulados por clave (variante voraz): un elemento
+    excede si en alguna de sus claves el acumulado, contándolo a él, supera ``libre`` (storage
+    no thin, o thin con ``BLOQUEAR``) o ``FACTOR_THIN_MAX × libre`` (thin con tope). Con
+    ``ADVERTIR`` un storage thin nunca hace exceder (igual que ``evaluar_espacio``). Los
+    elementos que exceden NO se suman al acumulado: quitándolos, el resto cabe.
+    """
+    acumulado: dict[ClavePresupuesto, int] = {}
+    exceden: list[int] = []
+    for e in elementos:
+        pedido = pedido_vm(e.cfg, inv)
+        excede = False
+        for clave, bytes_ in pedido.items():
+            dato = libre_de_clave(inv, clave)
+            if dato is None:
+                continue
+            libre, thin = dato
+            if thin:
+                if politica == PoliticaThin.ADVERTIR:
+                    continue
+                limite = (
+                    FACTOR_THIN_MAX * libre
+                    if politica == PoliticaThin.CONFIRMAR_CON_TOPE
+                    else libre
+                )
+            else:
+                limite = libre
+            if acumulado.get(clave, 0) + bytes_ > limite:
+                excede = True
+        if excede:
+            exceden.append(e.indice)
+        else:
+            for clave, bytes_ in pedido.items():
+                acumulado[clave] = acumulado.get(clave, 0) + bytes_
+    return tuple(exceden)
 
 
 def _gib_texto(valor: float) -> str:

@@ -23,6 +23,8 @@ from proxlaunch.nucleo.lote.constantes import (
     VMID_MAXIMO,
     VMID_MINIMO,
 )
+from proxlaunch.nucleo.lote.filas import filas_efectivas, validar_filas
+from proxlaunch.nucleo.lote.filas import usa_nombre_de_plantilla as _usa_nombre_de_plantilla
 from proxlaunch.nucleo.lote.modelos import (
     ClavePresupuesto,
     DefinicionLote,
@@ -33,8 +35,8 @@ from proxlaunch.nucleo.lote.modelos import (
     Severidad,
     UsoStorage,
 )
-from proxlaunch.nucleo.lote.nombres import generar_nombres, validar_patron
-from proxlaunch.nucleo.lote.reparto import repartir
+from proxlaunch.nucleo.lote.nombres import validar_patron
+from proxlaunch.nucleo.lote.reparto import repartir_filas
 from proxlaunch.nucleo.modelos.inventario import Inventario, VMRemota
 from proxlaunch.nucleo.reloj import Reloj
 from proxlaunch.nucleo.servicios.conexion import Sesion, permisos_faltantes_detalle
@@ -59,9 +61,10 @@ def _id_aleatorio() -> str:
 def usa_nombre_de_plantilla(definicion: DefinicionLote) -> bool:
     """N=1 con prefijo vacío: el nombre es el de la plantilla, igual que en M1 (CA-L04.1).
 
-    Ese nombre se valida con V-01 de M1, no con V-L02/V-L04.
+    Ese nombre se valida con V-01 de M1, no con V-L02/V-L04. Siempre falso en un lote por
+    filas: cada fila trae su nombre.
     """
-    return definicion.cantidad == 1 and definicion.patron.prefijo == ""
+    return _usa_nombre_de_plantilla(definicion)
 
 
 # --- Validación de la definición (pura, sin E/S) -----------------------------------
@@ -73,10 +76,18 @@ def validar_definicion(
     """V-L01, V-L02..V-L04, V-L07, V-L13 y V-L15: lo que se decide sin consultar al servidor."""
     p: list[Problema] = []
     n = definicion.cantidad
-    if not _es_entero(n) or not 1 <= n <= MAX_LOTE:
-        p.append(Problema("V-L01", Severidad.ERROR, "cantidad", {"max": str(MAX_LOTE)}))
-    if not usa_nombre_de_plantilla(definicion):
-        p.extend(validar_patron(definicion.patron, n if _es_entero(n) else 0))
+    por_filas = definicion.es_por_filas
+    if por_filas:
+        # V-L01, V-M07, V-M10, V-02 y V-L13; el patrón se ignora (D-22).
+        p.extend(validar_filas(definicion))
+        n = len(definicion.filas)
+        automaticas = sum(1 for f in definicion.filas if f.vmid is None)
+    else:
+        if not _es_entero(n) or not 1 <= n <= MAX_LOTE:
+            p.append(Problema("V-L01", Severidad.ERROR, "cantidad", {"max": str(MAX_LOTE)}))
+        if not usa_nombre_de_plantilla(definicion):
+            p.extend(validar_patron(definicion.patron, n if _es_entero(n) else 0))
+        automaticas = n if _es_entero(n) else 0
 
     inicio = definicion.vmid_inicial
     if inicio is not None and (not _es_entero(inicio) or not VMID_MINIMO <= inicio <= VMID_MAXIMO):
@@ -88,21 +99,23 @@ def validar_definicion(
                 {"minimo": str(VMID_MINIMO), "maximo": str(VMID_MAXIMO)},
             )
         )
-    elif _es_entero(n) and n >= 1:
+    elif _es_entero(n) and automaticas >= 1:
         primero = inicio if inicio is not None else inv.proximo_vmid
-        if _es_entero(primero) and primero + n - 1 > VMID_MAXIMO:
+        if _es_entero(primero) and primero + automaticas - 1 > VMID_MAXIMO:
             p.append(
                 Problema(
                     "V-L07",
                     Severidad.ERROR,
                     "vmid_inicial",
-                    {"ultimo": str(primero + n - 1), "maximo": str(VMID_MAXIMO)},
+                    {"ultimo": str(primero + automaticas - 1), "maximo": str(VMID_MAXIMO)},
                 )
             )
 
     destino = definicion.destino
     en_linea = {nd.nombre for nd in inv.topologia.nodos if nd.en_linea}
-    if destino.modo == ModoDestino.UN_NODO:
+    if por_filas:
+        pass  # V-L13 (destino siempre Automático) ya lo evaluó validar_filas
+    elif destino.modo == ModoDestino.UN_NODO:
         if len(destino.nodos) != 1 or destino.nodos[0] not in en_linea:
             p.append(Problema("V-L13", Severidad.ERROR, "destino", {"modo": "un_nodo"}))
     elif destino.modo == ModoDestino.NODOS_ELEGIDOS and not any(
@@ -130,12 +143,13 @@ def validar_definicion(
 # --- Construcción del plan (pura) ---------------------------------------------------
 
 
-def _etiquetas_del_lote(definicion: DefinicionLote, id_lote: str) -> tuple[str, ...]:
-    base = tuple(definicion.plantilla.etiquetas)
-    if not definicion.etiquetar:
-        return base
-    propias = (ETIQUETA_APP, f"{PREFIJO_ETIQUETA_LOTE}{id_lote}")
-    return base + tuple(e for e in propias if e not in base)
+def _etiquetas(base: Sequence[str], etiquetar: bool, id_lote: str) -> tuple[str, ...]:
+    """Etiquetas de una MV: las propias de su configuración más las del lote si se etiqueta."""
+    propias_cfg = tuple(base)
+    if not etiquetar:
+        return propias_cfg
+    del_lote = (ETIQUETA_APP, f"{PREFIJO_ETIQUETA_LOTE}{id_lote}")
+    return propias_cfg + tuple(e for e in del_lote if e not in propias_cfg)
 
 
 def _agrupar_m1(problemas: Sequence[Problema]) -> list[Problema]:
@@ -246,6 +260,7 @@ def construir_plan(
         reparto: dict[str, tuple[int, str]] | None = None,
         uso: dict[ClavePresupuesto, UsoStorage] | None = None,
         capacidad: int | None = None,
+        excedentes: Sequence[int] = (),
     ) -> Plan:
         return Plan(
             id_lote=id_lote,
@@ -258,6 +273,7 @@ def construir_plan(
             capacidad_maxima=capacidad,
             generado_en=ahora,
             version_validacion=version_validacion,
+            filas_excedentes=tuple(excedentes),
         )
 
     problemas = validar_definicion(definicion, inv, version_validacion)
@@ -265,49 +281,65 @@ def construir_plan(
     if any(p.severidad == Severidad.ERROR and p.regla != "V-L15" for p in problemas):
         return plan([], problemas)
 
-    n = definicion.cantidad
+    filas = filas_efectivas(definicion)  # camino único: homogéneo y por filas (D-22)
+    por_filas = definicion.es_por_filas
+    n = len(filas)
     if len(vmids) != n:
         raise ValueError(f"se esperaban {n} VMIDs y llegaron {len(vmids)}")
-    nombres = (
-        [definicion.plantilla.nombre]
-        if usa_nombre_de_plantilla(definicion)
-        else generar_nombres(definicion.patron, n)
-    )
-    nodos, reparto, p_reparto = repartir(definicion, inv, n)
+    if len(set(vmids)) != len(vmids):  # defensa de INV-L1: nunca dos MVs con el mismo VMID
+        raise ValueError("los VMIDs del plan deben ser únicos")
+    nodos, reparto, p_reparto = repartir_filas(filas, definicion.destino, inv, por_filas=por_filas)
     problemas.extend(p_reparto)
 
     # Sin sitio para alguna MV o sin nodos (E-L01): plan bloqueado y sin elementos. Si fue por
-    # espacio se calcula cuántas caben (CA-L07.7).
+    # espacio se calcula cuántas caben (CA-L07.7); por filas, qué filas no caben (CA-C08.6).
     if any(not nodo for nodo in nodos):
         por_espacio = any(
             p.regla == "E-L01" and p.params.get("motivo") == "sin_espacio" for p in p_reparto
+        )
+        sin_sitio = tuple(
+            p.indice
+            for p in p_reparto
+            if por_filas
+            and p.regla == "E-L01"
+            and p.params.get("motivo") == "sin_espacio"
+            and p.indice is not None
         )
         return plan(
             [],
             problemas,
             dict(reparto),
-            presupuesto.uso_de_nodos(definicion.plantilla, nodos, inv),
-            presupuesto.capacidad_maxima(definicion, inv) if por_espacio else None,
+            presupuesto.uso_de_filas(filas, nodos, inv),
+            presupuesto.capacidad_maxima(definicion, inv)
+            if por_espacio and not por_filas
+            else None,
+            sin_sitio,
         )
 
-    etiquetas = _etiquetas_del_lote(definicion, id_lote)
     elementos: list[ElementoPlan] = []
-    for i in range(n):
-        cfg = copy.deepcopy(definicion.plantilla)
-        cfg.vmid, cfg.nombre, cfg.nodo, cfg.etiquetas = vmids[i], nombres[i], nodos[i], etiquetas
-        elementos.append(ElementoPlan(i, nombres[i], vmids[i], nodos[i], cfg))
+    for i, fila in enumerate(filas):
+        cfg = copy.deepcopy(fila.cfg)
+        cfg.vmid, cfg.nombre, cfg.nodo = vmids[i], fila.nombre, nodos[i]
+        cfg.etiquetas = _etiquetas(fila.cfg.etiquetas, definicion.etiquetar, id_lote)
+        elementos.append(ElementoPlan(i, fila.nombre, vmids[i], nodos[i], cfg))
 
+    nombres = [fila.nombre for fila in filas]
     if len(set(nombres)) != len(nombres):  # V-L05: imposible por construcción
         problemas.append(Problema("V-L05", Severidad.ERROR, "patron"))
 
     uso = presupuesto.uso_por_clave(elementos, inv)
     p_espacio = presupuesto.evaluar_espacio(uso, definicion.politica_thin)
     capacidad: int | None = None
+    excedentes: tuple[int, ...] = ()
     if any(p.severidad == Severidad.ERROR for p in p_espacio):
-        capacidad = presupuesto.capacidad_maxima(definicion, inv)
-        p_espacio = [
-            replace(p, params={**p.params, "n": str(n), "max": str(capacidad)}) for p in p_espacio
-        ]
+        if por_filas:  # «Reducir a N» no aplica: se indica qué filas no caben
+            excedentes = presupuesto.filas_que_exceden(elementos, inv, definicion.politica_thin)
+        else:
+            capacidad = presupuesto.capacidad_maxima(definicion, inv)
+            p_espacio = [
+                replace(p, params={**p.params, "n": str(n), "max": str(capacidad)})
+                for p in p_espacio
+            ]
     problemas.extend(p_espacio)
 
     if vms_visibles is not None:
@@ -324,9 +356,10 @@ def construir_plan(
                 continue
             sev = Severidad.ERROR if pm.severidad == SeveridadM1.ERROR else Severidad.AVISO
             de_m1.append(Problema(pm.codigo, sev, pm.campo, dict(pm.params), e.indice))
-    problemas.extend(_agrupar_m1(de_m1))
+    # Por filas cada problema conserva su fila (``indice``): no se agrupan.
+    problemas.extend(de_m1 if por_filas else _agrupar_m1(de_m1))
 
-    return plan(elementos, problemas, dict(reparto), uso, capacidad)
+    return plan(elementos, problemas, dict(reparto), uso, capacidad, excedentes)
 
 
 # --- Planificador (con E/S) ----------------------------------------------------------
@@ -346,14 +379,17 @@ class Planificador:
         self._reloj = reloj
         self._generador_id = generador_id or _id_aleatorio
 
-    def reservar_vmids(self, inicio: int, cantidad: int) -> tuple[list[int], list[int]]:
+    def reservar_vmids(
+        self, inicio: int, cantidad: int, *, excluir: frozenset[int] = frozenset()
+    ) -> tuple[list[int], list[int]]:
         """Confirma ``cantidad`` VMIDs libres desde ``inicio`` con ``GET /cluster/nextid?vmid=``.
 
         Devuelve ``(vmids, saltados)`` en orden: los saltados son los ocupados que quedaron
         por debajo del último VMID asignado. Consulta en tandas de hasta
         ``MAX_CONSULTAS_SIMULTANEAS`` y nunca más candidatos de los que aún faltan, así que
         hace como máximo ``cantidad + saltos`` consultas (CA-L03.7). La ventana es de
-        ``MAX_SALTO_VMID`` números.
+        ``MAX_SALTO_VMID`` números. Los VMIDs de ``excluir`` (los fijos de un lote por
+        filas) no se consultan ni cuentan como saltados.
 
         Raises:
             ErrorProxLaunch: ``LOTE_VMIDS_INSUFICIENTES`` (E-L02) si la ventana no alcanza;
@@ -363,7 +399,7 @@ class Planificador:
         if cantidad < 1:
             return [], []
         ultimo = min(inicio + MAX_SALTO_VMID, VMID_MAXIMO + 1)
-        candidatos = iter(range(inicio, ultimo))
+        candidatos = (v for v in range(inicio, ultimo) if v not in excluir)
         libres: list[int] = []
         saltados: list[int] = []
         pendientes: dict[Future[bool], int] = {}
@@ -400,6 +436,49 @@ class Planificador:
             )
         return sorted(libres), sorted(saltados)
 
+    def comprobar_vmids(self, vmids: Sequence[int]) -> dict[int, bool]:
+        """Comprueba con ``GET /cluster/nextid?vmid=`` cada VMID dado (solo lecturas).
+
+        Devuelve ``{vmid: libre}`` (``True`` = libre en todo el clúster). Las consultas van
+        en paralelo (``MAX_CONSULTAS_SIMULTANEAS``); un error de red aborta sin resultado
+        parcial. No reasigna nada: decidir qué hacer con un VMID ocupado es del usuario.
+        """
+        unicos = sorted(set(vmids))
+        if not unicos:
+            return {}
+        cliente = self._sesion.cliente
+        with ThreadPoolExecutor(max_workers=MAX_CONSULTAS_SIMULTANEAS) as pool:
+            futuros = {v: pool.submit(cliente.vmid_libre, v) for v in unicos}
+            try:
+                return {v: futuros[v].result() for v in unicos}
+            except BaseException:
+                for futuro in futuros.values():
+                    futuro.cancel()
+                raise
+
+    def _vmids_por_filas(
+        self, definicion: DefinicionLote, inv: Inventario
+    ) -> tuple[list[int], list[int], list[Problema]]:
+        """VMIDs de un lote por filas: los fijos se comprueban aparte y no se reasignan
+        (V-03 por fila si están ocupados); los demás se reservan excluyendo los fijos."""
+        filas = definicion.filas
+        fijos = [f.vmid for f in filas if f.vmid is not None]
+        libres = self.comprobar_vmids(fijos)
+        problemas = [
+            Problema("V-03", Severidad.ERROR, "vmid", {"vmid": str(f.vmid)}, indice=i)
+            for i, f in enumerate(filas)
+            if f.vmid is not None and not libres[f.vmid]
+        ]
+        inicio = (
+            definicion.vmid_inicial if definicion.vmid_inicial is not None else inv.proximo_vmid
+        )
+        automaticos, saltados = self.reservar_vmids(
+            inicio, len(filas) - len(fijos), excluir=frozenset(fijos)
+        )
+        siguiente = iter(automaticos)
+        vmids = [f.vmid if f.vmid is not None else next(siguiente) for f in filas]
+        return vmids, saltados, problemas
+
     def planificar(
         self,
         definicion: DefinicionLote,
@@ -430,17 +509,21 @@ class Planificador:
                 vms_visibles=None,
             )
 
-        inicio = (
-            definicion.vmid_inicial if definicion.vmid_inicial is not None else inv.proximo_vmid
-        )
-        vmids, saltados = self.reservar_vmids(inicio, definicion.cantidad)
+        extra: list[Problema] = []
+        if definicion.es_por_filas:
+            vmids, saltados, ocupados = self._vmids_por_filas(definicion, inv)
+            extra.extend(ocupados)
+        else:
+            inicio = (
+                definicion.vmid_inicial if definicion.vmid_inicial is not None else inv.proximo_vmid
+            )
+            vmids, saltados = self.reservar_vmids(inicio, definicion.cantidad)
 
         try:
             visibles: list[VMRemota] | None = self._sesion.cliente.vms_visibles()
         except ErrorProxLaunch:
             visibles = None  # sin el aviso V-L06; no bloquea
 
-        extra: list[Problema] = []
         faltan = permisos_faltantes_detalle(self._sesion)  # None si no se pudo verificar
         for privilegio, ruta in faltan or []:
             if privilegio == "VM.Allocate":

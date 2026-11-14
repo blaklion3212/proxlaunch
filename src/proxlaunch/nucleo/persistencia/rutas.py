@@ -30,10 +30,12 @@ class Rutas:
     def __init__(self, base: Path | str | None = None) -> None:
         if base is None:
             self._config = Path(platformdirs.user_config_dir(NOMBRE_APP))
+            self._datos = Path(platformdirs.user_data_dir(NOMBRE_APP))
             self._log = Path(platformdirs.user_log_dir(NOMBRE_APP))
         else:
             self._config = Path(base)
             self._log = self._config / "log"
+            self._datos = self._config / "datos"
 
     @property
     def directorio_config(self) -> Path:
@@ -48,6 +50,21 @@ class Rutas:
     @property
     def perfiles(self) -> Path:
         return self._config / "perfiles.json"
+
+    @property
+    def perfiles_maquina(self) -> Path:
+        """Perfiles de máquina del usuario (MVP 3)."""
+        return self._config / "perfiles_maquina.json"
+
+    @property
+    def directorio_datos(self) -> Path:
+        """Datos del usuario (lotes guardados): ``user_data_dir`` o ``base/datos``."""
+        return self._datos
+
+    @property
+    def lotes(self) -> Path:
+        """Carpeta sugerida para los lotes guardados (se crea 0700 solo al usarla)."""
+        return self._datos / "lotes"
 
     @property
     def huellas(self) -> Path:

@@ -202,8 +202,9 @@ def informe_desde_entradas(
         contadores=contadores,
         entradas=entradas,
         duraciones_s=duraciones,
-        plantilla=plan.definicion.plantilla,
+        plantilla=plan.definicion.plantilla,  # por filas: solo informativa (CA-C08.8)
         rollback=tuple(_rollback_saneado(r, ocultar) for r in rollback),
         problemas_plan=tuple(_problema_saneado(p, ocultar) for p in plan.problemas),
         permisos_verificados=plan.permisos_verificados,
+        por_filas=plan.definicion.es_por_filas,
     )
