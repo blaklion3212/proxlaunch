@@ -11,20 +11,11 @@ from collections.abc import Callable
 from PySide6.QtCore import QCoreApplication
 
 from proxlaunch.nucleo.lote.constantes import MAX_LOTE
+from proxlaunch.nucleo.origen.permisos import ROL_PROXLAUNCH
 
-# Privilegios del rol ProxLaunchCreador (docs/investigacion/f1-api-proxmox.md §5).
-PRIVILEGIOS_ROL = (
-    "VM.Allocate",
-    "VM.Audit",
-    "VM.Config.Options",
-    "VM.Config.HWType",
-    "VM.Config.CPU",
-    "VM.Config.Memory",
-    "VM.Config.Network",
-    "Datastore.AllocateSpace",
-    "SDN.Use",
-    "Sys.Audit",
-)
+# Privilegios del rol ProxLaunchCreador: los 10 de siempre y los 4 del MVP 4 (RF-O24). La lista
+# vive en el núcleo (única fuente); aquí solo se muestra.
+PRIVILEGIOS_ROL: tuple[str, ...] = ROL_PROXLAUNCH
 NOMBRE_ROL = "ProxLaunchCreador"
 
 _TEXTOS: dict[str, Callable[[], str]] = {
@@ -306,6 +297,87 @@ _TEXTOS: dict[str, Callable[[], str]] = {
         "En un lote por filas cada máquina tiene su propia configuración, como venía en el "
         "archivo. Para cambiar algo, corrige el archivo e impórtalo de nuevo.",
     ),
+    "origen": lambda: QCoreApplication.translate(
+        "Ayuda",
+        "Aquí eliges de dónde sale el sistema operativo de la máquina: un disco vacío, un ISO de "
+        "instalación, un disco ya hecho que se importa o la copia de una plantilla de Proxmox. "
+        "Si no sabes cuál, usa un ISO para instalar desde cero o una plantilla para empezar con "
+        "algo ya instalado.",
+    ),
+    "iso": lambda: QCoreApplication.translate(
+        "Ayuda",
+        "Un ISO es la imagen del disco de instalación de un sistema operativo, como el CD con "
+        "el que se instalaría. La máquina arranca desde él y tú terminas la instalación desde "
+        "la consola de Proxmox.",
+    ),
+    "subir": lambda: QCoreApplication.translate(
+        "Ayuda",
+        "Sube un archivo de tu equipo al servidor de Proxmox para poder usarlo. ProxLaunch no "
+        "puede borrar lo que subes: si ya no lo necesitas, pídele a un administrador que lo "
+        "elimine desde Proxmox.",
+    ),
+    "descargar_url": lambda: QCoreApplication.translate(
+        "Ayuda",
+        "El propio servidor de Proxmox descarga el archivo desde la dirección web que indiques, "
+        "sin pasar por tu equipo. Usa solo direcciones https de confianza y, si puedes, escribe "
+        "también la huella del archivo para comprobarlo.",
+    ),
+    "checksum": lambda: QCoreApplication.translate(
+        "Ayuda",
+        "La huella (checksum) es un código que identifica un archivo. Si la escribes, Proxmox "
+        "comprueba al terminar que lo descargado coincide y, si no, descarta el archivo.",
+    ),
+    "asistente_so": lambda: QCoreApplication.translate(
+        "Ayuda",
+        "El asistente ajusta la máquina al sistema que vas a instalar: tipo de arranque, TPM, "
+        "controlador de discos y tarjeta de red. Te muestra cada cambio y no toca los núcleos, "
+        "la memoria ni el tamaño del disco.",
+    ),
+    "drivers_virtio": lambda: QCoreApplication.translate(
+        "Ayuda",
+        "Windows no trae los controladores de los discos y la red virtuales de Proxmox. Por eso "
+        "se añade un segundo CD, llamado virtio-win, para cargarlos durante la instalación.",
+    ),
+    "importar": lambda: QCoreApplication.translate(
+        "Ayuda",
+        "Importar crea la máquina a partir de un disco que ya tiene un sistema instalado, en "
+        "lugar de empezar vacía. Necesita una imagen en el servidor, guardada en un "
+        "almacenamiento con el contenido «Import» activado.",
+    ),
+    "formatos_disco": lambda: QCoreApplication.translate(
+        "Ayuda",
+        "qcow2, raw y vmdk son formas de guardar un disco virtual y ProxLaunch acepta las tres. "
+        "Tiene que ser un solo archivo: un disco que depende de otro o está cifrado no se puede "
+        "importar.",
+    ),
+    "copia_por_mv": lambda: QCoreApplication.translate(
+        "Ayuda",
+        "Cada máquina del lote recibe su propia copia del disco, así que ocupa espacio propio. "
+        "Con muchas máquinas el espacio necesario se multiplica.",
+    ),
+    "plantilla": lambda: QCoreApplication.translate(
+        "Ayuda",
+        "Una plantilla de Proxmox es una máquina ya instalada que se marcó como modelo. Al "
+        "clonarla obtienes máquinas nuevas con su mismo sistema, sin instalar nada.",
+    ),
+    "enlazado_completo": lambda: QCoreApplication.translate(
+        "Ayuda",
+        "«Rápido y ligero» (enlazado) comparte los datos con la plantilla: se crea en segundos "
+        "y casi no ocupa espacio, pero depende de ella. «Copia independiente» (completo) "
+        "duplica todo el disco: tarda más y ocupa más, pero la máquina no depende de nada.",
+    ),
+    "storage_recordado": lambda: QCoreApplication.translate(
+        "Ayuda",
+        "ProxLaunch recuerda, para cada servidor, el almacenamiento que usaste para ISOs, "
+        "imágenes y discos. La próxima vez lo propone solo; si deja de estar disponible te lo "
+        "diremos y podrás elegir otro.",
+    ),
+    "permisos_rol_ampliado": lambda: QCoreApplication.translate(
+        "Ayuda",
+        "Para usar ISOs, importar discos y clonar plantillas, el rol de ProxLaunch necesita "
+        "cuatro permisos más que antes. Si faltan, crear máquinas vacías sigue funcionando y "
+        "solo se desactivan esas opciones, indicando qué permiso falta.",
+    ),
     "lote_envio_incierto": lambda: QCoreApplication.translate(
         "Ayuda",
         "Si se corta la conexión justo al enviar una máquina, no se sabe si Proxmox llegó a "
@@ -350,6 +422,24 @@ CAMPOS_AYUDA_MVP3: tuple[str, ...] = (
     "csv_unidades",
     "csv_vista_previa",
     "lote_por_filas",
+)
+
+# Ayudas del origen del sistema operativo que deben tener texto (CA-O32.1).
+CAMPOS_AYUDA_ORIGEN: tuple[str, ...] = (
+    "origen",
+    "iso",
+    "subir",
+    "descargar_url",
+    "checksum",
+    "asistente_so",
+    "drivers_virtio",
+    "importar",
+    "formatos_disco",
+    "copia_por_mv",
+    "plantilla",
+    "enlazado_completo",
+    "storage_recordado",
+    "permisos_rol_ampliado",
 )
 
 # Campos técnicos que deben tener ayuda (CA-25.1, CA-25.2).
@@ -439,9 +529,140 @@ def notas_guia_token() -> list[str]:
             "asignaste los permisos al usuario; si la dejas marcada, el token necesita sus "
             "propios permisos (paso 4 con el token).",
         ),
+        QCoreApplication.translate(
+            "Ayuda",
+            "Los últimos cuatro privilegios de la lista sirven para instalar desde un ISO, "
+            "importar discos y clonar plantillas. Si los omites, crear máquinas vacías sigue "
+            "funcionando y ProxLaunch solo desactiva esas opciones.",
+        ),
+        nota_archivos_subidos(),
     ]
 
 
 def privilegios_guia_token() -> str:
     """Privilegios del rol, uno por línea (se muestra en fuente monoespaciada)."""
     return "\n".join(PRIVILEGIOS_ROL)
+
+
+def descripcion_privilegio(privilegio: str) -> str:
+    """Para qué sirve cada privilegio del rol, en lenguaje llano ("" si no se conoce)."""
+    textos: dict[str, Callable[[], str]] = {
+        "VM.Allocate": lambda: QCoreApplication.translate("Ayuda", "crear máquinas"),
+        "VM.Audit": lambda: QCoreApplication.translate("Ayuda", "ver las máquinas del servidor"),
+        "VM.Config.Options": lambda: QCoreApplication.translate(
+            "Ayuda", "ajustar nombre, etiquetas y opciones generales"
+        ),
+        "VM.Config.HWType": lambda: QCoreApplication.translate(
+            "Ayuda", "elegir el tipo de equipo y de arranque"
+        ),
+        "VM.Config.CPU": lambda: QCoreApplication.translate("Ayuda", "configurar procesadores"),
+        "VM.Config.Memory": lambda: QCoreApplication.translate("Ayuda", "configurar la memoria"),
+        "VM.Config.Network": lambda: QCoreApplication.translate(
+            "Ayuda", "configurar las tarjetas de red"
+        ),
+        "Datastore.AllocateSpace": lambda: QCoreApplication.translate(
+            "Ayuda", "crear discos en los almacenamientos"
+        ),
+        "SDN.Use": lambda: QCoreApplication.translate("Ayuda", "usar las redes del servidor"),
+        "Sys.Audit": lambda: QCoreApplication.translate("Ayuda", "ver el estado de los nodos"),
+        "VM.Config.Disk": lambda: QCoreApplication.translate(
+            "Ayuda", "fijar el orden de arranque con ISO y ampliar discos"
+        ),
+        "VM.Clone": lambda: QCoreApplication.translate("Ayuda", "clonar plantillas"),
+        "Datastore.AllocateTemplate": lambda: QCoreApplication.translate(
+            "Ayuda", "subir y descargar ISOs e imágenes de disco"
+        ),
+        "Sys.AccessNetwork": lambda: QCoreApplication.translate(
+            "Ayuda", "que el servidor descargue archivos desde una dirección web"
+        ),
+    }
+    fabrica = textos.get(privilegio)
+    return fabrica() if fabrica is not None else ""
+
+
+# Privilegios añadidos en el MVP 4 y lo que se pierde sin cada uno (RF-O24, CA-O24.3).
+PRIVILEGIOS_NUEVOS: tuple[str, ...] = (
+    "VM.Config.Disk",
+    "VM.Clone",
+    "Datastore.AllocateTemplate",
+    "Sys.AccessNetwork",
+)
+
+
+def funcion_perdida_sin_privilegio(privilegio: str) -> str:
+    """Qué deja de poder hacerse sin uno de los cuatro privilegios nuevos ("" si no aplica)."""
+    if privilegio == "VM.Config.Disk":
+        return QCoreApplication.translate(
+            "Ayuda",
+            "sin él no se fija el orden de arranque con un ISO ni se amplían discos",
+        )
+    if privilegio == "VM.Clone":
+        return QCoreApplication.translate("Ayuda", "sin él no se pueden clonar plantillas")
+    if privilegio == "Datastore.AllocateTemplate":
+        return QCoreApplication.translate(
+            "Ayuda", "sin él no se pueden subir ni descargar ISOs o imágenes de disco"
+        )
+    if privilegio == "Sys.AccessNetwork":
+        return QCoreApplication.translate(
+            "Ayuda", "sin él el servidor no puede descargar archivos desde una dirección web"
+        )
+    return ""
+
+
+def notas_privilegios_nuevos() -> list[str]:
+    """Una línea por privilegio nuevo del rol: «VM.Clone: sin él no se pueden clonar…»."""
+    return [f"{p}: {funcion_perdida_sin_privilegio(p)}" for p in PRIVILEGIOS_NUEVOS]
+
+
+def nota_archivos_subidos() -> str:
+    """La app no puede borrar lo que sube (RF-O25, CA-O25.4)."""
+    return QCoreApplication.translate(
+        "Ayuda",
+        "ProxLaunch no puede borrar los ISOs ni las imágenes que subas o descargues, ni siquiera "
+        "con un usuario administrador. Si ya no los necesitas, bórralos desde Proxmox (en el "
+        "almacenamiento, sección «ISO Images» o «Import»).",
+    )
+
+
+def texto_pedir_al_administrador() -> str:
+    """Texto listo para copiar y enviar al administrador de Proxmox (CA-O32.2)."""
+    lineas = [
+        QCoreApplication.translate(
+            "Ayuda",
+            "Hola. Para que ProxLaunch pueda instalar máquinas desde un ISO, importar discos y "
+            "clonar plantillas necesito lo siguiente en Proxmox:",
+        ),
+        "",
+        QCoreApplication.translate(
+            "Ayuda",
+            "1. Un rol llamado «{rol}» (Datacenter → Permisos → Roles → Crear) con estos {n} "
+            "privilegios:",
+        ).format(rol=NOMBRE_ROL, n=len(PRIVILEGIOS_ROL)),
+    ]
+    for privilegio in PRIVILEGIOS_ROL:
+        lineas.append(f"   - {privilegio}: {descripcion_privilegio(privilegio)}")
+    lineas += [
+        "",
+        QCoreApplication.translate(
+            "Ayuda",
+            "2. Asignar ese rol a mi usuario o a mi token en la ruta «/», con «Propagar» marcado "
+            "(Datacenter → Permisos → Añadir).",
+        ),
+        QCoreApplication.translate(
+            "Ayuda",
+            "3. Para importar discos: activar el contenido «Import» en un almacenamiento de tipo "
+            "directorio, NFS o CIFS (Datacenter → Almacenamiento → Editar → Contenido). Hace "
+            "falta Proxmox 8.4 o superior.",
+        ),
+        QCoreApplication.translate(
+            "Ayuda",
+            "4. Para clonar: convertir en plantilla una máquina ya instalada (clic derecho en la "
+            "máquina → Convertir en plantilla).",
+        ),
+        QCoreApplication.translate(
+            "Ayuda",
+            "5. Los ISOs e imágenes que suba no los puede borrar ProxLaunch: habrá que eliminarlos "
+            "desde Proxmox cuando ya no hagan falta.",
+        ),
+    ]
+    return "\n".join(lineas)

@@ -8,9 +8,10 @@ genérico de CA-21.2 (los detalles técnicos los muestra la vista aparte).
 from __future__ import annotations
 
 import html
+import re
 from collections.abc import Callable, Mapping
 
-from PySide6.QtCore import QCoreApplication
+from PySide6.QtCore import QCoreApplication, QLocale
 
 from proxlaunch.nucleo.archivos.constantes import (
     LONG_DESCRIPCION,
@@ -44,11 +45,29 @@ from proxlaunch.nucleo.lote.modelos import (
 from proxlaunch.nucleo.lote.modelos import Problema as ProblemaLote
 from proxlaunch.nucleo.lote.modelos import Severidad as SeveridadLote
 from proxlaunch.nucleo.lotes_guardados.revalidacion import Desajuste, TipoDesajuste
+from proxlaunch.nucleo.modelos.catalogo import Contenido
+from proxlaunch.nucleo.modelos.origen import (
+    DetalleClon,
+    DetalleImportacion,
+    DetalleIso,
+    ModoClon,
+    TipoSO,
+)
 from proxlaunch.nucleo.modelos.tarea import Desenlace, Etapa, ResultadoCreacion
+from proxlaunch.nucleo.modelos.vm import ConfiguracionVM, OrigenSO
+from proxlaunch.nucleo.origen.asistente import CambioAsistente, CampoAsistente
+from proxlaunch.nucleo.origen.capacidades_origen import Disponibilidad, EstadoVia, Via
+from proxlaunch.nucleo.origen.storages import DecisionStorage, TipoDecision
 from proxlaunch.nucleo.perfiles_maquina.aplicar import AvisoPista, resumen_perfil
 from proxlaunch.nucleo.perfiles_maquina.modelos import ConfigPerfil
 from proxlaunch.nucleo.seleccion_nodo import MotivoNodo
 from proxlaunch.nucleo.servicios.conexion import Aviso, CodigoAviso, EstadoHuella
+from proxlaunch.nucleo.transferencias.modelos import (
+    EstadoTransferencia,
+    Progreso,
+    RegistroTransferencia,
+    TipoTransferencia,
+)
 from proxlaunch.nucleo.validacion import Problema, Severidad
 
 
@@ -72,6 +91,14 @@ def _valor_neutro(clave: str) -> str:
         return QCoreApplication.translate("Textos", "varias")
     if clave in ("storage", "recurso"):
         return QCoreApplication.translate("Textos", "ese almacenamiento")
+    if clave == "privilegio":
+        return QCoreApplication.translate("Textos", "un permiso")
+    if clave == "ruta":
+        return QCoreApplication.translate("Textos", "esa ruta")
+    if clave in ("archivo", "volid"):
+        return QCoreApplication.translate("Textos", "el archivo")
+    if clave in ("tamano", "libre", "actual_gib", "pedido_gib", "bytes", "total"):
+        return "?"
     return QCoreApplication.translate("Textos", "un dato")
 
 
@@ -165,6 +192,8 @@ def texto_error(error: ErrorProxLaunch) -> str:
             )
         return QCoreApplication.translate("Textos", "El nodo no está disponible.")
     if c == CodigoError.PERMISO_INSUFICIENTE:
+        if p.get("via"):
+            return _texto_permiso_con_via(p)
         if p.get("privilegio") and p.get("inferido") == "1":
             # Proxmox no dijo qué falta; el privilegio se dedujo del contexto.
             return _fmt(
@@ -237,6 +266,9 @@ def texto_error(error: ErrorProxLaunch) -> str:
             campo=campo,
         )
     if c == CodigoError.PARAMETRO_INVALIDO:
+        texto_campo = _texto_parametro_origen(p.get("campo", ""))
+        if texto_campo is not None:
+            return texto_campo
         if p.get("mensaje"):
             return _fmt(
                 QCoreApplication.translate(
@@ -296,6 +328,9 @@ def texto_error(error: ErrorProxLaunch) -> str:
     texto_archivo = _texto_error_archivo(error)
     if texto_archivo is not None:
         return texto_archivo
+    texto_origen_so = _texto_error_origen(error)
+    if texto_origen_so is not None:
+        return texto_origen_so
     return texto_generico()
 
 
@@ -452,6 +487,9 @@ def texto_problema(p: Problema) -> str:
     texto_mvp3 = _texto_problema_mvp3(p)
     if texto_mvp3 is not None:
         return texto_mvp3
+    texto_mvp4 = _texto_problema_origen(p)
+    if texto_mvp4 is not None:
+        return texto_mvp4
     return texto_generico()
 
 
@@ -543,7 +581,9 @@ def texto_desenlace(resultado: ResultadoCreacion, nombre: str = "") -> str:
             nodo=resultado.nodo,
         )
     if d == Desenlace.CON_AVISOS:
-        return QCoreApplication.translate("Textos", "Creada con avisos")
+        base = QCoreApplication.translate("Textos", "Creada con avisos")
+        detalles = " ".join(t for t in (texto_aviso_origen(a) for a in resultado.avisos) if t)
+        return f"{base}. {detalles}" if detalles else base
     if d == Desenlace.ERROR:
         if resultado.error is not None:
             return texto_error(resultado.error)
@@ -558,6 +598,11 @@ def texto_desenlace(resultado: ResultadoCreacion, nombre: str = "") -> str:
             "Se perdió la conexión mientras se creaba la máquina; la tarea puede haber terminado",
         )
     if d == Desenlace.PARCIAL:
+        if resultado.error is not None and any(
+            a.startswith("ajuste_pendiente:") for a in resultado.avisos
+        ):
+            # Clon creado al que le faltan ajustes: se pueden reintentar o deshacer (E-O24).
+            return texto_error(resultado.error)
         return QCoreApplication.translate(
             "Textos", "La máquina quedó parcialmente creada; elimínala desde Proxmox"
         )
@@ -581,6 +626,8 @@ def texto_etapa(etapa: Etapa) -> str:
         return QCoreApplication.translate("Textos", "Creando la máquina")
     if etapa == Etapa.COMPROBANDO:
         return QCoreApplication.translate("Textos", "Comprobando el resultado")
+    if etapa == Etapa.AJUSTANDO:
+        return QCoreApplication.translate("Textos", "Ajustando la máquina")
     if etapa == Etapa.LISTO:
         return QCoreApplication.translate("Textos", "Listo")
     return str(etapa)
@@ -846,6 +893,7 @@ def texto_estado_mv(estado: EstadoMV) -> str:
         EstadoMV.ENVIANDO: QCoreApplication.translate("Textos", "Enviando a Proxmox"),
         EstadoMV.CREANDO: QCoreApplication.translate("Textos", "Creando la máquina"),
         EstadoMV.COMPROBANDO: QCoreApplication.translate("Textos", "Comprobando el resultado"),
+        EstadoMV.AJUSTANDO: QCoreApplication.translate("Textos", "Ajustando la máquina"),
         EstadoMV.OK: QCoreApplication.translate("Textos", "Lista"),
         EstadoMV.CON_AVISOS: QCoreApplication.translate("Textos", "Lista, con avisos"),
         EstadoMV.ERROR: QCoreApplication.translate("Textos", "Con error"),
@@ -869,6 +917,7 @@ _SIMBOLOS_MV = {
     EstadoMV.ENVIANDO: "●",
     EstadoMV.CREANDO: "●",
     EstadoMV.COMPROBANDO: "●",
+    EstadoMV.AJUSTANDO: "●",
     EstadoMV.OK: "✓",
     EstadoMV.CON_AVISOS: "⚠",
     EstadoMV.ERROR: "✕",
@@ -1104,6 +1153,10 @@ def _texto_v_l11(prm: Mapping[str, str]) -> str:
         return _fmt(
             QCoreApplication.translate("Textos", "«{nodo}» no tiene la red «{bridge}»."), prm
         )
+    if motivo == "fuente":
+        return _texto_v_l11_fuente(prm)
+    if motivo == "plantilla":
+        return _texto_v_l11_plantilla(prm)
     return _fmt(
         QCoreApplication.translate("Textos", "«{nodo}» no puede alojar esta configuración."), prm
     )
@@ -1442,6 +1495,14 @@ def _texto_e_m08(p: Mapping[str, str]) -> str:
             "No se guardó: el campo «{campo}» parece contener una credencial "
             "(usuario@realm!token). Bórrala y vuelve a guardar.",
         ).format(campo=campo)
+    if motivo == "caracteres":
+        # Nunca se muestra el valor ni la ruta del campo: solo qué debe corregirse.
+        return QCoreApplication.translate(
+            "Textos",
+            "No se guardó: el nombre de un archivo, almacenamiento o plantilla tiene caracteres "
+            "que no se pueden guardar. Usa solo letras sin acentos, números, punto, guion y "
+            "guion bajo.",
+        )
     if motivo == "sin_espacio":
         causa = QCoreApplication.translate("Textos", "no hay espacio en el disco")
     elif motivo == "sin_permiso":
@@ -1468,6 +1529,10 @@ def _texto_error_archivo(error: ErrorProxLaunch) -> str | None:
             return QCoreApplication.translate(
                 "Textos", "No se puede abrir este archivo: {motivo}."
             ).format(motivo=causa)
+        if motivo == "vacio":
+            return QCoreApplication.translate(
+                "Textos", "No se puede abrir este archivo: está vacío."
+            )
         if motivo == "demasiadas_entradas":
             return _fmt(
                 QCoreApplication.translate(
@@ -1609,6 +1674,11 @@ def texto_aviso_pista(aviso: AvisoPista) -> str:
             "Textos",
             "El perfil pedía el almacenamiento de UEFI «{pedido}», que no existe en «{nodo}».",
         )
+    elif aviso.recurso == "fuente":
+        pedida = QCoreApplication.translate(
+            "Textos",
+            "El perfil recordaba «{pedido}» como origen del sistema, pero no está en «{nodo}».",
+        )
     else:
         pedida = QCoreApplication.translate(
             "Textos", "El perfil pedía el almacenamiento «{pedido}», que no existe en «{nodo}»."
@@ -1722,6 +1792,29 @@ def textos_perfiles_fabrica() -> dict[str, tuple[str, str]]:
             QCoreApplication.translate("PerfilesFabrica", "Mínimo"),
             QCoreApplication.translate("PerfilesFabrica", "Disco y red básicos, para probar."),
         ),
+        "fabrica.windows-11": (
+            QCoreApplication.translate("PerfilesFabrica", "Windows 11 (escritorio)"),
+            QCoreApplication.translate(
+                "PerfilesFabrica",
+                "Para instalar Windows 11: arranque UEFI, TPM y agente de QEMU. El ISO se elige "
+                "después.",
+            ),
+        ),
+        "fabrica.windows-server": (
+            QCoreApplication.translate("PerfilesFabrica", "Windows Server"),
+            QCoreApplication.translate(
+                "PerfilesFabrica",
+                "Para instalar Windows Server 2022 o 2025: arranque UEFI, TPM y agente de "
+                "QEMU. El ISO se elige después.",
+            ),
+        ),
+        "fabrica.linux-red-hat": (
+            QCoreApplication.translate("PerfilesFabrica", "Linux (Red Hat y otros)"),
+            QCoreApplication.translate(
+                "PerfilesFabrica",
+                "Para instalar Linux, en especial Red Hat, Rocky o Alma. El ISO se elige después.",
+            ),
+        ),
     }
 
 
@@ -1746,6 +1839,11 @@ def alias_columnas_csv() -> dict[str, str]:
         QCoreApplication.translate("ColumnasCsv", "modelo_red"): "modelo_red",
         QCoreApplication.translate("ColumnasCsv", "firmware"): "firmware",
         QCoreApplication.translate("ColumnasCsv", "tipo_cpu"): "tipo_cpu",
+        QCoreApplication.translate("ColumnasCsv", "origen"): "origen",
+        QCoreApplication.translate("ColumnasCsv", "fuente"): "fuente",
+        QCoreApplication.translate("ColumnasCsv", "so"): "so",
+        QCoreApplication.translate("ColumnasCsv", "virtio"): "virtio",
+        QCoreApplication.translate("ColumnasCsv", "modo_clon"): "modo_clon",
     }
 
 
@@ -2024,8 +2122,12 @@ def texto_problema_celda(p: ProblemaCelda, columnas: MapaColumnas | None = None)
         ).format(unidad=prm.get("unidad", p.valor), validas=prm.get("validas", "MiB, GiB, TiB"))
     if regla == "E-M11.valor_no_admitido":
         return _texto_valor_no_admitido(p)
-    if regla in ("pista.storage", "pista.storage_efi", "pista.bridge"):
+    if regla in ("pista.storage", "pista.storage_efi", "pista.bridge", "pista.fuente"):
         return _texto_pista(p)
+    if regla == "E-O14":
+        return texto_error(ErrorProxLaunch(CodigoError.RUTA_ABSOLUTA_NO_PERMITIDA))
+    if regla == "E-O21":
+        return texto_error(ErrorProxLaunch(CodigoError.FUENTE_ES_URL))
     if regla == "V-L11":
         return QCoreApplication.translate(
             "Textos", "Ningún nodo del servidor puede alojar esta máquina."
@@ -2082,6 +2184,1387 @@ def texto_desajuste(d: Desajuste) -> str:
         return QCoreApplication.translate(
             "Textos", "La red «{valor}» no existe en este servidor."
         ).format(valor=d.valor)
+    if d.tipo == TipoDesajuste.ISO:
+        return QCoreApplication.translate(
+            "Textos", "El ISO «{valor}» no está en este servidor."
+        ).format(valor=d.valor)
+    if d.tipo == TipoDesajuste.DRIVERS:
+        return QCoreApplication.translate(
+            "Textos", "El CD de drivers «{valor}» no está en este servidor."
+        ).format(valor=d.valor)
+    if d.tipo == TipoDesajuste.IMAGEN:
+        return QCoreApplication.translate(
+            "Textos", "La imagen de disco «{valor}» no está en este servidor."
+        ).format(valor=d.valor)
+    if d.tipo == TipoDesajuste.PLANTILLA:
+        return QCoreApplication.translate(
+            "Textos", "La plantilla «{valor}» no existe en este servidor."
+        ).format(valor=d.valor)
     return QCoreApplication.translate(
         "Textos", "El nodo «{valor}» no existe o está sin conexión."
     ).format(valor=d.valor)
+
+
+# --- MVP 4: origen del sistema operativo ----------------------------------------------------
+#
+# Todo lo que sigue traduce códigos del núcleo (vías, estados, errores E-O, reglas V-O, avisos)
+# a lenguaje llano. Nunca se muestran URL completas, rutas locales ni huellas (INV-O6).
+
+
+# Cualquier cosa con forma de URL (también codificada); espejo de la defensa final de
+# ``nucleo.transferencias.url.ocultar_url``, que necesita la URL exacta y aquí no se conoce.
+_RE_URL = re.compile(r"(?i)https?(?::|%3A)(?://|%2F%2F)[^\s'\"<>)]*")
+
+
+def texto_sin_urls(texto: str) -> str:
+    """Sustituye toda dirección web de ``texto`` por «(dirección web)» (INV-O6).
+
+    Defensa en profundidad para textos de terceros (mensajes del servidor, detalles técnicos):
+    el núcleo ya oculta la URL de las descargas con ``ocultar_url``; aquí nunca se muestra una
+    dirección completa, sin importar de dónde venga el texto.
+    """
+    return _RE_URL.sub(QCoreApplication.translate("Textos", "(dirección web)"), texto)
+
+
+def _unir_y(partes: list[str]) -> str:
+    """«a», «a y b», «a, b y c»."""
+    partes = [x for x in partes if x]
+    if len(partes) <= 1:
+        return "".join(partes)
+    return ", ".join(partes[:-1]) + QCoreApplication.translate("Textos", " y ") + partes[-1]
+
+
+def texto_tamano_bytes(valor: int | str | None) -> str:
+    """Bytes a «350 MiB» / «1,2 GiB»; «?» si no es un número."""
+    try:
+        n = int(valor) if valor is not None and valor != "" else None
+    except (TypeError, ValueError):
+        n = None
+    if n is None or n < 0:
+        return "?"
+    unidades = (
+        QCoreApplication.translate("Textos", "bytes"),
+        "KiB",
+        "MiB",
+        "GiB",
+        "TiB",
+    )
+    cantidad = float(n)
+    i = 0
+    while cantidad >= 1024 and i < len(unidades) - 1:
+        cantidad /= 1024
+        i += 1
+    if i == 0:
+        return f"{n} {unidades[0]}"
+    texto = QLocale().toString(cantidad, "f", 0 if cantidad >= 100 else 1)
+    separador = QLocale().decimalPoint()
+    if texto.endswith(separador + "0"):
+        texto = texto[: -len(separador) - 1]
+    return f"{texto} {unidades[i]}"
+
+
+def _duracion_corta(segundos: float) -> str:
+    total = max(0, round(segundos))
+    if total < 60:
+        return QCoreApplication.translate("Textos", "{s} s").format(s=total)
+    if total < 3600:
+        return QCoreApplication.translate("Textos", "{m} min {s} s").format(
+            m=total // 60, s=total % 60
+        )
+    return QCoreApplication.translate("Textos", "{h} h {m} min").format(
+        h=total // 3600, m=(total % 3600) // 60
+    )
+
+
+def texto_contenido(contenido: Contenido | str) -> str:
+    """Qué guarda un almacenamiento, en plural y llano: «imágenes ISO»."""
+    valor = str(contenido)
+    if valor == Contenido.ISO:
+        return QCoreApplication.translate("Textos", "imágenes ISO")
+    if valor == Contenido.IMPORT:
+        return QCoreApplication.translate("Textos", "imágenes de disco para importar")
+    if valor == Contenido.IMAGENES:
+        return QCoreApplication.translate("Textos", "discos de máquinas")
+    return QCoreApplication.translate("Textos", "ese tipo de archivos")
+
+
+def texto_origen(origen: OrigenSO) -> str:
+    """Nombre largo del origen del sistema operativo (selector del formulario)."""
+    if origen == OrigenSO.ISO:
+        return QCoreApplication.translate("Textos", "Instalar desde un ISO")
+    if origen == OrigenSO.IMPORTAR_DISCO:
+        return QCoreApplication.translate("Textos", "Importar un disco existente")
+    if origen == OrigenSO.CLONAR_PLANTILLA:
+        return QCoreApplication.translate("Textos", "Clonar una plantilla de Proxmox")
+    return QCoreApplication.translate("Textos", "Disco vacío (sin sistema)")
+
+
+def texto_origen_corto(origen: OrigenSO) -> str:
+    """Nombre corto del origen para tablas e informes."""
+    if origen == OrigenSO.ISO:
+        return QCoreApplication.translate("Textos", "ISO")
+    if origen == OrigenSO.IMPORTAR_DISCO:
+        return QCoreApplication.translate("Textos", "Disco importado")
+    if origen == OrigenSO.CLONAR_PLANTILLA:
+        return QCoreApplication.translate("Textos", "Clon")
+    return QCoreApplication.translate("Textos", "Disco vacío")
+
+
+def texto_tipo_so(tipo: TipoSO) -> str:
+    """Nombre del sistema operativo del asistente."""
+    if tipo == TipoSO.LINUX:
+        return QCoreApplication.translate("Textos", "Linux")
+    if tipo == TipoSO.WINDOWS_11:
+        return QCoreApplication.translate("Textos", "Windows 11")
+    if tipo == TipoSO.WINDOWS_SERVER_2022_2025:
+        return QCoreApplication.translate("Textos", "Windows Server 2022 / 2025")
+    if tipo == TipoSO.WINDOWS_10:
+        return QCoreApplication.translate("Textos", "Windows 10")
+    if tipo == TipoSO.WINDOWS_SERVER_2016_2019:
+        return QCoreApplication.translate("Textos", "Windows Server 2016 / 2019")
+    return QCoreApplication.translate("Textos", "Otro sistema")
+
+
+def texto_modo_clon(modo: ModoClon, *, avanzado: bool = False) -> str:
+    """Nombre del modo de clonado: en básico «Rápido y ligero» / «Copia independiente»."""
+    if avanzado:
+        if modo == ModoClon.ENLAZADO:
+            return QCoreApplication.translate("Textos", "Enlazado")
+        if modo == ModoClon.COMPLETO:
+            return QCoreApplication.translate("Textos", "Completo")
+        return QCoreApplication.translate("Textos", "Automático")
+    if modo == ModoClon.COMPLETO:
+        return QCoreApplication.translate("Textos", "Copia independiente")
+    if modo == ModoClon.ENLAZADO:
+        return QCoreApplication.translate("Textos", "Rápido y ligero")
+    return QCoreApplication.translate("Textos", "Rápido y ligero (recomendado)")
+
+
+_ACCIONES_VIA: dict[str, Callable[[], str]] = {
+    "iso": lambda: QCoreApplication.translate("Textos", "usar un ISO del servidor"),
+    "subir_iso": lambda: QCoreApplication.translate("Textos", "subir un ISO"),
+    "descargar_url": lambda: QCoreApplication.translate(
+        "Textos", "descargar un ISO desde una dirección web"
+    ),
+    "importar": lambda: QCoreApplication.translate("Textos", "importar un disco"),
+    "subir_imagen": lambda: QCoreApplication.translate("Textos", "subir una imagen de disco"),
+    "descargar_imagen": lambda: QCoreApplication.translate(
+        "Textos", "descargar una imagen de disco desde una dirección web"
+    ),
+    "clonar": lambda: QCoreApplication.translate("Textos", "clonar la plantilla"),
+    "orden_arranque": lambda: QCoreApplication.translate("Textos", "fijar el orden de arranque"),
+    "ampliar_disco": lambda: QCoreApplication.translate("Textos", "ampliar el disco"),
+    "config": lambda: QCoreApplication.translate("Textos", "ajustar la máquina"),
+    "resize": lambda: QCoreApplication.translate("Textos", "ampliar el disco"),
+}
+
+
+def texto_accion_via(via: Via | str) -> str:
+    """La acción de una vía como frase para «… para {acción}»: «subir un ISO»."""
+    fabrica = _ACCIONES_VIA.get(str(via))
+    if fabrica is not None:
+        return fabrica()
+    return QCoreApplication.translate("Textos", "hacer esta acción")
+
+
+def texto_via(via: Via) -> str:
+    """Nombre de una vía de origen como opción de menú o fila de la tabla de capacidades."""
+    nombres: dict[str, Callable[[], str]] = {
+        "iso": lambda: QCoreApplication.translate("Textos", "Usar un ISO del servidor"),
+        "subir_iso": lambda: QCoreApplication.translate("Textos", "Subir un ISO desde tu equipo"),
+        "descargar_url": lambda: QCoreApplication.translate(
+            "Textos", "Descargar un ISO desde una dirección web"
+        ),
+        "importar": lambda: QCoreApplication.translate("Textos", "Importar un disco del servidor"),
+        "subir_imagen": lambda: QCoreApplication.translate(
+            "Textos", "Subir una imagen de disco desde tu equipo"
+        ),
+        "descargar_imagen": lambda: QCoreApplication.translate(
+            "Textos", "Descargar una imagen de disco desde una dirección web"
+        ),
+        "clonar": lambda: QCoreApplication.translate("Textos", "Clonar una plantilla"),
+        "orden_arranque": lambda: QCoreApplication.translate(
+            "Textos", "Fijar el orden de arranque"
+        ),
+        "ampliar_disco": lambda: QCoreApplication.translate("Textos", "Ampliar el disco"),
+    }
+    fabrica = nombres.get(str(via))
+    return fabrica() if fabrica is not None else str(via)
+
+
+def texto_disponibilidad(disponibilidad: Disponibilidad) -> str:
+    """Si una vía se puede usar: «Disponible», «No disponible» o «Disponible, sin confirmar»."""
+    if disponibilidad == Disponibilidad.SI:
+        return QCoreApplication.translate("Textos", "Disponible")
+    if disponibilidad == Disponibilidad.CON_AVISO:
+        return QCoreApplication.translate("Textos", "Disponible, sin poder confirmar tus permisos")
+    return QCoreApplication.translate("Textos", "No disponible")
+
+
+def texto_estado_via(estado: EstadoVia) -> str:
+    """Por qué una vía está (o no) disponible, en lenguaje llano.
+
+    Con ``Disponibilidad.NO`` explica la causa y qué hacer; con ``CON_AVISO`` dice que no se
+    pudieron comprobar los permisos; con ``SI`` solo confirma que se puede usar.
+    """
+    if estado.disponibilidad == Disponibilidad.SI:
+        return QCoreApplication.translate("Textos", "Disponible.")
+    if estado.disponibilidad == Disponibilidad.CON_AVISO:
+        return QCoreApplication.translate(
+            "Textos",
+            "No pudimos comprobar tus permisos. Puedes intentarlo; si falta alguno, "
+            "ProxLaunch te dirá cuál.",
+        )
+    if estado.codigo is not None:
+        return texto_error(ErrorProxLaunch(estado.codigo, dict(estado.params)))
+    if estado.params.get("motivo") == "sin_storage_iso":
+        return QCoreApplication.translate(
+            "Textos",
+            "Ningún almacenamiento de este servidor guarda imágenes ISO. Pide a tu administrador "
+            "que active el contenido «ISO» en uno.",
+        )
+    return QCoreApplication.translate("Textos", "No disponible.")
+
+
+def texto_tipo_decision(tipo: TipoDecision) -> str:
+    """Resumen corto de qué se hizo con el almacenamiento de un tipo de archivo."""
+    if tipo == TipoDecision.UNICO:
+        return QCoreApplication.translate("Textos", "Es el único almacenamiento que sirve")
+    if tipo == TipoDecision.RECORDADO:
+        return QCoreApplication.translate("Textos", "El que usaste la vez anterior")
+    if tipo == TipoDecision.PREGUNTAR:
+        return QCoreApplication.translate("Textos", "Hay que elegir uno")
+    if tipo == TipoDecision.RECORDADO_NO_DISPONIBLE:
+        return QCoreApplication.translate("Textos", "El que usabas ya no está disponible")
+    return QCoreApplication.translate("Textos", "Ningún almacenamiento sirve")
+
+
+def texto_decision_storage(decision: DecisionStorage, contenido: Contenido | str) -> str:
+    """Mensaje completo de la decisión del almacenamiento (E-O04 si el recordado ya no sirve)."""
+    if decision.tipo == TipoDecision.RECORDADO_NO_DISPONIBLE:
+        return texto_error(
+            ErrorProxLaunch(
+                CodigoError.STORAGE_RECORDADO_NO_DISPONIBLE,
+                {"storage": decision.recordado or "", "contenido": str(contenido)},
+            )
+        )
+    if decision.tipo == TipoDecision.SIN_CANDIDATOS:
+        return QCoreApplication.translate(
+            "Textos",
+            "Ningún almacenamiento activo de este servidor guarda {contenido}. Pide a tu "
+            "administrador que lo active en uno.",
+        ).format(contenido=texto_contenido(contenido))
+    if decision.tipo == TipoDecision.PREGUNTAR:
+        return QCoreApplication.translate(
+            "Textos", "Elige el almacenamiento donde guardar {contenido}."
+        ).format(contenido=texto_contenido(contenido))
+    return texto_tipo_decision(decision.tipo)
+
+
+# --- Transferencias -----------------------------------------------------------------------
+
+
+def texto_tipo_transferencia(tipo: TipoTransferencia) -> str:
+    if tipo == TipoTransferencia.SUBIDA:
+        return QCoreApplication.translate("Textos", "Subida desde tu equipo")
+    return QCoreApplication.translate("Textos", "Descarga en el servidor")
+
+
+def texto_estado_transferencia(estado: EstadoTransferencia) -> str:
+    """Nombre corto del estado de una transferencia."""
+    nombres = {
+        EstadoTransferencia.CALCULANDO_HUELLA: QCoreApplication.translate(
+            "Textos", "Calculando la huella del archivo"
+        ),
+        EstadoTransferencia.COMPROBANDO: QCoreApplication.translate(
+            "Textos", "Comprobando el destino"
+        ),
+        EstadoTransferencia.TRANSFIRIENDO: QCoreApplication.translate("Textos", "Enviando"),
+        EstadoTransferencia.ESPERANDO_SERVIDOR: QCoreApplication.translate(
+            "Textos", "Esperando al servidor"
+        ),
+        EstadoTransferencia.VERIFICANDO: QCoreApplication.translate("Textos", "Verificando"),
+        EstadoTransferencia.TERMINADA: QCoreApplication.translate("Textos", "Terminada"),
+        EstadoTransferencia.CANCELADA: QCoreApplication.translate("Textos", "Cancelada"),
+        EstadoTransferencia.FALLIDA: QCoreApplication.translate("Textos", "Falló"),
+        EstadoTransferencia.SIN_ESPERAR: QCoreApplication.translate("Textos", "Dejaste de esperar"),
+    }
+    return nombres.get(estado, str(estado))
+
+
+def texto_progreso_transferencia(progreso: Progreso) -> str:
+    """Línea de progreso: «Enviando: 120 MiB de 1,2 GiB (10 %) · 45 MiB/s · quedan 2 min 5 s».
+
+    Sin porcentaje inventado: solo se muestra el que sale de bytes reales o el que informa el
+    servidor.
+    """
+    estado = progreso.estado
+    base = texto_estado_transferencia(estado)
+    if estado in (
+        EstadoTransferencia.CALCULANDO_HUELLA,
+        EstadoTransferencia.TRANSFIRIENDO,
+        EstadoTransferencia.ESPERANDO_SERVIDOR,
+    ):
+        partes: list[str] = []
+        total = progreso.total_bytes
+        if total and progreso.hechos_bytes > 0:
+            pct = min(100, int(progreso.hechos_bytes * 100 / total))
+            partes.append(
+                QCoreApplication.translate("Textos", "{hechos} de {total} ({pct} %)").format(
+                    hechos=texto_tamano_bytes(progreso.hechos_bytes),
+                    total=texto_tamano_bytes(total),
+                    pct=pct,
+                )
+            )
+        elif progreso.porcentaje_servidor is not None:
+            partes.append(
+                QCoreApplication.translate("Textos", "{pct} %").format(
+                    pct=int(progreso.porcentaje_servidor)
+                )
+            )
+        elif total:
+            partes.append(
+                QCoreApplication.translate("Textos", "{total} en total").format(
+                    total=texto_tamano_bytes(total)
+                )
+            )
+        if estado == EstadoTransferencia.TRANSFIRIENDO and progreso.velocidad_bps:
+            partes.append(
+                QCoreApplication.translate("Textos", "{v}/s").format(
+                    v=texto_tamano_bytes(int(progreso.velocidad_bps))
+                )
+            )
+            if progreso.restante_s is not None:
+                partes.append(
+                    QCoreApplication.translate("Textos", "quedan {t}").format(
+                        t=_duracion_corta(progreso.restante_s)
+                    )
+                )
+        if partes:
+            return f"{base}: " + " · ".join(partes)
+    return base
+
+
+def texto_quedo_archivo(quedo: bool | None) -> str:
+    """Qué pasó con el archivo del servidor tras cancelar o fallar (la app no puede borrarlo)."""
+    if quedo is True:
+        return QCoreApplication.translate(
+            "Textos",
+            "Quedó un archivo incompleto en el servidor. ProxLaunch no puede borrarlo: pídele a "
+            "tu administrador que lo elimine.",
+        )
+    if quedo is False:
+        return QCoreApplication.translate("Textos", "No quedó ningún archivo en el servidor.")
+    return QCoreApplication.translate(
+        "Textos",
+        "No sabemos si quedó un archivo incompleto en el servidor. Revisa el almacenamiento en "
+        "Proxmox.",
+    )
+
+
+def texto_registro_transferencia(r: RegistroTransferencia) -> str:
+    """Una línea del registro de la sesión; sin URL, sin ruta local y sin huella (INV-O6)."""
+    partes = [
+        texto_tipo_transferencia(r.tipo),
+        r.nombre_archivo,
+        QCoreApplication.translate("Textos", "en «{storage}» ({nodo})").format(
+            storage=r.storage, nodo=r.nodo
+        ),
+    ]
+    if r.tamano_bytes is not None:
+        partes.append(texto_tamano_bytes(r.tamano_bytes))
+    partes.append(r.hora_local)
+    partes.append(texto_estado_transferencia(r.estado))
+    return " · ".join(p for p in partes if p)
+
+
+def texto_aviso_archivo_local(codigo: str) -> str:
+    """Aviso (no bloqueante) al elegir un archivo de tu equipo para subir."""
+    if codigo == "no_iso9660":
+        return QCoreApplication.translate(
+            "Textos",
+            "Este archivo no parece un ISO de instalación normal. Puedes subirlo, pero revisa "
+            "que sea el correcto.",
+        )
+    if codigo == "raw_sin_verificar":
+        return QCoreApplication.translate(
+            "Textos",
+            "ProxLaunch no puede comprobar el contenido de un disco raw. Asegúrate de que es "
+            "el archivo que quieres importar.",
+        )
+    return ""
+
+
+def texto_motivo_url(motivo: str) -> str:
+    """Por qué una dirección web no sirve (V-O11), sin repetir la dirección."""
+    textos = {
+        "vacia": QCoreApplication.translate(
+            "Textos", "Escribe una dirección web completa que empiece por https://."
+        ),
+        "larga": QCoreApplication.translate("Textos", "La dirección web es demasiado larga."),
+        "caracteres": QCoreApplication.translate(
+            "Textos", "La dirección web tiene espacios o caracteres no admitidos."
+        ),
+        "esquema": QCoreApplication.translate(
+            "Textos", "Escribe una dirección web completa que empiece por https://."
+        ),
+        "solo_https": QCoreApplication.translate(
+            "Textos",
+            "Solo se admiten direcciones seguras (https://). Una dirección http:// no está "
+            "protegida y solo se permite en el modo avanzado, con confirmación.",
+        ),
+        "sin_host": QCoreApplication.translate(
+            "Textos", "A la dirección web le falta el nombre del servidor."
+        ),
+        "credenciales": QCoreApplication.translate(
+            "Textos",
+            "La dirección web no debe llevar usuario ni contraseña. Quítalos de la dirección.",
+        ),
+        "puerto": QCoreApplication.translate(
+            "Textos", "El puerto de la dirección web no es válido."
+        ),
+    }
+    return textos.get(
+        motivo, QCoreApplication.translate("Textos", "La dirección web no es válida.")
+    )
+
+
+def texto_motivo_checksum(motivo: str) -> str:
+    """Por qué una huella (checksum) no sirve (V-O12)."""
+    if motivo == "vacio":
+        return QCoreApplication.translate("Textos", "Escribe la huella del archivo.")
+    return QCoreApplication.translate(
+        "Textos",
+        "La huella no tiene un formato válido: son solo números y letras de la A a la F "
+        "(por ejemplo, 64 caracteres para SHA-256).",
+    )
+
+
+def texto_motivo_nombre_archivo(motivo: str, contenido: Contenido | str = Contenido.ISO) -> str:
+    """Por qué un nombre de archivo no sirve para subirlo o descargarlo (V-O09)."""
+    if motivo == "ruta_absoluta":
+        return texto_error(ErrorProxLaunch(CodigoError.RUTA_ABSOLUTA_NO_PERMITIDA))
+    if motivo == "extension":
+        if str(contenido) == Contenido.IMPORT:
+            return QCoreApplication.translate(
+                "Textos", "El nombre debe terminar en qcow2, raw o vmdk."
+            )
+        return QCoreApplication.translate("Textos", "El nombre debe terminar en iso o img.")
+    if motivo == "reservado":
+        return QCoreApplication.translate(
+            "Textos", "Ese nombre está reservado por Windows. Elige otro."
+        )
+    if motivo == "forma":
+        return QCoreApplication.translate(
+            "Textos", "El nombre debe tener entre 1 y 100 caracteres."
+        )
+    return QCoreApplication.translate(
+        "Textos",
+        "Usa solo letras sin acentos, números, punto, guion y guion bajo, y no empieces por "
+        "un punto.",
+    )
+
+
+# --- Asistente de sistema operativo -----------------------------------------------------
+
+
+def _valor_asistente(campo: CampoAsistente, valor: str) -> str:
+    """Valor de un cambio del asistente en lenguaje llano."""
+    if campo in (CampoAsistente.TPM, CampoAsistente.AGENTE):
+        if valor == "si":
+            return QCoreApplication.translate("Textos", "sí")
+        if valor == "no":
+            return QCoreApplication.translate("Textos", "no")
+    if campo == CampoAsistente.FIRMWARE:
+        if valor == "seabios":
+            return QCoreApplication.translate("Textos", "SeaBIOS (clásico)")
+        if valor == "ovmf":
+            return QCoreApplication.translate("Textos", "UEFI (OVMF)")
+    if campo == CampoAsistente.BUS_DISCO:
+        return valor.upper()
+    if campo == CampoAsistente.MODELO_RED:
+        return ", ".join("VirtIO" if v == "virtio" else v for v in valor.split(",") if v)
+    return valor
+
+
+def texto_cambio_asistente(cambio: CambioAsistente) -> str:
+    """Una línea «Arranque: SeaBIOS (clásico) → UEFI (OVMF)» de lo que cambió el asistente."""
+    campo = cambio.campo
+    if campo == CampoAsistente.FIRMWARE:
+        titulo = QCoreApplication.translate("Textos", "Arranque")
+    elif campo == CampoAsistente.TPM:
+        titulo = QCoreApplication.translate("Textos", "TPM 2.0")
+    elif campo == CampoAsistente.CONTROLADOR:
+        titulo = QCoreApplication.translate("Textos", "Controlador de discos")
+    elif campo == CampoAsistente.MODELO_RED:
+        titulo = QCoreApplication.translate("Textos", "Tarjeta de red")
+    elif campo == CampoAsistente.BUS_DISCO:
+        titulo = QCoreApplication.translate("Textos", "Conexión del primer disco")
+    else:
+        titulo = QCoreApplication.translate("Textos", "Agente de QEMU")
+    return QCoreApplication.translate("Textos", "{campo}: {antes} → {despues}").format(
+        campo=titulo,
+        antes=_valor_asistente(campo, cambio.antes),
+        despues=_valor_asistente(campo, cambio.despues),
+    )
+
+
+# --- Ajustes tras clonar, avisos de la máquina y fuente del origen --------------------------
+
+
+def _ajuste_verbo(ajuste: str) -> str:
+    """El ajuste como acción: «ampliar el disco»."""
+    if ajuste == "etiquetas":
+        return QCoreApplication.translate("Textos", "poner las etiquetas")
+    if ajuste == "cpu_memoria":
+        return QCoreApplication.translate("Textos", "cambiar los procesadores o la memoria")
+    if ajuste == "disco":
+        return QCoreApplication.translate("Textos", "ampliar el disco")
+    return QCoreApplication.translate("Textos", "aplicar los ajustes")
+
+
+def _ajuste_sustantivo(ajuste: str) -> str:
+    """El ajuste como cosa pendiente: «el tamaño del disco»."""
+    if ajuste == "etiquetas":
+        return QCoreApplication.translate("Textos", "las etiquetas")
+    if ajuste == "cpu_memoria":
+        return QCoreApplication.translate("Textos", "los procesadores o la memoria")
+    if ajuste == "disco":
+        return QCoreApplication.translate("Textos", "el tamaño del disco")
+    return QCoreApplication.translate("Textos", "los ajustes")
+
+
+def texto_aviso_origen(codigo: str) -> str:
+    """Texto de un código de aviso de una máquina del libro del MVP 4 (vacío si no se conoce).
+
+    Códigos: ``ajuste_pendiente:<ajuste>``, ``ajuste_omitido:disco``, ``ajustes_reintentados``
+    y ``discos_sueltos_posibles``.
+    """
+    base, _, detalle = codigo.partition(":")
+    if base == "ajuste_pendiente":
+        return QCoreApplication.translate(
+            "Textos", "Se creó, pero falta aplicar {ajuste}. Puedes reintentar los ajustes."
+        ).format(ajuste=_ajuste_sustantivo(detalle))
+    if base == "ajuste_omitido":
+        return QCoreApplication.translate(
+            "Textos",
+            "No se amplió el disco: no pudimos comprobar que tengas el permiso VM.Config.Disk. "
+            "Amplíalo en Proxmox si lo necesitas.",
+        )
+    if codigo == "ajustes_reintentados":
+        return QCoreApplication.translate(
+            "Textos", "Se aplicaron los ajustes que faltaban al reintentar."
+        )
+    if codigo == "discos_sueltos_posibles":
+        return QCoreApplication.translate(
+            "Textos",
+            "La importación falló después de enviarse; pueden haber quedado discos sueltos en el "
+            "almacenamiento. Revísalos en Proxmox.",
+        )
+    return ""
+
+
+def texto_fuente_origen(cfg: ConfiguracionVM) -> str:
+    """De dónde sale el sistema de una máquina: nombre del ISO, la imagen o la plantilla.
+
+    Nunca una dirección web ni una ruta local. Vacío si el origen es un disco vacío.
+    """
+    det = cfg.detalle_origen
+    if isinstance(det, DetalleIso):
+        return det.iso.volid or det.iso.nombre
+    if isinstance(det, DetalleImportacion):
+        return det.imagen.volid or det.imagen.nombre
+    if isinstance(det, DetalleClon):
+        return det.plantilla.nombre or (
+            "" if det.plantilla.vmid is None else str(det.plantilla.vmid)
+        )
+    return ""
+
+
+def texto_ajustes_clon(cfg: ConfiguracionVM) -> str:
+    """Ajustes pedidos sobre la plantilla, en una línea; «igual que la plantilla» si no hay."""
+    det = cfg.detalle_origen
+    if not isinstance(det, DetalleClon):
+        return ""
+    a = det.ajustes
+    partes: list[str] = []
+    if a.sockets is not None and a.cores is not None:
+        partes.append(
+            QCoreApplication.translate("Textos", "{n} procesadores").format(n=a.sockets * a.cores)
+        )
+    elif a.cores is not None:
+        partes.append(QCoreApplication.translate("Textos", "{n} núcleos").format(n=a.cores))
+    elif a.sockets is not None:
+        partes.append(QCoreApplication.translate("Textos", "{n} sockets").format(n=a.sockets))
+    if a.tipo_cpu is not None:
+        partes.append(QCoreApplication.translate("Textos", "CPU {t}").format(t=a.tipo_cpu))
+    if a.memoria_mib is not None:
+        partes.append(
+            QCoreApplication.translate("Textos", "{m} de memoria").format(
+                m=texto_tamano_bytes(a.memoria_mib * 1024 * 1024)
+            )
+        )
+    if a.disco_gib is not None:
+        partes.append(
+            QCoreApplication.translate("Textos", "disco de {g} GiB").format(g=a.disco_gib)
+        )
+    if not partes:
+        return QCoreApplication.translate("Textos", "igual que la plantilla")
+    return ", ".join(partes)
+
+
+def texto_resumen_origen(cfg: ConfiguracionVM) -> str:
+    """«ISO: local:iso/alpine.iso (Linux)» o «Clon: web-base (Rápido y ligero)»; vacío si no hay."""
+    if cfg.origen == OrigenSO.DISCO_VACIO:
+        return ""
+    texto = texto_origen_corto(cfg.origen)
+    fuente = texto_fuente_origen(cfg)
+    if fuente:
+        texto += f": {fuente}"
+    detalles: list[str] = []
+    if cfg.origen != OrigenSO.CLONAR_PLANTILLA and cfg.tipo_so is not None:
+        detalles.append(texto_tipo_so(cfg.tipo_so))
+    det = cfg.detalle_origen
+    if isinstance(det, DetalleClon):
+        detalles.append(texto_modo_clon(det.modo_efectivo or det.modo, avanzado=True))
+        detalles.append(texto_ajustes_clon(cfg))
+    elif isinstance(det, DetalleImportacion) and det.ampliar_a_gib is not None:
+        detalles.append(
+            QCoreApplication.translate("Textos", "ampliado a {g} GiB").format(g=det.ampliar_a_gib)
+        )
+    detalles = [d for d in detalles if d]
+    if detalles:
+        texto += " (" + ", ".join(detalles) + ")"
+    return texto
+
+
+# --- Errores E-O ----------------------------------------------------------------------------
+
+
+def _texto_permiso_con_via(p: Mapping[str, str]) -> str:
+    """E-O20: permiso que falta para una acción concreta (extiende CA-L18.9)."""
+    accion = texto_accion_via(p.get("via", ""))
+    if not p.get("privilegio"):
+        return _fmt(
+            QCoreApplication.translate(
+                "Textos",
+                "Tu usuario no tiene permiso para {accion}. Pide a tu administrador este permiso "
+                "o usa un token con permisos suficientes.",
+            ),
+            accion=accion,
+        )
+    if p.get("desconocido") == "1":
+        return _fmt(
+            QCoreApplication.translate(
+                "Textos",
+                "No pudimos comprobar tus permisos. Para {accion} hace falta {privilegio} en "
+                "«{ruta}»; sin poder confirmarlo, esta opción no se usa.",
+            ),
+            p,
+            accion=accion,
+        )
+    if p.get("inferido") == "1":
+        return _fmt(
+            QCoreApplication.translate(
+                "Textos",
+                "Proxmox no permitió {accion}. Lo más probable es que a tu usuario le falte "
+                "{privilegio} en «{ruta}». Pídeselo a tu administrador.",
+            ),
+            p,
+            accion=accion,
+        )
+    return _fmt(
+        QCoreApplication.translate(
+            "Textos",
+            "Falta el permiso {privilegio} en «{ruta}» para {accion}. Pídeselo a tu administrador.",
+        ),
+        p,
+        accion=accion,
+    )
+
+
+def _texto_parametro_origen(campo: str) -> str | None:
+    """Rechazos de Proxmox que el traductor clasifica por campo (``filename``, ``content``…)."""
+    if campo == "filename":
+        return QCoreApplication.translate(
+            "Textos",
+            "Proxmox no aceptó el nombre del archivo. Usa solo letras sin acentos, números, "
+            "punto, guion y guion bajo, con la extensión correcta (iso, qcow2, raw o vmdk).",
+        )
+    if campo == "content":
+        return QCoreApplication.translate(
+            "Textos",
+            "Ese almacenamiento no admite este tipo de archivo. Elige otro almacenamiento o "
+            "pide a tu administrador que lo active.",
+        )
+    if campo == "media":
+        return QCoreApplication.translate(
+            "Textos",
+            "Proxmox no aceptó el ISO como unidad de CD. Comprueba que el archivo sea un ISO y "
+            "vuelve a intentarlo.",
+        )
+    if campo == "size":
+        return QCoreApplication.translate(
+            "Textos",
+            "Los discos solo pueden crecer: elige un tamaño igual o mayor que el actual.",
+        )
+    return None
+
+
+def _texto_tipo_fuente(tipo: str) -> str:
+    if tipo == "plantilla":
+        return QCoreApplication.translate("Textos", "La plantilla")
+    if tipo == "imagen":
+        return QCoreApplication.translate("Textos", "La imagen de disco")
+    if tipo == "drivers":
+        return QCoreApplication.translate("Textos", "El CD de drivers")
+    if tipo == "iso":
+        return QCoreApplication.translate("Textos", "El ISO")
+    return QCoreApplication.translate("Textos", "El archivo")
+
+
+def _texto_motivo_clon(motivo: str, nombre: str) -> str:
+    if motivo == "no_compartido":
+        return QCoreApplication.translate(
+            "Textos",
+            "la plantilla está en un almacenamiento que solo existe en su nodo y la máquina "
+            "nueva iría a otro",
+        )
+    if motivo == "sin_images":
+        return QCoreApplication.translate(
+            "Textos", "el almacenamiento elegido no admite discos de máquinas"
+        )
+    if motivo == "parametro_enlazado":
+        return QCoreApplication.translate(
+            "Textos",
+            "un clon rápido y ligero no permite elegir almacenamiento ni formato; usa «Copia "
+            "independiente»",
+        )
+    if motivo == "enlazado_no_soportado":
+        return QCoreApplication.translate(
+            "Textos",
+            "el almacenamiento de la plantilla no admite clones rápidos y ligeros; usa «Copia "
+            "independiente»",
+        )
+    if motivo == "bloqueada":
+        return QCoreApplication.translate(
+            "Textos", "la plantilla está ocupada con otra operación; espera a que termine"
+        )
+    if motivo == "no_plantilla":
+        return QCoreApplication.translate("Textos", "«{nombre}» ya no es una plantilla").format(
+            nombre=nombre or QCoreApplication.translate("Textos", "esa máquina")
+        )
+    if motivo == "tpm_en_marcha":
+        return QCoreApplication.translate(
+            "Textos", "la plantilla tiene TPM y está encendida; apágala antes de clonar"
+        )
+    return QCoreApplication.translate("Textos", "Proxmox no lo permite con esta plantilla")
+
+
+def _texto_motivo_imagen(motivo: str) -> str:
+    if motivo == "backing":
+        return QCoreApplication.translate(
+            "Textos",
+            "Este disco depende de otro archivo (un disco base). Conviértelo a un qcow2 "
+            "independiente antes de subirlo.",
+        )
+    if motivo == "cifrado":
+        return QCoreApplication.translate(
+            "Textos",
+            "Este disco está cifrado y Proxmox no puede importarlo. Quítale el cifrado antes de "
+            "subirlo.",
+        )
+    if motivo == "multiarchivo":
+        return QCoreApplication.translate(
+            "Textos",
+            "Este disco está formado por varios archivos. Conviértelo a un solo archivo antes "
+            "de subirlo.",
+        )
+    if motivo == "ova":
+        return QCoreApplication.translate(
+            "Textos",
+            "Un archivo OVA no se puede importar tal cual. Extrae el disco que lleva dentro y "
+            "súbelo.",
+        )
+    if motivo == "version":
+        return QCoreApplication.translate(
+            "Textos",
+            "Esta versión del formato de disco no es compatible. Conviértelo a un qcow2 estándar.",
+        )
+    if motivo == "truncado":
+        return QCoreApplication.translate(
+            "Textos",
+            "El archivo parece incompleto o dañado. Vuelve a copiarlo o a descargarlo.",
+        )
+    return QCoreApplication.translate(
+        "Textos",
+        "Este disco depende de otro archivo, está cifrado o no es un solo archivo. Conviértelo "
+        "a un qcow2 independiente antes de subirlo.",
+    )
+
+
+def _texto_error_origen(error: ErrorProxLaunch) -> str | None:
+    """Mensajes E-O01 a E-O24; ``None`` si el código no es del origen del sistema operativo."""
+    p = error.params
+    c = error.codigo
+    if c == CodigoError.IMPORTAR_VERSION_NO_SOPORTADA:
+        return _fmt(
+            QCoreApplication.translate(
+                "Textos",
+                "Tu Proxmox {version} no permite importar discos sin ser administrador del "
+                "servidor. Puedes instalar desde un ISO o clonar una plantilla. Desde la "
+                "versión 8.4 sí se puede importar.",
+            ),
+            p,
+        )
+    if c == CodigoError.IMPORTAR_SIN_STORAGE_IMPORT:
+        texto = QCoreApplication.translate(
+            "Textos",
+            "Para importar discos, pide a tu administrador que active el contenido «Import» en "
+            "un almacenamiento de tipo directorio, NFS o CIFS.",
+        )
+        candidatos = [c for c in p.get("candidatos", "").split(",") if c]
+        if candidatos:
+            texto += " " + QCoreApplication.translate(
+                "Textos", "Podría activarse en: {lista}."
+            ).format(lista=", ".join(f"«{c}»" for c in candidatos))
+        return texto
+    if c == CodigoError.DESCARGA_URL_SIN_PERMISO:
+        if p.get("privilegio") == "Sys.AccessNetwork":
+            return _fmt(
+                QCoreApplication.translate(
+                    "Textos",
+                    "Falta el permiso Sys.AccessNetwork en el nodo «{nodo}» para descargar "
+                    "desde una dirección web. Pídeselo a tu administrador o descarga el archivo "
+                    "en tu equipo y súbelo.",
+                ),
+                p,
+            )
+        return QCoreApplication.translate(
+            "Textos",
+            "Descargar desde una dirección web exige permisos de administrador en esta versión "
+            "de Proxmox. Descarga el archivo en tu equipo y súbelo.",
+        )
+    if c == CodigoError.STORAGE_RECORDADO_NO_DISPONIBLE:
+        return _fmt(
+            QCoreApplication.translate(
+                "Textos",
+                "El almacenamiento «{storage}» que usabas en este servidor ya no está "
+                "disponible o ya no admite {contenido}. Elige otro.",
+            ),
+            p,
+            contenido=texto_contenido(p.get("contenido", "")),
+        )
+    if c == CodigoError.CATALOGO_SIN_PERMISO:
+        return _fmt(
+            QCoreApplication.translate(
+                "Textos",
+                "No puedes ver los archivos de «{storage}»: falta el permiso Datastore.Audit o "
+                "Datastore.AllocateSpace.",
+            ),
+            p,
+        )
+    if c == CodigoError.TRANSFERENCIA_NO_VERIFICADA:
+        return QCoreApplication.translate(
+            "Textos",
+            "El servidor dice que terminó, pero el archivo no coincide con el que enviaste. No "
+            "lo uses.",
+        )
+    if c == CodigoError.TRANSFERENCIA_HUELLA_INCORRECTA:
+        return QCoreApplication.translate(
+            "Textos", "El archivo llegó dañado: la huella no coincide. No quedó guardado."
+        )
+    if c == CodigoError.TRANSFERENCIA_CORTADA:
+        texto = QCoreApplication.translate(
+            "Textos", "Se cortó la conexión mientras se subía el archivo."
+        )
+        if p.get("bytes") and p.get("total") and p.get("total") != "0":
+            texto += " " + QCoreApplication.translate(
+                "Textos", "Se habían enviado {hechos} de {total}."
+            ).format(hechos=texto_tamano_bytes(p["bytes"]), total=texto_tamano_bytes(p["total"]))
+        return texto
+    if c == CodigoError.ARCHIVO_CAMBIO:
+        return QCoreApplication.translate(
+            "Textos", "El archivo cambió mientras se subía. Vuelve a intentarlo."
+        )
+    if c == CodigoError.NOMBRE_YA_EXISTE:
+        return _fmt(
+            QCoreApplication.translate(
+                "Textos",
+                "Ya existe un archivo llamado «{nombre}» en «{storage}». ProxLaunch no lo "
+                "sobrescribe: usa el que ya está o elige otro nombre.",
+            ),
+            p,
+        )
+    if c == CodigoError.DESCARGA_URL_FALLIDA:
+        return _fmt(
+            QCoreApplication.translate(
+                "Textos",
+                "El servidor no pudo descargar {archivo} desde {host}: {motivo}. Prueba a "
+                "descargarlo en tu equipo y subirlo.",
+            ),
+            p,
+            motivo=texto_sin_urls(p.get("motivo", ""))
+            or QCoreApplication.translate("Textos", "sin más detalles"),
+        )
+    if c == CodigoError.IMPORTAR_SIN_PERMISO:
+        return _fmt(
+            QCoreApplication.translate(
+                "Textos", "Falta el permiso {privilegio} en «{ruta}» para {accion}."
+            ),
+            p,
+            accion=texto_accion_via(p.get("via") or "importar"),
+        )
+    if c == CodigoError.IMPORTAR_DESTINO_SIN_PERMISO:
+        return _fmt(
+            QCoreApplication.translate(
+                "Textos",
+                "Para guardar el disco importado necesitas el permiso Datastore.AllocateSpace "
+                "en «{storage}».",
+            ),
+            p,
+        )
+    if c == CodigoError.RUTA_ABSOLUTA_NO_PERMITIDA:
+        return QCoreApplication.translate(
+            "Textos",
+            "Importar desde una ruta del servidor exige ser administrador (root). Sube el "
+            "archivo desde tu equipo.",
+        )
+    if c == CodigoError.IMAGEN_NO_ADMITIDA:
+        return _texto_motivo_imagen(p.get("motivo", ""))
+    if c == CodigoError.FUENTE_DESAPARECIO:
+        return _fmt(
+            QCoreApplication.translate(
+                "Textos", "{tipo} «{nombre}» ya no está en el servidor. Elige otra."
+            ),
+            p,
+            tipo=_texto_tipo_fuente(p.get("tipo", "")),
+        )
+    if c == CodigoError.SIN_PLANTILLAS:
+        return QCoreApplication.translate(
+            "Textos",
+            "No veo ninguna plantilla con tu cuenta. Pide el permiso VM.Audit o crea la "
+            "plantilla en Proxmox (clic derecho en la máquina → Convertir en plantilla).",
+        )
+    if c == CodigoError.CLON_NO_POSIBLE:
+        return QCoreApplication.translate("Textos", "No se puede clonar así: {motivo}.").format(
+            motivo=_texto_motivo_clon(p.get("motivo", ""), p.get("nombre", ""))
+        )
+    if c == CodigoError.CLON_ID_OCUPADO:
+        return _fmt(
+            QCoreApplication.translate(
+                "Textos",
+                "El número de máquina {vmid} se ocupó justo antes de clonar. Vuelve a intentarlo.",
+            ),
+            p,
+        )
+    if c == CodigoError.FUENTE_ES_URL:
+        return QCoreApplication.translate(
+            "Textos",
+            "Aquí va el nombre de un archivo del servidor, no una dirección web. Para descargar "
+            "usa «Descargar en el servidor».",
+        )
+    if c == CodigoError.ESPACIO_INSUFICIENTE_TRANSFERENCIA:
+        if p.get("ambito") == "raiz":
+            return _fmt(
+                QCoreApplication.translate(
+                    "Textos",
+                    "El nodo «{nodo}» tiene poco espacio temporal ({libre} libres) para recibir "
+                    "un archivo de {tamano}. La subida podría fallar.",
+                ),
+                p,
+                tamano=texto_tamano_bytes(p.get("tamano")),
+                libre=texto_tamano_bytes(p.get("libre")),
+            )
+        return _fmt(
+            QCoreApplication.translate(
+                "Textos", "El archivo pesa {tamano} y «{storage}» solo tiene {libre} libres."
+            ),
+            p,
+            tamano=texto_tamano_bytes(p.get("tamano")),
+            libre=texto_tamano_bytes(p.get("libre")),
+        )
+    if c == CodigoError.TRANSFERENCIA_EN_CURSO:
+        return QCoreApplication.translate(
+            "Textos", "Hay una transferencia en curso. Espera a que termine o cancélala."
+        )
+    if c == CodigoError.AJUSTE_POST_CLON_FALLIDO:
+        ajustes = [a for a in p.get("ajuste", "").split(",") if a]
+        return _fmt(
+            QCoreApplication.translate(
+                "Textos",
+                "La máquina «{nombre}» se clonó, pero no se pudo {ajuste}. Puedes reintentar los "
+                "ajustes o deshacer.",
+            ),
+            p,
+            ajuste=_unir_y([_ajuste_verbo(a) for a in ajustes]) or _ajuste_verbo(""),
+        )
+    if c == CodigoError.TRANSFERENCIA_CANCELADA:
+        quedo = {"si": True, "no": False}.get(p.get("quedo_archivo", ""))
+        return (
+            QCoreApplication.translate("Textos", "Transferencia cancelada.")
+            + " "
+            + texto_quedo_archivo(quedo)
+        )
+    return None
+
+
+# --- Reglas V-O -----------------------------------------------------------------------------
+
+
+def _nombre_fuente_campo(campo: str, regla: str) -> str:
+    """«el ISO», «el CD de drivers» o «la imagen de disco» según el campo de la regla."""
+    if campo.endswith("drivers"):
+        return QCoreApplication.translate("Textos", "el CD de drivers")
+    if regla.startswith("V-O03") or campo.endswith("imagen"):
+        return QCoreApplication.translate("Textos", "la imagen de disco")
+    return QCoreApplication.translate("Textos", "el ISO")
+
+
+def _texto_v_o_fuente(p: Problema) -> str:
+    """V-O02 (ISO, drivers) y V-O03 (imagen): la fuente no sirve o no está."""
+    prm = p.params
+    motivo = prm.get("motivo", "")
+    objeto = _nombre_fuente_campo(p.campo, p.codigo)
+    es_imagen = p.codigo.startswith("V-O03")
+    if motivo == "ruta_absoluta":
+        return texto_error(ErrorProxLaunch(CodigoError.RUTA_ABSOLUTA_NO_PERMITIDA))
+    if motivo in ("forma", "caracteres", "extension", "reservado"):
+        contenido = Contenido.IMPORT if es_imagen else Contenido.ISO
+        return QCoreApplication.translate("Textos", "No se puede usar {objeto}. {causa}").format(
+            objeto=objeto, causa=texto_motivo_nombre_archivo(motivo, contenido)
+        )
+    if motivo == "no_disponible":
+        if prm.get("nombre"):
+            texto = _fmt(
+                QCoreApplication.translate("Textos", "No encuentro «{nombre}» en «{nodo}»."), prm
+            )
+        else:
+            texto = _fmt(
+                QCoreApplication.translate("Textos", "No encuentro {objeto} en «{nodo}»."),
+                prm,
+                objeto=objeto,
+            )
+        alternativas = [a for a in prm.get("alternativas", "").split(",") if a]
+        if alternativas:
+            texto += " " + QCoreApplication.translate("Textos", "Disponibles: {lista}.").format(
+                lista=", ".join(f"«{a.strip()}»" for a in alternativas)
+            )
+        return texto
+    if motivo == "nombre_no_admitido":
+        return QCoreApplication.translate(
+            "Textos",
+            "Este archivo tiene un nombre que ProxLaunch no admite. Cámbiale el nombre en "
+            "Proxmox o elige otro.",
+        )
+    if motivo == "sin_resolver":
+        return _fmt(
+            QCoreApplication.translate(
+                "Textos",
+                "No encuentro «{nombre}» entre los archivos del servidor. Elígelo de la lista.",
+            ),
+            prm,
+        )
+    if motivo == "storage_inactivo":
+        return _fmt(
+            QCoreApplication.translate(
+                "Textos", "El almacenamiento «{storage}» no está activo en «{nodo}»."
+            ),
+            prm,
+        )
+    if motivo == "version":
+        return texto_error(
+            ErrorProxLaunch(
+                CodigoError.IMPORTAR_VERSION_NO_SOPORTADA, {"version": prm.get("version", "")}
+            )
+        )
+    return QCoreApplication.translate("Textos", "Elige {objeto} de la lista.").format(objeto=objeto)
+
+
+def _texto_v_o01(p: Problema) -> str:
+    motivo = p.params.get("motivo", "")
+    if motivo == "falta_fuente":
+        if p.campo.endswith("imagen"):
+            return QCoreApplication.translate("Textos", "Elige una imagen de disco.")
+        if p.campo.endswith("plantilla"):
+            return QCoreApplication.translate("Textos", "Elige una plantilla.")
+        return QCoreApplication.translate("Textos", "Elige un ISO.")
+    if motivo == "falta_so":
+        return QCoreApplication.translate("Textos", "Elige qué sistema operativo vas a instalar.")
+    if motivo == "incoherente":
+        return QCoreApplication.translate(
+            "Textos", "Los datos del sistema operativo no corresponden al origen elegido."
+        )
+    return QCoreApplication.translate("Textos", "Falta elegir de dónde sale el sistema operativo.")
+
+
+def _campo_legible_origen(campo: str) -> str:
+    if campo == "tipo_so":
+        return QCoreApplication.translate("Textos", "el sistema operativo")
+    if campo == "tpm":
+        return QCoreApplication.translate("Textos", "el TPM")
+    if campo == "agente_qemu":
+        return QCoreApplication.translate("Textos", "el agente de QEMU")
+    return QCoreApplication.translate("Textos", "el archivo de origen")
+
+
+def _texto_v_o07(prm: Mapping[str, str]) -> str:
+    try:
+        so = texto_tipo_so(TipoSO(prm.get("tipo_so", "")))
+    except ValueError:
+        so = QCoreApplication.translate("Textos", "Este sistema")
+    return QCoreApplication.translate(
+        "Textos",
+        "{so} pide al menos {cores} núcleos, {memoria} GiB de memoria y {disco} GiB de disco.",
+    ).format(
+        so=so,
+        cores=prm.get("minimo_cores", "?"),
+        memoria=f"{int(prm['minimo_memoria_mib']) / 1024:g}"
+        if prm.get("minimo_memoria_mib", "").isdigit()
+        else "?",
+        disco=prm.get("minimo_disco_gib", "?"),
+    )
+
+
+def _texto_v_o18(prm: Mapping[str, str]) -> str:
+    if prm.get("efecto") == "orden_arranque":
+        base = QCoreApplication.translate(
+            "Textos",
+            "Sin el permiso VM.Config.Disk no se puede fijar el orden de arranque. La máquina se "
+            "creará igual; si no arranca desde el ISO, cambia el orden en Proxmox.",
+        )
+    else:
+        base = QCoreApplication.translate(
+            "Textos",
+            "Sin el permiso VM.Config.Disk no se puede ampliar el disco. La máquina se creará "
+            "con el tamaño original.",
+        )
+    if prm.get("desconocido") == "1":
+        base = QCoreApplication.translate("Textos", "No pudimos comprobar tus permisos. ") + base
+    return base
+
+
+def _texto_problema_origen(p: Problema) -> str | None:
+    """Reglas V-O01 a V-O30 (docs/requisitos/mvp4.md §7); ``None`` si no es una de ellas."""
+    cod = p.codigo
+    prm = p.params
+    if cod == "V-O01":
+        return _texto_v_o01(p)
+    if cod == "V-O01.ajeno":
+        return QCoreApplication.translate(
+            "Textos", "Este origen no usa {dato}: se ignorará."
+        ).format(dato=_campo_legible_origen(p.campo))
+    if cod in ("V-O02", "V-O03"):
+        return _texto_v_o_fuente(p)
+    if cod in ("V-O02.ambiguo", "V-O03.ambiguo"):
+        return _fmt(
+            QCoreApplication.translate(
+                "Textos",
+                "Hay más de un archivo llamado «{nombre}» ({volids}). Elige cuál usar.",
+            ),
+            prm,
+        )
+    if cod == "V-O02.drivers":
+        return QCoreApplication.translate(
+            "Textos",
+            "Windows necesita los drivers VirtIO y no encuentro ningún ISO «virtio-win» en el "
+            "servidor. Sube uno, o elige «Crear sin los drivers» y cárgalos después.",
+        )
+    if cod == "V-O04":
+        return _texto_v_o04(prm)
+    if cod == "V-O04.ambiguo":
+        return _fmt(
+            QCoreApplication.translate(
+                "Textos", "Hay varias plantillas llamadas «{nombre}» ({plantillas}). Elige una."
+            ),
+            prm,
+        )
+    if cod == "V-O05":
+        if prm.get("motivo") == "tpm":
+            return QCoreApplication.translate("Textos", "Windows 11 exige un TPM 2.0.")
+        return QCoreApplication.translate("Textos", "Windows 11 exige arranque UEFI (OVMF).")
+    if cod == "V-O05.seabios":
+        return QCoreApplication.translate(
+            "Textos",
+            "Windows funciona con el arranque clásico (SeaBIOS), pero se recomienda UEFI (OVMF).",
+        )
+    if cod == "V-O05.rhel10":
+        if prm.get("coincide_iso") == "0":
+            return QCoreApplication.translate(
+                "Textos",
+                "Si vas a instalar RHEL 10 (o Rocky, Alma, CentOS Stream 10), necesita un "
+                "procesador x86-64-v3. Elige ese tipo de CPU o «host».",
+            )
+        return QCoreApplication.translate(
+            "Textos",
+            "Este ISO parece de la familia RHEL 10 (Red Hat, Rocky, Alma), que necesita un "
+            "procesador x86-64-v3. Con el tipo de CPU actual puede no arrancar: elige "
+            "x86-64-v3 o «host».",
+        )
+    if cod == "V-O06":
+        return _fmt(
+            QCoreApplication.translate(
+                "Textos", "Con un ISO solo caben {maximo} discos IDE; usa SCSI o SATA."
+            ),
+            prm,
+            maximo=prm.get("maximo", "2"),
+        )
+    if cod == "V-O07":
+        return _texto_v_o07(prm)
+    if cod == "V-O08":
+        if prm.get("storage"):
+            return _fmt(
+                QCoreApplication.translate(
+                    "Textos",
+                    "No hay un almacenamiento válido para el TPM: «{storage}» en «{nodo}» no "
+                    "admite discos de máquinas. Elige otro.",
+                ),
+                prm,
+            )
+        return QCoreApplication.translate(
+            "Textos", "No hay un almacenamiento válido para el TPM. Elige uno que admita discos."
+        )
+    if cod in ("V-O13", "V-O13.raiz"):
+        return texto_error(
+            ErrorProxLaunch(
+                CodigoError.ESPACIO_INSUFICIENTE_TRANSFERENCIA,
+                {**prm, **({"ambito": "raiz"} if cod == "V-O13.raiz" else {})},
+            )
+        )
+    if cod == "V-O14":
+        return texto_error(ErrorProxLaunch(CodigoError.NOMBRE_YA_EXISTE, dict(prm)))
+    if cod == "V-O15":
+        return _fmt(
+            QCoreApplication.translate(
+                "Textos",
+                "Falta el permiso {privilegio} en «{ruta}» para subir o descargar archivos.",
+            ),
+            prm,
+        )
+    if cod == "V-O16":
+        return texto_error(ErrorProxLaunch(CodigoError.DESCARGA_URL_SIN_PERMISO, dict(prm)))
+    if cod == "V-O17":
+        return _fmt(
+            QCoreApplication.translate(
+                "Textos", "Falta el permiso {privilegio} en «{ruta}» para clonar la plantilla."
+            ),
+            prm,
+        )
+    if cod == "V-O18":
+        return _texto_v_o18(prm)
+    if cod == "V-O19":
+        return texto_error(ErrorProxLaunch(CodigoError.IMPORTAR_DESTINO_SIN_PERMISO, dict(prm)))
+    if cod == "V-O21":
+        if prm.get("motivo") == "storage_destino":
+            return QCoreApplication.translate(
+                "Textos",
+                "Un clon rápido y ligero se guarda en el almacenamiento de la plantilla y no "
+                "permite elegir otro. Elige «Copia independiente».",
+            )
+        return QCoreApplication.translate(
+            "Textos",
+            "Este almacenamiento no permite clonar de forma rápida y ligera. Elige «Copia "
+            "independiente».",
+        )
+    if cod == "V-O23":
+        return _fmt(
+            QCoreApplication.translate(
+                "Textos",
+                "El tamaño del disco debe ser un número entero de GiB entre {minimo} y {maximo}.",
+            ),
+            prm,
+        )
+    if cod == "V-O23.tamano":
+        return _fmt(
+            QCoreApplication.translate(
+                "Textos",
+                "El disco ya mide {actual_gib} GiB y pediste {pedido_gib} GiB. Los discos solo "
+                "pueden crecer.",
+            ),
+            prm,
+        )
+    if cod == "V-O24":
+        campo = p.campo.rpartition(".")[2]
+        texto = texto_problema(Problema(campo, prm.get("regla", ""), p.severidad, {}))
+        if texto == texto_generico():
+            return QCoreApplication.translate(
+                "Textos", "Un valor que pides cambiar en la plantilla no es válido."
+            )
+        return texto
+    if cod == "V-O25":
+        return _texto_v_l11(prm)
+    if cod == "V-O26":
+        return texto_error(ErrorProxLaunch(CodigoError.STORAGE_RECORDADO_NO_DISPONIBLE, dict(prm)))
+    if cod == "V-O27":
+        return texto_error(ErrorProxLaunch(CodigoError.TRANSFERENCIA_EN_CURSO))
+    if cod == "V-O29":
+        return QCoreApplication.translate(
+            "Textos", "Para importar un disco necesitas un disco donde guardarlo."
+        )
+    if cod == "V-O29.sindisco":
+        return QCoreApplication.translate(
+            "Textos",
+            "Sin disco no podrás instalar el sistema desde el ISO. Agrega un disco si quieres "
+            "instalarlo.",
+        )
+    return None
+
+
+def _texto_v_o04(prm: Mapping[str, str]) -> str:
+    motivo = prm.get("motivo", "")
+    if motivo == "no_en_nodo":
+        return _fmt(
+            QCoreApplication.translate(
+                "Textos",
+                "La plantilla «{nombre}» no está en el nodo «{nodo}» ni en un almacenamiento "
+                "compartido con él.",
+            ),
+            prm,
+        )
+    if motivo == "bloqueada":
+        return QCoreApplication.translate(
+            "Textos", "La plantilla está ocupada con otra operación. Espera a que termine."
+        )
+    if motivo == "sin_detalle":
+        return _fmt(
+            QCoreApplication.translate(
+                "Textos", "No se pudo leer la configuración de la plantilla «{nombre}»."
+            ),
+            prm,
+        )
+    if motivo == "sin_resolver":
+        return QCoreApplication.translate("Textos", "Elige una plantilla de la lista.")
+    texto = _fmt(QCoreApplication.translate("Textos", "No encuentro la plantilla «{nombre}»."), prm)
+    alternativas = [a for a in prm.get("alternativas", "").split(",") if a]
+    if alternativas:
+        texto += " " + QCoreApplication.translate("Textos", "Disponibles: {lista}.").format(
+            lista=", ".join(f"«{a.strip()}»" for a in alternativas)
+        )
+    return texto
+
+
+def _texto_v_l11_fuente(prm: Mapping[str, str]) -> str:
+    """V-L11 por origen: «pve2» no tiene el ISO / la imagen / el CD de drivers."""
+    tipo = prm.get("tipo", "")
+    objeto = _texto_tipo_fuente(tipo).lower()
+    return _fmt(
+        QCoreApplication.translate("Textos", "«{nodo}» no tiene {objeto} «{fuente}»."),
+        prm,
+        objeto=objeto,
+    )
+
+
+def _texto_v_l11_plantilla(prm: Mapping[str, str]) -> str:
+    """V-L11 por origen: «pve2» no tiene la plantilla ni su almacenamiento."""
+    if prm.get("storage"):
+        return _fmt(
+            QCoreApplication.translate(
+                "Textos",
+                "«{nodo}» no tiene la plantilla «{plantilla}» ni el almacenamiento «{storage}».",
+            ),
+            prm,
+        )
+    return _fmt(
+        QCoreApplication.translate("Textos", "«{nodo}» no tiene la plantilla «{plantilla}»."),
+        prm,
+    )

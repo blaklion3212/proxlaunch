@@ -70,6 +70,16 @@ class DialogoDeshacer(QDialog):
         self._advertencia.setWordWrap(True)
         self._advertencia.setProperty("error", True)
         self._advertencia.setTextFormat(Qt.TextFormat.PlainText)
+        # Deshacer solo borra máquinas: lo subido y las plantillas quedan (CA-O30.3, CA-O25.2).
+        self._nota_archivos = QLabel(
+            QCoreApplication.translate(
+                "DialogoDeshacer",
+                "Los archivos que subiste (ISOs e imágenes de disco) y las plantillas no se "
+                "eliminan. Si ya no los necesitas, un administrador puede borrarlos desde Proxmox.",
+            )
+        )
+        self._nota_archivos.setWordWrap(True)
+        self._nota_archivos.setProperty("secundario", True)
         self.boton_eliminar = QPushButton()
         self.boton_cancelar = QPushButton(QCoreApplication.translate("DialogoDeshacer", "Cancelar"))
         self.boton_eliminar.setAutoDefault(False)
@@ -87,6 +97,7 @@ class DialogoDeshacer(QDialog):
         capa.addWidget(self.radio_todo)
         capa.addWidget(self.radio_incompletas)
         capa.addWidget(self.lista)
+        capa.addWidget(self._nota_archivos)
         capa.addWidget(self._advertencia)
         capa.addLayout(fila)
         self._actualizar()

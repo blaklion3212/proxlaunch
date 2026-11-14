@@ -22,6 +22,7 @@ from proxlaunch.nucleo.capacidades import Capacidades
 from proxlaunch.nucleo.constructor_peticion import construir_parametros
 from proxlaunch.nucleo.csv_importacion.plantilla import escribir_plantilla
 from proxlaunch.nucleo.errores import CodigoError, ErrorProxLaunch
+from proxlaunch.nucleo.lote.ajustes import reintentar_ajustes
 from proxlaunch.nucleo.lote.constantes import ETIQUETA_APP, PREFIJO_ETIQUETA_LOTE
 from proxlaunch.nucleo.lote.libro import Libro
 from proxlaunch.nucleo.lote.modelos import (
@@ -46,20 +47,35 @@ from proxlaunch.nucleo.lote.rollback import ServicioRollback
 from proxlaunch.nucleo.lote.simulacion import simular
 from proxlaunch.nucleo.lotes_guardados.formato import guardar_lote, leer_archivo_lote
 from proxlaunch.nucleo.lotes_guardados.modelos import ArchivoLote, LoteGuardado
+from proxlaunch.nucleo.modelos.catalogo import (
+    CatalogoServidor,
+    Contenido,
+    DetallePlantilla,
+    ListadoStorage,
+    Plantilla,
+)
+from proxlaunch.nucleo.modelos.conexion import PerfilConexion
 from proxlaunch.nucleo.modelos.inventario import Bridge, Inventario, Storage
 from proxlaunch.nucleo.modelos.tarea import Desenlace, Etapa, ResultadoCreacion
 from proxlaunch.nucleo.modelos.vm import ConfiguracionVM
+from proxlaunch.nucleo.origen.resolucion import NecesidadesCatalogo
+from proxlaunch.nucleo.origen.storages import con_recordado
 from proxlaunch.nucleo.perfiles_maquina.formato import (
     ArchivoPerfiles,
     exportar_perfiles,
     leer_archivo_perfiles,
 )
 from proxlaunch.nucleo.perfiles_maquina.modelos import PerfilMaquina
+from proxlaunch.nucleo.persistencia.perfiles import RepositorioPerfiles
 from proxlaunch.nucleo.registro import enmascarar
 from proxlaunch.nucleo.reloj import Reloj
+from proxlaunch.nucleo.servicios.catalogo import ServicioCatalogo
 from proxlaunch.nucleo.servicios.conexion import Sesion, permisos_faltantes
 from proxlaunch.nucleo.servicios.creacion import ServicioCreacion
-from proxlaunch.nucleo.servicios.descubrimiento import descubrir, descubrir_nodo
+from proxlaunch.nucleo.servicios.descubrimiento import (
+    descubrir,
+    descubrir_nodo_completo,
+)
 from proxlaunch.nucleo.validacion import Severidad as SeveridadM1
 from proxlaunch.nucleo.validacion import validar_vm
 
@@ -97,6 +113,9 @@ class Trabajador(QRunnable):
         self._con_contexto = con_contexto
         self.senales = SenalesTrabajador()
         self.cancelado = threading.Event()
+        # Señales a las que el Lanzador conectó algo: solo esas se desconectan al terminar
+        # (desconectar una sin receptores emite un RuntimeWarning de PySide6).
+        self.conectadas: list[Any] = []
         # El Lanzador conserva la referencia hasta que termine; así no se destruye antes.
         self.setAutoDelete(False)
 
@@ -170,10 +189,13 @@ class Lanzador(QObject):
         senales = trabajador.senales
         if al_upid is not None:
             senales.upid.connect(al_upid, cola)
+            trabajador.conectadas.append(senales.upid)
         if al_etapa is not None:
             senales.etapa.connect(al_etapa, cola)
+            trabajador.conectadas.append(senales.etapa)
         senales.terminado.connect(lambda r: self._finalizar(trabajador, al_terminar, r), cola)
         senales.fallo.connect(lambda e: self._finalizar_fallo(trabajador, al_fallar, e), cola)
+        trabajador.conectadas.extend((senales.terminado, senales.fallo))
         self._activos.add(trabajador)
         QThreadPool.globalInstance().start(trabajador)
         return trabajador
@@ -181,14 +203,10 @@ class Lanzador(QObject):
     @staticmethod
     def _desconectar(trabajador: Trabajador) -> None:
         """Rompe el ciclo trabajador -> señales -> lambda -> trabajador."""
-        for senal in (
-            trabajador.senales.terminado,
-            trabajador.senales.fallo,
-            trabajador.senales.etapa,
-            trabajador.senales.upid,
-        ):
+        for senal in trabajador.conectadas:
             with contextlib.suppress(RuntimeError, TypeError):
                 senal.disconnect()
+        trabajador.conectadas.clear()
 
     def _finalizar(
         self, trabajador: Trabajador, destino: Callable[[Any], None] | None, resultado: Any
@@ -223,26 +241,48 @@ class Lanzador(QObject):
 
 
 def descubrir_y_comprobar_permisos(sesion: Sesion) -> tuple[Inventario, list[str] | None]:
-    """Descubre el inventario y comprueba los permisos tras conectar (RF-11, RF-12)."""
+    """Descubre el inventario y comprueba los permisos tras conectar (RF-11, RF-12).
+
+    Los permisos efectivos ya los leyó ``descubrir`` (``inv.catalogo.permisos``): se reutilizan
+    para no repetir ``GET /access/permissions``. Si esa lectura falló, quedan desconocidos y no
+    se vuelve a pedir (CA-12.3); un inventario sin catálogo conserva la consulta de siempre.
+    """
     inventario = descubrir(sesion)
-    return inventario, permisos_faltantes(sesion)
+    catalogo = inventario.catalogo
+    if catalogo is None:
+        return inventario, permisos_faltantes(sesion)
+    if catalogo.permisos is None:
+        return inventario, None
+    return inventario, permisos_faltantes(sesion, permisos=catalogo.permisos.rutas)
 
 
-def recargar_nodo(sesion: Sesion, nodo: str) -> tuple[str, list[Storage], list[Bridge]]:
-    """Relee storages y bridges de un nodo (CA-11.7)."""
-    storages, bridges = descubrir_nodo(sesion, nodo)
-    return nodo, storages, bridges
+def recargar_nodo(
+    sesion: Sesion, nodo: str
+) -> tuple[str, list[Storage], list[Bridge], list[Storage]]:
+    """Relee storages y bridges de un nodo (CA-11.7).
+
+    Devuelve ``(nodo, con_images, bridges, todos)``: ``todos`` (de la misma respuesta, sin GET
+    extra) mantiene al día ``Inventario.storages_todos`` para el origen del SO.
+    """
+    con_images, todos, bridges = descubrir_nodo_completo(sesion, nodo)
+    return nodo, con_images, bridges, todos
 
 
 def reintentar_nodos(
     sesion: Sesion, nodos: list[str]
-) -> tuple[dict[str, tuple[list[Storage], list[Bridge]]], dict[str, ErrorProxLaunch]]:
-    """Reintenta el descubrimiento de los nodos que fallaron (CA-11.8)."""
-    recuperados: dict[str, tuple[list[Storage], list[Bridge]]] = {}
+) -> tuple[
+    dict[str, tuple[list[Storage], list[Bridge], list[Storage]]], dict[str, ErrorProxLaunch]
+]:
+    """Reintenta el descubrimiento de los nodos que fallaron (CA-11.8).
+
+    Cada nodo recuperado trae ``(con_images, bridges, todos)``.
+    """
+    recuperados: dict[str, tuple[list[Storage], list[Bridge], list[Storage]]] = {}
     fallidos: dict[str, ErrorProxLaunch] = {}
     for nodo in nodos:
         try:
-            recuperados[nodo] = descubrir_nodo(sesion, nodo)
+            con_images, todos, bridges = descubrir_nodo_completo(sesion, nodo)
+            recuperados[nodo] = (con_images, bridges, todos)
         except ErrorProxLaunch as e:
             fallidos[nodo] = e
     return recuperados, fallidos
@@ -656,3 +696,74 @@ def escribir_informe_csv(ruta: Path, informe: InformeLote) -> Path:
 
     guardar_informe_csv(ruta, informe)
     return ruta
+
+
+# --- Origen del SO (MVP 4): lecturas del catálogo, storages recordados y ajustes ---------------
+# Solo lecturas (GET) salvo el reintento de ajustes (PUT idempotentes sobre MVs del libro).
+
+
+def leer_listados(
+    sesion: Sesion, reloj: Reloj, inv: Inventario, nodo: str, contenido: Contenido
+) -> tuple[ListadoStorage, ...]:
+    """Archivos ``iso`` o ``import`` de cada storage activo del nodo (RF-O07, RF-O16)."""
+    return ServicioCatalogo(sesion, reloj).listar(inv, nodo, contenido)
+
+
+def leer_plantillas(sesion: Sesion, reloj: Reloj) -> tuple[Plantilla, ...]:
+    """Plantillas que el token puede ver (RF-O19)."""
+    return ServicioCatalogo(sesion, reloj).plantillas()
+
+
+def leer_detalle_plantilla(
+    sesion: Sesion, reloj: Reloj, inv: Inventario, nodo: str, vmid: int
+) -> tuple[DetallePlantilla | None, dict[str, frozenset[str]]]:
+    """Configuración de la plantilla elegida y los formatos de los storages de su nodo."""
+    servicio = ServicioCatalogo(sesion, reloj)
+    return servicio.detalle_plantilla(nodo, vmid), servicio.formatos(inv, [nodo])
+
+
+def leer_catalogo_para(
+    sesion: Sesion,
+    reloj: Reloj,
+    inv: Inventario,
+    necesidades: NecesidadesCatalogo,
+    nodos: Sequence[str],
+) -> CatalogoServidor:
+    """Lo que necesita un lote cargado o importado para revisar sus desajustes (RF-O27)."""
+    return ServicioCatalogo(sesion, reloj).leer_para(inv, necesidades, nodos)
+
+
+def guardar_storage_recordado(
+    repositorio: RepositorioPerfiles, perfil_id: str, contenido: Contenido, storage: str | None
+) -> PerfilConexion | None:
+    """Guarda (o borra, con ``None``) el storage recordado del perfil de conexión (RF-O05).
+
+    Lee el perfil guardado y le cambia solo ese campo, para no pisar lo que haya editado el
+    diálogo de conexión. Devuelve el perfil escrito, o ``None`` si ya no existe.
+    """
+    perfil = repositorio.obtener(perfil_id)
+    if perfil is None:
+        return None
+    nuevo = con_recordado(perfil, contenido, storage)
+    repositorio.guardar(nuevo)
+    return nuevo
+
+
+def reintentar_ajustes_lote(
+    sesion: Sesion,
+    reloj: Reloj,
+    libro: Libro,
+    vmids: tuple[int, ...],
+    inv: Inventario,
+    observador: Callable[[EntradaLibro], None],
+    control: ControlLote,
+    fabrica: Callable[[Sesion, Reloj], ServicioCreacion] | None = None,
+) -> Libro:
+    """«Reintentar ajustes»: reenvía solo los ``PUT`` pendientes de los clones (CA-O22.6)."""
+    if fabrica:
+        reintentar_ajustes(
+            libro, vmids, sesion, reloj, inv, observador, control, fabrica_creacion=fabrica
+        )
+    else:
+        reintentar_ajustes(libro, vmids, sesion, reloj, inv, observador, control)
+    return libro

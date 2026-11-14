@@ -31,9 +31,10 @@ from proxlaunch.interfaz.modelos_tabla import (
     ModeloRollback,
     TablaCopiable,
 )
-from proxlaunch.interfaz.textos import texto_estado_mv
+from proxlaunch.interfaz.textos import texto_estado_mv, texto_resumen_origen, texto_sin_urls
 from proxlaunch.interfaz.vistas.campos import mensaje, poner_mensaje
 from proxlaunch.interfaz.vistas.detalles_tecnicos import DetallesTecnicos
+from proxlaunch.nucleo.lote.ajustes import tiene_ajustes_pendientes
 from proxlaunch.nucleo.lote.modelos import (
     ESTADOS_DUDOSOS,
     ESTADOS_EN_CURSO,
@@ -98,6 +99,11 @@ def texto_detalles_entrada(e: EntradaLibro) -> str:
         f"VMID: {el.vmid}",
         QCoreApplication.translate("ProgresoLote", "Nodo: {nodo}").format(nodo=el.nodo),
     ]
+    origen = texto_resumen_origen(el.cfg)
+    if origen:
+        lineas.append(
+            QCoreApplication.translate("ProgresoLote", "Sistema operativo: {o}").format(o=origen)
+        )
     if e.upid:
         lineas.append(f"UPID: {e.upid}")
     if e.motivo_no_enviada:
@@ -113,16 +119,18 @@ def texto_detalles_entrada(e: EntradaLibro) -> str:
             QCoreApplication.translate("ProgresoLote", "Código: {c}").format(c=e.error.codigo)
         )
         for clave, valor in e.error.params.items():
-            lineas.append(f"  {clave}: {valor}")
+            lineas.append(f"  {clave}: {texto_sin_urls(valor)}")
         if e.error.detalle_tecnico:
             lineas.append(
                 QCoreApplication.translate("ProgresoLote", "Mensaje original: {d}").format(
-                    d=e.error.detalle_tecnico
+                    d=texto_sin_urls(e.error.detalle_tecnico)
                 )
             )
     if e.log_tarea:
         lineas += ["", QCoreApplication.translate("ProgresoLote", "Registro de la tarea:")]
-        lineas.extend(enmascarar(linea) for linea in e.log_tarea)  # defensa en profundidad
+        lineas.extend(
+            texto_sin_urls(enmascarar(linea)) for linea in e.log_tarea
+        )  # defensa en profundidad
     return "\n".join(lineas)
 
 
@@ -135,6 +143,7 @@ class ProgresoLote(QWidget):
     comprobar_una_solicitado = Signal(int)  # VMID de la máquina dudosa elegida
     deshacer_solicitado = Signal()
     reintentar_solicitado = Signal()
+    reintentar_ajustes_solicitado = Signal()  # MVP 4: ajustes pendientes tras un clon
     informe_solicitado = Signal()
     copiar_informe_solicitado = Signal()
     decidir_pausa_solicitado = Signal()
@@ -223,6 +232,16 @@ class ProgresoLote(QWidget):
         self.boton_reintentar = QPushButton(
             QCoreApplication.translate("ProgresoLote", "Reintentar pendientes")
         )
+        self.boton_reintentar_ajustes = QPushButton(
+            QCoreApplication.translate("ProgresoLote", "Reintentar ajustes")
+        )
+        self.boton_reintentar_ajustes.setToolTip(
+            QCoreApplication.translate(
+                "ProgresoLote",
+                "Vuelve a aplicar las etiquetas, los procesadores, la memoria o el tamaño del "
+                "disco que no se pudieron cambiar tras clonar. No crea máquinas nuevas.",
+            )
+        )
         self.boton_informe = QPushButton(QCoreApplication.translate("ProgresoLote", "Informe"))
         self.boton_volver = QPushButton(
             QCoreApplication.translate("ProgresoLote", "Volver al formulario")
@@ -233,6 +252,7 @@ class ProgresoLote(QWidget):
         self.boton_comprobar.clicked.connect(self.comprobar_dudosas_solicitado)
         self.boton_deshacer.clicked.connect(self.deshacer_solicitado)
         self.boton_reintentar.clicked.connect(self.reintentar_solicitado)
+        self.boton_reintentar_ajustes.clicked.connect(self.reintentar_ajustes_solicitado)
         self.boton_informe.clicked.connect(self.informe_solicitado)
         self.boton_volver.clicked.connect(self.volver_solicitado)
 
@@ -244,6 +264,7 @@ class ProgresoLote(QWidget):
             self.boton_comprobar_una,
             self.boton_deshacer,
             self.boton_reintentar,
+            self.boton_reintentar_ajustes,
             self.boton_informe,
         ):
             botones.addWidget(b)
@@ -329,6 +350,7 @@ class ProgresoLote(QWidget):
         dudosas: int = 0,
         elegibles: int = 0,
         reintentables: int = 0,
+        con_ajustes: int = 0,
     ) -> None:
         """Muestra solo los botones que tienen sentido en la fase actual."""
         self._fase = fase
@@ -361,6 +383,7 @@ class ProgresoLote(QWidget):
         self.boton_deshacer.setVisible(terminado)
         self.boton_deshacer.setEnabled(elegibles > 0)
         self.boton_reintentar.setVisible(terminado and reintentables > 0)
+        self.boton_reintentar_ajustes.setVisible(terminado and con_ajustes > 0)
         self.boton_informe.setVisible(terminado or fase == FaseLote.DESHACIENDO)
         self.boton_informe.setEnabled(terminado)
         self.boton_volver.setVisible(terminado)
@@ -389,6 +412,10 @@ class ProgresoLote(QWidget):
             self.dejar_de_esperar_solicitado.emit()
         else:
             self.cancelar_solicitado.emit()
+
+    def vmids_con_ajustes_pendientes(self) -> tuple[int, ...]:
+        """VMIDs de los clones creados a los que les falta algún ajuste (se pueden reintentar)."""
+        return tuple(e.elemento.vmid for e in self._entradas if tiene_ajustes_pendientes(e))
 
     def hay_enviadas(self) -> bool:
         """``True`` si alguna máquina ya salió hacia Proxmox (pide confirmar la cancelación)."""

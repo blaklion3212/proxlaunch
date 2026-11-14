@@ -4,7 +4,10 @@ from __future__ import annotations
 
 from PySide6.QtCore import Qt
 from PySide6.QtWidgets import (
+    QApplication,
+    QBoxLayout,
     QDialog,
+    QHBoxLayout,
     QLabel,
     QPlainTextEdit,
     QPushButton,
@@ -15,9 +18,12 @@ from PySide6.QtWidgets import (
 
 from proxlaunch.interfaz.ayuda import (
     NOMBRE_ROL,
+    PRIVILEGIOS_ROL,
     notas_guia_token,
+    notas_privilegios_nuevos,
     pasos_guia_token,
     privilegios_guia_token,
+    texto_pedir_al_administrador,
     titulo_guia_token,
 )
 
@@ -41,8 +47,19 @@ class DialogoGuiaToken(QDialog):
         privilegios = QPlainTextEdit(privilegios_guia_token())
         privilegios.setReadOnly(True)
         privilegios.setProperty("mono", True)
-        privilegios.setFixedHeight(190)
+        # Alto para todas las líneas del rol (14 con el MVP 4) sin necesidad de desplazarse.
+        privilegios.setFixedHeight(
+            privilegios.fontMetrics().lineSpacing() * len(PRIVILEGIOS_ROL) + 24
+        )
         capa.addWidget(privilegios)
+        lbl_nuevos = QLabel(
+            self.tr("Qué se pierde sin los cuatro privilegios nuevos:")
+            + "\n"
+            + "\n".join(f"• {n}" for n in notas_privilegios_nuevos())
+        )
+        lbl_nuevos.setWordWrap(True)
+        lbl_nuevos.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse)
+        capa.addWidget(lbl_nuevos)
         for nota in notas_guia_token():
             lbl = QLabel(nota)
             lbl.setWordWrap(True)
@@ -52,9 +69,31 @@ class DialogoGuiaToken(QDialog):
         zona = QScrollArea()
         zona.setWidgetResizable(True)
         zona.setWidget(contenido)
+        # «Cerrar» se crea primero: es el primer botón del diálogo (orden de creación).
         cerrar = QPushButton(self.tr("Cerrar"))
         cerrar.setDefault(True)
         cerrar.clicked.connect(self.accept)
+        self.boton_copiar = QPushButton(self.tr("Copiar texto para mi administrador"))
+        self.boton_copiar.setToolTip(
+            self.tr(
+                "Copia un mensaje con los permisos, la activación de «Import» y la creación de "
+                "plantillas que hay que pedir."
+            )
+        )
+        self.boton_copiar.clicked.connect(self._copiar_para_administrador)
+        self._estado = QLabel()
+        self._estado.setProperty("secundario", True)
+        # De derecha a izquierda: «Cerrar» queda a la derecha y es el primer botón del diálogo.
+        fila = QHBoxLayout()
+        fila.setDirection(QBoxLayout.Direction.RightToLeft)
+        fila.addWidget(cerrar)
+        fila.addWidget(self._estado, 1)
+        fila.addWidget(self.boton_copiar)
         principal = QVBoxLayout(self)
         principal.addWidget(zona)
-        principal.addWidget(cerrar, 0, Qt.AlignmentFlag.AlignRight)
+        principal.addLayout(fila)
+
+    def _copiar_para_administrador(self) -> None:
+        """Deja en el portapapeles el texto «Qué pedirle a tu administrador» (CA-O32.2)."""
+        QApplication.clipboard().setText(texto_pedir_al_administrador())
+        self._estado.setText(self.tr("Texto copiado."))

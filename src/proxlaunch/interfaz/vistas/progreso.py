@@ -21,6 +21,15 @@ from proxlaunch.interfaz.vistas.detalles_tecnicos import DetallesTecnicos
 from proxlaunch.nucleo.modelos.tarea import Desenlace, Etapa
 
 ETAPAS = (Etapa.VALIDANDO, Etapa.ENVIANDO, Etapa.CREANDO, Etapa.COMPROBANDO, Etapa.LISTO)
+# Un clon añade la etapa «Ajustando» (etiquetas, procesadores, memoria, disco) antes de terminar.
+ETAPAS_CON_AJUSTES = (
+    Etapa.VALIDANDO,
+    Etapa.ENVIANDO,
+    Etapa.CREANDO,
+    Etapa.COMPROBANDO,
+    Etapa.AJUSTANDO,
+    Etapa.LISTO,
+)
 
 
 class PanelProgreso(QGroupBox):
@@ -35,6 +44,7 @@ class PanelProgreso(QGroupBox):
 
     def __init__(self, parent: QWidget | None = None) -> None:
         super().__init__(QCoreApplication.translate("PanelProgreso", "Progreso"), parent)
+        self._etapas_activas: tuple[Etapa, ...] = ETAPAS
         self.barra = QProgressBar()
         self.barra.setRange(0, len(ETAPAS))
         self.barra.setValue(0)
@@ -42,7 +52,7 @@ class PanelProgreso(QGroupBox):
         self._etapas = QVBoxLayout()
         self._etapas.setSpacing(2)
         self._lbl_etapas: dict[Etapa, QLabel] = {}
-        for etapa in ETAPAS:
+        for etapa in ETAPAS_CON_AJUSTES:
             lbl = QLabel(texto_etapa(etapa))
             lbl.setProperty("secundario", True)
             self._lbl_etapas[etapa] = lbl
@@ -111,12 +121,15 @@ class PanelProgreso(QGroupBox):
 
     def reiniciar(self) -> None:
         """Estado inicial, antes de crear nada."""
+        self._etapas_activas = ETAPAS
+        self.barra.setRange(0, len(ETAPAS))
         self.barra.setValue(0)
         self.barra.setFormat(QCoreApplication.translate("PanelProgreso", "Sin tareas en curso"))
         for etapa, lbl in self._lbl_etapas.items():
             lbl.setText(texto_etapa(etapa))
             poner_propiedad(lbl, "secundario", True)
             poner_propiedad(lbl, "exito", False)
+            lbl.setVisible(etapa in ETAPAS)  # «Ajustando» solo aparece en un clon
         self._mensaje.clear()
         self._mensaje.hide()
         self.establecer_upid(None)
@@ -138,12 +151,19 @@ class PanelProgreso(QGroupBox):
 
     def establecer_etapa(self, etapa: Etapa) -> None:
         """Marca la etapa actual: barra por etapas, sin porcentaje."""
-        indice = ETAPAS.index(etapa)
+        if etapa == Etapa.AJUSTANDO and self._etapas_activas is not ETAPAS_CON_AJUSTES:
+            self._etapas_activas = ETAPAS_CON_AJUSTES
+            self.barra.setRange(0, len(ETAPAS_CON_AJUSTES))
+            self._lbl_etapas[Etapa.AJUSTANDO].show()
+        etapas = self._etapas_activas
+        indice = etapas.index(etapa)
         self.barra.setValue(indice + 1 if etapa == Etapa.LISTO else indice)
         self.barra.setFormat(texto_etapa(etapa))
-        for i, e in enumerate(ETAPAS):
+        for e in ETAPAS_CON_AJUSTES:
             lbl = self._lbl_etapas[e]
             base = texto_etapa(e)
+            # «Ajustando» oculta (no es un clon) cuenta como pendiente hasta que termina todo.
+            i = etapas.index(e) if e in etapas else len(etapas)
             if i < indice or etapa == Etapa.LISTO:
                 lbl.setText("✓ " + base)
                 poner_propiedad(lbl, "secundario", False)

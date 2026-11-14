@@ -20,10 +20,19 @@ from PySide6.QtWidgets import QFileDialog, QWidget
 from proxlaunch.interfaz.modelos_tabla import detalle_entrada
 from proxlaunch.interfaz.textos import (
     simbolo_estado_mv,
+    texto_ajustes_clon,
     texto_error,
     texto_estado_mv,
     texto_estado_rollback,
+    texto_estado_transferencia,
+    texto_fuente_origen,
+    texto_modo_clon,
+    texto_origen_corto,
     texto_problema_lote,
+    texto_sin_urls,
+    texto_tamano_bytes,
+    texto_tipo_so,
+    texto_tipo_transferencia,
 )
 from proxlaunch.nucleo.archivos.csv_seguro import escribir_csv
 from proxlaunch.nucleo.archivos.escritura import escribir_atomico
@@ -31,12 +40,14 @@ from proxlaunch.nucleo.errores import ErrorProxLaunch
 from proxlaunch.nucleo.lote.constantes import ETIQUETA_APP, PREFIJO_ETIQUETA_LOTE
 from proxlaunch.nucleo.lote.informe import upid_sin_usuario as _upid_sin_usuario
 from proxlaunch.nucleo.lote.modelos import (
+    EntradaLibro,
     EstadoMV,
     InformeLote,
     ResultadoRollback,
     Severidad,
 )
-from proxlaunch.nucleo.modelos.vm import ConfiguracionVM
+from proxlaunch.nucleo.modelos.origen import DetalleClon
+from proxlaunch.nucleo.modelos.vm import ConfiguracionVM, OrigenSO
 from proxlaunch.nucleo.persistencia.rutas import NOMBRE_APP, crear_carpeta_privada
 from proxlaunch.nucleo.registro import enmascarar
 
@@ -137,7 +148,41 @@ def _lineas_deshacer(resultados: tuple[ResultadoRollback, ...]) -> list[str]:
         QCoreApplication.translate("InformeLote", "Detalle"),
     )
     lineas.extend(_tabla(cab, filas))
+    lineas.append("")
+    lineas.append(texto_archivos_no_se_eliminan())
     return lineas
+
+
+def texto_archivos_no_se_eliminan() -> str:
+    """Deshacer solo elimina máquinas; lo subido y las plantillas no se tocan (CA-O30.3)."""
+    return QCoreApplication.translate(
+        "InformeLote",
+        "Los archivos que subiste (ISOs e imágenes de disco) y las plantillas no se eliminan "
+        "al deshacer: Deshacer solo borra las máquinas creadas por el lote.",
+    )
+
+
+def _modo_clon_csv(cfg: ConfiguracionVM) -> str:
+    det = cfg.detalle_origen
+    if not isinstance(det, DetalleClon):
+        return ""
+    return str(det.modo_efectivo or det.modo)
+
+
+def _ajustes_csv(cfg: ConfiguracionVM) -> str:
+    """Ajustes del clon como «cores=2;memoria_mib=4096» (identificadores estables, sin traducir)."""
+    det = cfg.detalle_origen
+    if not isinstance(det, DetalleClon):
+        return ""
+    a = det.ajustes
+    pares = (
+        ("sockets", a.sockets),
+        ("cores", a.cores),
+        ("tipo_cpu", a.tipo_cpu),
+        ("memoria_mib", a.memoria_mib),
+        ("disco_gib", a.disco_gib),
+    )
+    return ";".join(f"{k}={v}" for k, v in pares if v is not None)
 
 
 @dataclass(frozen=True)
@@ -153,6 +198,11 @@ class DatosMaquina:
     codigo_error: str
     duracion_s: float | None
     upid: str | None
+    # MVP 4 (CA-O30.5): de dónde sale el sistema operativo; sin URL ni rutas locales (INV-O6).
+    origen: OrigenSO = OrigenSO.DISCO_VACIO
+    fuente: str = ""
+    modo: str = ""  # solo clones: identificador estable del modo efectivo
+    ajustes: str = ""  # solo clones: «cores=2;memoria_mib=4096»
 
     @property
     def resultado(self) -> str:
@@ -171,6 +221,10 @@ def datos_maquinas(informe: InformeLote) -> list[DatosMaquina]:
             codigo_error=str(e.error.codigo) if e.error is not None else "",
             duracion_s=informe.duraciones_s.get(e.elemento.vmid),
             upid=e.upid,
+            origen=e.elemento.cfg.origen,
+            fuente=texto_fuente_origen(e.elemento.cfg),
+            modo=_modo_clon_csv(e.elemento.cfg),
+            ajustes=_ajustes_csv(e.elemento.cfg),
         )
         for e in informe.entradas
     ]
@@ -237,13 +291,18 @@ ENCABEZADO_INFORME_CSV = (
     "resultado",
     "codigo_error",
     "duracion_s",
+    # MVP 4 (CA-O30.5): origen del sistema, fuente (nombre, nunca URL ni ruta), modo y ajustes.
+    "origen",
+    "fuente",
+    "modo_clon",
+    "ajustes",
 )
 
 
 def filas_informe_csv(informe: InformeLote) -> list[list[str | int]]:
-    """Filas del informe CSV: nombre, VMID, nodo, desenlace, código de error y duración.
+    """Filas del informe CSV: nombre, VMID, nodo, desenlace, código de error, duración y origen.
 
-    Nunca el UPID, ni host, IP o usuario (CA-C14).
+    Nunca el UPID, ni host, IP, usuario, URL o ruta local (CA-C14, CA-O30.6).
     """
     filas: list[list[str | int]] = []
     for d in datos_maquinas(informe):
@@ -258,6 +317,10 @@ def filas_informe_csv(informe: InformeLote) -> list[list[str | int]]:
                 texto_estado_mv(d.estado),
                 d.codigo_error,
                 duracion,
+                str(d.origen),
+                d.fuente,
+                d.modo,
+                d.ajustes,
             ]
         )
     return filas
@@ -269,6 +332,88 @@ def guardar_informe_csv(ruta: Path, informe: InformeLote) -> None:
     Lanza ``ErrorProxLaunch`` ``ARCHIVO_NO_GUARDABLE`` (E-M08) si no se puede escribir.
     """
     escribir_csv(ruta, ENCABEZADO_INFORME_CSV, filas_informe_csv(informe))
+
+
+def _lineas_origen(entradas: tuple[EntradaLibro, ...]) -> list[str]:
+    """Origen del sistema, fuente, modo y ajustes de cada máquina (CA-O30.5).
+
+    Vacío si todas las máquinas son discos vacíos (los informes de antes no cambian).
+    """
+    if all(e.elemento.cfg.origen == OrigenSO.DISCO_VACIO for e in entradas):
+        return []
+    cab = (
+        QCoreApplication.translate("InformeLote", "N.º"),
+        QCoreApplication.translate("InformeLote", "Nombre"),
+        QCoreApplication.translate("InformeLote", "Origen"),
+        QCoreApplication.translate("InformeLote", "Fuente"),
+        QCoreApplication.translate("InformeLote", "Sistema"),
+        QCoreApplication.translate("InformeLote", "Modo"),
+        QCoreApplication.translate("InformeLote", "Ajustes"),
+    )
+    filas: list[tuple[str, ...]] = []
+    for e in entradas:
+        cfg = e.elemento.cfg
+        det = cfg.detalle_origen
+        es_clon = isinstance(det, DetalleClon)
+        filas.append(
+            (
+                str(e.elemento.indice + 1),
+                e.elemento.nombre,
+                texto_origen_corto(cfg.origen),
+                texto_fuente_origen(cfg) or "—",
+                texto_tipo_so(cfg.tipo_so) if cfg.tipo_so is not None and not es_clon else "—",
+                texto_modo_clon(det.modo_efectivo or det.modo, avanzado=True)
+                if isinstance(det, DetalleClon)
+                else "—",
+                texto_ajustes_clon(cfg) if es_clon else "—",
+            )
+        )
+    return [
+        "",
+        QCoreApplication.translate("InformeLote", "Sistema operativo de las máquinas"),
+        "-" * 34,
+        *_tabla(cab, filas),
+    ]
+
+
+def _lineas_transferencias(informe: InformeLote) -> list[str]:
+    """Archivos subidos o descargados en la sesión (RF-O25); sin URL, ruta local ni huella."""
+    if not informe.transferencias:
+        return []
+    cab = (
+        QCoreApplication.translate("InformeLote", "Tipo"),
+        QCoreApplication.translate("InformeLote", "Archivo"),
+        QCoreApplication.translate("InformeLote", "Almacenamiento"),
+        QCoreApplication.translate("InformeLote", "Nodo"),
+        QCoreApplication.translate("InformeLote", "Tamaño"),
+        QCoreApplication.translate("InformeLote", "Hora"),
+        QCoreApplication.translate("InformeLote", "Estado"),
+        QCoreApplication.translate("InformeLote", "Identificador"),
+    )
+    filas: list[tuple[str, ...]] = [
+        (
+            texto_tipo_transferencia(t.tipo),
+            t.nombre_archivo,
+            t.storage,
+            t.nodo,
+            texto_tamano_bytes(t.tamano_bytes) if t.tamano_bytes is not None else "—",
+            t.hora_local,
+            texto_estado_transferencia(t.estado),
+            t.volid or "—",
+        )
+        for t in informe.transferencias
+    ]
+    return [
+        "",
+        QCoreApplication.translate("InformeLote", "Archivos subidos o descargados en esta sesión"),
+        "-" * 44,
+        *_tabla(cab, filas),
+        texto_archivos_no_se_eliminan(),
+        QCoreApplication.translate(
+            "InformeLote",
+            "Si ya no los necesitas, pídele a un administrador que los borre desde Proxmox.",
+        ),
+    ]
 
 
 def texto_permisos_no_verificados() -> str:
@@ -382,7 +527,7 @@ def texto_informe(informe: InformeLote) -> str:
                     lineas.append(
                         QCoreApplication.translate(
                             "InformeLote", "    Detalles técnicos: {d}"
-                        ).format(d=enmascarar(e.error.detalle_tecnico))
+                        ).format(d=texto_sin_urls(enmascarar(e.error.detalle_tecnico)))
                     )
 
     lineas += [
@@ -394,6 +539,8 @@ def texto_informe(informe: InformeLote) -> str:
         lineas.extend(_lineas_por_maquina(informe))
     else:
         lineas.extend(_lineas_plantilla(informe.plantilla))
+
+    lineas.extend(_lineas_origen(informe.entradas))
 
     if informe.problemas_plan:
         lineas += [
@@ -408,6 +555,8 @@ def texto_informe(informe: InformeLote) -> str:
 
     if informe.rollback:
         lineas.extend(_lineas_deshacer(informe.rollback))
+
+    lineas.extend(_lineas_transferencias(informe))
 
     if not informe.es_simulacion:
         vmids = [e.elemento.vmid for e in informe.entradas]

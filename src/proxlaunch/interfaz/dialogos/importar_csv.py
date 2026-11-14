@@ -196,6 +196,17 @@ class DialogoImportarCsv(QDialog):
                 secundario=True,
             )
         )
+        # MVP 4: columnas del sistema operativo (RF-O28).
+        capa.addWidget(
+            etiqueta(
+                self.tr(
+                    "Para elegir de dónde sale el sistema operativo usa las columnas «origen» "
+                    "(iso, importar o clonar) y «fuente» (el nombre del ISO, de la imagen o de "
+                    "la plantilla en el servidor). «fuente» no admite direcciones web ni rutas."
+                ),
+                secundario=True,
+            )
+        )
 
         # Archivo.
         fila_archivo = QHBoxLayout()

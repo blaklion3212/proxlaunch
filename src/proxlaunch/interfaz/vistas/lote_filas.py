@@ -17,6 +17,7 @@ from PySide6.QtWidgets import QHBoxLayout, QLabel, QPushButton, QVBoxLayout, QWi
 from proxlaunch.interfaz.modelos_tabla import ModeloFilasLote, TablaCopiable
 from proxlaunch.interfaz.vistas.campos import boton_ayuda, etiqueta, mensaje, poner_mensaje
 from proxlaunch.nucleo.lote.modelos import DefinicionLote
+from proxlaunch.nucleo.modelos.vm import OrigenSO
 
 
 def texto_titulo_filas(n: int, origen: str | None, *, desde_archivo: bool) -> str:
@@ -72,6 +73,17 @@ class PanelLoteFilas(QWidget):
             ),
             secundario=True,
         )
+        # MVP 4: un clon hereda de la plantilla; aquí solo se ven los ajustes pedidos.
+        self._nota_clones = etiqueta(
+            QCoreApplication.translate(
+                "PanelLoteFilas",
+                "En las máquinas clonadas, los procesadores, la memoria y los discos salen de la "
+                "plantilla: aquí solo ves lo que pediste cambiar y «—» significa «igual que la "
+                "plantilla».",
+            ),
+            secundario=True,
+        )
+        self._nota_clones.hide()
         self._ayuda = boton_ayuda("lote_por_filas")
         self._problemas = mensaje(error=True)
         self._problemas.setAccessibleName(
@@ -140,6 +152,7 @@ class PanelLoteFilas(QWidget):
         capa.setContentsMargins(0, 0, 0, 0)
         capa.addLayout(cabecera)
         capa.addWidget(self._nota)
+        capa.addWidget(self._nota_clones)
         capa.addWidget(self._problemas)
         capa.addWidget(self.tabla, 1)
         capa.addLayout(principal)
@@ -162,6 +175,7 @@ class PanelLoteFilas(QWidget):
         """
         self._definicion = definicion
         self.modelo.establecer_filas(definicion.filas)
+        self._actualizar_nota_clones(definicion)
         self._titulo.setText(
             texto_titulo_filas(len(definicion.filas), origen, desde_archivo=desde_archivo)
         )
@@ -172,6 +186,7 @@ class PanelLoteFilas(QWidget):
         """Sustituye las filas (p. ej. tras quitar algunas) conservando el modo."""
         self._definicion = definicion
         self.modelo.establecer_filas(definicion.filas)
+        self._actualizar_nota_clones(definicion)
         self._titulo.setText(titulo)
         self._refrescar_botones()
 
@@ -201,6 +216,11 @@ class PanelLoteFilas(QWidget):
         return tuple(sorted({i.row() for i in self.tabla.selectionModel().selectedRows()}))
 
     # --- Internos -----------------------------------------------------------------------
+
+    def _actualizar_nota_clones(self, definicion: DefinicionLote) -> None:
+        """La nota de los clones solo aparece si alguna fila clona una plantilla."""
+        hay_clon = any(f.cfg.origen == OrigenSO.CLONAR_PLANTILLA for f in definicion.filas)
+        self._nota_clones.setVisible(hay_clon)
 
     def _refrescar_botones(self) -> None:
         n = len(self._definicion.filas) if self._definicion is not None else 0

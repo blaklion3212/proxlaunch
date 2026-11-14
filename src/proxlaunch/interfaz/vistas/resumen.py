@@ -8,10 +8,19 @@ from html import escape
 from PySide6.QtCore import QCoreApplication, Qt, Signal
 from PySide6.QtWidgets import QGroupBox, QLabel, QPushButton, QVBoxLayout, QWidget
 
-from proxlaunch.interfaz.textos import texto_problema
+from proxlaunch.interfaz.textos import (
+    texto_ajustes_clon,
+    texto_cambio_asistente,
+    texto_modo_clon,
+    texto_problema,
+    texto_resumen_origen,
+    texto_tipo_so,
+)
 from proxlaunch.interfaz.vistas.campos import mensaje, poner_mensaje
 from proxlaunch.interfaz.vistas.formulario_vm import mib_a_texto_gib
+from proxlaunch.nucleo.modelos.catalogo import PermisosEfectivos
 from proxlaunch.nucleo.modelos.inventario import Nodo
+from proxlaunch.nucleo.modelos.origen import DetalleClon, DetalleImportacion, DetalleIso, ModoClon
 from proxlaunch.nucleo.modelos.vm import (
     Bus,
     ConfiguracionVM,
@@ -19,7 +28,11 @@ from proxlaunch.nucleo.modelos.vm import (
     Firmware,
     FormatoDisco,
     ModeloRed,
+    OrigenSO,
 )
+from proxlaunch.nucleo.origen.asistente import CambioAsistente
+from proxlaunch.nucleo.origen.constantes import ORDEN_ARRANQUE
+from proxlaunch.nucleo.origen.permisos import estado_privilegio
 from proxlaunch.nucleo.validacion import Problema, Severidad, opciones_permitidas
 from proxlaunch.nucleo.valores_defecto import TIPO_CPU
 
@@ -180,6 +193,8 @@ class ResumenVM(QGroupBox):
         bloqueo: str | None,
         ocupado: bool,
         nodo: Nodo | None = None,
+        cambios_asistente: Sequence[CambioAsistente] = (),
+        permisos: PermisosEfectivos | None = None,
     ) -> None:
         """Redibuja el resumen y decide si se puede crear."""
         e = escape
@@ -200,11 +215,15 @@ class ResumenVM(QGroupBox):
         if motivo_nodo and cfg.nodo:
             nodo_txt += f" <i>({e(motivo_nodo)})</i>"
         lineas.append(f"<b>{e(et_nodo)}:</b> {nodo_txt}")
+        clon = cfg.origen == OrigenSO.CLONAR_PLANTILLA
+        if cfg.origen != OrigenSO.DISCO_VACIO:
+            lineas.extend(self._lineas_origen(cfg, cambios_asistente, permisos, avanzado))
         if cfg.firmware == Firmware.OVMF:
             firmware = "UEFI (OVMF)"
         else:
             firmware = QCoreApplication.translate("ResumenVM", "SeaBIOS (clásico)")
-        lineas.append(f"<b>{e(et_arranque)}:</b> {e(firmware)}")
+        if not clon:  # un clon hereda el arranque de la plantilla
+            lineas.append(f"<b>{e(et_arranque)}:</b> {e(firmware)}")
         total = QCoreApplication.translate(
             "ResumenVM", "{n} procesadores virtuales en total"
         ).format(n=cfg.sockets * cfg.cores)
@@ -213,7 +232,11 @@ class ResumenVM(QGroupBox):
             valor=mib_a_texto_gib(cfg.memoria_mib)
         )
         lineas.append(f"<b>{e(et_memoria)}:</b> {e(memoria)}")
-        if cfg.con_disco and cfg.discos:
+        de_plantilla = QCoreApplication.translate("ResumenVM", "los de la plantilla")
+        if clon:
+            lineas.append(f"<b>{e(et_discos)}:</b> {e(de_plantilla)}")
+            lineas.append(f"<b>{e(et_redes)}:</b> {e(de_plantilla)}")
+        elif cfg.con_disco and cfg.discos:
             partes = []
             for i, d in enumerate(cfg.discos):
                 etiqueta = etiquetas_discos[i] if i < len(etiquetas_discos) else f"#{i + 1}"
@@ -224,7 +247,9 @@ class ResumenVM(QGroupBox):
             lineas.append(f"<b>{e(et_discos)}:</b><br>" + "<br>".join(partes))
         else:
             lineas.append(f"<b>{e(et_discos)}:</b> {e(sin_disco)}")
-        if cfg.redes:
+        if clon:
+            pass
+        elif cfg.redes:
             partes = []
             for i, r in enumerate(cfg.redes):
                 vlan = f", VLAN {r.vlan}" if r.vlan is not None else ""
@@ -232,7 +257,7 @@ class ResumenVM(QGroupBox):
             lineas.append(f"<b>{e(et_redes)}:</b><br>" + "<br>".join(partes))
         else:
             lineas.append(f"<b>{e(et_redes)}:</b> {e(sin_red)}")
-        if not avanzado:
+        if not avanzado and not clon:
             ocultas = opciones_avanzadas_no_predeterminadas(cfg)
             if ocultas:
                 titulo = QCoreApplication.translate(
@@ -255,6 +280,7 @@ class ResumenVM(QGroupBox):
             poner_mensaje(self._pendientes, None)
         textos_aviso = [texto_problema(p) for p in avisos]
         textos_aviso.extend(self._avisos_recursos(cfg, nodo))
+        textos_aviso.extend(self._avisos_origen(cfg))
         poner_mensaje(self._avisos, "\n".join(dict.fromkeys(textos_aviso)), aviso=True)
 
         if bloqueo:
@@ -270,6 +296,120 @@ class ResumenVM(QGroupBox):
         puede = not errores and not bloqueo and not ocupado and not self._enviado
         self.boton_crear.setEnabled(puede)
         self.boton_crear.setToolTip(motivo)
+
+    @staticmethod
+    def _lineas_origen(
+        cfg: ConfiguracionVM,
+        cambios: Sequence[CambioAsistente],
+        permisos: PermisosEfectivos | None,
+        avanzado: bool,
+    ) -> list[str]:
+        """Origen del SO: de dónde sale el sistema y qué hará la app (RF-O08, O13, O14, O18, O20).
+
+        Los nombres de archivo vienen del servidor: se escapan como el resto del resumen.
+        """
+        e = escape
+        et_origen = QCoreApplication.translate("ResumenVM", "Origen")
+        lineas = [f"<b>{e(et_origen)}:</b> {e(texto_resumen_origen(cfg))}"]
+        det = cfg.detalle_origen
+        if isinstance(det, DetalleIso):
+            lineas.append(
+                e(
+                    QCoreApplication.translate(
+                        "ResumenVM",
+                        "Montará el ISO «{iso}» como CD. ProxLaunch no enciende la máquina: "
+                        "arráncala tú en Proxmox para instalar el sistema.",
+                    ).format(iso=det.iso.nombre or det.iso.volid)
+                )
+            )
+            if estado_privilegio(permisos, "VM.Config.Disk", "/vms") is True:
+                nombres = {
+                    "disco": QCoreApplication.translate("ResumenVM", "disco"),
+                    "cd": QCoreApplication.translate("ResumenVM", "CD"),
+                    "red": QCoreApplication.translate("ResumenVM", "red"),
+                }
+                orden = ", ".join(nombres[x] for x in ORDEN_ARRANQUE)
+                lineas.append(
+                    e(
+                        QCoreApplication.translate(
+                            "ResumenVM", "Orden de arranque: {orden}."
+                        ).format(orden=orden)
+                    )
+                )
+            if det.drivers is not None and not det.sin_drivers:
+                lineas.append(
+                    e(
+                        QCoreApplication.translate(
+                            "ResumenVM", "CD de drivers (virtio-win): {nombre}."
+                        ).format(nombre=det.drivers.nombre or det.drivers.volid)
+                    )
+                )
+                lineas.append(
+                    e(
+                        QCoreApplication.translate(
+                            "ResumenVM",
+                            "Al instalar Windows, carga los controladores desde ese CD: "
+                            "vioscsi (disco), NetKVM (red) y Balloon.",
+                        )
+                    )
+                )
+        elif isinstance(det, DetalleImportacion):
+            lineas.append(
+                e(
+                    QCoreApplication.translate(
+                        "ResumenVM", "El primer disco será una copia del disco «{imagen}»."
+                    ).format(imagen=det.imagen.nombre or det.imagen.volid)
+                )
+            )
+        elif isinstance(det, DetalleClon):
+            modo = det.modo_efectivo or det.modo
+            lineas.append(
+                e(
+                    QCoreApplication.translate("ResumenVM", "Forma de copiar: {modo}.").format(
+                        modo=texto_modo_clon(modo, avanzado=avanzado)
+                    )
+                )
+            )
+            ajustes = texto_ajustes_clon(cfg)
+            if ajustes:
+                lineas.append(
+                    e(
+                        QCoreApplication.translate("ResumenVM", "Ajustes: {ajustes}.").format(
+                            ajustes=ajustes
+                        )
+                    )
+                )
+            if modo == ModoClon.ENLAZADO:
+                lineas.append(
+                    e(
+                        QCoreApplication.translate(
+                            "ResumenVM",
+                            "La máquina depende de la plantilla: Proxmox no te dejará borrarla "
+                            "mientras exista.",
+                        )
+                    )
+                )
+        if cambios and cfg.tipo_so is not None:
+            titulo = QCoreApplication.translate(
+                "ResumenVM", "Para {so} el asistente aplicó:"
+            ).format(so=texto_tipo_so(cfg.tipo_so))
+            lineas.append(
+                f"<b>{e(titulo)}</b><br>"
+                + "<br>".join("• " + e(texto_cambio_asistente(c)) for c in cambios)
+            )
+        return lineas
+
+    @staticmethod
+    def _avisos_origen(cfg: ConfiguracionVM) -> list[str]:
+        """Aviso persistente de «crear sin los drivers» (CA-O14.3)."""
+        det = cfg.detalle_origen
+        if isinstance(det, DetalleIso) and det.sin_drivers:
+            return [
+                QCoreApplication.translate(
+                    "ResumenVM", "Sin los drivers, Windows no verá el disco VirtIO ni la red."
+                )
+            ]
+        return []
 
     @staticmethod
     def _avisos_recursos(cfg: ConfiguracionVM, nodo: Nodo | None) -> list[str]:

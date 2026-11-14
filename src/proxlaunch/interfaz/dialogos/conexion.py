@@ -10,12 +10,14 @@ from __future__ import annotations
 
 import dataclasses
 import uuid
+from collections.abc import Mapping, Sequence
 
 from PySide6.QtWidgets import (
     QButtonGroup,
     QCheckBox,
     QComboBox,
     QDialog,
+    QGroupBox,
     QHBoxLayout,
     QLabel,
     QLineEdit,
@@ -37,18 +39,21 @@ from proxlaunch.interfaz.vistas.campos import (
     EnlaceLabel,
     FilaCampo,
     boton_ayuda,
+    etiqueta,
     mensaje,
     poner_mensaje,
 )
 from proxlaunch.nucleo.api.autenticacion import DesafioTFA, TipoTFA
 from proxlaunch.nucleo.capacidades import VERSIONES_CONOCIDAS
 from proxlaunch.nucleo.errores import CodigoError, ErrorProxLaunch
+from proxlaunch.nucleo.modelos.catalogo import Contenido
 from proxlaunch.nucleo.modelos.conexion import (
     CredencialContrasena,
     CredencialToken,
     MetodoAuth,
     PerfilConexion,
 )
+from proxlaunch.nucleo.origen.storages import recordado_de
 from proxlaunch.nucleo.persistencia.huellas import RepositorioHuellas
 from proxlaunch.nucleo.persistencia.perfiles import RepositorioPerfiles
 from proxlaunch.nucleo.persistencia.secretos import AlmacenSecretos
@@ -75,6 +80,7 @@ class DialogoConexion(QDialog):
         secretos: AlmacenSecretos,
         lanzador: Lanzador,
         *,
+        candidatos_storage: Mapping[Contenido, Sequence[str]] | None = None,
         avanzado: bool,
         version_forzada: tuple[int, int] | None = None,
         perfil_id: str | None = None,
@@ -91,6 +97,9 @@ class DialogoConexion(QDialog):
         self._secretos = secretos
         self._lanzador = lanzador
         self._avanzado = avanzado
+        # Storages del servidor conectado (para elegir cuál recordar) y los recordados del perfil.
+        self._candidatos = {c: tuple(v) for c, v in (candidatos_storage or {}).items()}
+        self._recordados: dict[Contenido, str | None] = dict.fromkeys(Contenido)
         self._perfil_actual: PerfilConexion | None = None
         self._secreto_guardado: str | None = None
         self._ignorar_guardado = False  # valor del perfil aunque la casilla esté oculta
@@ -215,6 +224,7 @@ class DialogoConexion(QDialog):
         capa.addWidget(self._nota_recordar)
         capa.addWidget(self._contenedor_ssl)
         capa.addWidget(self.fila_version)
+        self._construir_storages(capa)
         if self.version_forzada is not None:
             self._seleccionar_version(self.version_forzada)
 
@@ -260,6 +270,79 @@ class DialogoConexion(QDialog):
         self.chk_ignorar.toggled.connect(lambda _v: self._actualizar_info_ssl())
         self.chk_recordar.toggled.connect(self._al_cambiar_recordar)
 
+    def _construir_storages(self, capa: QVBoxLayout) -> None:
+        """Almacenamientos recordados de este servidor (RF-O05): se ven y se pueden olvidar."""
+        caja = QGroupBox(self.tr("Almacenamientos recordados de este servidor"))
+        interior = QVBoxLayout(caja)
+        interior.addWidget(
+            etiqueta(
+                self.tr(
+                    "ProxLaunch los detecta solo. Aquí aparecen los que elegiste que recuerde; "
+                    "solo se guarda el nombre del almacenamiento."
+                ),
+                secundario=True,
+            )
+        )
+        self._filas_storage: dict[Contenido, tuple[QLabel, QComboBox, QPushButton]] = {}
+        for contenido, titulo in (
+            (Contenido.IMAGENES, self.tr("Discos de las máquinas")),
+            (Contenido.ISO, self.tr("Archivos ISO")),
+            (Contenido.IMPORT, self.tr("Discos para importar")),
+        ):
+            valor = QLabel()
+            combo = QComboBox()
+            combo.setAccessibleName(titulo)
+            combo.currentIndexChanged.connect(
+                lambda _i, c=contenido, w=combo: self._al_elegir_storage(c, w)
+            )
+            olvidar = QPushButton(self.tr("Dejar de recordar"))
+            olvidar.setAccessibleName(self.tr("Dejar de recordar: {nombre}").format(nombre=titulo))
+            olvidar.clicked.connect(lambda _c=False, c=contenido: self._olvidar_storage(c))
+            fila = QHBoxLayout()
+            fila.addWidget(QLabel(titulo))
+            fila.addWidget(valor, 1)
+            fila.addWidget(combo, 1)
+            fila.addWidget(olvidar)
+            interior.addLayout(fila)
+            self._filas_storage[contenido] = (valor, combo, olvidar)
+        capa.addWidget(caja)
+        self._pintar_storages()
+
+    def _pintar_storages(self) -> None:
+        """Texto en básico y lista desplegable en avanzado; el recordado que ya no está se marca."""
+        for contenido, (valor, combo, olvidar) in self._filas_storage.items():
+            recordado = self._recordados[contenido]
+            candidatos = self._candidatos.get(contenido, ())
+            automatico = self.tr("Detectar automáticamente")
+            ausente = bool(recordado) and bool(candidatos) and recordado not in candidatos
+            nombre = recordado or ""
+            if ausente:
+                nombre = self.tr("{nombre} (no disponible)").format(nombre=nombre)
+            valor.setText(nombre if recordado else automatico)
+            valor.setVisible(not self._avanzado)
+            combo.blockSignals(True)
+            combo.clear()
+            combo.addItem(automatico, None)
+            for c in candidatos:
+                combo.addItem(c, c)
+            if recordado and recordado not in candidatos:
+                combo.addItem(nombre, recordado)
+            combo.setCurrentIndex(max(combo.findData(recordado), 0))
+            combo.blockSignals(False)
+            combo.setVisible(self._avanzado)
+            olvidar.setEnabled(recordado is not None and not self._ocupado)
+
+    def _al_elegir_storage(self, contenido: Contenido, combo: QComboBox) -> None:
+        if self._cargando:
+            return
+        self._recordados[contenido] = combo.currentData()
+        self._pintar_storages()
+
+    def _olvidar_storage(self, contenido: Contenido) -> None:
+        """«Dejar de recordar»: vuelve a detectarlo solo; se guarda con el perfil."""
+        self._recordados[contenido] = None
+        self._pintar_storages()
+
     def _seleccionar_version(self, version: tuple[int, int]) -> None:
         """Selecciona por igualdad: PySide compara las tuplas de ``findData`` por identidad."""
         for i in range(self.combo_version.count()):
@@ -302,6 +385,10 @@ class DialogoConexion(QDialog):
     def _cargar_perfil_interno(self, perfil: PerfilConexion | None) -> None:
         self._perfil_actual = perfil
         self._secreto_guardado = None
+        self._recordados = {
+            c: (None if perfil is None else recordado_de(perfil, c)) for c in Contenido
+        }
+        self._pintar_storages()
         poner_mensaje(self._estado, None)
         for fila in (
             self.fila_nombre,
@@ -455,6 +542,9 @@ class DialogoConexion(QDialog):
             realm=self.realm.currentText().strip() or REALM,
             recordar_credenciales=self.chk_recordar.isChecked(),
             ignorar_ssl=self.chk_ignorar.isChecked() if self._avanzado else self._ignorar_guardado,
+            storage_mv=self._recordados[Contenido.IMAGENES],
+            storage_iso=self._recordados[Contenido.ISO],
+            storage_import=self._recordados[Contenido.IMPORT],
         )
         ok = True
         problemas = validar_perfil(perfil)
@@ -611,6 +701,7 @@ class DialogoConexion(QDialog):
             self.chk_recordar,
             self.chk_ignorar,
             self.combo_version,
+            *(combo for _v, combo, _o in self._filas_storage.values()),
         ):
             w.setEnabled(not ocupado)
         if ocupado:

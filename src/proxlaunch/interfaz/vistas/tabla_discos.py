@@ -120,6 +120,8 @@ class TablaDiscos(QWidget):
         super().__init__(parent)
         self._filas: list[_FilaDisco] = []
         self._storages: dict[str, Storage] = {}
+        self._recordado: str | None = None  # storage recordado del servidor (RF-O05)
+        self._primero_importado = False  # el primer disco sale de una imagen (RF-O17)
         self._ctrl = ControladorScsi.VIRTIO_SINGLE
         self._avanzado = False
         self._avanzados: list[QWidget] = []  # registro de widgets que solo ve el modo avanzado
@@ -175,6 +177,37 @@ class TablaDiscos(QWidget):
         """Solo cambia la visibilidad; los valores se conservan (CA-24.5)."""
         self._avanzado = avanzado
         self._aplicar_visibilidad()
+
+    def establecer_storage_recordado(self, storage: str | None) -> None:
+        """Almacenamiento recordado del servidor: es el de partida de los discos nuevos."""
+        self._recordado = storage
+
+    def reemplazar_storage(self, viejo: str | None, nuevo: str) -> None:
+        """Cambia a ``nuevo`` los discos que usaban ``viejo`` (el de partida) si existe."""
+        if viejo == nuevo or nuevo not in self._storages:
+            return
+        for f in self._filas:
+            if f.storage.currentData() == viejo:
+                f.storage.setCurrentIndex(f.storage.findData(nuevo))
+
+    def establecer_primero_importado(self, activo: bool) -> None:
+        """Con una imagen importada, el tamaño del primer disco es el de la imagen (CA-O17.1)."""
+        self._primero_importado = activo
+        self._aplicar_importado()
+
+    def _aplicar_importado(self) -> None:
+        for i, f in enumerate(self._filas):
+            importado = self._primero_importado and i == 0
+            f.tamano.setEnabled(not importado)
+            f.tamano.setToolTip(
+                QCoreApplication.translate(
+                    "TablaDiscos",
+                    "Este disco es una copia de la imagen que elegiste: tiene el tamaño de la "
+                    "imagen. Para hacerlo más grande usa «Ampliar el disco» en el origen.",
+                )
+                if importado
+                else ""
+            )
 
     def establecer_controlador(self, ctrl: ControladorScsi) -> None:
         self._ctrl = ctrl
@@ -244,9 +277,11 @@ class TablaDiscos(QWidget):
     def agregar_disco(self, disco: Disco | None = None) -> None:
         """Añade un disco (por defecto el de la sección 5 en el mejor almacenamiento)."""
         if disco is None:
-            from proxlaunch.nucleo.valores_defecto import storage_por_defecto
+            from proxlaunch.nucleo.valores_defecto import storage_disco_por_defecto
 
-            disco = disco_por_defecto(storage_por_defecto(list(self._storages.values())) or "")
+            disco = disco_por_defecto(
+                storage_disco_por_defecto(list(self._storages.values()), self._recordado) or ""
+            )
         self._nueva_fila(disco)
         self._renumerar()
         self.cambiado.emit()
@@ -271,6 +306,17 @@ class TablaDiscos(QWidget):
     def etiquetas_discos(self) -> list[str]:
         """Etiquetas «scsi0», «virtio0»... en el mismo orden que ``discos()``."""
         return [f.indice.text() for f in self._filas]
+
+    @staticmethod
+    def etiquetas_para(discos: Sequence[Disco]) -> list[str]:
+        """Etiquetas «scsi0»... de una lista de discos (p. ej. tras el asistente de SO)."""
+        cuenta: dict[Bus, int] = {}
+        etiquetas: list[str] = []
+        for d in discos:
+            n = cuenta.get(d.bus, 0)
+            cuenta[d.bus] = n + 1
+            etiquetas.append(f"{d.bus}{n}")
+        return etiquetas
 
     def habilitar(self, habilitado: bool) -> None:
         self.setEnabled(habilitado)
@@ -358,6 +404,7 @@ class TablaDiscos(QWidget):
             self._avanzados.append(w)
             w.setVisible(self._avanzado)
         self._actualizar_quitar()
+        self._aplicar_importado()
 
     def _quitar_fila(self, f: _FilaDisco, *, emitir: bool = True) -> None:
         self._filas.remove(f)
@@ -371,6 +418,7 @@ class TablaDiscos(QWidget):
             for col, w in resto.widgets():
                 self._rejilla.addWidget(w, n, col)
         self._actualizar_quitar()
+        self._aplicar_importado()
         if emitir:
             self._renumerar()
             self.cambiado.emit()

@@ -24,19 +24,26 @@ from proxlaunch.interfaz.informe_lote import texto_permisos_no_verificados, text
 from proxlaunch.interfaz.modelos_tabla import ModeloPlan, TablaCopiable
 from proxlaunch.interfaz.textos import (
     texto_error,
+    texto_modo_clon,
     texto_motivo_reparto,
+    texto_origen_corto,
     texto_problema_lote,
+    texto_resumen_origen,
 )
 from proxlaunch.interfaz.vistas.campos import etiqueta, mensaje, poner_mensaje
 from proxlaunch.interfaz.vistas.detalles_tecnicos import DetallesTecnicos
 from proxlaunch.nucleo.errores import CodigoError, ErrorProxLaunch
 from proxlaunch.nucleo.lote.modelos import (
     COMPARTIDO,
+    AccionPeticion,
+    ElementoPlan,
     Plan,
     Problema,
     ResultadoSimulacion,
     Severidad,
 )
+from proxlaunch.nucleo.modelos.origen import DetalleClon, DetalleImportacion, ModoClon
+from proxlaunch.nucleo.modelos.vm import OrigenSO
 
 _MAX_AVISOS_VISIBLES = 12
 
@@ -88,18 +95,101 @@ def _gib(bytes_: int) -> str:
     return f"{valor:.0f}" if abs(valor - round(valor)) < 0.05 else f"{valor:.1f}"
 
 
+def _ruta_de_peticion(accion: AccionPeticion, nodo: str, vmid: int, e: ElementoPlan | None) -> str:
+    """Método y ruta de una petición simulada (el clon va a la plantilla; los ajustes, al clon)."""
+    if accion == AccionPeticion.CLONAR:
+        det = e.cfg.detalle_origen if e is not None else None
+        plantilla = det.plantilla.vmid if isinstance(det, DetalleClon) else None
+        return f"POST /nodes/{nodo}/qemu/{plantilla if plantilla is not None else '?'}/clone"
+    if accion == AccionPeticion.CONFIGURAR:
+        return f"PUT /nodes/{nodo}/qemu/{vmid}/config"
+    if accion == AccionPeticion.AMPLIAR:
+        return f"PUT /nodes/{nodo}/qemu/{vmid}/resize"
+    return f"POST /nodes/{nodo}/qemu"
+
+
 def texto_peticiones(sim: ResultadoSimulacion) -> str:
-    """Petición POST de cada máquina, tal como se enviaría (sin cabeceras ni secretos)."""
+    """Peticiones de cada máquina, tal como se enviarían (sin cabeceras ni secretos).
+
+    Un clon envía varias (clonar, configurar, ampliar el disco): salen todas, en orden.
+    """
     bloques: list[str] = []
     por_vmid = {e.vmid: e for e in sim.plan.elementos}
     for vmid, parametros in sim.peticiones.items():
         e = por_vmid.get(vmid)
         cabecera = f"# {e.nombre} (VMID {vmid})" if e else f"# VMID {vmid}"
-        nodo = e.nodo if e else "?"
-        lineas = [cabecera, f"POST /nodes/{nodo}/qemu"]
-        lineas.extend(f"  {k} = {v}" for k, v in parametros.items())
+        detalle = sim.peticiones_detalle.get(vmid)
+        if detalle:
+            lineas = [cabecera]
+            for pet in detalle:
+                lineas.append(_ruta_de_peticion(pet.accion, pet.nodo, vmid, e))
+                lineas.extend(f"  {k} = {v}" for k, v in pet.parametros.items())
+        else:
+            nodo = e.nodo if e else "?"
+            lineas = [cabecera, f"POST /nodes/{nodo}/qemu"]
+            lineas.extend(f"  {k} = {v}" for k, v in parametros.items())
         bloques.append("\n".join(lineas))
     return "\n\n".join(bloques)
+
+
+def texto_origen_del_plan(plan: Plan) -> str:
+    """Cómo se creará cada máquina: ISO, disco importado o plantilla (RF-O29, CA-O18.8, CA-O23.4).
+
+    Vacío si todas son discos vacíos (el lote de siempre no cambia).
+    """
+    elementos = plan.elementos
+    if not elementos or all(e.cfg.origen == OrigenSO.DISCO_VACIO for e in elementos):
+        return ""
+    if plan.definicion.es_por_filas:
+        cuenta: dict[OrigenSO, int] = {}
+        for e in elementos:
+            cuenta[e.cfg.origen] = cuenta.get(e.cfg.origen, 0) + 1
+        partes = [f"{n} × {texto_origen_corto(o)}" for o, n in cuenta.items()]
+        return QCoreApplication.translate(
+            "ResumenLote", "Origen de las máquinas: {partes}."
+        ).format(partes=", ".join(partes))
+    primero = elementos[0].cfg
+    lineas = [
+        QCoreApplication.translate("ResumenLote", "Origen: {origen}.").format(
+            origen=texto_resumen_origen(primero)
+        )
+    ]
+    det = primero.detalle_origen
+    if isinstance(det, DetalleClon):
+        nodos = sorted(
+            {
+                str(x.cfg.detalle_origen.plantilla.nodo)
+                for x in elementos
+                if isinstance(x.cfg.detalle_origen, DetalleClon)
+            }
+        )
+        if len(nodos) > 1:
+            lineas.append(
+                QCoreApplication.translate(
+                    "ResumenLote",
+                    "La plantilla «{nombre}» está en {nodos}: se clona la de cada nodo.",
+                ).format(nombre=det.plantilla.nombre, nodos=" y ".join(nodos))
+            )
+        if (det.modo_efectivo or det.modo) == ModoClon.ENLAZADO:
+            lineas.append(
+                QCoreApplication.translate(
+                    "ResumenLote",
+                    "Las máquinas dependen de la plantilla (copia {modo}): Proxmox no te dejará "
+                    "borrarla mientras existan.",
+                ).format(modo=texto_modo_clon(ModoClon.ENLAZADO))
+            )
+    elif isinstance(det, DetalleImportacion) and primero.discos:
+        tamano = det.tamano_virtual_bytes
+        if tamano is not None:
+            t = -(-tamano // 1024**3)
+            lineas.append(
+                QCoreApplication.translate(
+                    "ResumenLote",
+                    "Cada máquina recibirá una copia completa del disco ({t} GiB). "
+                    "Total: {total} GiB en «{storage}».",
+                ).format(t=t, total=t * len(elementos), storage=primero.discos[0].storage)
+            )
+    return "\n".join(lineas)
 
 
 class ResumenLote(QWidget):
@@ -154,6 +244,7 @@ class ResumenLote(QWidget):
         self.tabla.setMinimumHeight(160)
 
         self._totales = self._etiqueta_datos()
+        self._origen = self._etiqueta_datos()
         self._reparto = self._etiqueta_datos()
         self._saltados = self._etiqueta_datos(secundario=True)
         self._errores = mensaje(error=True)
@@ -249,6 +340,7 @@ class ResumenLote(QWidget):
             self._nota_filas,
             self.tabla,
             self._totales,
+            self._origen,
             self._reparto,
             self._saltados,
             self._errores,
@@ -439,6 +531,9 @@ class ResumenLote(QWidget):
 
     def _pintar_totales(self, plan: Plan) -> None:
         elementos = plan.elementos
+        texto_origen = texto_origen_del_plan(plan)
+        self._origen.setText(texto_origen)
+        self._origen.setVisible(bool(texto_origen))
         if not elementos:
             self._totales.hide()
             self._reparto.hide()

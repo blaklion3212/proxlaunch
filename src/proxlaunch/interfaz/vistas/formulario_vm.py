@@ -32,6 +32,7 @@ from proxlaunch.interfaz.vistas.campos import (
     mensaje,
     poner_mensaje,
 )
+from proxlaunch.interfaz.vistas.selector_origen import SelectorOrigen
 from proxlaunch.interfaz.vistas.tabla_discos import TablaDiscos, entero_o_cero, texto_ausente
 from proxlaunch.interfaz.vistas.tabla_redes import TablaRedes
 from proxlaunch.nucleo.errores import ErrorProxLaunch
@@ -41,13 +42,14 @@ from proxlaunch.nucleo.modelos.vm import (
     ConfiguracionVM,
     ControladorScsi,
     Firmware,
+    OrigenSO,
 )
 from proxlaunch.nucleo.seleccion_nodo import MotivoNodo, elegir_nodo
 from proxlaunch.nucleo.validacion import Problema, Severidad
 from proxlaunch.nucleo.valores_defecto import (
     bridge_por_defecto,
     configuracion_por_defecto,
-    storage_por_defecto,
+    storage_disco_por_defecto,
 )
 
 TIPOS_CPU = ("x86-64-v2-AES", "x86-64-v2", "x86-64-v3", "x86-64-v4", "host", "kvm64")
@@ -95,15 +97,22 @@ class FormularioVM(QWidget):
         self._avanzados: list[tuple[QWidget, Callable[[], bool]]] = []
         # Storage de UEFI cargado de un lote o perfil que el nodo no tiene (CA-G04.3).
         self._efi_ausente: str | None = None
+        # Storage de discos recordado para este servidor (RF-O05); None = el de más espacio.
+        self._recordado_mv: str | None = None
 
         capa = QVBoxLayout(self)
         capa.setContentsMargins(0, 0, 0, 0)
         capa.setSpacing(10)
+        self._construir_origen(capa)
         self._construir_general(capa)
         self._construir_firmware(capa)
+        self._caja_firmware = self._ultima_caja
         self._construir_computo(capa)
+        self._caja_computo = self._ultima_caja
         self._construir_discos(capa)
+        self._caja_discos = self._ultima_caja
         self._construir_red(capa)
+        self._caja_red = self._ultima_caja
         capa.addStretch(1)
         self._aplicar_modo()
         self._actualizar_total_cpu()
@@ -115,7 +124,29 @@ class FormularioVM(QWidget):
         interior = QVBoxLayout(grupo)
         interior.setSpacing(4)
         capa.addWidget(grupo)
+        self._ultima_caja = grupo
         return interior
+
+    def _construir_origen(self, capa: QVBoxLayout) -> None:
+        """«¿Cómo quieres crear la máquina?» (RF-O01): vacía, ISO, disco existente o plantilla."""
+        g = self._grupo(self.tr("Origen del sistema"), capa)
+        self.selector_origen = SelectorOrigen()
+        self._nota_clon = etiqueta(
+            self.tr(
+                "El hardware, los discos y la red se copian de la plantilla. Arriba eliges solo "
+                "lo que quieres cambiar."
+            ),
+            secundario=True,
+        )
+        self._nota_clon.hide()
+        self._nota_importar = etiqueta(
+            self.tr("El primer disco de la máquina será la copia del disco que elegiste."),
+            secundario=True,
+        )
+        self._nota_importar.hide()
+        g.addWidget(self.selector_origen)
+        g.addWidget(self._nota_clon)
+        self.selector_origen.seleccion_cambiada.connect(self._al_cambiar_origen)
 
     def _registrar_avanzado(self, w: QWidget, condicion: Callable[[], bool] | None = None) -> None:
         self._avanzados.append((w, condicion or (lambda: True)))
@@ -247,6 +278,7 @@ class FormularioVM(QWidget):
         self.tabla_discos = TablaDiscos()
         self._registrar_avanzado(self.fila_ctrl, lambda: not self.chk_sin_disco.isChecked())
         g.addWidget(self.chk_sin_disco)
+        g.addWidget(self._nota_importar)
         g.addWidget(self._sin_storage)
         g.addWidget(self.fila_ctrl)
         g.addWidget(self.tabla_discos)
@@ -265,6 +297,7 @@ class FormularioVM(QWidget):
     def establecer_modo(self, avanzado: bool) -> None:
         """Cambia solo la visibilidad de los widgets avanzados; no restablece valores."""
         self._avanzado = avanzado
+        self.selector_origen.establecer_modo(avanzado)
         self._aplicar_modo()
 
     def _aplicar_modo(self) -> None:
@@ -293,7 +326,9 @@ class FormularioVM(QWidget):
                 nodo_inicial = nodo or next(
                     (n.nombre for n in inv.topologia.nodos if n.en_linea), ""
                 )
-                storage_inicial = storage_por_defecto(list(inv.storages.get(nodo_inicial, ())))
+                storage_inicial = storage_disco_por_defecto(
+                    list(inv.storages.get(nodo_inicial, ())), self._recordado_mv
+                )
                 cfg = configuracion_por_defecto(
                     inv.proximo_vmid,
                     "",
@@ -314,6 +349,23 @@ class FormularioVM(QWidget):
         self._aplicar_modo()
         self.cambiado.emit()
 
+    def establecer_storage_recordado(self, storage: str | None) -> None:
+        """Storage de discos recordado del servidor: es el de partida de los discos (RF-O05)."""
+        self._recordado_mv = storage
+        self.tabla_discos.establecer_storage_recordado(storage)
+
+    def usar_storage_mv(self, storage: str) -> None:
+        """El usuario eligió el storage de discos de este servidor: los discos que usaban el de
+        partida pasan a él y los nuevos lo usan (RF-O05)."""
+        inv = self._inv
+        anterior = None
+        if inv is not None:
+            anterior = storage_disco_por_defecto(
+                list(inv.storages.get(self._nodo_actual, ())), self._recordado_mv
+            )
+        self.establecer_storage_recordado(storage)
+        self.tabla_discos.reemplazar_storage(anterior, storage)
+
     def aplicar_configuracion(self, cfg: ConfiguracionVM) -> None:
         """Rellena el formulario con una configuración (pruebas y «Crear otra»)."""
         self._ocupado = True
@@ -324,15 +376,18 @@ class FormularioVM(QWidget):
         self._aplicar_modo()
         self.cambiado.emit()
 
-    def aplicar_hardware(self, cfg: ConfiguracionVM) -> None:
+    def aplicar_hardware(self, cfg: ConfiguracionVM, *, origen: bool = True) -> None:
         """Aplica SOLO el hardware de ``cfg`` (perfil de máquina o lote guardado).
 
         No toca el nombre, el VMID, el nodo ni sus marcas de «tocado». Un almacenamiento o una
         red que el nodo no tiene se muestran como «x (no existe)» con error, nunca se sustituyen
-        en silencio (CA-G04.3); el usuario debe elegir otro.
+        en silencio (CA-G04.3); el usuario debe elegir otro. Con ``origen`` también carga el
+        origen del SO de ``cfg`` y su detalle (un lote guardado, un perfil con origen sugerido).
         """
         self._ocupado = True
         try:
+            if origen:
+                self.selector_origen.aplicar(cfg)
             self.combo_firmware.setCurrentIndex(max(self.combo_firmware.findData(cfg.firmware), 0))
             self.combo_sockets.setCurrentIndex(max(self.combo_sockets.findData(cfg.sockets), 0))
             self.cores.setText(str(cfg.cores))
@@ -359,6 +414,7 @@ class FormularioVM(QWidget):
             self._actualizar_sin_disco()
             self._actualizar_nodo()
             self._avisar_ausentes()
+            self._actualizar_para_origen()
         finally:
             self._ocupado = False
         self._aplicar_modo()
@@ -396,6 +452,7 @@ class FormularioVM(QWidget):
     ) -> None:
         self.vmid.setText(str(cfg.vmid))
         self.nombre.setText(cfg.nombre)
+        self.selector_origen.aplicar(cfg)
         self.combo_firmware.setCurrentIndex(max(self.combo_firmware.findData(cfg.firmware), 0))
         self.combo_sockets.setCurrentIndex(max(self.combo_sockets.findData(cfg.sockets), 0))
         self.cores.setText(str(cfg.cores))
@@ -424,11 +481,19 @@ class FormularioVM(QWidget):
         self._refrescar_etiqueta_nodo()
         self._actualizar_total_cpu()
         self._actualizar_sin_disco()
+        self._actualizar_para_origen()
 
     # --- Lectura ----------------------------------------------------------------------
 
     def configuracion(self) -> ConfiguracionVM:
-        """Construye la configuración con lo que hay en los widgets."""
+        """Construye la configuración con lo que hay en los widgets.
+
+        Incluye el origen del SO y su detalle, con el asistente de SO ya aplicado cuando hay
+        ISO o disco importado (``SelectorOrigen.completar``).
+        """
+        return self.selector_origen.completar(self._configuracion_base())
+
+    def _configuracion_base(self) -> ConfiguracionVM:
         nodo = self.nodo_efectivo()
         balloon_estado = self.combo_balloon.currentData()
         ballooning: Ballooning | None
@@ -511,6 +576,10 @@ class FormularioVM(QWidget):
         return self._radio_auto.isChecked()
 
     def etiquetas_discos(self) -> list[str]:
+        """Etiquetas de los discos; con el asistente de SO salen de la configuración efectiva
+        (puede cambiar el bus del primer disco)."""
+        if self.selector_origen.cambios_asistente:
+            return self.tabla_discos.etiquetas_para(self.configuracion().discos)
         return self.tabla_discos.etiquetas_discos()
 
     # --- Nodo -------------------------------------------------------------------------
@@ -710,6 +779,26 @@ class FormularioVM(QWidget):
         self._aplicar_modo()
         self._al_editar()
 
+    def _al_cambiar_origen(self) -> None:
+        """Otro origen, fuente o sistema operativo: se ajusta el formulario y se revalida."""
+        self._actualizar_para_origen()
+        self._al_editar()
+
+    def _actualizar_para_origen(self) -> None:
+        """Con una plantilla el hardware es el suyo; con un disco importado el primero es la
+        imagen y no puede faltar (CA-O15.4, CA-O22.1)."""
+        origen = self.selector_origen.origen
+        clon = origen == OrigenSO.CLONAR_PLANTILLA
+        importar = origen == OrigenSO.IMPORTAR_DISCO
+        for caja in (self._caja_firmware, self._caja_computo, self._caja_discos, self._caja_red):
+            caja.setVisible(not clon)
+        self._nota_clon.setVisible(clon)
+        self._nota_importar.setVisible(importar)
+        if importar and self.chk_sin_disco.isChecked():
+            self.chk_sin_disco.setChecked(False)
+        self.chk_sin_disco.setEnabled(not importar)
+        self.tabla_discos.establecer_primero_importado(importar)
+
     def _al_cambiar_sin_disco(self, _marcado: bool) -> None:
         if self._ocupado:
             return
@@ -830,7 +919,8 @@ class FormularioVM(QWidget):
         self.tabla_redes.aplicar_problemas(problemas)
 
     def bloquear(self, bloqueado: bool) -> None:
-        """Bloquea los campos mientras se crea la máquina (CA-19.4)."""
+        """Bloquea los campos mientras se crea la máquina (CA-19.4); con ellos, el origen."""
+        self.selector_origen.establecer_bloqueado(bloqueado)
         self.setEnabled(not bloqueado)
 
     # --- Lote (MVP 2) -----------------------------------------------------------------

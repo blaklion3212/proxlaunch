@@ -27,9 +27,12 @@ from proxlaunch.interfaz.tema.paleta import TOKENS_CLARO, TOKENS_OSCURO
 from proxlaunch.interfaz.textos import (
     simbolo_estado_mv,
     simbolo_estado_rollback,
+    texto_aviso_origen,
     texto_error,
     texto_estado_mv,
     texto_estado_rollback,
+    texto_origen_corto,
+    texto_resumen_origen,
     texto_vmid_ocupado_en_lote,
 )
 from proxlaunch.nucleo.errores import CodigoError, ErrorProxLaunch
@@ -43,7 +46,8 @@ from proxlaunch.nucleo.lote.modelos import (
     Plan,
     ResultadoRollback,
 )
-from proxlaunch.nucleo.modelos.vm import ConfiguracionVM
+from proxlaunch.nucleo.modelos.origen import DetalleClon
+from proxlaunch.nucleo.modelos.vm import ConfiguracionVM, OrigenSO
 
 _Indice: TypeAlias = QModelIndex | QPersistentModelIndex
 
@@ -78,6 +82,7 @@ _TOKEN_ESTADO: dict[EstadoMV, str] = {
     EstadoMV.ENVIANDO: "acento_enlace",
     EstadoMV.CREANDO: "acento_enlace",
     EstadoMV.COMPROBANDO: "acento_enlace",
+    EstadoMV.AJUSTANDO: "acento_enlace",
     EstadoMV.OK: "exito",
     EstadoMV.CON_AVISOS: "aviso",
     EstadoMV.ERROR: "error",
@@ -140,16 +145,57 @@ class _ModeloBase(QAbstractTableModel):
 # --- Plan ---------------------------------------------------------------------------
 
 
+def _es_clon(cfg: ConfiguracionVM) -> bool:
+    """Un clon hereda los discos de la plantilla: los del formulario no se usan (INV-O3)."""
+    return cfg.origen == OrigenSO.CLONAR_PLANTILLA
+
+
 def _almacenamiento_principal(e: ElementoPlan) -> str:
     cfg = e.cfg
+    if _es_clon(cfg):
+        det = cfg.detalle_origen
+        # Solo hay almacenamiento propio en un clon completo hacia otro almacenamiento.
+        return (det.storage_destino or "—") if isinstance(det, DetalleClon) else "—"
     if not cfg.con_disco or not cfg.discos:
         return "—"
     return cfg.discos[0].storage or "—"
 
 
-def _total_discos_gib(e: ElementoPlan) -> int:
+def _total_discos_gib(e: ElementoPlan) -> str:
     cfg = e.cfg
-    return sum(d.tamano_gib for d in cfg.discos) if cfg.con_disco else 0
+    if _es_clon(cfg):
+        det = cfg.detalle_origen
+        # Sin ampliación el tamaño es el de la plantilla, que esta tabla no conoce.
+        if isinstance(det, DetalleClon) and det.ajustes.disco_gib is not None:
+            return str(det.ajustes.disco_gib)
+        return "—"
+    return str(sum(d.tamano_gib for d in cfg.discos) if cfg.con_disco else 0)
+
+
+def _celdas_clon(cfg: ConfiguracionVM) -> tuple[str, str, str, str]:
+    """(discos, almacenamiento, procesadores, memoria) de un clon antes de planificar."""
+    det = cfg.detalle_origen
+    if not isinstance(det, DetalleClon):
+        return "—", "—", "—", "—"
+    a = det.ajustes
+    disco = "—" if a.disco_gib is None else str(a.disco_gib)
+    procesadores = (
+        str((a.sockets or 1) * (a.cores or 1))
+        if a.sockets is not None or a.cores is not None
+        else "—"
+    )
+    memoria = "—" if a.memoria_mib is None else f"{a.memoria_mib / 1024:g}"
+    return disco, det.storage_destino or "—", procesadores, memoria
+
+
+def _hay_origen(cfgs: Iterable[ConfiguracionVM]) -> bool:
+    """¿Alguna máquina tiene un origen distinto del disco vacío? Entonces se añade la columna."""
+    return any(c.origen != OrigenSO.DISCO_VACIO for c in cfgs)
+
+
+def _texto_origen_celda(cfg: ConfiguracionVM) -> str:
+    """«ISO: local:iso/alpine.iso (Linux)»; «Disco vacío» si no hay sistema de origen."""
+    return texto_resumen_origen(cfg) or texto_origen_corto(cfg.origen)
 
 
 def _vcpus(cfg: ConfiguracionVM) -> int:
@@ -172,13 +218,14 @@ class ModeloPlan(_ModeloBase):
         self._elementos: tuple[ElementoPlan, ...] = ()
         self._origenes: tuple[int | None, ...] = ()  # nº de fila del archivo (solo por filas)
         self._por_filas = False
+        self._con_origen = False  # MVP 4: columna «Origen» si alguna máquina no es disco vacío
 
     @property
     def por_filas(self) -> bool:
         return self._por_filas
 
     def _cabeceras(self) -> tuple[str, ...]:
-        base = (
+        base: tuple[str, ...] = (
             QCoreApplication.translate("ModelosTabla", "Fila")
             if self._por_filas
             else QCoreApplication.translate("ModelosTabla", "N.º"),
@@ -188,13 +235,15 @@ class ModeloPlan(_ModeloBase):
             QCoreApplication.translate("ModelosTabla", "Almacenamiento"),
             QCoreApplication.translate("ModelosTabla", "Discos (GiB)"),
         )
-        if not self._por_filas:
-            return base
-        return (
-            *base,
-            QCoreApplication.translate("ModelosTabla", "Procesadores"),
-            QCoreApplication.translate("ModelosTabla", "Memoria (GiB)"),
-        )
+        if self._por_filas:
+            base = (
+                *base,
+                QCoreApplication.translate("ModelosTabla", "Procesadores"),
+                QCoreApplication.translate("ModelosTabla", "Memoria (GiB)"),
+            )
+        if self._con_origen:
+            base = (*base, QCoreApplication.translate("ModelosTabla", "Sistema operativo"))
+        return base
 
     def etiqueta_fila(self, e: ElementoPlan) -> str:
         """Número con el que se nombra la máquina: el de la fila del archivo, o su posición."""
@@ -212,6 +261,7 @@ class ModeloPlan(_ModeloBase):
         self.beginResetModel()
         self._elementos = plan.elementos if plan is not None else ()
         self._por_filas = plan is not None and plan.definicion.es_por_filas
+        self._con_origen = _hay_origen(x.cfg for x in self._elementos)
         self._origenes = (
             tuple(f.origen for f in plan.definicion.filas)
             if plan is not None and self._por_filas
@@ -234,17 +284,19 @@ class ModeloPlan(_ModeloBase):
                 str(e.vmid),
                 e.nodo,
                 _almacenamiento_principal(e),
-                str(_total_discos_gib(e)),
+                _total_discos_gib(e),
             )
             if self._por_filas:
                 celdas = (*celdas, str(_vcpus(e.cfg)), _gib_memoria(e.cfg))
+            if self._con_origen:
+                celdas = (*celdas, _texto_origen_celda(e.cfg))
             return celdas[col]
         numericas = (0, 2, 5, 6, 7) if self._por_filas else (0, 2, 5)
         if role == Qt.ItemDataRole.TextAlignmentRole and col in numericas:
             return int(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
         if role == Qt.ItemDataRole.AccessibleTextRole:
             if self._por_filas:
-                return QCoreApplication.translate(
+                texto = QCoreApplication.translate(
                     "ModelosTabla",
                     "Fila {n}: {nombre}, número {vmid}, nodo {nodo}, {v} procesadores "
                     "virtuales, {m} GiB de memoria",
@@ -256,9 +308,12 @@ class ModeloPlan(_ModeloBase):
                     v=_vcpus(e.cfg),
                     m=_gib_memoria(e.cfg),
                 )
-            return QCoreApplication.translate(
-                "ModelosTabla", "Máquina {n}: {nombre}, número {vmid}, nodo {nodo}"
-            ).format(n=e.indice + 1, nombre=e.nombre, vmid=e.vmid, nodo=e.nodo)
+            else:
+                texto = QCoreApplication.translate(
+                    "ModelosTabla", "Máquina {n}: {nombre}, número {vmid}, nodo {nodo}"
+                ).format(n=e.indice + 1, nombre=e.nombre, vmid=e.vmid, nodo=e.nodo)
+            origen = texto_resumen_origen(e.cfg)
+            return f"{texto}. {origen}" if origen else texto
         return None
 
 
@@ -273,9 +328,10 @@ class ModeloFilasLote(_ModeloBase):
     def __init__(self, parent: QObject | None = None) -> None:
         super().__init__(parent)
         self._filas: tuple[FilaLote, ...] = ()
+        self._con_origen = False  # MVP 4: columna «Sistema operativo» si alguna fila lo trae
 
     def _cabeceras(self) -> tuple[str, ...]:
-        return (
+        base: tuple[str, ...] = (
             QCoreApplication.translate("ModelosTabla", "Fila"),
             QCoreApplication.translate("ModelosTabla", "Nombre"),
             "VMID",
@@ -286,10 +342,14 @@ class ModeloFilasLote(_ModeloBase):
             QCoreApplication.translate("ModelosTabla", "Almacenamiento"),
             QCoreApplication.translate("ModelosTabla", "Red"),
         )
+        if self._con_origen:
+            base = (*base, QCoreApplication.translate("ModelosTabla", "Sistema operativo"))
+        return base
 
     def establecer_filas(self, filas: Sequence[FilaLote]) -> None:
         self.beginResetModel()
         self._filas = tuple(filas)
+        self._con_origen = _hay_origen(f.cfg for f in self._filas)
         self.endResetModel()
 
     @property
@@ -312,29 +372,42 @@ class ModeloFilasLote(_ModeloBase):
         col = index.column()
         auto = QCoreApplication.translate("ModelosTabla", "Automático")
         if role == Qt.ItemDataRole.DisplayRole:
-            discos = sum(d.tamano_gib for d in cfg.discos) if cfg.con_disco else 0
+            discos = str(sum(d.tamano_gib for d in cfg.discos) if cfg.con_disco else 0)
             storage = (cfg.discos[0].storage or "—") if cfg.con_disco and cfg.discos else "—"
             red = ", ".join(r.bridge or "—" for r in cfg.redes) or "—"
-            return (
+            procesadores, memoria = str(_vcpus(cfg)), _gib_memoria(cfg)
+            if _es_clon(cfg):
+                # Un clon hereda de la plantilla: solo se muestra lo que se pidió ajustar.
+                discos, storage, procesadores, memoria = _celdas_clon(cfg)
+            celdas: tuple[str, ...] = (
                 self.etiqueta_fila(i),
                 fila.nombre,
                 str(fila.vmid) if fila.vmid is not None else auto,
                 fila.nodo or auto,
-                str(_vcpus(cfg)),
-                _gib_memoria(cfg),
-                str(discos),
+                procesadores,
+                memoria,
+                discos,
                 storage,
                 red,
-            )[col]
+            )
+            if self._con_origen:
+                celdas = (*celdas, _texto_origen_celda(cfg))
+            return celdas[col]
         if role == Qt.ItemDataRole.TextAlignmentRole and col in (0, 2, 4, 5, 6):
             return int(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
         if role == Qt.ItemDataRole.AccessibleTextRole:
-            return QCoreApplication.translate(
+            origen = texto_resumen_origen(cfg)
+            if _es_clon(cfg):
+                return QCoreApplication.translate(
+                    "ModelosTabla", "Fila {n}: {nombre}. {origen}"
+                ).format(n=self.etiqueta_fila(i), nombre=fila.nombre, origen=origen)
+            texto = QCoreApplication.translate(
                 "ModelosTabla",
                 "Fila {n}: {nombre}, {v} procesadores virtuales, {m} GiB de memoria",
             ).format(
                 n=self.etiqueta_fila(i), nombre=fila.nombre, v=_vcpus(cfg), m=_gib_memoria(cfg)
             )
+            return f"{texto}. {origen}" if origen else texto
         return None
 
 
@@ -347,7 +420,7 @@ def texto_aviso_entrada(codigo: str) -> str:
         return QCoreApplication.translate(
             "ModelosTabla", "Se creó aunque Proxmox tardó en responder."
         )
-    return ""
+    return texto_aviso_origen(codigo)  # MVP 4: ajustes pendientes u omitidos, discos sueltos
 
 
 def detalle_entrada(entrada: EntradaLibro) -> str:
@@ -384,9 +457,14 @@ def detalle_entrada(entrada: EntradaLibro) -> str:
             "Existe en Proxmox, pero no podemos asegurar que la creó este lote. No se eliminará.",
         )
     if estado == EstadoMV.PARCIAL:
-        return QCoreApplication.translate(
+        avisos = " ".join(t for t in (texto_aviso_entrada(a) for a in entrada.avisos) if t)
+        if any(a.startswith("ajuste_pendiente:") for a in entrada.avisos):
+            # Clon creado al que le faltan ajustes: se puede reintentar o deshacer (E-O24).
+            return texto_error(error) if error is not None else avisos
+        base = QCoreApplication.translate(
             "ModelosTabla", "Quedó a medias; elimínala con «Deshacer…» o desde Proxmox."
         )
+        return f"{base} {avisos}" if avisos else base
     if estado == EstadoMV.CONEXION_PERDIDA and error is None:
         return texto_error(
             ErrorProxLaunch(
@@ -394,11 +472,13 @@ def detalle_entrada(entrada: EntradaLibro) -> str:
                 {"nombre": nombre, "vmid": str(entrada.elemento.vmid)},
             )
         )
+    avisos_extra = " ".join(t for t in (texto_aviso_entrada(a) for a in entrada.avisos) if t)
     if error is not None:
         if error.codigo == CodigoError.VMID_OCUPADO:
             return texto_vmid_ocupado_en_lote(error.params.get("vmid", "?"))
-        return texto_error(error)
-    return ""
+        base = texto_error(error)
+        return f"{base} {avisos_extra}" if avisos_extra else base
+    return avisos_extra
 
 
 class ModeloLibro(_ModeloBase):

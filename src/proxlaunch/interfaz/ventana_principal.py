@@ -39,6 +39,7 @@ from proxlaunch.interfaz.archivos_ui import (
     elegir_para_abrir,
     elegir_para_guardar,
 )
+from proxlaunch.interfaz.controlador_origen import ControladorOrigen
 from proxlaunch.interfaz.dialogos.acerca_de import DialogoAcercaDe
 from proxlaunch.interfaz.dialogos.conexion import DialogoConexion
 from proxlaunch.interfaz.dialogos.confirmar import confirmar
@@ -51,6 +52,7 @@ from proxlaunch.interfaz.dialogos.informe import DialogoInforme
 from proxlaunch.interfaz.dialogos.lote_no_encaja import PanelLoteNoEncaja
 from proxlaunch.interfaz.dialogos.pausa_lote import AccionPausa, DialogoPausaLote
 from proxlaunch.interfaz.dialogos.perfiles_maquina import DialogoPerfilesMaquina
+from proxlaunch.interfaz.dialogos.transferencias_sesion import DialogoTransferenciasSesion
 from proxlaunch.interfaz.informe_lote import (
     guardar_informe_parcial,
     nombre_archivo_csv_sugerido,
@@ -91,6 +93,7 @@ from proxlaunch.interfaz.trabajadores import (
     planificar_lote,
     reanudar_seguimiento,
     recargar_nodo,
+    reintentar_ajustes_lote,
     reintentar_nodos,
     replanificar_lote,
     simular_lote,
@@ -159,9 +162,11 @@ from proxlaunch.nucleo.lotes_guardados.revalidacion import (
     desajustes,
     sustituir,
 )
+from proxlaunch.nucleo.modelos.catalogo import Contenido
 from proxlaunch.nucleo.modelos.inventario import Inventario
 from proxlaunch.nucleo.modelos.tarea import Desenlace, Etapa, ResultadoCreacion
-from proxlaunch.nucleo.modelos.vm import ConfiguracionVM
+from proxlaunch.nucleo.modelos.vm import ConfiguracionVM, OrigenSO
+from proxlaunch.nucleo.origen.storages import candidatos_servidor
 from proxlaunch.nucleo.perfiles_maquina.almacen import AlmacenPerfilesMaquina
 from proxlaunch.nucleo.perfiles_maquina.aplicar import (
     aplicar_perfil,
@@ -221,6 +226,7 @@ _ETAPA_POR_ESTADO = {
     EstadoMV.VALIDANDO: Etapa.VALIDANDO,
     EstadoMV.ENVIANDO: Etapa.ENVIANDO,
     EstadoMV.CREANDO: Etapa.CREANDO,
+    EstadoMV.AJUSTANDO: Etapa.AJUSTANDO,
     EstadoMV.COMPROBANDO: Etapa.COMPROBANDO,
 }
 _DESENLACE_POR_ESTADO = {
@@ -327,6 +333,7 @@ class VentanaPrincipal(QMainWindow):
         self._deps = deps
         self._prefs: Preferencias = deps.preferencias.cargar()
         self._lanzador = Lanzador(self)
+        self.origen = ControladorOrigen(self._lanzador, deps.perfiles, deps.reloj, self)
         self._sesion: Sesion | None = None
         self._inv: Inventario | None = None
         self._perfil_id: str | None = None
@@ -406,6 +413,7 @@ class VentanaPrincipal(QMainWindow):
             lambda vmid: self._comprobar_dudosas(frozenset({vmid}))
         )
         self.progreso_lote.deshacer_solicitado.connect(self._deshacer)
+        self.progreso_lote.reintentar_ajustes_solicitado.connect(self._reintentar_ajustes)
         self.progreso_lote.reintentar_solicitado.connect(lambda: self._reintentar_pendientes())
         self.progreso_lote.informe_solicitado.connect(self._mostrar_informe)
         self.progreso_lote.decidir_pausa_solicitado.connect(self._decidir_pausa)
@@ -420,8 +428,10 @@ class VentanaPrincipal(QMainWindow):
         self.progreso.comprobar_ahora.connect(lambda: self._reanudar(una_vez=True))
         self.progreso.volver.connect(self._volver_al_formulario)
         deps.gestor_tema.tema_cambiado.connect(self._al_cambiar_tema)
+        self._enlazar_origen()
         self.bloque_lote.establecer_modo(self._prefs.modo == Modo.AVANZADO)
         self.formulario.establecer_modo(self._prefs.modo == Modo.AVANZADO)
+        self.origen.establecer_modo(self._prefs.modo == Modo.AVANZADO)
         self.selector_perfil.establecer_modo(self._prefs.modo == Modo.AVANZADO)
         self.selector_perfil.establecer_perfiles(self._almacen_perfiles.todos(), None)
         self._actualizar_acciones()
@@ -546,7 +556,11 @@ class VentanaPrincipal(QMainWindow):
         self._accion_ultimo_lote = QAction(self.tr("Ver el último lote"), self)
         self._accion_ultimo_lote.setEnabled(False)
         self._accion_ultimo_lote.triggered.connect(self._ver_ultimo_lote)
-        m_archivo.addActions([a_conectar, a_cerrar, self._accion_ultimo_lote])
+        self._accion_archivos_subidos = QAction(self.tr("Archivos subidos en esta sesión…"), self)
+        self._accion_archivos_subidos.triggered.connect(self._ver_archivos_subidos)
+        m_archivo.addActions(
+            [a_conectar, a_cerrar, self._accion_ultimo_lote, self._accion_archivos_subidos]
+        )
         m_archivo.addSeparator()
         m_archivo.addAction(a_salir)
 
@@ -582,6 +596,9 @@ class VentanaPrincipal(QMainWindow):
         m_perfiles.addActions([self._accion_guardar_perfil, self._accion_administrar_perfiles])
 
         m_ver = barra.addMenu(self.tr("&Ajustes"))
+        self._accion_recordados = QAction(self.tr("Almacenamientos recordados…"), self)
+        self._accion_recordados.triggered.connect(lambda: self.origen.revisar_recordados(self))
+        m_ver.addAction(self._accion_recordados)
         m_tema = m_ver.addMenu(self.tr("Tema"))
         self._grupo_tema = QActionGroup(self)
         self._acciones_tema: dict[ModoTema, QAction] = {}
@@ -619,7 +636,11 @@ class VentanaPrincipal(QMainWindow):
                 DialogoAcercaDe(self._deps.gestor_tema.tema_actual, self)
             )
         )
-        m_ayuda.addActions([a_guia, a_acerca])
+        self._accion_capacidades = QAction(self.tr("Qué puedo hacer en este servidor…"), self)
+        self._accion_capacidades.triggered.connect(
+            self.formulario.selector_origen.abrir_capacidades
+        )
+        m_ayuda.addActions([self._accion_capacidades, a_guia, a_acerca])
 
     @staticmethod
     def _mostrar_y_borrar(dialogo: QDialog) -> None:
@@ -641,6 +662,7 @@ class VentanaPrincipal(QMainWindow):
         self._guardar_preferencias()
         self._acciones_modo[modo].setChecked(True)
         self.formulario.establecer_modo(modo == Modo.AVANZADO)
+        self.origen.establecer_modo(modo == Modo.AVANZADO)
         self.bloque_lote.establecer_modo(modo == Modo.AVANZADO)
         self.selector_perfil.establecer_modo(modo == Modo.AVANZADO)
         self._accion_administrar_perfiles.setVisible(modo == Modo.AVANZADO)
@@ -658,6 +680,16 @@ class VentanaPrincipal(QMainWindow):
         self._logo_bienvenida.setPixmap(pixmap)
         self.barra.actualizar_logo(tema)
         self.progreso_lote.establecer_tema(tema)
+        self.origen.establecer_tema(tema)
+
+    def _enlazar_origen(self) -> None:
+        """Conecta el selector del formulario con el controlador del origen del SO."""
+        self.origen.enlazar(self.formulario.selector_origen, self.formulario.nodo_efectivo)
+        self.origen.catalogo_cargado.connect(lambda _c: self._timer_validar.start())
+        self.origen.fallo.connect(lambda e: self._manejar_fallo(e, durante="al leer el catálogo"))
+        self.origen.mensaje.connect(self.statusBar().showMessage)
+        self.origen.storage_mv_elegido.connect(self.formulario.usar_storage_mv)
+        self.origen.transferencia_terminada.connect(lambda _r: self._timer_validar.start())
 
     @property
     def avanzado(self) -> bool:
@@ -684,6 +716,7 @@ class VentanaPrincipal(QMainWindow):
             self._deps.huellas,
             self._deps.secretos,
             self._lanzador,
+            candidatos_storage=self._candidatos_storage(),
             avanzado=self.avanzado,
             version_forzada=self._prefs.version_forzada,
             perfil_id=self._perfil_id,
@@ -694,6 +727,13 @@ class VentanaPrincipal(QMainWindow):
         dialogo.accepted.connect(lambda: self._al_conectar(dialogo))
         dialogo.finished.connect(lambda _r: self._dialogo_cerrado(dialogo))
         dialogo.open()
+
+    def _candidatos_storage(self) -> dict[Contenido, tuple[str, ...]]:
+        """Almacenamientos del servidor conectado, para elegir cuál recordar (RF-O05)."""
+        inv = self._inv
+        if inv is None:
+            return {}
+        return {c: candidatos_servidor(inv, c) for c in Contenido}
 
     def _dialogo_cerrado(self, dialogo: DialogoConexion) -> None:
         self._dialogo_conexion = None
@@ -712,6 +752,7 @@ class VentanaPrincipal(QMainWindow):
         cambio_perfil = perfil.id != self._perfil_id
         self._sesion = sesion
         self._perfil_id = perfil.id
+        self.origen.establecer_sesion(sesion, None if cambio_perfil else self._inv)
         self._restaurar_etiquetado()
         if dialogo.version_forzada != self._prefs.version_forzada:
             self._prefs.version_forzada = dialogo.version_forzada
@@ -779,7 +820,7 @@ class VentanaPrincipal(QMainWindow):
         )
 
     def _cerrar_sesion(self) -> None:
-        if self._creando or self._lote_en_curso:
+        if self._creando or self._lote_en_curso or self.origen.transferencia_activa:
             return
         # Un lote importado o editado no se pierde sin preguntar (RF-G08).
         self._confirmar_cambios(self._cerrar_sesion_confirmada)
@@ -794,6 +835,7 @@ class VentanaPrincipal(QMainWindow):
             except ErrorProxLaunch:
                 _log.warning("No se pudo cerrar la sesión limpiamente")
         self._sesion = None
+        self.origen.establecer_sesion(None, None)
         self._restaurar_etiquetado()
         self._inv = None
         if self._origen_lote is None:
@@ -898,7 +940,8 @@ class VentanaPrincipal(QMainWindow):
         inv, _faltantes = resultado
         self._descubriendo = False
         self._refrescar_botones_red()
-        self._inv = inv
+        self._inv = self.origen.adoptar(inv)
+        self.formulario.establecer_storage_recordado(self.origen.recordado(Contenido.IMAGENES))
         self._estado_descubrimiento.setText(
             self.tr("{n} nodo(s) encontrados.").format(n=len(inv.topologia.nodos))
         )
@@ -977,9 +1020,11 @@ class VentanaPrincipal(QMainWindow):
         self._refrescar_botones_red()
         if inv is None:
             return
-        for nodo, (storages, bridges) in recuperados.items():
+        for nodo, (storages, bridges, *resto) in recuperados.items():
             inv.storages[nodo] = tuple(storages)
             inv.bridges[nodo] = tuple(bridges)
+            if resto:  # ``storages_todos`` sale de la misma respuesta (origen del SO)
+                inv.storages_todos[nodo] = tuple(resto[0])
             inv.errores_por_nodo.pop(nodo, None)
         if recuperados:
             nodos = tuple(
@@ -1001,9 +1046,14 @@ class VentanaPrincipal(QMainWindow):
             recargar_nodo,
             sesion,
             nodo,
-            al_terminar=lambda r: self.formulario.actualizar_recursos_nodo(r[0], r[1], r[2]),
+            al_terminar=self._tras_recargar_nodo,
             al_fallar=lambda e: self._manejar_fallo(e, durante="al cambiar de nodo"),
         )
+
+    def _tras_recargar_nodo(self, r: tuple[Any, ...]) -> None:
+        if self._inv is not None and len(r) > 3:
+            self._inv.storages_todos[r[0]] = tuple(r[3])
+        self.formulario.actualizar_recursos_nodo(r[0], r[1], r[2])
 
     def _al_confirmar_vmid(self, vmid: int) -> None:
         """V-03: comprueba en segundo plano que el VMID escrito está libre (CA-13.2)."""
@@ -1040,6 +1090,8 @@ class VentanaPrincipal(QMainWindow):
             self.formulario.establecer_lote(en_lote)
             self.resumen.establecer_modo_lote(en_lote)
         cfg = self.formulario.configuracion()
+        self.origen.sincronizar(cfg)
+        cfg, problemas_origen = self.origen.resolver(cfg)
         problemas_lote = self.bloque_lote.problemas(cfg)
         self.bloque_lote.aplicar_problemas(problemas_lote)
         if en_lote:
@@ -1049,6 +1101,8 @@ class VentanaPrincipal(QMainWindow):
             cfg.nombre = nombres[0] if nombres else ""
             cfg.vmid = self.bloque_lote.definicion(cfg).vmid_inicial or inv.proximo_vmid
         problemas = validar_vm(cfg, inv, sesion.capacidades) + self.formulario.problemas_extra()
+        vistos = {(p.codigo, p.campo) for p in problemas}
+        problemas += [p for p in problemas_origen if (p.codigo, p.campo) not in vistos]
         if en_lote:
             problemas = [p for p in problemas if p.campo not in ("nombre", "vmid")]
         self._hay_problemas = any(p.severidad == Severidad.ERROR for p in problemas) or any(
@@ -1090,6 +1144,8 @@ class VentanaPrincipal(QMainWindow):
             bloqueo=bloqueo,
             ocupado=self._creando or self._lote_en_curso or self._planificando,
             nodo=nodo,
+            cambios_asistente=self.formulario.selector_origen.cambios_asistente,
+            permisos=inv.catalogo.permisos if inv.catalogo is not None else None,
         )
 
     # --- Creación ---------------------------------------------------------------------
@@ -1106,7 +1162,7 @@ class VentanaPrincipal(QMainWindow):
             return
         self._creando = True
         self._upid_recibido = None
-        cfg = self.formulario.configuracion()
+        cfg, _ = self.origen.resolver(self.formulario.configuracion())
         self._cfg_creacion = cfg
         self._bloquear_edicion(True)
         self.progreso.iniciar()
@@ -1141,6 +1197,9 @@ class VentanaPrincipal(QMainWindow):
             capacidad_maxima=None,
             generado_en=self._deps.reloj.ahora(),
             version_validacion=sesion.capacidades.version,
+            catalogo=self._inv.catalogo
+            if cfg.origen != OrigenSO.DISCO_VACIO and self._inv
+            else None,
         )
 
     def _nuevo_servicio_creacion(self, sesion: Sesion) -> ServicioCreacion:
@@ -1469,6 +1528,8 @@ class VentanaPrincipal(QMainWindow):
         sesion, inv = self._sesion, self._inv
         if sesion is None or inv is None or self._planificando or self._lote_en_curso:
             return
+        if self.origen.transferencia_activa:
+            return  # V-O27: el resumen no se genera con una transferencia en curso
         definicion = self.bloque_lote.definicion(self.formulario.configuracion())
         self._reintento = None
         self._nodo_reintento = None
@@ -1549,7 +1610,7 @@ class VentanaPrincipal(QMainWindow):
 
     def _al_reintento_armado(self, resultado: tuple[Inventario, Plan]) -> None:
         inv, plan = resultado
-        self._inv = inv
+        self._inv = self.origen.adoptar(inv)
         self._al_planificado(plan)
         self.resumen_lote.mostrar_selector_nodo(
             [n.nombre for n in inv.topologia.nodos if n.en_linea], self._nodo_reintento
@@ -1557,7 +1618,7 @@ class VentanaPrincipal(QMainWindow):
 
     def _al_reintento_simulado(self, resultado: tuple[Inventario, ResultadoSimulacion]) -> None:
         inv, simulacion = resultado
-        self._inv = inv
+        self._inv = self.origen.adoptar(inv)
         self._al_simulado(simulacion)
         self.resumen_lote.mostrar_selector_nodo(
             [n.nombre for n in inv.topologia.nodos if n.en_linea], self._nodo_reintento
@@ -1668,7 +1729,7 @@ class VentanaPrincipal(QMainWindow):
 
     def _tras_replanificar(self, anterior: Plan, resultado: tuple[Inventario, Plan]) -> None:
         inv, nuevo = resultado
-        self._inv = inv
+        self._inv = self.origen.adoptar(inv)
         diferencia = diferencia_planes(anterior, nuevo)
         if nuevo.bloqueado or diferencia:
             # CA-L10.6: no se envía nada hasta que el usuario revise el plan nuevo.
@@ -1741,6 +1802,33 @@ class VentanaPrincipal(QMainWindow):
             adaptada,
             libro,
             al_terminar=lambda r: self._al_lote_terminado(lote, r),
+            al_fallar=lambda e: self._fallo_lote(lote, e),
+        )
+        self._timer_lote.start()
+
+    def _reintentar_ajustes(self) -> None:
+        """«Reintentar ajustes» de los clones PARCIAL: solo reenvía los PUT pendientes."""
+        lote = self._lote
+        vmids = self.progreso_lote.vmids_con_ajustes_pendientes()
+        if lote is None or lote.libro is None or lote.cerrado or self._lote_en_curso or not vmids:
+            return
+        lote.terminado = False
+        lote.control = ControlLote()
+        lote.cancelando = False
+        lote.pausa_mostrada = False
+        self.progreso_lote.mostrar_aviso(None)
+        self.progreso_lote.establecer_fase(FaseLote.EJECUTANDO)
+        self._lanzador.lanzar(
+            reintentar_ajustes_lote,
+            lote.sesion,
+            self._deps.reloj,
+            lote.libro,
+            vmids,
+            lote.inv,
+            lote.puente.observar,
+            lote.control,
+            self._fabrica_adaptada(),
+            al_terminar=lambda libro: self._al_lote_terminado(lote, libro),
             al_fallar=lambda e: self._fallo_lote(lote, e),
         )
         self._timer_lote.start()
@@ -2016,6 +2104,7 @@ class VentanaPrincipal(QMainWindow):
             dudosas=dudosas,
             elegibles=elegibles,
             reintentables=reintentables,
+            con_ajustes=len(self.progreso_lote.vmids_con_ajustes_pendientes()),
         )
         self.statusBar().showMessage(texto_barra(entradas))
         self._accion_ultimo_lote.setEnabled(True)
@@ -2350,6 +2439,7 @@ class VentanaPrincipal(QMainWindow):
                 rollback=rollback,
                 reloj=self._deps.reloj,
                 ocultar=ocultar,
+                transferencias=self.origen.registro.lista(),
             )
         return informe_desde_entradas(
             lote.plan,
@@ -2358,6 +2448,7 @@ class VentanaPrincipal(QMainWindow):
             rollback,
             self._deps.reloj.ahora(),
             ocultar,
+            self.origen.registro.lista(),
         )
 
     def _informe_de_simulacion(self) -> InformeLote | None:
@@ -2372,6 +2463,7 @@ class VentanaPrincipal(QMainWindow):
             (),
             self._deps.reloj.ahora(),
             self._valores_a_ocultar(sesion),
+            self.origen.registro.lista(),
         )
 
     def _informe_simulacion(self) -> None:
@@ -2516,6 +2608,17 @@ class VentanaPrincipal(QMainWindow):
             listo and libre and not self.bloque_lote.es_por_filas
         )
         self._accion_administrar_perfiles.setEnabled(libre)
+        self.origen.establecer_ocupado(not libre or not sin_plan)
+        self._accion_capacidades.setEnabled(listo)
+        self._accion_recordados.setEnabled(
+            listo and self.origen.hay_recordado_no_disponible(self.formulario.nodo_efectivo())
+        )
+
+    def _ver_archivos_subidos(self) -> None:
+        """«Archivos subidos en esta sesión»: copiar o guardar la lista (RF-O25)."""
+        self._mostrar_y_borrar(
+            DialogoTransferenciasSesion(self.origen.registro, self, lanzador=self._lanzador)
+        )
 
     def _mostrar_error_archivo(self, error: ErrorProxLaunch) -> None:
         """Error al leer o escribir un archivo: banner rojo y barra de estado (sin diálogo)."""
@@ -2578,7 +2681,14 @@ class VentanaPrincipal(QMainWindow):
         self._aplicar_perfil_elegido(perfil, inv)
 
     def _aplicar_perfil_elegido(self, perfil: PerfilMaquina, inv: Inventario) -> None:
-        resultado = aplicar_perfil(perfil, self.formulario.configuracion(), inv)
+        actual = self.formulario.configuracion()
+        resultado = aplicar_perfil(perfil, actual, inv)
+        if perfil.config.origen == OrigenSO.DISCO_VACIO:
+            # Un perfil sin origen sugerido no cambia cómo se crea la máquina (solo su SO).
+            resultado.cfg.origen, resultado.cfg.detalle_origen = (
+                actual.origen,
+                actual.detalle_origen,
+            )
         self._aplicando = True
         try:
             self.formulario.aplicar_hardware(resultado.cfg)
@@ -2940,6 +3050,7 @@ class VentanaPrincipal(QMainWindow):
             self.panel_no_encaja.establecer_desajustes(())
             return
         definicion = self._definicion_actual()
+        self.origen.cargar_necesidades(definicion)
         self.panel_no_encaja.establecer_desajustes(
             desajustes(definicion, inv), [f.origen for f in definicion.filas]
         )
@@ -3250,6 +3361,24 @@ class VentanaPrincipal(QMainWindow):
         if not ev.isAccepted():
             self._cierre_confirmado = False
 
+    def _cancelar_transferencia_al_cerrar(self) -> bool:
+        """Pregunta (foco en «Cancelar») y, si se cierra, cancela y espera con tope (CA-O12.4)."""
+        if not confirmar(
+            self,
+            QCoreApplication.translate("VentanaPrincipal", "Hay una transferencia en curso"),
+            QCoreApplication.translate(
+                "VentanaPrincipal",
+                "Se está subiendo o descargando un archivo. Si cierras, se cancelará: puede quedar "
+                "un archivo incompleto en el servidor y ProxLaunch no puede borrarlo.",
+            ),
+            QCoreApplication.translate("VentanaPrincipal", "Cancelar la transferencia y cerrar"),
+            QCoreApplication.translate("VentanaPrincipal", "Seguir en ProxLaunch"),
+        ):
+            return False
+        self.origen.cancelar_transferencia()
+        self.origen.esperar_fin_de_transferencia()
+        return True
+
     def _evaluar_cierre(self, ev: QCloseEvent) -> None:
         """CA-20.8 y RF-L23: con una tarea o un lote en curso se pide confirmación.
 
@@ -3270,6 +3399,9 @@ class VentanaPrincipal(QMainWindow):
                 ev.ignore()
                 self._guardar_lote(despues=self._cerrar_confirmado, para_cerrar=True)
                 return
+        if self.origen.transferencia_activa and not self._cancelar_transferencia_al_cerrar():
+            ev.ignore()
+            return
         lote = self._lote
         if lote is not None and not lote.modo_uno and self._lote_en_curso:
             snap = lote.puente.instantanea()

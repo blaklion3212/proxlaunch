@@ -34,7 +34,7 @@ from proxlaunch.interfaz.textos import (
 from proxlaunch.interfaz.vistas.campos import etiqueta, mensaje, poner_mensaje, poner_propiedad
 from proxlaunch.nucleo.archivos.constantes import LONG_DESCRIPCION, MAX_PERFILES_USUARIO
 from proxlaunch.nucleo.errores import ErrorProxLaunch
-from proxlaunch.nucleo.modelos.vm import ConfiguracionVM
+from proxlaunch.nucleo.modelos.vm import ConfiguracionVM, OrigenSO
 from proxlaunch.nucleo.perfiles_maquina.almacen import AlmacenPerfilesMaquina
 from proxlaunch.nucleo.perfiles_maquina.aplicar import config_desde_configuracion
 from proxlaunch.nucleo.perfiles_maquina.modelos import ConfigPerfil, OrigenPerfil, PerfilMaquina
@@ -297,6 +297,19 @@ class DialogoGuardarPerfil(_DialogoBaseNombre):
             QCoreApplication.translate("DialogoGuardarPerfil", "Resumen del perfil")
         )
         self.capa.insertWidget(2, self.resumen)
+        # MVP 4: el origen del sistema se guarda como sugerencia, solo con nombres.
+        self.nota_origen = etiqueta(
+            QCoreApplication.translate(
+                "DialogoGuardarPerfil",
+                "También se recordará el origen del sistema operativo: el nombre del ISO, de la "
+                "imagen o de la plantilla. Nunca se guardan direcciones web ni rutas de tu "
+                "equipo. Al usar el perfil en otro servidor se buscará ese nombre y, si no "
+                "está, tendrás que elegir otro.",
+            ),
+            secundario=True,
+        )
+        self.capa.insertWidget(3, self.nota_origen)
+        self.nota_origen.setVisible(cfg.origen != OrigenSO.DISCO_VACIO)
 
         self.casilla_pistas = QCheckBox(
             QCoreApplication.translate(

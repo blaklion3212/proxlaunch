@@ -133,6 +133,16 @@ class PanelLoteNoEncaja(QFrame):
             )
         if d.tipo == TipoDesajuste.BRIDGE:
             return titulo, self.tr("Red que reemplaza a «{valor}»:").format(valor=d.valor)
+        if d.tipo == TipoDesajuste.ISO:
+            return titulo, self.tr("ISO que reemplaza a «{valor}»:").format(valor=d.valor)
+        if d.tipo == TipoDesajuste.DRIVERS:
+            return titulo, self.tr("CD de drivers que reemplaza a «{valor}»:").format(valor=d.valor)
+        if d.tipo == TipoDesajuste.IMAGEN:
+            return titulo, self.tr("Imagen de disco que reemplaza a «{valor}»:").format(
+                valor=d.valor
+            )
+        if d.tipo == TipoDesajuste.PLANTILLA:
+            return titulo, self.tr("Plantilla que reemplaza a «{valor}»:").format(valor=d.valor)
         return titulo, self.tr("Nodo que reemplaza a «{valor}»:").format(valor=d.valor)
 
     # --- Renglones -----------------------------------------------------------------------
