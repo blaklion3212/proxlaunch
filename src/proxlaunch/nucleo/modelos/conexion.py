@@ -26,6 +26,10 @@ class PerfilConexion:
     realm: str = "pam"
     recordar_credenciales: bool = False
     ignorar_ssl: bool = False  # solo efectivo en modo avanzado (CA-06.3)
+    # MVP 4 (RF-O04..O06): storage recordado por contenido; None = sin recordar.
+    storage_mv: str | None = None  # discos de MV (images)
+    storage_iso: str | None = None  # ISO
+    storage_import: str | None = None  # imágenes de disco a importar
 
 
 @dataclass(repr=False)

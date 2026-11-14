@@ -22,3 +22,6 @@ ACTUALIZACIONES_POR_S = 10  # interfaz (CA-L13.5)
 LINEAS_LOG_TAREA = 50  # por MV con avisos o error (RNF-L05)
 ETIQUETA_APP = "proxlaunch"
 PREFIJO_ETIQUETA_LOTE = "lote-"
+# MVP 4 (docs/requisitos/mvp4.md §10)
+CONCURRENCIA_ENLAZADO_POR_NODO = 3  # P-O03: clones enlazados simultáneos por nodo
+CONCURRENCIA_PESADA_POR_STORAGE = 2  # operaciones pesadas simultáneas por storage

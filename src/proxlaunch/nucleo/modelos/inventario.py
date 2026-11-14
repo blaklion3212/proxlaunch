@@ -1,9 +1,10 @@
 """Modelos del inventario descubierto: versión, nodos, storages, bridges y topología."""
 
 import math
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 from proxlaunch.nucleo.errores import ErrorProxLaunch
+from proxlaunch.nucleo.modelos.catalogo import CatalogoServidor
 
 _GIB = 1024**3
 # Backends donde el espacio se puede sobreasignar (CT-5, P-01).
@@ -41,6 +42,7 @@ class Storage:
     activo: bool
     total_bytes: int
     libre_bytes: int
+    formatos: frozenset[str] | None = None  # de ?format=1 si se pidió (CA-O04.6)
 
     @property
     def es_thin(self) -> bool:
@@ -91,3 +93,6 @@ class Inventario:
     storages: dict[str, tuple[Storage, ...]]  # por nodo
     bridges: dict[str, tuple[Bridge, ...]]  # por nodo
     errores_por_nodo: dict[str, ErrorProxLaunch]
+    # MVP 4 (al final y con valor por defecto)
+    storages_todos: dict[str, tuple[Storage, ...]] = field(default_factory=dict)  # todo contenido
+    catalogo: CatalogoServidor | None = None

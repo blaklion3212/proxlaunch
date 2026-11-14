@@ -8,7 +8,9 @@ from dataclasses import dataclass, field
 from enum import StrEnum
 
 from proxlaunch.nucleo.errores import ErrorProxLaunch
+from proxlaunch.nucleo.modelos.catalogo import CatalogoServidor
 from proxlaunch.nucleo.modelos.vm import ConfiguracionVM
+from proxlaunch.nucleo.transferencias.modelos import RegistroTransferencia
 
 
 class ModoDestino(StrEnum):
@@ -149,6 +151,7 @@ class Plan:
     es_simulacion: bool = False
     permisos_verificados: bool = True  # falso si GET /access/permissions falló (CA-L09.4)
     filas_excedentes: tuple[int, ...] = ()  # índices que no caben (CA-C08.6), solo por filas
+    catalogo: CatalogoServidor | None = None  # MVP 4: catálogo leído al planificar
 
     @property
     def bloqueado(self) -> bool:
@@ -174,6 +177,7 @@ class EstadoMV(StrEnum):
     ENVIANDO = "enviando"
     CREANDO = "creando"
     COMPROBANDO = "comprobando"
+    AJUSTANDO = "ajustando"  # MVP 4: ajustes tras un clon
     # Finales = Desenlace de M1
     OK = "ok"
     CON_AVISOS = "con_avisos"
@@ -194,6 +198,7 @@ ESTADOS_EN_CURSO = frozenset(
         EstadoMV.ENVIANDO,
         EstadoMV.CREANDO,
         EstadoMV.COMPROBANDO,
+        EstadoMV.AJUSTANDO,
     }
 )
 ESTADOS_DUDOSOS = frozenset({EstadoMV.CONEXION_PERDIDA, EstadoMV.TIEMPO_AGOTADO})
@@ -258,6 +263,22 @@ class ResultadoRollback:
     error: ErrorProxLaunch | None = None
 
 
+class AccionPeticion(StrEnum):
+    """Acción de una petición simulada (MVP 4: un clon implica varias peticiones)."""
+
+    CREAR = "crear"
+    CLONAR = "clonar"
+    CONFIGURAR = "configurar"
+    AMPLIAR = "ampliar"
+
+
+@dataclass(frozen=True)
+class PeticionSimulada:
+    accion: AccionPeticion
+    nodo: str
+    parametros: dict[str, str]
+
+
 @dataclass(frozen=True)
 class ResultadoSimulacion:
     """Simulación (RF-L11): el plan y la petición exacta que se enviaría por VMID."""
@@ -266,6 +287,8 @@ class ResultadoSimulacion:
     peticiones: dict[int, dict[str, str]]  # vmid -> parámetros del POST (sin secretos)
     version_detectada: tuple[int, int]
     version_forzada: tuple[int, int] | None
+    # MVP 4: todas las peticiones por VMID (clon + ajustes); ``peticiones`` conserva la principal
+    peticiones_detalle: dict[int, tuple[PeticionSimulada, ...]] = field(default_factory=dict)
 
 
 @dataclass(frozen=True)
@@ -299,3 +322,5 @@ class InformeLote:
     problemas_plan: tuple[Problema, ...] = ()
     permisos_verificados: bool = True
     por_filas: bool = False  # la interfaz muestra la configuración de cada MV (CA-C08.8)
+    # MVP 4: archivos subidos/descargados en la sesión
+    transferencias: tuple[RegistroTransferencia, ...] = ()

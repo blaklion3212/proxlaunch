@@ -67,6 +67,32 @@ class CodigoError(StrEnum):
     PERFILES_SOLO_LECTURA = "perfiles_solo_lectura"  # E-M14
     LOTE_NO_ENCAJA = "lote_no_encaja"  # E-M15
     PERFIL_RECHAZADO = "perfil_rechazado"  # interno: regla V-M01/V-M03/V-M05 (sin E-M propio)
+    # --- Origen del sistema operativo (MVP 4, docs/arquitectura/mvp4.md §8) ---
+    IMPORTAR_VERSION_NO_SOPORTADA = "importar_version_no_soportada"  # E-O01
+    IMPORTAR_SIN_STORAGE_IMPORT = "importar_sin_storage_import"  # E-O02
+    DESCARGA_URL_SIN_PERMISO = "descarga_url_sin_permiso"  # E-O03
+    STORAGE_RECORDADO_NO_DISPONIBLE = "storage_recordado_no_disponible"  # E-O04
+    CATALOGO_SIN_PERMISO = "catalogo_sin_permiso"  # E-O05
+    TRANSFERENCIA_NO_VERIFICADA = "transferencia_no_verificada"  # E-O06
+    TRANSFERENCIA_HUELLA_INCORRECTA = "transferencia_huella_incorrecta"  # E-O07
+    TRANSFERENCIA_CORTADA = "transferencia_cortada"  # E-O08
+    ARCHIVO_CAMBIO = "archivo_cambio"  # E-O09
+    NOMBRE_YA_EXISTE = "nombre_ya_existe"  # E-O10
+    DESCARGA_URL_FALLIDA = "descarga_url_fallida"  # E-O11
+    IMPORTAR_SIN_PERMISO = "importar_sin_permiso"  # E-O12
+    IMPORTAR_DESTINO_SIN_PERMISO = "importar_destino_sin_permiso"  # E-O13
+    RUTA_ABSOLUTA_NO_PERMITIDA = "ruta_absoluta_no_permitida"  # E-O14
+    IMAGEN_NO_ADMITIDA = "imagen_no_admitida"  # E-O15
+    FUENTE_DESAPARECIO = "fuente_desaparecio"  # E-O16
+    SIN_PLANTILLAS = "sin_plantillas"  # E-O17
+    CLON_NO_POSIBLE = "clon_no_posible"  # E-O18
+    CLON_ID_OCUPADO = "clon_id_ocupado"  # E-O19
+    # E-O20 reutiliza PERMISO_INSUFICIENTE con params["via"]
+    FUENTE_ES_URL = "fuente_es_url"  # E-O21
+    ESPACIO_INSUFICIENTE_TRANSFERENCIA = "espacio_insuficiente_transferencia"  # E-O22
+    TRANSFERENCIA_EN_CURSO = "transferencia_en_curso"  # E-O23
+    AJUSTE_POST_CLON_FALLIDO = "ajuste_post_clon_fallido"  # E-O24
+    TRANSFERENCIA_CANCELADA = "transferencia_cancelada"  # interno: sin E-O propio
 
 
 class ErrorProxLaunch(Exception):

@@ -31,14 +31,21 @@ _PATRON_VERSION = re.compile(r"^\s*(\d+)\.(\d+)(?:[.-](\d+))?")
 class Funcion(StrEnum):
     """Funciones cuya disponibilidad depende de la versión."""
 
-    # Entrada de EJEMPLO: el MVP 4 añadirá las funciones reales (importaciones).
-    IMPORTAR_DISCO = "importar_disco"
+    DESCARGAR_URL = "descargar_url"  # download-url con Sys.AccessNetwork (8.2)
+    IMPORTAR_DISCO = "importar_disco"  # import-from y contenido «import» (8.4)
+    SUBIR_IMAGEN_DISCO = "subir_imagen_disco"  # upload de imágenes de disco (8.4)
+    TPM_CLON_COMPLETO = "tpm_clon_completo"  # clonar completo con tpmstate0 (8.4)
+    CLAVES_MS_2023 = "claves_ms_2023"  # claves Microsoft 2023 en efidisk0 (9.1)
     ETIQUETAS = "etiquetas"  # parámetro ``tags`` al crear (RF-L24)
 
 
 # Única tabla: función -> (mayor, menor) desde la que está disponible.
 TABLA: dict[Funcion, tuple[int, int]] = {
-    Funcion.IMPORTAR_DISCO: (8, 2),
+    Funcion.DESCARGAR_URL: (8, 2),
+    Funcion.IMPORTAR_DISCO: (8, 4),
+    Funcion.SUBIR_IMAGEN_DISCO: (8, 4),
+    Funcion.TPM_CLON_COMPLETO: (8, 4),
+    Funcion.CLAVES_MS_2023: (9, 1),
     Funcion.ETIQUETAS: (7, 3),  # todas las versiones soportadas (>= 8.0) la admiten
 }
 

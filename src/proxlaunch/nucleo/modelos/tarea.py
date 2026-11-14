@@ -13,6 +13,7 @@ class Etapa(StrEnum):
     ENVIANDO = "enviando"
     CREANDO = "creando"
     COMPROBANDO = "comprobando"
+    AJUSTANDO = "ajustando"  # MVP 4: ajustes tras un clon (etiquetas, CPU, disco)
     LISTO = "listo"
 
 
@@ -56,3 +57,5 @@ class ResultadoCreacion:
     upid: str | None
     error: ErrorProxLaunch | None
     log_tarea: list[str] = field(default_factory=list)
+    # MVP 4: códigos de aviso, p. ej. «ajuste_pendiente:etiquetas|cpu_memoria|disco».
+    avisos: tuple[str, ...] = ()
