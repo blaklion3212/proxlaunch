@@ -146,8 +146,9 @@ def _resolver_ref(
         if not volumen.admitido:
             return ref, _problema(campo, codigo, motivo="nombre_no_admitido")
         return RefVolumen(nombre=ref.nombre or volumen.nombre, volid=volumen.volid), None
-    if not ref.nombre or cat is None:
-        return ref, None  # sin fuente: lo da V-O01; catálogo sin leer: no se afirma nada
+    if not ref.nombre or cat is None or not _hay_listado(cat, nodo, contenido):
+        # sin fuente: lo da V-O01; catálogo sin listar en el nodo: no se afirma nada
+        return ref, None
     todos = [v for v in cat.buscar_nombre(ref.nombre, nodo, contenido)]
     coincidentes = [v for v in todos if v.admitido and _storage_activo(inv, nodo, v.storage)]
     if len(coincidentes) == 1:
@@ -387,9 +388,10 @@ def _motivos_clon(inv: Inventario, nodo: str, det: DetalleClon) -> list[Problema
     elegible = [p for p in candidatas if p.nodo == nodo or _alcanzable(p, nodo, inv)]
     if not elegible:
         activos = {s.id for s in _storages_nodo(inv, nodo) if s.activo}
-        faltan = sorted(
-            {d.storage for p in candidatas if p.detalle for d in p.detalle.discos} - activos
-        )
+        usados = sorted({d.storage for p in candidatas if p.detalle for d in p.detalle.discos})
+        # Si todos los storages de la plantilla existen y están activos en el nodo (mismo nombre,
+        # pero no compartido), el motivo cita igualmente el storage de la plantilla.
+        faltan = [s for s in usados if s not in activos] or usados
         return [
             _motivo(
                 nodo,

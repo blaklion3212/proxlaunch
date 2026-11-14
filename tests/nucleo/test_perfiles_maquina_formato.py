@@ -84,7 +84,7 @@ def test_un_perfil_de_fabrica_exportado_se_describe_como_un_perfil_normal():
     texto = datos.decode()
     assert "fabrica" not in texto
     importado = leer_perfiles(datos)
-    assert len(importado.validos) == 6 and not importado.invalidos
+    assert len(importado.validos) == 9 and not importado.invalidos  # RF-O31: 6 + 3 de fábrica
 
 
 def test_ida_y_vuelta_exportar_importar_con_pistas():
@@ -311,7 +311,7 @@ def test_un_perfil_invalido_se_marca_con_la_ruta_del_campo_y_los_demas_se_import
         ({"ballooning": {"activo": 1, "minimo_mib": 512}}, "ballooning.activo", MotivoCampo.TIPO),
         ({"ballooning": "si"}, "ballooning", MotivoCampo.TIPO),
         ({"storage_efi_preferido": 5}, "storage_efi_preferido", MotivoCampo.TIPO),
-        ({"origen": "iso"}, "origen", MotivoCampo.ENUM),
+        ({"origen": "ova"}, "origen", MotivoCampo.ENUM),  # «iso» ya es válido (RF-O26)
         ({"origen": 5}, "origen", MotivoCampo.TIPO),
     ],
 )
@@ -472,7 +472,7 @@ def test_un_lote_abierto_como_perfiles_da_e_m02_con_la_pista():
 
 def test_version_futura_es_e_m03_y_version_invalida_e_m02():
     with pytest.raises(ErrorProxLaunch) as exc:
-        leer_perfiles(archivo_perfiles(version_formato=2))
+        leer_perfiles(archivo_perfiles(version_formato=3))  # MVP 4: la 2 ya se lee (CA-O26.8)
     assert exc.value.codigo == CodigoError.ARCHIVO_VERSION_FUTURA
     for malo in (0, -1, True, "1", 1.0):
         with pytest.raises(ErrorProxLaunch) as exc:

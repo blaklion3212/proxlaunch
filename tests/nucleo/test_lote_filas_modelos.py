@@ -65,9 +65,15 @@ def test_los_constructores_de_m2_siguen_siendo_validos_y_el_modo_es_homogeneo():
 def test_plan_e_informe_de_m2_se_construyen_sin_los_campos_nuevos():
     campos_plan = [f.name for f in dataclasses.fields(Plan)]
     campos_informe = [f.name for f in dataclasses.fields(InformeLote)]
-    assert campos_plan[-1] == "filas_excedentes" and campos_informe[-1] == "por_filas"
-    assert dataclasses.fields(Plan)[-1].default == ()
-    assert dataclasses.fields(InformeLote)[-1].default is False
+    # MVP 4 añade `catalogo` (Plan) y `transferencias` (InformeLote) AL FINAL, con defecto.
+    assert campos_plan[-2:] == ["filas_excedentes", "catalogo"]
+    assert campos_informe[-2:] == ["por_filas", "transferencias"]
+    por_nombre_plan = {f.name: f for f in dataclasses.fields(Plan)}
+    por_nombre_inf = {f.name: f for f in dataclasses.fields(InformeLote)}
+    assert por_nombre_plan["filas_excedentes"].default == ()
+    assert por_nombre_plan["catalogo"].default is None
+    assert por_nombre_inf["por_filas"].default is False
+    assert por_nombre_inf["transferencias"].default == ()
     # El orden de los campos de M2 no cambió: los nuevos van al final.
     assert campos_plan[:3] == ["id_lote", "definicion", "elementos"]
 

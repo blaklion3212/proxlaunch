@@ -46,12 +46,20 @@ GUION = textwrap.dedent(
     from proxlaunch.nucleo.modelos.vm import ConfiguracionVM, Disco, InterfazRed
 
     GIB = 1024 ** 3
+    NUEVOS_M4 = {"tipo_so": None, "tpm": False, "agente_qemu": False, "detalle_origen": None}
 
     def norm(o):
         if isinstance(o, Enum):
             return o.value
         if dataclasses.is_dataclass(o) and not isinstance(o, type):
-            return {f.name: norm(getattr(o, f.name)) for f in dataclasses.fields(o)}
+            d = {f.name: norm(getattr(o, f.name)) for f in dataclasses.fields(o)}
+            # Campos nuevos de ConfiguracionVM en el MVP 4 (RF-O01/RF-O13): en M2 no existían.
+            # Solo se descartan si valen su valor por defecto; si un lote sin origen los dejara
+            # distintos del defecto, la diferencia SÍ se detecta (RF-O03, CA-O03.1).
+            for campo, defecto in NUEVOS_M4.items():
+                if campo in d and d[campo] == defecto:
+                    del d[campo]
+            return d
         if isinstance(o, dict):
             def clave(k):
                 return f"{k.ambito}|{k.storage}" if isinstance(k, ClavePresupuesto) else str(k)
@@ -64,6 +72,7 @@ GUION = textwrap.dedent(
         d = norm(p)
         d.pop("definicion", None)
         d.pop("filas_excedentes", None)  # campo nuevo del MVP 3 (siempre vacío en homogéneo)
+        d.pop("catalogo", None)  # campo nuevo del MVP 4 (None sin origen, RF-O03/CA-O03.1)
         return d
 
     def redes_posibles(rng):

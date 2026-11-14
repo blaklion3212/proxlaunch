@@ -39,9 +39,14 @@ def test_ca18_1_el_modelo_contiene_los_campos_requeridos(hacer_cfg):
     assert requeridos <= set(cfg.a_dict())
 
 
-def test_ca18_1_origen_solo_admite_disco_vacio():
-    """CA-18.1."""
-    assert [o.value for o in OrigenSO] == ["disco_vacio"]
+def test_ca18_1_origen_admite_los_cuatro_valores_del_mvp4():
+    """CA-18.1 ampliado por RF-O01: `OrigenSO` pasa de 1 a 4 valores."""
+    assert [o.value for o in OrigenSO] == [
+        "disco_vacio",
+        "iso",
+        "importar_disco",
+        "clonar_plantilla",
+    ]
 
 
 def test_valores_por_defecto_del_modelo():
@@ -58,7 +63,7 @@ def test_valores_por_defecto_del_modelo():
     assert (disco.discard, disco.ssd, disco.iothread) == (True, True, True)
 
 
-@pytest.mark.parametrize("origen", ["iso", "ova", "", "DISCO_VACIO", None, 1])
+@pytest.mark.parametrize("origen", ["ova", "", "DISCO_VACIO", None, 1])
 def test_ca18_2_origen_distinto_lanza_error_de_validacion(origen):
     """CA-18.2."""
     with pytest.raises(ErrorProxLaunch) as e:
@@ -70,7 +75,7 @@ def test_ca18_2_origen_distinto_lanza_error_de_validacion(origen):
 def test_ca18_2_desde_dict_con_origen_invalido_lanza_error(hacer_cfg):
     """CA-18.2."""
     datos = hacer_cfg().a_dict()
-    datos["origen"] = "iso"
+    datos["origen"] = "ova"  # «iso» ya es un origen válido (RF-O01)
     with pytest.raises(ErrorProxLaunch):
         ConfiguracionVM.desde_dict(datos)
 
@@ -219,7 +224,15 @@ def test_ca11_4_la_conversion_es_coherente_con_v14(hacer_cfg, inv, caps, con_cod
 
 
 def test_ca20_2_etapas_en_orden():
-    assert [e.value for e in Etapa] == ["validando", "enviando", "creando", "comprobando", "listo"]
+    # MVP 4: se intercala «ajustando» (PUT config/resize tras clonar, RF-O22) antes de «listo».
+    assert [e.value for e in Etapa] == [
+        "validando",
+        "enviando",
+        "creando",
+        "comprobando",
+        "ajustando",
+        "listo",
+    ]
 
 
 def test_desenlaces_previstos_por_rf20():

@@ -441,7 +441,7 @@ def test_patron_mal_formado_es_e_m04(patron, ruta):
         ({"cores": True}, "homogeneo.config.cores"),
         ({"memoria_mib": "4096"}, "homogeneo.config.memoria_mib"),
         ({"firmware": "uefi"}, "homogeneo.config.firmware"),
-        ({"origen": "iso"}, "homogeneo.config.origen"),
+        ({"origen": "usb"}, "homogeneo.config.origen"),  # «iso» ya es válido (MVP 4, RF-O27)
         ({"con_disco": "si"}, "homogeneo.config.con_disco"),
         ({"discos": [{"storage": 5, "tamano_gib": 8}]}, "homogeneo.config.discos[0].storage"),
         (
@@ -571,9 +571,10 @@ def test_un_archivo_de_perfiles_abierto_como_lote_da_e_m02_con_la_pista():
 
 def test_version_futura_es_e_m03_sin_lectura_parcial_y_con_version_invalida_e_m02():
     """CA-G06.2 / CA-X01.4: aunque el resto del archivo sea válido."""
-    e = _error_lote(archivo_lote(version_formato=2))
+    # MVP 4 (CA-O26.8): la 2 ya se lee; la futura es la 3.
+    e = _error_lote(archivo_lote(version_formato=3))
     assert e.codigo == CodigoError.ARCHIVO_VERSION_FUTURA
-    assert e.params == {"version_archivo": "2", "version_soportada": "1"}
+    assert e.params == {"version_archivo": "3", "version_soportada": "2"}
     for malo in (0, -1, True, "1", 1.0, None):
         assert (
             _error_lote(archivo_lote(version_formato=malo)).codigo

@@ -149,7 +149,7 @@ def test_s2_la_plantilla_se_reimporta_sin_perder_filas(tmp_path):
         inv=None,
         nodo_referencia=None,
     )
-    assert len(resultado.filas) == 2
+    assert len(resultado.filas) == 5  # CA-O28.9: una fila de ejemplo por origen
     assert tabla.encabezado[0] == "nombre"
 
 

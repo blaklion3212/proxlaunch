@@ -16,10 +16,17 @@ from proxlaunch.nucleo.csv_importacion.modelos import (
     ResultadoImportacion,
     TablaCsv,
 )
+from proxlaunch.nucleo.origen.nombres import parece_url
+from proxlaunch.nucleo.transferencias.url import url_saneada
 from proxlaunch.nucleo.validacion import Severidad
 
 COLUMNAS_EXTRA = ("fila_original", "columna", "problema")
 SEPARADOR_PROBLEMAS = " | "  # varios problemas de una fila en una sola celda
+
+
+def _celda_segura(celda: str, es_fuente: bool) -> str:
+    """La celda ``fuente`` con forma de URL se escribe como ``host/archivo`` (INV-O6)."""
+    return url_saneada(celda) if es_fuente and parece_url(celda) else celda
 
 
 def filas_con_error(
@@ -40,6 +47,7 @@ def filas_con_error(
         if i not in credenciales and normalizar_encabezado(titulo) not in extra
     ]
     encabezado = [tabla.encabezado[i] for i in conservar] + list(COLUMNAS_EXTRA)
+    pos_fuente = resultado.columnas.posiciones.get("fuente", -1)
     originales = {f.numero: f.celdas for f in tabla.filas}
     filas: list[list[str | int]] = []
     for fila in resultado.filas:
@@ -48,7 +56,9 @@ def filas_con_error(
         celdas = originales.get(fila.numero, ())
         errores = [p for p in fila.problemas if p.severidad == Severidad.ERROR]
         columnas = [p.columna for p in errores if p.columna]
-        fila_csv: list[str | int] = [celdas[i] if i < len(celdas) else "" for i in conservar]
+        fila_csv: list[str | int] = [
+            _celda_segura(celdas[i], i == pos_fuente) if i < len(celdas) else "" for i in conservar
+        ]
         fila_csv.append(fila.numero)
         fila_csv.append(SEPARADOR_PROBLEMAS.join(dict.fromkeys(columnas)))
         fila_csv.append(SEPARADOR_PROBLEMAS.join(traducir(p) for p in errores))

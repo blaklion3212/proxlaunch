@@ -47,6 +47,7 @@ def test_ca_10_2_servidor_individual():
     t.en("GET", "/cluster/status", dato("9.2", "cluster_status_individual.json"))
     t.en("GET", "/nodes", dato("9.2", "nodes_individual.json"))
     t.en("GET", "/cluster/nextid", "101")
+    t.en("GET", "/access/permissions", dato("9.2", "permisos_completos.json"))  # MVP 4: CA-O02.6
     t.en("GET", "/nodes/pve1/storage", dato("9.2", "storage.json"))
     t.en("GET", "/nodes/pve1/network", dato("9.2", "network.json"))
     inv = descubrir(crear_sesion(t))
@@ -277,6 +278,7 @@ def test_rnf_12_diez_nodos_y_cincuenta_storages_terminan_rapido_y_completos():
     t.en("GET", "/nodes", nodos)
     t.en("GET", "/cluster/status", [{"type": "cluster", "name": "c"}])
     t.en("GET", "/cluster/nextid", "100")
+    t.en("GET", "/access/permissions", dato("9.2", "permisos_completos.json"))  # MVP 4: CA-O02.6
 
     def _lento(valor):
         def _f(llamada):

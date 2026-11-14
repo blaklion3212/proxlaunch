@@ -44,8 +44,10 @@ def filas_plantilla() -> list[list[str | int]]:
         ["ejemplo-05", "", 4, "8", 80, "", "", "", "", ""],
     ]
     origenes: list[list[str | int]] = [
-        ["", "", "", "", ""],
-        ["", "", "", "", ""],
+        # «vacio» explícito: sin él la fila heredaría el origen del perfil base (p. ej. ISO sin
+        # fuente) y la plantilla no pasaría su propia validación.
+        ["vacio", "", "", "", ""],
+        ["vacio", "", "", "", ""],
         ["iso", "ejemplo-instalador.iso", "linux", "", ""],
         ["importar", "ejemplo-disco.qcow2", "", "", ""],
         ["clonar", "ejemplo-plantilla", "", "", "auto"],

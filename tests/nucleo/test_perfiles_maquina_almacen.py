@@ -106,8 +106,9 @@ def test_cargar_un_archivo_valido_conserva_ids_nombres_y_orden(tmp_path):
         ("b" * 32, "Segundo", OrigenPerfil.USUARIO),
         ("a" * 32, "Primero", OrigenPerfil.USUARIO),
     ]
-    assert [p.id for p in a.todos()][:6] == [p.id for p in perfiles_fabrica()]
-    assert a.todos()[6].nombre == "Segundo"
+    # MVP 4 (RF-O31, D-25): 9 perfiles de fábrica (6 de M3 + 3 nuevos).
+    assert [p.id for p in a.todos()][:9] == [p.id for p in perfiles_fabrica()]
+    assert a.todos()[9].nombre == "Segundo"
 
 
 @pytest.mark.parametrize(
@@ -197,7 +198,10 @@ def test_un_perfil_malo_entre_buenos_se_descarta_solo_el_malo_y_el_archivo_no_se
         ({"id": 5, "nombre": "A", "config": config_perfil_json()}, "id no cadena"),
         ({"nombre": "A", "config": config_perfil_json()}, "sin id"),
         ({"id": "d" * 32, "nombre": "", "config": config_perfil_json()}, "sin nombre"),
-        ({"id": "d" * 32, "nombre": "A", "config": config_perfil_json(origen="iso")}, "origen"),
+        (
+            {"id": "d" * 32, "nombre": "A", "config": config_perfil_json(origen="ova")},
+            "origen",
+        ),  # «iso» ya es válido (RF-O26)
         ("no es un objeto", "no objeto"),
         (None, "null"),
     ],
@@ -257,8 +261,8 @@ def _almacen_futuro(tmp_path):
     futuro = _entrada("a" * 32, "De la versión nueva")
     futuro["campo_de_v2"] = {"algo": "nuevo"}
     datos = _escribir_almacen(
-        ruta, [futuro, _entrada("b" * 32, "Ilegible", cores=0)], version_formato=2
-    )
+        ruta, [futuro, _entrada("b" * 32, "Ilegible", cores=0)], version_formato=3
+    )  # MVP 4: la 2 ya se lee (CA-O26.8); la «futura» es la 3
     a = _almacen(ruta)
     return ruta, datos, a, a.cargar()
 

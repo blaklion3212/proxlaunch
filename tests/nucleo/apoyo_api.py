@@ -230,6 +230,8 @@ def rutas_inventario(t: TransporteFalso, ver: str = "9.2", nodos: str = "nodes.j
     t.en("GET", "/cluster/status", dato(ver, "cluster_status.json"))
     t.en("GET", "/nodes", dato(ver, nodos))
     t.en("GET", "/cluster/nextid", dato(ver, "nextid.json"))
+    # MVP 4 (RF-O02/CA-O02.6): descubrir() lee los permisos efectivos una sola vez.
+    t.en("GET", "/access/permissions", dato(ver, "permisos_completos.json"))
     for n in ("pve1", "pve2", "pve3"):
         t.en("GET", f"/nodes/{n}/storage", dato(ver, "storage.json"))
         t.en("GET", f"/nodes/{n}/network", dato(ver, "network.json"))

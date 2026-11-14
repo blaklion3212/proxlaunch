@@ -554,20 +554,21 @@ def test_ca_09_5_formato_inesperado_conecta_con_la_capacidad_minima(
     assert any(r.levelno == logging.WARNING for r in registros)
 
 
-def test_ca_09_4_funcion_desde_8_2_no_esta_en_8_0(hacer_servicio, huellas):
+def test_ca_09_4_funcion_desde_8_4_no_esta_en_8_0(hacer_servicio, huellas):
+    # Enmienda 14.6 del MVP 4: IMPORTAR_DISCO requiere (8, 4), no (8, 2).
     sesion = _conectar_con_version(hacer_servicio, huellas, "8.0.4")
     assert not sesion.capacidades.tiene(Funcion.IMPORTAR_DISCO)
-    assert sesion.capacidades.requisito(Funcion.IMPORTAR_DISCO) == (8, 2)
+    assert sesion.capacidades.requisito(Funcion.IMPORTAR_DISCO) == (8, 4)
 
 
 def test_rf_26_version_forzada(hacer_servicio, huellas):
     _confiar(huellas, A)
     t = TransporteFalso().en("GET", "/version", {"version": "8.0.4"})
     sesion = hacer_servicio(fabrica=lambda p, h: t).conectar(
-        perfil_basico(), TOKEN, version_forzada=(8, 2)
+        perfil_basico(), TOKEN, version_forzada=(8, 4)
     )
     assert sesion.capacidades.forzada is True
-    assert sesion.capacidades.tiene(Funcion.IMPORTAR_DISCO)
+    assert sesion.capacidades.tiene(Funcion.IMPORTAR_DISCO)  # enmienda 14.6: desde (8, 4)
 
 
 # --- RF-08: llavero ---------------------------------------------------------------------

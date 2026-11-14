@@ -411,7 +411,7 @@ def test_el_mecanismo_senala_una_funcion_de_prueba_inyectada_con_la_version_requ
     )
     (p,) = [x for x in problemas if x.codigo == "V-P07.version"]
     assert p.severidad == Severidad.ERROR
-    assert p.params == {"funcion": "importar_disco", "version": "8.2"}
+    assert p.params == {"funcion": "importar_disco", "version": "8.4"}  # enmienda 14.6
 
 
 def test_con_la_version_suficiente_la_funcion_inyectada_no_da_problema():

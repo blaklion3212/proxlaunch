@@ -69,6 +69,7 @@ from proxlaunch.nucleo.origen.nombres import (
 from proxlaunch.nucleo.origen.resolucion import resolver_origen
 from proxlaunch.nucleo.perfiles_maquina.aplicar import AvisoPista, aplicar_config
 from proxlaunch.nucleo.perfiles_maquina.modelos import PerfilMaquina
+from proxlaunch.nucleo.transferencias.url import url_saneada
 from proxlaunch.nucleo.validacion import (
     VMID_MIN,
     Problema,
@@ -294,6 +295,8 @@ class _Fila:
         columna = mapa.encabezados.get(canonica) if canonica else None
         if canonica is not None and not valor:
             valor = self.celda(canonica)
+        if canonica == "fuente" and parece_url(valor):
+            valor = url_saneada(valor)  # INV-O6: la URL con credenciales no se conserva
         self.b.problemas.append(
             (
                 _orden(mapa, canonica),
@@ -392,6 +395,8 @@ class _Fila:
             if pos < len(b.fila.celdas):
                 original = sin_control(b.fila.celdas[pos]).strip()
                 if original:
+                    if canonica == "fuente" and parece_url(original):
+                        original = url_saneada(original)  # INV-O6
                     b.originales[canonica] = original
         return b
 

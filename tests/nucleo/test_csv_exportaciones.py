@@ -54,8 +54,8 @@ def _traducir(p) -> str:
 
 
 @pytest.mark.parametrize("sep", [";", ","])
-def test_la_plantilla_tiene_el_encabezado_canonico_y_dos_filas_de_ejemplo(tmp_path, sep):
-    """CA-C10.1."""
+def test_la_plantilla_tiene_el_encabezado_canonico_y_cinco_filas_de_ejemplo(tmp_path, sep):
+    """CA-C10.1 ampliado por CA-O28.9: una fila de ejemplo por origen (5 filas, 15 columnas)."""
     ruta = tmp_path / "plantilla.csv"
     escribir_plantilla(ruta, separador=sep)
     filas = _releer(ruta.read_bytes(), sep)
@@ -70,9 +70,14 @@ def test_la_plantilla_tiene_el_encabezado_canonico_y_dos_filas_de_ejemplo(tmp_pa
         "vlan",
         "nodo",
         "vmid",
+        "origen",
+        "fuente",
+        "so",
+        "virtio",
+        "modo_clon",
     ]
-    assert [f[0] for f in filas[1:]] == ["ejemplo-01", "ejemplo-02"]
-    assert all(len(f) == 10 for f in filas)
+    assert [f[0] for f in filas[1:]] == [f"ejemplo-0{n}" for n in range(1, 6)]
+    assert all(len(f) == 15 for f in filas)
     assert tuple(filas[0]) == ENCABEZADO_PLANTILLA
 
 
@@ -84,7 +89,7 @@ def test_la_plantilla_usa_punto_y_coma_por_defecto_bom_y_crlf(tmp_path):
     assert datos.startswith(BOM) and datos.count(BOM) == 1
     assert b'"nombre";"perfil";"cpu"' in datos
     assert (
-        datos.count(b"\r\n") == 3
+        datos.count(b"\r\n") == 6  # encabezado + 5 filas de ejemplo (CA-O28.9)
         and datos.replace(b"\r\n", b"").count(b"\n") == 0
         and b"\r" not in datos.replace(b"\r\n", b"")
     )
@@ -101,7 +106,7 @@ def test_los_ejemplos_son_validos_y_no_empiezan_por_un_disparador():
     for fila in filas_plantilla():
         for celda in fila:
             assert not (isinstance(celda, str) and celda[:1] in {"=", "+", "-", "@", "\t", "\r"})
-    assert [f[0] for f in filas_plantilla()] == ["ejemplo-01", "ejemplo-02"]
+    assert [f[0] for f in filas_plantilla()] == [f"ejemplo-0{n}" for n in range(1, 6)]
 
 
 def test_la_plantilla_escribe_enteros_sin_comilla_ni_apostrofe(tmp_path):
@@ -110,22 +115,37 @@ def test_la_plantilla_escribe_enteros_sin_comilla_ni_apostrofe(tmp_path):
     assert b"'" not in ruta.read_bytes()
 
 
-@pytest.mark.parametrize("sep", [";", ","])
-def test_la_plantilla_pasa_su_propia_validacion_de_capa_1_con_cualquier_perfil_base(tmp_path, sep):
-    """CA-C10.4 (y V-M11 como aviso, CA-C10.3)."""
+def _validar_plantilla_con_base(tmp_path, sep, base):
     ruta = tmp_path / "p.csv"
     escribir_plantilla(ruta, separador=sep)
     tabla = leer_tabla(ruta.read_bytes())
     assert tabla.deteccion.separador == sep and tabla.codificacion.value == "utf-8-sig"
-    for base in perfiles_fabrica():
-        r = interpretar(
-            tabla, perfil_base=base, perfiles=perfiles_fabrica(), inv=None, nodo_referencia=None
-        )
-        assert [f.estado for f in r.filas] == [EstadoFila.CON_AVISO, EstadoFila.CON_AVISO], base.id
+    return interpretar(
+        tabla, perfil_base=base, perfiles=perfiles_fabrica(), inv=None, nodo_referencia=None
+    )
+
+
+@pytest.mark.parametrize("sep", [";", ","])
+def test_la_plantilla_pasa_su_propia_validacion_de_capa_1_con_cualquier_perfil_base(tmp_path, sep):
+    """CA-C10.4 (y V-M11 como aviso, CA-C10.3) con los perfiles base de origen «vacío»."""
+    bases = [b for b in perfiles_fabrica() if b.config.origen.value == "disco_vacio"]
+    assert len(bases) >= 6  # los 6 perfiles de M3 no cambian (CA-O31.2)
+    for base in bases:
+        r = _validar_plantilla_con_base(tmp_path, sep, base)
+        assert [f.estado for f in r.filas] == [EstadoFila.CON_AVISO] * 5, base.id
         for f in r.filas:
             assert [p.regla for p in f.problemas if p.severidad == Severidad.ERROR] == []
             assert [p.regla for p in f.problemas] == ["V-M11"]
-        assert r.numeros_validos == (2, 3)
+        assert r.numeros_validos == (2, 3, 4, 5, 6)
+
+
+@pytest.mark.parametrize("sep", [";"])
+def test_la_plantilla_pasa_su_validacion_tambien_con_perfiles_base_de_origen_iso(tmp_path, sep):
+    bases = [b for b in perfiles_fabrica() if b.config.origen.value != "disco_vacio"]
+    assert bases  # RF-O31: windows-11, windows-server y linux-red-hat
+    for base in bases:
+        r = _validar_plantilla_con_base(tmp_path, sep, base)
+        assert r.numeros_validos == (2, 3, 4, 5, 6), base.id
 
 
 def test_la_plantilla_es_atomica_con_permisos_0600_y_reemplaza_la_anterior(tmp_path, monkeypatch):

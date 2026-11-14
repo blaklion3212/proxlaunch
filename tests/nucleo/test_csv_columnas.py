@@ -33,6 +33,12 @@ ALIAS = {
     "modelo_red": ["tarjeta_red"],
     "firmware": ["bios"],
     "tipo_cpu": ["cpu_tipo"],
+    # MVP 4, RF-O28 (enmienda 14.7): columnas de origen.
+    "origen": ["source"],
+    "fuente": ["origen_archivo", "iso", "plantilla", "imagen"],
+    "so": ["sistema"],
+    "virtio": ["drivers"],
+    "modo_clon": ["clon"],
     **{f"disco{n}": [] for n in range(2, 9)},
     **{f"almacenamiento{n}": [f"storage{n}"] for n in range(2, 9)},
 }
@@ -51,14 +57,21 @@ def test_la_tabla_de_columnas_es_la_de_los_requisitos():
     for c in COLUMNAS:
         assert set(c.alias) == set(ALIAS[c.canonica]), c.canonica
     assert [c.canonica for c in COLUMNAS if c.obligatoria] == ["nombre"]
-    assert {c.canonica for c in COLUMNAS if c.avanzada} == {"sockets", "modelo_red", "tipo_cpu"}
+    assert {c.canonica for c in COLUMNAS if c.avanzada} == {
+        "sockets",
+        "modelo_red",
+        "tipo_cpu",
+        "modo_clon",  # RF-O28: «No (avanzado)»
+    }
     assert len(canonicas) == len(COLUMNAS)  # sin duplicados
 
 
 def test_el_encabezado_de_la_plantilla_usa_nombres_canonicos():
     assert set(ENCABEZADO_PLANTILLA) <= {c.canonica for c in COLUMNAS}
+    # MVP 4 (RF-O28, CA-O28.9): la plantilla añade las columnas de origen al final.
     assert ENCABEZADO_PLANTILLA == (
         "nombre", "perfil", "cpu", "memoria", "disco", "almacenamiento", "red", "vlan", "nodo", "vmid",  # noqa: E501
+        "origen", "fuente", "so", "virtio", "modo_clon",
     )  # fmt: skip
 
 

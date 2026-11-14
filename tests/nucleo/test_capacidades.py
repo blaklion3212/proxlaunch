@@ -92,16 +92,17 @@ def test_ca09_6_tabla_recorrida_para_cada_version(funcion, version):
     [
         pytest.param((8, 0), False, id="CA-09.4-8.0-oculta"),
         pytest.param((8, 1), False, id="CA-09.4-8.1-oculta"),
-        pytest.param((8, 2), True, id="CA-09.4-8.2-disponible"),
+        pytest.param((8, 2), False, id="CA-09.4-8.2-oculta"),
+        pytest.param((8, 3), False, id="CA-09.4-8.3-oculta"),
         pytest.param((8, 4), True, id="CA-09.6-8.4"),
         pytest.param((9, 0), True, id="CA-09.6-9.0"),
         pytest.param((9, 2), True, id="CA-09.6-9.2"),
     ],
 )
-def test_ca09_4_funcion_desde_8_2(version, esperado):
-    """CA-09.4: la función de ejemplo 'desde 8.2' aparece o no según la versión."""
+def test_ca09_4_funcion_desde_8_4(version, esperado):
+    """CA-09.4 con la enmienda 14.6 del MVP 4: IMPORTAR_DISCO pasa de (8, 2) a (8, 4)."""
     caps = capacidades_para(Version("x", version[0], version[1], 0), None)
-    assert caps.requisito(Funcion.IMPORTAR_DISCO) == (8, 2)
+    assert caps.requisito(Funcion.IMPORTAR_DISCO) == (8, 4)
     assert caps.tiene(Funcion.IMPORTAR_DISCO) is esperado
 
 

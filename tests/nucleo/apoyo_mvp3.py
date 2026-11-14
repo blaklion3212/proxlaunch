@@ -13,7 +13,7 @@ from collections.abc import Callable, Iterable, Sequence
 from pathlib import Path
 from typing import Any
 
-from proxlaunch.nucleo.archivos.constantes import VERSION_FORMATO
+from proxlaunch.nucleo.archivos.constantes import VERSION_FORMATO_BASE
 from proxlaunch.nucleo.csv_importacion.interpretacion import interpretar
 from proxlaunch.nucleo.csv_importacion.lectura import leer_tabla
 from proxlaunch.nucleo.csv_importacion.modelos import (
@@ -142,7 +142,7 @@ def archivo_perfiles(perfiles: Sequence[object] | None = None, /, **raiz: Any) -
     """Archivo ``proxlaunch.perfiles`` v1 en bytes. ``raiz`` sobrescribe/añade claves raíz."""
     cuerpo: dict[str, Any] = {
         "formato": "proxlaunch.perfiles",
-        "version_formato": VERSION_FORMATO,
+        "version_formato": VERSION_FORMATO_BASE,  # los archivos de apoyo son v1 (DT-O15)
         "app_version": "0.0.0-prueba",
         "perfiles": list(perfiles) if perfiles is not None else [perfil_json()],
     }
@@ -197,7 +197,7 @@ def archivo_lote(contenido: dict[str, Any] | None = None, /, **raiz: Any) -> byt
     """Archivo ``proxlaunch.lote`` v1 homogéneo en bytes (``raiz`` sobrescribe claves raíz)."""
     cuerpo: dict[str, Any] = {
         "formato": "proxlaunch.lote",
-        "version_formato": VERSION_FORMATO,
+        "version_formato": VERSION_FORMATO_BASE,  # los archivos de apoyo son v1 (DT-O15)
         "app_version": "0.0.0-prueba",
         "nombre": "Lote de prueba",
         "tipo": "homogeneo",
@@ -215,7 +215,7 @@ def archivo_lote_por_filas(filas: Sequence[object] | None = None, /, **raiz: Any
         ]
     cuerpo: dict[str, Any] = {
         "formato": "proxlaunch.lote",
-        "version_formato": VERSION_FORMATO,
+        "version_formato": VERSION_FORMATO_BASE,  # los archivos de apoyo son v1 (DT-O15)
         "app_version": "0.0.0-prueba",
         "nombre": "Por filas",
         "tipo": "por_filas",

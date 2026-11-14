@@ -356,8 +356,10 @@ TABLA_FABRICA = {
 }
 
 
-def test_las_claves_de_fabrica_son_las_seis_de_la_seccion_8_en_orden():
-    assert tuple(TABLA_FABRICA) == CLAVES_FABRICA
+def test_las_claves_de_fabrica_empiezan_por_las_seis_de_la_seccion_8_en_orden():
+    # CA-O31.2: los 6 perfiles de M3 no cambian; los 3 nuevos (RF-O31, D-25) van detrás.
+    assert CLAVES_FABRICA[:6] == tuple(TABLA_FABRICA)
+    assert CLAVES_FABRICA[6:] == ("windows-11", "windows-server", "linux-red-hat")
 
 
 def test_el_perfil_predeterminado_es_servidor_pequeno():
@@ -392,7 +394,7 @@ def test_los_perfiles_de_fabrica_no_llevan_pistas_ni_datos_del_sitio(clave):
 def test_ids_unicos_con_prefijo_reservado_y_validos_como_de_fabrica():
     perfiles = perfiles_fabrica()
     ids = [p.id for p in perfiles]
-    assert len(set(ids)) == len(ids) == 6
+    assert len(set(ids)) == len(ids) == 9  # 6 de M3 + 3 del MVP 4 (RF-O31)
     for p in perfiles:
         assert p.id.startswith("fabrica.")
         assert id_valido(p.id, permitir_fabrica=True)
@@ -466,9 +468,9 @@ def test_la_config_del_predeterminado_es_la_de_m1_sin_pistas():
     assert config_desde_configuracion(por_defecto, con_pistas=False) == perfil.config
 
 
-def test_ningun_id_ni_clave_de_fabrica_nombra_un_sistema_operativo():
-    """CA-P02.6: describen solo hardware."""
-    texto = " ".join(p.id for p in perfiles_fabrica()).lower()
+def test_ningun_id_ni_clave_de_fabrica_de_m3_nombra_un_sistema_operativo():
+    """CA-P02.6: los seis de M3 describen solo hardware (los 3 del MVP 4 nombran un SO, RF-O31)."""
+    texto = " ".join(p.id for p in perfiles_fabrica()[:6]).lower()
     for so in ("windows", "ubuntu", "debian", "linux", "centos", "tpm", "freebsd"):
         assert so not in texto
 

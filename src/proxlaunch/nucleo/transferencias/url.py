@@ -137,6 +137,25 @@ def host_y_archivo(url: UrlDescarga) -> tuple[str, str]:
     return url.host, url.archivo
 
 
+def url_saneada(texto: str) -> str:
+    """Forma mostrable ``host/archivo`` de un texto con forma de URL (admite userinfo).
+
+    Pensada para celdas de CSV: la URL del usuario nunca se conserva con usuario, clave, ruta
+    ni consulta (INV-O6). Si no se puede analizar, devuelve una marca fija sin datos de la URL.
+    """
+    try:
+        partes = urlsplit(texto.strip())
+        host = partes.hostname or ""
+        segmentos = [s for s in partes.path.split("/") if s]
+        archivo = unquote(segmentos[-1]) if segmentos else ""
+    except ValueError:
+        return "(url)"
+    if not host:
+        return "(url)"
+    url = UrlDescarga(texto=texto.strip(), host=host, archivo=archivo, es_http=False)
+    return ocultar_url(texto.strip(), url)
+
+
 def ocultar_url(texto: str, url: UrlDescarga) -> str:
     """Sustituye la URL (y sus formas codificadas) por ``host/archivo`` en ``texto``.
 

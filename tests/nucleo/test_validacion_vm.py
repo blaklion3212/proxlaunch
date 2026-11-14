@@ -623,10 +623,13 @@ def test_v20_origen_disco_vacio_es_valido(hacer_cfg, inv, caps, con_codigo):
     assert con_codigo(validar_vm(hacer_cfg(), inv, caps), "V-20") == []
 
 
-def test_v20_origen_distinto_se_detecta_aunque_se_asigne_despues(hacer_cfg, inv, caps, con_codigo):
+def test_v20_esta_retirada_y_la_sustituye_v_o01_enmienda_14_1(hacer_cfg, inv, caps, con_codigo):
+    """Enmienda 14.1 del MVP 4: «origen = iso» ya no da V-20; sin detalle da V-O01."""
     cfg = hacer_cfg()
-    cfg.origen = "iso"
-    assert con_codigo(validar_vm(cfg, inv, caps), "V-20", "origen")
+    cfg.origen = "iso"  # se asigna después de construir, como en el test original
+    problemas = validar_vm(cfg, inv, caps)
+    assert con_codigo(problemas, "V-20") == []
+    assert con_codigo(problemas, "V-O01", "detalle_origen")
 
 
 def test_ca16_3_sin_disco_ignora_la_lista_de_discos(hacer_cfg, inv, caps):
