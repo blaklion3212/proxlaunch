@@ -173,7 +173,8 @@ def test_ca_l02_4_el_mensaje_nombra_el_primer_nombre_invalido_y_la_causa(bloque)
     poner_lote(bloque, 3, "web_")
     aplicar(bloque)
     texto = bloque._filas["prefijo"]._error.text()
-    assert "web_01" in texto and "_" in texto
+    # El primer nombre REAL del plan lleva el separador («web_-01»), no prefijo+número.
+    assert "web_-01" in texto and "_" in texto
 
 
 def test_ca_l02_4_nombre_de_mas_de_63_caracteres_bloquea(bloque):

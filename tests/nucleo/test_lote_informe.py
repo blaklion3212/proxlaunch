@@ -6,7 +6,7 @@ import pytest
 
 from proxlaunch.nucleo.errores import CodigoError, ErrorProxLaunch
 from proxlaunch.nucleo.lote.constantes import LINEAS_LOG_TAREA
-from proxlaunch.nucleo.lote.informe import construir_informe
+from proxlaunch.nucleo.lote.informe import construir_informe, upid_sin_usuario
 from proxlaunch.nucleo.lote.libro import Libro
 from proxlaunch.nucleo.lote.modelos import (
     EstadoMV,
@@ -145,8 +145,9 @@ def test_ca_l12_10_el_informe_sale_solo_del_libro_no_de_otra_fuente(banco):
     antes = libro.instantanea()
     inf = _informe(banco, libro)
     assert libro.instantanea() == antes  # construir el informe no modifica el libro
+    # CA-L19.3: el informe lleva el UPID del libro SIN el campo del usuario.
     assert [(e.elemento.vmid, e.estado, e.upid) for e in inf.entradas] == [
-        (e.elemento.vmid, e.estado, e.upid) for e in antes
+        (e.elemento.vmid, e.estado, upid_sin_usuario(e.upid) if e.upid else None) for e in antes
     ]
 
 

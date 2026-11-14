@@ -44,10 +44,11 @@ def upid_sin_usuario(upid: str) -> str:
 
 
 def _sanear_texto(texto: str, ocultar: Sequence[str] = ()) -> str:
-    """Quita de un texto libre los valores de ``ocultar`` (host y usuario del perfil, tal cual),
-    los UPID completos, las IPv4 y los ``usuario@realm``."""
+    """Quita de un texto libre los valores de ``ocultar`` (host y usuario del perfil, sin
+    distinguir mayúsculas: el DNS no las distingue), los UPID completos, las IPv4 y los
+    ``usuario@realm``."""
     for valor in sorted({v for v in ocultar if v}, key=len, reverse=True):
-        texto = texto.replace(valor, _OCULTO)
+        texto = re.sub(re.escape(valor), _OCULTO, texto, flags=re.IGNORECASE)
     texto = _RE_UPID.sub(lambda m: upid_sin_usuario(m.group(0)), texto)
     texto = _RE_IPV4.sub(_OCULTO, texto)
     return _RE_USUARIO.sub(_OCULTO, texto)

@@ -421,25 +421,12 @@ class BloqueLote(QGroupBox):
                 continue  # solo bloquea crear de verdad: lo decide la ventana
             if not self.es_lote and p.regla != "V-L01":
                 continue  # con una sola máquina el nombre y el destino son los de M1
-            if p.regla == "V-L04" and p.params.get("causa") == "caracter":
-                p = self._con_ejemplo_del_prefijo(p, definicion.patron)
             if p.regla == "V-L01" and self.cantidad_valor() > MAX_LOTE:
                 p = Problema(p.regla, p.severidad, p.campo, {**p.params, "causa": "maximo"})
             if p.regla == "V-L02" and not definicion.patron.prefijo:
                 p = Problema(p.regla, p.severidad, p.campo, {**p.params, "causa": "vacio"})
             resultado.append(p)
         return resultado
-
-    @staticmethod
-    def _con_ejemplo_del_prefijo(p: Problema, patron: PatronNombres) -> Problema:
-        """Si el carácter inválido está en el prefijo, el mensaje lo ilustra con prefijo+número."""
-        nombre = p.params.get("nombre", "")
-        if nombre.startswith(patron.prefijo) and p.params.get("caracter", "") in patron.prefijo:
-            numero = nombre[len(patron.prefijo) + len(patron.separador) :]
-            return Problema(
-                p.regla, p.severidad, p.campo, {**p.params, "ejemplo": patron.prefijo + numero}
-            )
-        return p
 
     def aplicar_problemas(self, problemas: Sequence[Problema]) -> None:
         """Muestra cada error junto a su campo y la vista previa de los nombres."""
