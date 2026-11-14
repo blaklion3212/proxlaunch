@@ -30,6 +30,7 @@ from proxlaunch.interfaz.textos import (
     texto_error,
     texto_estado_mv,
     texto_estado_rollback,
+    texto_vmid_ocupado_en_lote,
 )
 from proxlaunch.nucleo.errores import CodigoError, ErrorProxLaunch
 from proxlaunch.nucleo.lote.modelos import (
@@ -214,8 +215,11 @@ def detalle_entrada(entrada: EntradaLibro) -> str:
     estado = entrada.estado
     nombre = entrada.elemento.nombre
     error = entrada.error
-    if estado in ESTADOS_EN_CURSO or estado == EstadoMV.OK:
+    if estado in ESTADOS_EN_CURSO:
         return ""
+    if estado == EstadoMV.OK:
+        # Una máquina rescatada por la comprobación se creó, pero se avisa de ello (CA-L15.2).
+        return " ".join(t for t in (texto_aviso_entrada(a) for a in entrada.avisos) if t)
     if estado == EstadoMV.CON_AVISOS:
         partes = [texto_aviso_entrada(a) for a in entrada.avisos]
         if error is not None:
@@ -251,6 +255,8 @@ def detalle_entrada(entrada: EntradaLibro) -> str:
             )
         )
     if error is not None:
+        if error.codigo == CodigoError.VMID_OCUPADO:
+            return texto_vmid_ocupado_en_lote(error.params.get("vmid", "?"))
         return texto_error(error)
     return ""
 

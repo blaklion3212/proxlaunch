@@ -25,6 +25,7 @@ from proxlaunch.nucleo.lote.modelos import (
     DefinicionLote,
     ElementoPlan,
     EntradaLibro,
+    EstadoMV,
     MotivoReparto,
     Plan,
     Problema,
@@ -35,6 +36,7 @@ from proxlaunch.nucleo.lote.modelos import (
 from proxlaunch.nucleo.lote.motor import ControlLote, MotorLote
 from proxlaunch.nucleo.lote.planificador import Planificador
 from proxlaunch.nucleo.lote.presupuesto import evaluar_espacio, uso_por_clave
+from proxlaunch.nucleo.lote.reconciliacion import tiene_etiqueta_del_lote
 from proxlaunch.nucleo.lote.rollback import ServicioRollback
 from proxlaunch.nucleo.lote.simulacion import simular
 from proxlaunch.nucleo.modelos.inventario import Bridge, Inventario, Storage
@@ -270,9 +272,37 @@ def reanudar_seguimiento(
     return servicio.seguir(cfg, upid, cancelado, al_cambiar_etapa, inv=inv)
 
 
-def comprobar_existencia(servicio: ServicioCreacion, cfg: ConfiguracionVM) -> bool | None:
-    """Envío incierto sin UPID: ¿existe ya la máquina? ``None`` si no se pudo comprobar."""
-    return servicio.existe_vm(cfg)
+def comprobar_existencia(
+    servicio: ServicioCreacion,
+    cfg: ConfiguracionVM,
+    cliente: Any,
+    id_lote: str,
+    etiquetar: bool,
+) -> EstadoMV | None:
+    """Envío incierto sin UPID: ¿existe ya la máquina y es de este lote?
+
+    ``None`` si no se pudo comprobar; ``NO_CREADA_SEGURA`` si no existe; si existe, la misma
+    misma regla de propiedad que la reconciliación del motor y el rollback: ``OK`` (lleva la
+    etiqueta del lote o el lote no etiqueta) o ``EXISTE_SIN_CONFIRMAR_PROPIEDAD`` (CA-L15.5).
+    """
+    existe = servicio.existe_vm(cfg)
+    if existe is None:
+        return None
+    if not existe:
+        return EstadoMV.NO_CREADA_SEGURA
+    if not etiquetar:
+        return EstadoMV.OK
+    try:
+        config = cliente.config_vm(cfg.nodo, cfg.vmid)
+    except Exception:
+        # ``existe_vm`` acaba de leer esa misma configuración; si ahora no se puede releer no se
+        # descarta la máquina (comportamiento del MVP 1). «Deshacer» vuelve a verificar la
+        # etiqueta antes de eliminar nada.
+        _log.warning("No se pudo releer la config para verificar la etiqueta (vmid=%s)", cfg.vmid)
+        return EstadoMV.OK
+    if tiene_etiqueta_del_lote(config, id_lote):
+        return EstadoMV.OK
+    return EstadoMV.EXISTE_SIN_CONFIRMAR_PROPIEDAD
 
 
 # --- Lotes (MVP 2): puentes entre los hilos del motor y la interfaz --------------------
@@ -384,6 +414,17 @@ def simular_lote(
     return simular(sesion, definicion, inv, version_forzada=version_forzada, reloj=reloj)
 
 
+def _motor(
+    sesion: Sesion,
+    reloj: Reloj,
+    fabrica: Callable[[Sesion, Reloj], ServicioCreacion] | None,
+) -> MotorLote:
+    """Motor con la fábrica de creación inyectada (si la hay), igual en todas las acciones."""
+    if fabrica:
+        return MotorLote(sesion, reloj, fabrica_creacion=fabrica)
+    return MotorLote(sesion, reloj)
+
+
 def ejecutar_lote(
     sesion: Sesion,
     reloj: Reloj,
@@ -394,10 +435,7 @@ def ejecutar_lote(
     fabrica: Callable[[Sesion, Reloj], ServicioCreacion] | None = None,
 ) -> Libro:
     """Ejecuta el plan con el motor; bloquea hasta que termine (hilo de trabajo)."""
-    motor = (
-        MotorLote(sesion, reloj, fabrica_creacion=fabrica) if fabrica else MotorLote(sesion, reloj)
-    )
-    return motor.ejecutar(plan, inv, observador, control)
+    return _motor(sesion, reloj, fabrica).ejecutar(plan, inv, observador, control)
 
 
 def comprobar_dudosas_lote(
@@ -406,9 +444,11 @@ def comprobar_dudosas_lote(
     libro: Libro,
     observador: Callable[[EntradaLibro], None],
     control: ControlLote,
+    fabrica: Callable[[Sesion, Reloj], ServicioCreacion] | None = None,
+    vmids: frozenset[int] | None = None,
 ) -> Libro:
-    """Comprueba las máquinas dudosas (solo lecturas, CA-L15.7)."""
-    MotorLote(sesion, reloj).comprobar_dudosas(libro, observador, control)
+    """Comprueba las máquinas dudosas, o solo las de ``vmids`` (solo lecturas, CA-L15.7)."""
+    _motor(sesion, reloj, fabrica).comprobar_dudosas(libro, observador, control, vmids)
     return libro
 
 
@@ -420,9 +460,10 @@ def continuar_lote(
     observador: Callable[[EntradaLibro], None],
     control: ControlLote,
     comprobar_antes: bool,
+    fabrica: Callable[[Sesion, Reloj], ServicioCreacion] | None = None,
 ) -> Libro:
     """«Comprobar y continuar» / «Reconectar»: comprueba las dudosas y envía solo las pendientes."""
-    motor = MotorLote(sesion, reloj)
+    motor = _motor(sesion, reloj, fabrica)
     if comprobar_antes:
         motor.comprobar_dudosas(libro, observador, control)
     return motor.ejecutar_pendientes(libro, inv, observador, control)
@@ -441,6 +482,24 @@ def deshacer_lote(
     return ServicioRollback(sesion, reloj).deshacer(
         candidatos, observador, control, id_lote=id_lote, etiquetado=etiquetado
     )
+
+
+def deshacer_lotes(
+    sesion: Sesion,
+    reloj: Reloj,
+    grupos: list[tuple[list[CandidatoRollback], str, bool]],
+    observador: Callable[[ResultadoRollback], None],
+    control: ControlLote,
+) -> list[ResultadoRollback]:
+    """Deshace las máquinas elegidas de uno o varios lotes de la sesión, lote por lote."""
+    resultados: list[ResultadoRollback] = []
+    for candidatos, id_lote, etiquetado in grupos:
+        resultados.extend(
+            deshacer_lote(sesion, reloj, candidatos, observador, control, id_lote, etiquetado)
+        )
+        if control.cancelado.is_set():
+            break
+    return resultados
 
 
 def armar_reintento(

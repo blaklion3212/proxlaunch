@@ -51,7 +51,9 @@ def _comprobar_y_esperar(qtbot, v):
 
 def test_envio_incierto_explica_que_no_se_sabe_si_proxmox_recibio_la_orden(qtbot, entorno):
     v = _crear_incierto(qtbot, entorno)
-    assert "No sabemos si Proxmox recibió la orden" in v.progreso.texto_mensaje
+    # El motor reconcilia con existe_vm (0/+5/+15 s); si no puede saberlo, muestra E-L06.
+    assert "No pudimos comprobar si «srv-web-01» existe" in v.progreso.texto_mensaje
+    assert "antes de crearla otra vez" in v.progreso.texto_mensaje
     assert v.progreso.texto_upid == ""
     assert v.progreso.boton_comprobar.isVisible()
     assert v.progreso.boton_comprobar.text() == "Comprobar"
@@ -62,9 +64,10 @@ def test_comprobar_con_envio_incierto_y_maquina_existente_es_ok_con_aviso_y_crea
     qtbot, entorno
 ):
     v = _crear_incierto(qtbot, entorno)
+    antes = len(entorno.creacion.llamadas_existe_vm)  # las de la reconciliación del motor
     entorno.creacion.respuesta_existe_vm = True
     _comprobar_y_esperar(qtbot, v)
-    assert len(entorno.creacion.llamadas_existe_vm) == 1
+    assert len(entorno.creacion.llamadas_existe_vm) == antes + 1
     assert v._ultimo_resultado.desenlace == Desenlace.OK
     assert "sí se creó" in v.progreso.texto_mensaje
     assert "Verifica" in v.progreso.texto_mensaje
@@ -94,12 +97,13 @@ def test_comprobar_con_envio_incierto_sin_poder_saber_mantiene_el_estado_y_avisa
 
 def test_comprobar_con_envio_incierto_nunca_vuelve_a_crear_ni_sigue_una_tarea(qtbot, entorno):
     v = _crear_incierto(qtbot, entorno)
+    antes = len(entorno.creacion.llamadas_existe_vm)  # las de la reconciliación del motor
     entorno.creacion.respuesta_existe_vm = None
     _comprobar_y_esperar(qtbot, v)
     _comprobar_y_esperar(qtbot, v)
     assert entorno.creacion.llamadas_crear == 1
     assert entorno.creacion.llamadas_reanudar == []
-    assert len(entorno.creacion.llamadas_existe_vm) == 2
+    assert len(entorno.creacion.llamadas_existe_vm) == antes + 2
 
 
 def test_excepcion_al_comprobar_la_existencia_no_desbloquea(qtbot, entorno):

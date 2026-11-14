@@ -607,6 +607,19 @@ def _causa_legible(causa: str) -> str:
         return causa
 
 
+def texto_vmid_ocupado_en_lote(vmid: str) -> str:
+    """E-L03: en un lote el número lo tomó otra persona; esa máquina se reintenta después."""
+    return QCoreApplication.translate(
+        "Textos", "El número {vmid} lo usó otra persona mientras tanto. Esta máquina no se creó."
+    ).format(vmid=vmid)
+
+
+def _con_punto(texto: str) -> str:
+    """Termina ``texto`` en punto sin duplicarlo."""
+    texto = texto.rstrip()
+    return texto if texto.endswith((".", "!", "?")) else texto + "."
+
+
 def texto_motivo_no_enviada(motivo: MotivoNoEnviada | str | None) -> str:
     """Por qué una máquina no se envió (E-L10)."""
     if motivo == MotivoNoEnviada.CANCELADO:
@@ -675,11 +688,13 @@ def _texto_error_lote(error: ErrorProxLaunch) -> str | None:
         return _fmt(
             QCoreApplication.translate(
                 "Textos",
-                "Fallaron {n} máquinas seguidas por la misma causa: {causa}. ¿Continuar o detener?",
+                "Fallaron {n} máquinas seguidas por la misma causa: {causa} ¿Continuar o detener?",
             ),
             p,
-            causa=_causa_legible(p.get("causa", ""))
-            or QCoreApplication.translate("Textos", "una causa desconocida"),
+            causa=_con_punto(
+                _causa_legible(p.get("causa", ""))
+                or QCoreApplication.translate("Textos", "una causa desconocida")
+            ),
         )
     if c == CodigoError.LOTE_PAUSADO_CONEXION:
         n = _entero(p.get("n"))
@@ -1004,6 +1019,7 @@ def _texto_v_l04(p: ProblemaLote) -> str:
     return _fmt(
         QCoreApplication.translate("Textos", "El nombre «{nombre}» no es válido: {causa}."),
         prm,
+        nombre=prm.get("ejemplo") or prm.get("nombre", "?"),
         causa=_causa_nombre(prm),
     )
 
@@ -1065,6 +1081,15 @@ def texto_problema_lote(p: ProblemaLote) -> str:
     """Mensaje de una regla V-L (docs/requisitos/mvp2.md §4) o de una V-xx de M1 por elemento."""
     regla, prm = p.regla, p.params
     if regla == "V-L01":
+        if prm.get("causa") == "maximo":
+            return _fmt(
+                QCoreApplication.translate(
+                    "Textos",
+                    "El máximo por lote es {max} máquinas. Divide el trabajo en varios lotes.",
+                ),
+                prm,
+                max=str(MAX_LOTE),
+            )
         return _fmt(
             QCoreApplication.translate("Textos", "Elige entre 1 y {max} máquinas."),
             prm,
@@ -1150,6 +1175,16 @@ def texto_problema_lote(p: ProblemaLote) -> str:
                 "Cada máquina pide {vcpus} procesadores virtuales y «{nodo}» tiene {cpus_nodo}.",
             ),
             prm,
+        )
+    if regla == "V-L12.desconocida":
+        nodos = [n for n in prm.get("nodos", "").split(",") if n]
+        return _fmt(
+            QCoreApplication.translate(
+                "Textos",
+                "No se pudo leer la memoria libre de {nodos}; el reparto usa el espacio.",
+            ),
+            prm,
+            nodos=", ".join(f"«{n}»" for n in nodos) or prm.get("nodo", "?"),
         )
     if regla == "V-L12":
         if "pedido_mib" not in prm and "pedido_gib" not in prm and "pedido" not in prm:

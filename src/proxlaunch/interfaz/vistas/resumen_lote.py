@@ -20,7 +20,7 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
-from proxlaunch.interfaz.informe_lote import texto_rangos
+from proxlaunch.interfaz.informe_lote import texto_permisos_no_verificados, texto_rangos
 from proxlaunch.interfaz.modelos_tabla import ModeloPlan, TablaCopiable
 from proxlaunch.interfaz.textos import (
     texto_error,
@@ -98,6 +98,8 @@ class ResumenLote(QWidget):
     crear_solicitado = Signal()
     reducir_solicitado = Signal(int)
     volver_solicitado = Signal()
+    cancelar_solicitado = Signal()  # cancela la preparación del plan o la simulación (CA-L11.10)
+    informe_simulacion_solicitado = Signal()  # exporta la simulación como informe (CA-L11.8)
     nodo_reintento_cambiado = Signal(object)  # str o None (los mismos nodos de antes)
 
     def __init__(self, parent: QWidget | None = None) -> None:
@@ -166,6 +168,12 @@ class ResumenLote(QWidget):
             QCoreApplication.translate("ResumenLote", "Volver al formulario")
         )
         self.boton_copiar = QPushButton(QCoreApplication.translate("ResumenLote", "Copiar resumen"))
+        self.boton_cancelar = QPushButton(QCoreApplication.translate("ResumenLote", "Cancelar"))
+        self.boton_cancelar.hide()
+        self.boton_informe_simulacion = QPushButton(
+            QCoreApplication.translate("ResumenLote", "Informe de la simulación…")
+        )
+        self.boton_informe_simulacion.hide()
         self.boton_reducir = QPushButton()
         self.boton_simular = QPushButton(QCoreApplication.translate("ResumenLote", "Simular"))
         self.boton_simular.setToolTip(
@@ -178,6 +186,8 @@ class ResumenLote(QWidget):
         self.boton_crear.setProperty("primario", True)
         self.boton_reducir.hide()
         self.boton_volver.clicked.connect(self.volver_solicitado)
+        self.boton_cancelar.clicked.connect(self.cancelar_solicitado)
+        self.boton_informe_simulacion.clicked.connect(self.informe_simulacion_solicitado)
         self.boton_copiar.clicked.connect(self.copiar_resumen)
         self.boton_reducir.clicked.connect(self._al_reducir)
         self.boton_simular.clicked.connect(self.simular_solicitado)
@@ -186,7 +196,9 @@ class ResumenLote(QWidget):
         botones = QHBoxLayout()
         botones.addWidget(self.boton_volver)
         botones.addWidget(self.boton_copiar)
+        botones.addWidget(self.boton_informe_simulacion)
         botones.addStretch(1)
+        botones.addWidget(self.boton_cancelar)
         botones.addWidget(self.boton_reducir)
         botones.addWidget(self.boton_simular)
         botones.addWidget(self.boton_crear)
@@ -231,6 +243,7 @@ class ResumenLote(QWidget):
         self._plan = None
         self._simulacion = None
         self._enviado = False
+        self._ocupado = False
         self.modelo.establecer_plan(None)
         self._titulo.setText("")
         for w in (
@@ -327,6 +340,8 @@ class ResumenLote(QWidget):
         avisos = [p for p in plan.problemas if p.severidad != Severidad.ERROR]
         poner_mensaje(self._errores, self._lista(errores, prefijo="✕ "))
         textos_avisos = self._lista(avisos, prefijo="⚠ ")
+        if not plan.permisos_verificados:
+            textos_avisos = f"⚠ {texto_permisos_no_verificados()}\n{textos_avisos}".strip()
         if diferencia:
             cambio = texto_error(
                 ErrorProxLaunch(CodigoError.LOTE_PLAN_CAMBIO, {"diferencia": diferencia})
@@ -461,6 +476,8 @@ class ResumenLote(QWidget):
         self.boton_crear.setEnabled(self.puede_crear)
         self.boton_simular.setEnabled(plan is not None and not self._ocupado and not self._enviado)
         self.boton_copiar.setEnabled(plan is not None)
+        self.boton_cancelar.setVisible(self._ocupado)
+        self.boton_informe_simulacion.setVisible(self.es_simulacion and plan is not None)
         self.boton_volver.setEnabled(not self._enviado)
         motivo = ""
         if plan is not None:

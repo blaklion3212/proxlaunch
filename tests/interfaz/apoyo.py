@@ -12,7 +12,7 @@ from dataclasses import dataclass, field
 from typing import Any
 
 from proxlaunch.nucleo.capacidades import capacidades_para
-from proxlaunch.nucleo.errores import ErrorProxLaunch
+from proxlaunch.nucleo.errores import CodigoError, ErrorProxLaunch
 from proxlaunch.nucleo.modelos.conexion import PerfilConexion
 from proxlaunch.nucleo.modelos.inventario import (
     Bridge,
@@ -110,12 +110,13 @@ def sesion_falsa(
     avisos: list[Aviso] | None = None,
     version: tuple[int, int] = (9, 2),
     forzada: bool = False,
+    cliente: Any = None,
 ) -> Sesion:
-    """Sesión sin red: el cliente es un marcador (las pruebas no lo usan)."""
+    """Sesión sin red: el cliente es un marcador salvo que se pase uno falso (lotes)."""
     v = Version(f"{version[0]}.{version[1]}", version[0], version[1], 0)
     return Sesion(
         perfil=perfil_ or perfil(),
-        cliente=object(),  # type: ignore[arg-type]
+        cliente=cliente if cliente is not None else object(),  # type: ignore[arg-type]
         version=v,
         capacidades=capacidades_para(v, version if forzada else None),
         host_activo=(perfil_ or perfil()).hosts[0],
@@ -217,11 +218,21 @@ class CreacionFalsa:
         self.inventarios_reanudar: list[Any] = []
         self.llamadas_existe_vm: list[Any] = []
         self.respuesta_existe_vm: bool | None = None
+        self.cfgs_recibidas: list[Any] = []  # configuraciones tal como llegaron a ``crear``
 
     def crear(self, cfg, inv, al_cambiar_etapa: Callable, cancelado, *, al_enviar=None):
         self.llamadas_crear += 1
-        for etapa in (Etapa.VALIDANDO, Etapa.ENVIANDO):
-            al_cambiar_etapa(etapa)
+        self.cfgs_recibidas.append(cfg)
+        al_cambiar_etapa(Etapa.VALIDANDO)
+        # El servicio real devuelve CANCELADO sin UPID solo ANTES de enviar: nunca anuncia
+        # ENVIANDO en ese caso (la máquina no salió hacia Proxmox).
+        if (
+            isinstance(self.resultado, ResultadoCreacion)
+            and self.resultado.desenlace == Desenlace.CANCELADO
+            and self.resultado.upid is None
+        ):
+            return self.resultado
+        al_cambiar_etapa(Etapa.ENVIANDO)
         if self.enviar_upid and al_enviar is not None:
             al_enviar(UPID)
         al_cambiar_etapa(Etapa.CREANDO)
@@ -248,3 +259,201 @@ class CreacionFalsa:
 
 def resultado(desenlace=Desenlace.OK, error=None, upid=UPID, vmid=101, nodo="pve1", log=None):
     return ResultadoCreacion(desenlace, vmid, nodo, upid, error, log or [])
+
+
+# --- Lotes (MVP 2) ------------------------------------------------------------------------
+
+
+def upid_de(vmid: int, nodo: str = "pve1", usuario: str = "root@pam") -> str:
+    """UPID con la forma real de Proxmox (incluye el usuario) para el VMID dado."""
+    return f"UPID:{nodo}:0003A1B2:00F4C1D3:6535AB12:qmcreate:{vmid}:{usuario}:"
+
+
+class CreacionPorVmid(CreacionFalsa):
+    """Servicio de creación falso para lotes: un desenlace distinto por VMID.
+
+    - ``por_vmid``: VMID -> ``ResultadoCreacion`` o excepción que lanza ``crear``; también
+      puede ser una función ``cfg -> resultado`` (por ejemplo, para fallar por nodo).
+    - ``puertas``: VMID -> ``Event``; la creación de esa máquina queda «en vuelo» (UPID ya
+      anunciado) hasta que la prueba libere la puerta o se pida abandonar la espera.
+    - ``existe_por_vmid``: VMID -> respuesta de ``existe_vm`` (si falta, ``respuesta_existe_vm``).
+    Es seguro entre hilos (el motor llama a ``crear`` desde un hilo por nodo).
+    """
+
+    def __init__(self, por_vmid=None, puertas=None, existe_por_vmid=None):
+        super().__init__(resultado(Desenlace.OK))
+        self.por_vmid: dict[int, Any] = dict(por_vmid or {})
+        self.puertas: dict[int, threading.Event] = dict(puertas or {})
+        self.existe_por_vmid: dict[int, Any] = dict(existe_por_vmid or {})
+        self.entraron: dict[int, threading.Event] = {}
+        self.vmids_creados: list[int] = []
+        self._cerrojo = threading.Lock()
+
+    def entro(self, vmid: int) -> threading.Event:
+        with self._cerrojo:
+            return self.entraron.setdefault(vmid, threading.Event())
+
+    def crear(self, cfg, inv, al_cambiar_etapa: Callable, cancelado, *, al_enviar=None):
+        with self._cerrojo:
+            self.llamadas_crear += 1
+            self.vmids_creados.append(cfg.vmid)
+            self.cfgs_recibidas.append(cfg)
+        res = self.por_vmid.get(cfg.vmid)
+        if callable(res):
+            res = res(cfg)
+        if res is None:
+            res = resultado(Desenlace.OK, upid=upid_de(cfg.vmid), vmid=cfg.vmid, nodo=cfg.nodo)
+        al_cambiar_etapa(Etapa.VALIDANDO)
+        if (
+            isinstance(res, ResultadoCreacion)
+            and res.desenlace == Desenlace.CANCELADO
+            and res.upid is None
+        ):
+            return res
+        al_cambiar_etapa(Etapa.ENVIANDO)
+        upid = res.upid if isinstance(res, ResultadoCreacion) else upid_de(cfg.vmid)
+        if upid and al_enviar is not None:
+            al_enviar(upid)
+        al_cambiar_etapa(Etapa.CREANDO)
+        self.entro(cfg.vmid).set()
+        puerta = self.puertas.get(cfg.vmid)
+        if puerta is not None:
+            # En vuelo: espera la puerta o que se pida «Dejar de esperar» (sin dormir de verdad).
+            for _ in range(500):
+                if puerta.wait(0.01):
+                    break
+                if cancelado.is_set():
+                    return resultado(Desenlace.CANCELADO, upid=upid, vmid=cfg.vmid, nodo=cfg.nodo)
+        if isinstance(res, BaseException):
+            raise res
+        return res
+
+    def existe_vm(self, cfg):
+        self.llamadas_existe_vm.append(cfg)
+        r = self.existe_por_vmid.get(cfg.vmid, self.respuesta_existe_vm)
+        if isinstance(r, BaseException):
+            raise r
+        return r
+
+
+class _VistaSoloLectura:
+    """Cliente de solo lectura: cualquier escritura es un error de programación."""
+
+    _LECTURAS = frozenset(
+        {"vmid_libre", "vms_visibles", "config_vm", "permisos", "estado_actual_vm", "estado_tarea"}
+    )
+
+    def __init__(self, base: ClienteLoteFalso) -> None:
+        self._base = base
+
+    def __getattr__(self, nombre: str):
+        if nombre in self._LECTURAS:
+            return getattr(self._base, nombre)
+        raise AssertionError(f"Escritura o método no permitido en simulación: {nombre}")
+
+
+class ClienteLoteFalso:
+    """Cliente de Proxmox falso para planificar, deshacer y reconciliar lotes (sin red)."""
+
+    PRIVILEGIOS = (
+        "VM.Allocate",
+        "VM.Audit",
+        "VM.Config.Options",
+        "VM.Config.HWType",
+        "VM.Config.CPU",
+        "VM.Config.Memory",
+        "VM.Config.Network",
+        "Datastore.AllocateSpace",
+        "SDN.Use",
+        "Sys.Audit",
+    )
+
+    def __init__(self) -> None:
+        self.vmids_ocupados: set[int] = set()
+        self.visibles: list[Any] = []
+        self.configs: dict[int, dict | None] = {}
+        self.estados_vm: dict[int, dict] = {}
+        self.privilegios_que_faltan: set[str] = set()
+        self.fallo_permisos: ErrorProxLaunch | None = None
+        self.fallo_vmid_libre: ErrorProxLaunch | None = None
+        self.eliminar_falla: dict[int, ErrorProxLaunch] = {}
+        self.eliminados: list[int] = []
+        # Creación directa (cuando el motor usa el ServicioCreacion real, p. ej. al continuar).
+        self.creados: list[tuple[str, dict[str, str]]] = []
+        self.crear_falla: dict[int, ErrorProxLaunch] = {}
+        self.puerta_eliminar: threading.Event | None = None  # retiene el DELETE hasta liberarla
+        self.llamadas: list[tuple] = []
+        self.pidio_solo_lectura = 0
+        self._cerrojo = threading.Lock()
+
+    def _anotar(self, *dato) -> None:
+        with self._cerrojo:
+            self.llamadas.append(dato)
+
+    def solo_lectura(self) -> _VistaSoloLectura:
+        self.pidio_solo_lectura += 1
+        return _VistaSoloLectura(self)
+
+    def vmid_libre(self, vmid: int) -> bool:
+        self._anotar("vmid_libre", vmid)
+        if self.fallo_vmid_libre is not None:
+            raise self.fallo_vmid_libre
+        return vmid not in self.vmids_ocupados and not self.configs.get(vmid)
+
+    def proximo_vmid(self, vmid: int | None = None) -> int:
+        """``GET /cluster/nextid`` (con ``vmid`` valida que esté libre)."""
+        self._anotar("proximo_vmid", vmid)
+        usados = self.vmids_ocupados | {v for v, c in self.configs.items() if c is not None}
+        if vmid is None:
+            return max(usados | {99}) + 1
+        if vmid in usados:
+            raise ErrorProxLaunch(CodigoError.VMID_OCUPADO, {"vmid": str(vmid)})
+        return vmid
+
+    def crear_vm(self, nodo: str, parametros: dict[str, str]) -> str:
+        """``POST /nodes/{n}/qemu``: crea la MV (queda con su nombre y etiquetas)."""
+        vmid = int(parametros["vmid"])
+        self._anotar("crear_vm", nodo, vmid)
+        if vmid in self.crear_falla:
+            raise self.crear_falla[vmid]
+        with self._cerrojo:
+            self.creados.append((nodo, dict(parametros)))
+        self.configs[vmid] = {"name": parametros.get("name"), "tags": parametros.get("tags", "")}
+        return upid_de(vmid, nodo)
+
+    def log_tarea(self, nodo: str, upid: str) -> list[str]:
+        return []
+
+    def vms_visibles(self) -> list[Any]:
+        self._anotar("vms_visibles")
+        return list(self.visibles)
+
+    def permisos(self) -> dict[str, dict[str, int]]:
+        self._anotar("permisos")
+        if self.fallo_permisos is not None:
+            raise self.fallo_permisos
+        return {"/": {p: 1 for p in self.PRIVILEGIOS if p not in self.privilegios_que_faltan}}
+
+    def config_vm(self, nodo: str, vmid: int):
+        self._anotar("config_vm", nodo, vmid)
+        return self.configs.get(vmid)
+
+    def estado_actual_vm(self, nodo: str, vmid: int) -> dict:
+        self._anotar("estado_actual_vm", nodo, vmid)
+        return self.estados_vm.get(vmid, {"status": "stopped"})
+
+    def eliminar_vm(self, nodo: str, vmid: int) -> str:
+        self._anotar("eliminar_vm", nodo, vmid)
+        if self.puerta_eliminar is not None:
+            self.puerta_eliminar.wait(5)
+        if vmid in self.eliminar_falla:
+            raise self.eliminar_falla[vmid]
+        self.eliminados.append(vmid)
+        self.configs[vmid] = None
+        return f"UPID:{nodo}:0003A1B2:00F4C1D3:6535AB12:qmdestroy:{vmid}:root@pam:"
+
+    def estado_tarea(self, nodo: str, upid: str):
+        from proxlaunch.nucleo.modelos.tarea import EstadoTarea
+
+        self._anotar("estado_tarea", nodo, upid)
+        return EstadoTarea(estado="stopped", exitstatus="OK")

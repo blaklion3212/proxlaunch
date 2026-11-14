@@ -11,7 +11,8 @@ Reglas de ``repartir`` (todas deterministas):
     nombre ascendente. Si ninguno tiene espacio, la MV va al mejor nodo igualmente y
     ``evaluar_espacio`` informa el exceso (V-L09/V-L10, CA-L07.1).
   * Por turnos (CA-L05.5): MV ``i`` al nodo ``i mod k`` en orden alfabético; el que no
-    puede alojarla se salta; si ninguno puede, error E-L01.
+    puede alojarla se salta; si ninguno puede, error E-L01. Un storage thin sin sitio no
+    cuenta como «no puede» (RF-L08): el turno se respeta y el exceso lo informa V-L10.
 """
 
 from dataclasses import replace
@@ -26,7 +27,7 @@ from proxlaunch.nucleo.lote.modelos import (
     Problema,
     Severidad,
 )
-from proxlaunch.nucleo.lote.presupuesto import libres_iniciales, pedido_vm
+from proxlaunch.nucleo.lote.presupuesto import libre_de_clave, libres_iniciales, pedido_vm
 from proxlaunch.nucleo.modelos.inventario import Inventario, Nodo
 from proxlaunch.nucleo.modelos.vm import ConfiguracionVM, Firmware
 from proxlaunch.nucleo.validacion import TIPOS_BRIDGE, storage_efi_efectivo
@@ -171,6 +172,14 @@ def repartir(
     def tiene_sitio(n: str) -> bool:
         return all(restante.get(k, 0) >= v for k, v in pedido[n].items() if k in libre_inicial)
 
+    def tiene_sitio_duro(n: str) -> bool:
+        """Solo cuentan los storages no thin: un thin se puede sobreasignar (RF-L08)."""
+        return all(
+            restante.get(k, 0) >= v
+            for k, v in pedido[n].items()
+            if k in libre_inicial and not (libre_de_clave(inv, k) or (0, False))[1]
+        )
+
     def espacio_inicial(n: str) -> int:
         return max((libre_inicial[k] for k in pedido[n] if k in libre_inicial), default=0)
 
@@ -206,6 +215,14 @@ def repartir(
                 if tiene_sitio(candidato):
                     elegido = candidato
                     break
+            else:
+                # Sin sitio holgado: si solo falta en storages thin, el turno sigue (como en
+                # Equilibrado) y evaluar_espacio pide la confirmación con tope (V-L10).
+                for desplazamiento in range(k):
+                    candidato = elegibles[(i + desplazamiento) % k]
+                    if tiene_sitio_duro(candidato):
+                        elegido = candidato
+                        break
         else:
             con_sitio = [n for n in elegibles if tiene_sitio(n)]
 

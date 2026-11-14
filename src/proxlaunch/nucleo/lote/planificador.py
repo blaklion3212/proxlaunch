@@ -453,7 +453,7 @@ class Planificador:
                     )
                 )
 
-        return construir_plan(
+        plan = construir_plan(
             definicion,
             inv,
             vmids,
@@ -464,3 +464,5 @@ class Planificador:
             vms_visibles=visibles,
             problemas_extra=extra,
         )
+        # Si no se pudieron leer los permisos no se bloquea, pero el plan queda marcado.
+        return replace(plan, permisos_verificados=faltan is not None)

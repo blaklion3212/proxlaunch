@@ -35,6 +35,7 @@ from proxlaunch.interfaz.textos import texto_estado_mv
 from proxlaunch.interfaz.vistas.campos import mensaje, poner_mensaje
 from proxlaunch.interfaz.vistas.detalles_tecnicos import DetallesTecnicos
 from proxlaunch.nucleo.lote.modelos import (
+    ESTADOS_DUDOSOS,
     ESTADOS_EN_CURSO,
     EntradaLibro,
     EstadoMV,
@@ -130,6 +131,7 @@ class ProgresoLote(QWidget):
     cancelar_solicitado = Signal()
     dejar_de_esperar_solicitado = Signal()
     comprobar_dudosas_solicitado = Signal()
+    comprobar_una_solicitado = Signal(int)  # VMID de la máquina dudosa elegida
     deshacer_solicitado = Signal()
     reintentar_solicitado = Signal()
     informe_solicitado = Signal()
@@ -210,6 +212,12 @@ class ProgresoLote(QWidget):
             QCoreApplication.translate("ProgresoLote", "Decidir qué hacer…")
         )
         self.boton_comprobar = QPushButton()
+        # «Comprobar ahora» de la máquina dudosa seleccionada (CA-L15.6); solo lecturas.
+        self.boton_comprobar_una = QPushButton(
+            QCoreApplication.translate("ProgresoLote", "Comprobar ahora")
+        )
+        self.boton_comprobar_una.hide()
+        self.boton_comprobar_una.clicked.connect(self._al_comprobar_una)
         self.boton_deshacer = QPushButton(QCoreApplication.translate("ProgresoLote", "Deshacer…"))
         self.boton_reintentar = QPushButton(
             QCoreApplication.translate("ProgresoLote", "Reintentar pendientes")
@@ -232,6 +240,7 @@ class ProgresoLote(QWidget):
             self.boton_cancelar,
             self.boton_decidir,
             self.boton_comprobar,
+            self.boton_comprobar_una,
             self.boton_deshacer,
             self.boton_reintentar,
             self.boton_informe,
@@ -355,6 +364,7 @@ class ProgresoLote(QWidget):
         self.boton_informe.setEnabled(terminado)
         self.boton_volver.setVisible(terminado)
         self.chk_problemas.setEnabled(True)
+        self._actualizar_comprobar_una()
 
     def _titulo_de_fase(self, fase: FaseLote) -> str:
         """Título según la fase: «Creando…» mientras trabaja y «Lote terminado» al acabar."""
@@ -388,12 +398,29 @@ class ProgresoLote(QWidget):
     def _al_filtrar(self, activo: bool) -> None:
         self.filtro.establecer_solo_problemas(activo)
 
-    def _al_seleccionar(self, _nueva: QItemSelection, _vieja: QItemSelection) -> None:
+    def _entrada_seleccionada(self) -> EntradaLibro | None:
         filas = self.tabla.selectionModel().selectedRows()
-        entrada = None
-        if filas:
-            origen = self.filtro.mapToSource(filas[0])
-            entrada = self.modelo.entrada(origen.row())
+        if not filas:
+            return None
+        return self.modelo.entrada(self.filtro.mapToSource(filas[0]).row())
+
+    def _actualizar_comprobar_una(self) -> None:
+        """«Comprobar ahora» se ofrece para la máquina dudosa elegida cuando el lote terminó."""
+        entrada = self._entrada_seleccionada()
+        self.boton_comprobar_una.setVisible(
+            self._fase == FaseLote.TERMINADO
+            and entrada is not None
+            and entrada.estado in ESTADOS_DUDOSOS
+        )
+
+    def _al_comprobar_una(self) -> None:
+        entrada = self._entrada_seleccionada()
+        if entrada is not None:
+            self.comprobar_una_solicitado.emit(entrada.elemento.vmid)
+
+    def _al_seleccionar(self, _nueva: QItemSelection, _vieja: QItemSelection) -> None:
+        entrada = self._entrada_seleccionada()
+        self._actualizar_comprobar_una()
         visible = entrada is not None and bool(entrada.upid)
         for w in (self._upid_titulo, self._upid, self._copiar_upid):
             w.setVisible(visible)

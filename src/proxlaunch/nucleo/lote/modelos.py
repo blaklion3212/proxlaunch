@@ -119,6 +119,7 @@ class Plan:
     generado_en: float  # reloj inyectado (V-L14)
     version_validacion: tuple[int, int]  # forzada o detectada (CA-L11.6)
     es_simulacion: bool = False
+    permisos_verificados: bool = True  # falso si GET /access/permissions falló (CA-L09.4)
 
     @property
     def bloqueado(self) -> bool:
@@ -263,3 +264,4 @@ class InformeLote:
     plantilla: ConfiguracionVM
     rollback: tuple[ResultadoRollback, ...] = ()
     problemas_plan: tuple[Problema, ...] = ()
+    permisos_verificados: bool = True

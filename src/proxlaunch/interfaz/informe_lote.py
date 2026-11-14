@@ -25,6 +25,7 @@ from proxlaunch.interfaz.textos import (
     texto_problema_lote,
 )
 from proxlaunch.nucleo.lote.constantes import ETIQUETA_APP, PREFIJO_ETIQUETA_LOTE
+from proxlaunch.nucleo.lote.informe import upid_sin_usuario as _upid_sin_usuario
 from proxlaunch.nucleo.lote.modelos import (
     EntradaLibro,
     EstadoMV,
@@ -71,13 +72,8 @@ def texto_duracion(segundos: float | None) -> str:
 
 
 def upid_sin_usuario(upid: str | None) -> str:
-    """UPID sin el campo del usuario (``UPID:nodo:pid:inicio:hora:tipo:id:usuario:``)."""
-    if not upid:
-        return "—"
-    partes = upid.split(":")
-    if len(partes) >= 8 and partes[0] == "UPID":
-        partes[7] = "…"
-    return ":".join(partes)
+    """UPID sin el campo del usuario; «—» si no hay (la lógica vive en el núcleo)."""
+    return _upid_sin_usuario(upid) if upid else "—"
 
 
 def _tabla(cabecera: tuple[str, ...], filas: list[tuple[str, ...]]) -> list[str]:
@@ -155,6 +151,15 @@ def _fila_maquina(e: EntradaLibro, duraciones: dict[int, float]) -> tuple[str, .
     )
 
 
+def texto_permisos_no_verificados() -> str:
+    """CA-L09.4: no se pudieron leer los permisos; el lote no se bloqueó por ello."""
+    return QCoreApplication.translate(
+        "InformeLote",
+        "Permisos no verificados: no se pudieron leer los permisos del usuario, así que "
+        "Proxmox pudo rechazar alguna máquina.",
+    )
+
+
 def texto_informe(informe: InformeLote) -> str:
     """Informe completo en texto plano (misma función para copiar y para guardar)."""
     m = informe.metadatos
@@ -187,6 +192,8 @@ def texto_informe(informe: InformeLote) -> str:
         )
     else:
         lineas.append(QCoreApplication.translate("InformeLote", "Servidor: individual"))
+    if not informe.permisos_verificados:
+        lineas.append(texto_permisos_no_verificados())
 
     lineas += ["", QCoreApplication.translate("InformeLote", "Resumen"), "-------"]
     lineas.append(

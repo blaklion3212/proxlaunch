@@ -163,6 +163,17 @@ class ControlLote:
             )
 
 
+def _respuesta_2xx_sin_upid(error: ErrorProxLaunch | None) -> bool:
+    """``True`` si el POST obtuvo una respuesta 2xx inservible (sin UPID válido o no JSON)."""
+    if error is None:
+        return False
+    if error.codigo == CodigoError.UPID_INVALIDO:
+        return True
+    return error.codigo == CodigoError.DESCONOCIDO and error.params.get(
+        "estado_http", ""
+    ).startswith("2")
+
+
 class _Turno(StrEnum):
     SEGUIR = "seguir"
     CANCELADO = "cancelado"
@@ -235,12 +246,23 @@ class MotorLote:
         self._correr(corrida, [e.elemento for e in libro.pendientes()])
         return libro
 
-    def comprobar_dudosas(self, libro: Libro, observador: Observador, control: ControlLote) -> None:
+    def comprobar_dudosas(
+        self,
+        libro: Libro,
+        observador: Observador,
+        control: ControlLote,
+        vmids: frozenset[int] | None = None,
+    ) -> None:
         """Comprueba las MVs ``CONEXION_PERDIDA``/``TIEMPO_AGOTADO``. Solo lecturas (CA-L15.7).
 
-        Con UPID usa ``comprobar_ahora``; sin UPID, la reconciliación por existencia.
+        Con UPID usa ``comprobar_ahora``; sin UPID, la reconciliación por existencia. Si se
+        indica ``vmids``, solo se comprueban esas (CA-L15.6: «Comprobar ahora» por máquina).
         """
-        dudosas = [e for e in libro.instantanea() if e.estado in ESTADOS_DUDOSOS]
+        dudosas = [
+            e
+            for e in libro.instantanea()
+            if e.estado in ESTADOS_DUDOSOS and (vmids is None or e.elemento.vmid in vmids)
+        ]
         if not dudosas:
             return
         trabajadores = max(1, min(self._max_nodos, len(dudosas)))
@@ -255,11 +277,15 @@ class MotorLote:
     # --- Ejecución --------------------------------------------------------------------
 
     def _correr(self, c: _Corrida, elementos: list[ElementoPlan]) -> None:
+        if not elementos:
+            return
+        if self._max_nodos == 1:
+            # Modo secuencial (CA-L12.3): un solo hilo y el orden global del plan.
+            self._procesar_cola(c, elementos)
+            return
         colas: dict[str, list[ElementoPlan]] = {}
         for elemento in elementos:
             colas.setdefault(elemento.nodo, []).append(elemento)
-        if not colas:
-            return
         trabajadores = max(1, min(self._max_nodos, len(colas)))
         with ThreadPoolExecutor(max_workers=trabajadores, thread_name_prefix="lote") as pool:
             futuros = [pool.submit(self._procesar_cola, c, cola) for cola in colas.values()]
@@ -268,9 +294,16 @@ class MotorLote:
                 raise exc
 
     def _procesar_cola(self, c: _Corrida, cola: list[ElementoPlan]) -> None:
-        """Procesa de forma secuencial las MVs de un nodo (≤ 1 creación en curso por nodo)."""
+        """Procesa de forma secuencial una cola (≤ 1 creación en curso por nodo).
+
+        Con ``max_nodos == 1`` la cola mezcla nodos: si uno cae, solo se saltan las MVs de ese nodo.
+        """
         servicio = self._fabrica(self._sesion, self._reloj)
+        caidos: set[str] = set()
         for posicion, elemento in enumerate(cola):
+            if elemento.nodo in caidos:
+                self._no_enviadas(c, [elemento], MotivoNoEnviada.NODO_CAIDO)
+                continue
             turno = self._esperar_turno(c.control)
             if turno == _Turno.SUSPENDER:
                 return
@@ -280,12 +313,12 @@ class MotorLote:
                     if turno == _Turno.CANCELADO
                     else MotivoNoEnviada.PAUSA
                 )
-                self._no_enviadas(c, cola[posicion:], motivo)
+                pendientes = [e for e in cola[posicion:] if e.nodo not in caidos]
+                self._no_enviadas(c, pendientes, motivo)
                 return
             if self._procesar_elemento(c, servicio, elemento):
                 # Nodo caído: solo se vacía la cola de este nodo (CA-L14.5).
-                self._no_enviadas(c, cola[posicion + 1 :], MotivoNoEnviada.NODO_CAIDO)
-                return
+                caidos.add(elemento.nodo)
 
     @staticmethod
     def _esperar_turno(control: ControlLote) -> _Turno:
@@ -380,6 +413,15 @@ class MotorLote:
                 )
         else:
             estado = _ESTADO_POR_DESENLACE[res.desenlace]
+            if (
+                estado == EstadoMV.ERROR
+                and enviado
+                and upid is None
+                and _respuesta_2xx_sin_upid(error)
+            ):
+                # Respuesta 2xx sin UPID válido (o sin JSON): el POST llegó y Proxmox pudo crear
+                # la MV, así que no es «nada creado» (RF-L15): se trata como envío incierto.
+                estado = EstadoMV.CONEXION_PERDIDA
             if estado == EstadoMV.CONEXION_PERDIDA and upid is None:
                 if enviado:
                     estado, aviso, error_rec = reconciliar_incierta(

@@ -60,6 +60,15 @@ class DialogoAcercaDe(QDialog):
         nota.setWordWrap(True)
         nota.setProperty("secundario", True)
         nota.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        etiquetas = QLabel(
+            self.tr(
+                "Las máquinas que crea ProxLaunch llevan la etiqueta «proxlaunch» (y otra «lote-…» "
+                "si se crean en un lote). Así se reconocen en Proxmox y se pueden deshacer."
+            )
+        )
+        etiquetas.setWordWrap(True)
+        etiquetas.setProperty("secundario", True)
+        etiquetas.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self._selector = QComboBox()
         self._licencia = QPlainTextEdit()
         self._licencia.setReadOnly(True)
@@ -79,7 +88,7 @@ class DialogoAcercaDe(QDialog):
         fila.addStretch(1)
         fila.addWidget(cerrar)
         capa = QVBoxLayout(self)
-        for w in (logo, version, compat, nota, self._selector, self._licencia):
+        for w in (logo, version, compat, nota, etiquetas, self._selector, self._licencia):
             capa.addWidget(w)
         capa.addLayout(fila)
         self._mostrar_licencia()

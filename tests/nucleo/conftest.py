@@ -189,3 +189,22 @@ def registros():
     yield manejador.registros
     logger.removeHandler(manejador)
     logger.setLevel(nivel)
+
+
+# --- Fixtures del lote (MVP 2) -------------------------------------------------------------
+
+
+@pytest.fixture
+def banco():
+    """Banco de lote con un solo nodo (``pve1``): clúster simulado, sesión real y motor."""
+    from .apoyo_lote import crear_banco
+
+    return crear_banco(("pve1",))
+
+
+@pytest.fixture
+def fabrica_banco():
+    """Crea bancos con los nodos indicados: ``fabrica_banco(("pve1", "pve2"))``."""
+    from .apoyo_lote import crear_banco
+
+    return crear_banco

@@ -40,6 +40,7 @@ from proxlaunch.interfaz.informe_lote import (
     guardar_informe_parcial,
     tomar_aviso_informe_parcial,
 )
+from proxlaunch.interfaz.modelos_tabla import texto_aviso_entrada
 from proxlaunch.interfaz.tema import GestorTema, ModoTema
 from proxlaunch.interfaz.textos import (
     privilegio_faltante_critico,
@@ -60,7 +61,7 @@ from proxlaunch.interfaz.trabajadores import (
     comprobar_vmid,
     continuar_lote,
     descubrir_y_comprobar_permisos,
-    deshacer_lote,
+    deshacer_lotes,
     ejecutar_lote,
     planificar_lote,
     reanudar_seguimiento,
@@ -87,11 +88,12 @@ from proxlaunch.nucleo.lote.constantes import (
     UMBRAL_CONFIRMACION_DOBLE,
     UMBRAL_PAUSA_ERRORES,
 )
-from proxlaunch.nucleo.lote.informe import construir_informe
+from proxlaunch.nucleo.lote.informe import construir_informe, informe_desde_entradas
 from proxlaunch.nucleo.lote.libro import Libro
 from proxlaunch.nucleo.lote.modelos import (
     ESTADOS_DUDOSOS,
     ESTADOS_EN_CURSO,
+    CandidatoRollback,
     DefinicionLote,
     Destino,
     ElementoPlan,
@@ -229,35 +231,6 @@ def diferencia_planes(antes: Plan, despues: Plan) -> str:
     return "; ".join(cambios)
 
 
-def informe_desde_entradas(
-    plan: Plan,
-    entradas: tuple[EntradaLibro, ...],
-    metadatos: MetadatosInforme,
-    rollback: tuple[ResultadoRollback, ...],
-    ahora: float,
-) -> InformeLote:
-    """Informe a partir de una instantánea (cierre de la aplicación o fallo del motor)."""
-    contadores = {e.value: 0 for e in EstadoMV}
-    duraciones: dict[int, float] = {}
-    for e in entradas:
-        contadores[e.estado.value] += 1
-        if e.t_inicio is not None:
-            fin = e.t_fin if e.t_fin is not None else ahora
-            duraciones[e.elemento.vmid] = max(0.0, fin - e.t_inicio)
-    return InformeLote(
-        metadatos=metadatos,
-        id_lote=plan.id_lote,
-        es_simulacion=plan.es_simulacion,
-        pedidas=len(plan.elementos),
-        contadores=contadores,
-        entradas=entradas,
-        duraciones_s=duraciones,
-        plantilla=plan.definicion.plantilla,
-        rollback=rollback,
-        problemas_plan=plan.problemas,
-    )
-
-
 class VentanaPrincipal(QMainWindow):
     """Orquesta conexión, descubrimiento, validación en vivo y creación de la MV."""
 
@@ -285,7 +258,9 @@ class VentanaPrincipal(QMainWindow):
         self._avisos_extra: list[str] = []
         # Lotes (MVP 2).
         self._lote: _Lote | None = None
+        self._lotes_previos: list[_Lote] = []  # lotes anteriores de la sesión (CA-L21.4)
         self._planificando = False
+        self._gen_plan = 0  # cada cancelación lo sube y descarta lo que aún llegue (CA-L11.10)
         self._iniciando_lote = False
         self._plan_mostrado: Plan | None = None
         self._reintento: tuple[ElementoPlan, ...] | None = None
@@ -312,10 +287,15 @@ class VentanaPrincipal(QMainWindow):
         self.resumen_lote.crear_solicitado.connect(self._crear_lote_solicitado)
         self.resumen_lote.reducir_solicitado.connect(self._reducir)
         self.resumen_lote.volver_solicitado.connect(self._volver_del_resumen)
+        self.resumen_lote.cancelar_solicitado.connect(self._cancelar_preparacion)
+        self.resumen_lote.informe_simulacion_solicitado.connect(self._informe_simulacion)
         self.resumen_lote.nodo_reintento_cambiado.connect(self._al_cambiar_nodo_reintento)
         self.progreso_lote.cancelar_solicitado.connect(self._cancelar_lote)
         self.progreso_lote.dejar_de_esperar_solicitado.connect(self._dejar_de_esperar)
         self.progreso_lote.comprobar_dudosas_solicitado.connect(self._comprobar_dudosas)
+        self.progreso_lote.comprobar_una_solicitado.connect(
+            lambda vmid: self._comprobar_dudosas(frozenset({vmid}))
+        )
         self.progreso_lote.deshacer_solicitado.connect(self._deshacer)
         self.progreso_lote.reintentar_solicitado.connect(lambda: self._reintentar_pendientes())
         self.progreso_lote.informe_solicitado.connect(self._mostrar_informe)
@@ -979,7 +959,7 @@ class VentanaPrincipal(QMainWindow):
             )
         )
 
-    def _al_terminar_creacion(self, resultado: ResultadoCreacion) -> None:
+    def _al_terminar_creacion(self, resultado: ResultadoCreacion, aviso: str = "") -> None:
         cfg = self._cfg_creacion
         self._creando = False
         self._refrescar_botones_red()
@@ -1003,6 +983,8 @@ class VentanaPrincipal(QMainWindow):
             )
         ):
             texto = texto_error(resultado.error)
+        if aviso:
+            texto += "\n" + aviso  # CA-L15.2: se creó, pero Proxmox tardó en responder
         self.progreso.mostrar_resultado(texto, d, resultado.upid)
         self.progreso.detalles.establecer(
             texto_detalles(resultado.error, resultado),
@@ -1076,10 +1058,16 @@ class VentanaPrincipal(QMainWindow):
         if not res.upid:
             # Envío incierto: se comprueba si la máquina existe, sin volver a enviar nada.
             self.progreso.mostrar_progreso_mensaje(self.tr("Comprobando si la máquina existe..."))
+            lote = self._lote
+            id_lote = lote.plan.id_lote if lote is not None else ""
+            etiquetar = lote.plan.definicion.etiquetar if lote is not None else False
             self._lanzador.lanzar(
                 comprobar_existencia,
                 servicio,
                 cfg,
+                sesion.cliente,
+                id_lote,
+                etiquetar,
                 al_terminar=self._tras_existencia,
                 al_fallar=self._fallo_reanudar,
             )
@@ -1102,13 +1090,31 @@ class VentanaPrincipal(QMainWindow):
             al_fallar=self._fallo_reanudar,
         )
 
-    def _tras_existencia(self, existe: bool | None) -> None:
-        """Resultado de comprobar si una creación de envío incierto llegó a crearse."""
+    def _tras_existencia(self, estado: EstadoMV | None) -> None:
+        """Resultado de comprobar si una creación de envío incierto llegó a crearse.
+
+        ``estado``: ``None`` si no se pudo saber; ``NO_CREADA_SEGURA`` si no existe; ``OK`` si
+        existe y es de este lote; ``EXISTE_SIN_CONFIRMAR_PROPIEDAD`` si existe pero no se puede
+        demostrar que es suya (CA-L15.5).
+        """
         cfg, res = self._cfg_creacion, self._ultimo_resultado
         self._creando = False
         self._refrescar_botones_red()
         if cfg is None:
             return
+        if estado == EstadoMV.EXISTE_SIN_CONFIRMAR_PROPIEDAD:
+            entrada = self._resolver_uno_sin_confirmar(cfg)
+            if entrada is not None:
+                self._mostrar_existe_sin_confirmar(entrada)
+            else:
+                self._creando = False
+                self.progreso.mostrar_resultado(
+                    texto_existe_sin_confirmar(), Desenlace.CONEXION_PERDIDA, None
+                )
+                self.progreso.boton_comprobar.setVisible(False)
+            self._timer_validar.start()
+            return
+        existe = None if estado is None else estado != EstadoMV.NO_CREADA_SEGURA
         if existe is True:
             texto = self.tr("La máquina sí se creó. Verifica en Proxmox que quedó como esperabas.")
             self._ultimo_resultado = ResultadoCreacion(Desenlace.OK, cfg.vmid, cfg.nodo, None, None)
@@ -1211,6 +1217,7 @@ class VentanaPrincipal(QMainWindow):
         self._pila_derecha.setCurrentIndex(1)
         vf = self._version_forzada(sesion)
         reloj = self._deps.reloj
+        gen = self._gen_plan
         if simulando:
             self._lanzador.lanzar(
                 simular_lote,
@@ -1219,8 +1226,8 @@ class VentanaPrincipal(QMainWindow):
                 definicion,
                 inv,
                 vf,
-                al_terminar=self._al_simulado,
-                al_fallar=self._fallo_planificacion,
+                al_terminar=self._si_vigente(gen, self._al_simulado),
+                al_fallar=self._si_vigente(gen, self._fallo_planificacion),
             )
         elif self._reintento is not None:
             self._lanzador.lanzar(
@@ -1231,8 +1238,8 @@ class VentanaPrincipal(QMainWindow):
                 definicion,
                 vf,
                 self._nodo_reintento,
-                al_terminar=self._al_reintento_armado,
-                al_fallar=self._fallo_planificacion,
+                al_terminar=self._si_vigente(gen, self._al_reintento_armado),
+                al_fallar=self._si_vigente(gen, self._fallo_planificacion),
             )
         else:
             self._lanzador.lanzar(
@@ -1242,8 +1249,8 @@ class VentanaPrincipal(QMainWindow):
                 definicion,
                 inv,
                 vf,
-                al_terminar=self._al_planificado,
-                al_fallar=self._fallo_planificacion,
+                al_terminar=self._si_vigente(gen, self._al_planificado),
+                al_fallar=self._si_vigente(gen, self._fallo_planificacion),
             )
 
     def _fallo_planificacion(self, error: ErrorProxLaunch) -> None:
@@ -1298,8 +1305,28 @@ class VentanaPrincipal(QMainWindow):
         else:
             self._volver_del_resumen()
 
+    def _si_vigente(self, gen: int, destino: Callable[[Any], None]) -> Callable[[Any], None]:
+        """Envuelve un resultado de segundo plano: si se canceló la preparación, se descarta."""
+
+        def _entregar(valor: Any) -> None:
+            if gen == self._gen_plan:
+                destino(valor)
+
+        return _entregar
+
+    def _cancelar_preparacion(self) -> None:
+        """CA-L11.10: cancela la preparación del plan o la simulación; no queda nada creado."""
+        self._gen_plan += 1
+        self._planificando = False
+        self._iniciando_lote = False
+        self.resumen_lote.mostrar_vacio()
+        self._plan_mostrado = None
+        self._pila_derecha.setCurrentIndex(0)
+        self._timer_validar.start()
+
     def _volver_del_resumen(self) -> None:
         if self._iniciando_lote or self._planificando:
+            self._cancelar_preparacion()
             return
         self.resumen_lote.mostrar_vacio()
         self._plan_mostrado = None
@@ -1327,6 +1354,7 @@ class VentanaPrincipal(QMainWindow):
             return
         self.resumen_lote.mostrar_planificando()
         vf = self._version_forzada(sesion)
+        gen = self._gen_plan
         if self._reintento is not None:
             self._lanzador.lanzar(
                 armar_reintento,
@@ -1336,8 +1364,8 @@ class VentanaPrincipal(QMainWindow):
                 plan.definicion,
                 vf,
                 self._nodo_reintento,
-                al_terminar=lambda r: self._tras_replanificar(plan, r),
-                al_fallar=self._fallo_planificacion,
+                al_terminar=self._si_vigente(gen, lambda r: self._tras_replanificar(plan, r)),
+                al_fallar=self._si_vigente(gen, self._fallo_planificacion),
             )
             return
         self._lanzador.lanzar(
@@ -1346,8 +1374,8 @@ class VentanaPrincipal(QMainWindow):
             self._deps.reloj,
             plan.definicion,
             vf,
-            al_terminar=lambda r: self._tras_replanificar(plan, r),
-            al_fallar=self._fallo_planificacion,
+            al_terminar=self._si_vigente(gen, lambda r: self._tras_replanificar(plan, r)),
+            al_fallar=self._si_vigente(gen, self._fallo_planificacion),
         )
 
     def _tras_replanificar(self, anterior: Plan, resultado: tuple[Inventario, Plan]) -> None:
@@ -1398,6 +1426,10 @@ class VentanaPrincipal(QMainWindow):
         control = ControlLote()
         puente = PuenteLote(plan.elementos, self)
         puente.sucio.connect(self._despertar_timer)
+        anterior = self._lote
+        if anterior is not None and anterior.libro is not None and not anterior.cerrado:
+            # El lote anterior (p. ej. el que se reintenta) conserva su libro y su rollback.
+            self._lotes_previos.append(anterior)
         self._lote = _Lote(plan, inv, sesion, self._perfil_id, control, puente, modo_uno)
         self._accion_ultimo_lote.setEnabled(False)
         self.formulario.bloquear(True)
@@ -1406,8 +1438,7 @@ class VentanaPrincipal(QMainWindow):
             self.progreso_lote.iniciar(plan)
             self._pila_derecha.setCurrentIndex(2)
         self._refrescar_botones_red()
-        fabrica = self._deps.fabrica_creacion
-        adaptada = (lambda s, _r: fabrica(s)) if fabrica else None
+        adaptada = self._fabrica_adaptada()
         self._lanzador.lanzar(
             ejecutar_lote,
             sesion,
@@ -1421,6 +1452,11 @@ class VentanaPrincipal(QMainWindow):
             al_fallar=self._fallo_lote,
         )
         self._timer_lote.start()
+
+    def _fabrica_adaptada(self) -> Callable[[Sesion, Reloj], ServicioCreacion] | None:
+        """Fábrica de creación inyectada, con la firma que espera el motor (igual en todo)."""
+        fabrica = self._deps.fabrica_creacion
+        return (lambda s, _r: fabrica(s)) if fabrica else None
 
     # --- Seguimiento ---
 
@@ -1550,7 +1586,8 @@ class VentanaPrincipal(QMainWindow):
             return
         if lote.terminado or lote.cancelando:
             return
-        if self.progreso_lote.hay_enviadas() and not confirmar(
+        # Se consulta el puente directamente: no depende del refresco de la tabla (100 ms).
+        if any(e.post_intentado for e in lote.puente.instantanea()) and not confirmar(
             self,
             QCoreApplication.translate("VentanaPrincipal", "Cancelar el lote"),
             QCoreApplication.translate(
@@ -1672,11 +1709,12 @@ class VentanaPrincipal(QMainWindow):
         dudosas = sum(1 for e in entradas if e.estado in ESTADOS_DUDOSOS)
         reintentables = sum(1 for e in entradas if e.estado in _ESTADOS_REINTENTABLES)
         elegibles = 0
-        if lote.libro is not None:
-            candidatos = ServicioRollback(lote.sesion, self._deps.reloj).elegibles(
-                lote.libro, etiquetado=lote.plan.definicion.etiquetar
+        for lt in self._lotes_deshacibles() or ([lote] if lote.libro is not None else []):
+            assert lt.libro is not None
+            candidatos = ServicioRollback(lt.sesion, self._deps.reloj).elegibles(
+                lt.libro, etiquetado=lt.plan.definicion.etiquetar
             )
-            elegibles = sum(1 for c in candidatos if c.elegible)
+            elegibles += sum(1 for c in candidatos if c.elegible)
         self.progreso_lote.establecer_fase(
             FaseLote.TERMINADO,
             dudosas=dudosas,
@@ -1711,7 +1749,7 @@ class VentanaPrincipal(QMainWindow):
             # Se comprobó tres veces y no existe: mismo texto y estilo neutro que «Comprobar».
             self._fin_uno_inicial = True
             try:
-                self._tras_existencia(False)
+                self._tras_existencia(EstadoMV.NO_CREADA_SEGURA)
             finally:
                 self._fin_uno_inicial = False
             return
@@ -1733,7 +1771,8 @@ class VentanaPrincipal(QMainWindow):
                 e.upid,
                 error_uno,
                 list(e.log_tarea),
-            )
+            ),
+            " ".join(t for t in (texto_aviso_entrada(a) for a in e.avisos) if t),
         )
 
     def _sincronizar_libro_uno(self, resultado: ResultadoCreacion) -> None:
@@ -1760,6 +1799,23 @@ class VentanaPrincipal(QMainWindow):
             return
         lote.puente.observar(nueva)
 
+    def _resolver_uno_sin_confirmar(self, cfg: ConfiguracionVM) -> EntradaLibro | None:
+        """Tras «Comprobar» halla una máquina sin etiqueta del lote: el libro la marca así."""
+        lote = self._lote
+        if lote is None or not lote.modo_uno or lote.libro is None:
+            return None
+        try:
+            nueva = lote.libro.resolver(
+                cfg.vmid,
+                EstadoMV.EXISTE_SIN_CONFIRMAR_PROPIEDAD,
+                t_fin=self._deps.reloj.ahora(),
+            )
+        except (AssertionError, KeyError):
+            _log.warning("No se pudo actualizar el libro tras comprobar", exc_info=True)
+            return None
+        lote.puente.observar(nueva)
+        return nueva
+
     def _mostrar_existe_sin_confirmar(self, e: EntradaLibro) -> None:
         """La máquina existe, pero no se puede asegurar que la creó este lote (CA-L15.5)."""
         self._creando = False
@@ -1776,7 +1832,7 @@ class VentanaPrincipal(QMainWindow):
 
     # --- Acciones sobre un lote terminado ---
 
-    def _comprobar_dudosas(self) -> None:
+    def _comprobar_dudosas(self, vmids: frozenset[int] | None = None) -> None:
         lote = self._lote
         if lote is None or lote.libro is None or not lote.terminado or lote.deshaciendo:
             return
@@ -1795,9 +1851,20 @@ class VentanaPrincipal(QMainWindow):
             lote.libro,
             lote.puente.observar,
             control,
+            None,
+            vmids,
             al_terminar=lambda _l: self._finalizar_lote(),
             al_fallar=self._fallo_lote,
         )
+
+    def _lotes_deshacibles(self) -> list[_Lote]:
+        """Lotes de la sesión que se pueden deshacer: los anteriores y el actual, mismo servidor."""
+        todos = [*self._lotes_previos, *([self._lote] if self._lote is not None else [])]
+        return [
+            lt
+            for lt in todos
+            if lt.libro is not None and not lt.cerrado and lt.perfil_id == self._perfil_id
+        ]
 
     def _deshacer(self) -> None:
         lote = self._lote
@@ -1805,14 +1872,21 @@ class VentanaPrincipal(QMainWindow):
             return
         if lote.perfil_id != self._perfil_id:
             return  # otro servidor: ya no se puede deshacer (CA-L18.14)
-        candidatos = ServicioRollback(self._sesion, self._deps.reloj).elegibles(
-            lote.libro, etiquetado=lote.plan.definicion.etiquetar
-        )
+        servicio = ServicioRollback(self._sesion, self._deps.reloj)
+        candidatos: list[CandidatoRollback] = []
+        duenos: dict[int, _Lote] = {}  # id del candidato -> lote al que pertenece
+        for lt in self._lotes_deshacibles():
+            assert lt.libro is not None
+            for c in servicio.elegibles(lt.libro, etiquetado=lt.plan.definicion.etiquetar):
+                candidatos.append(c)
+                duenos[id(c)] = lt
         dialogo = DialogoDeshacer(candidatos, self)
-        dialogo.finished.connect(lambda r: self._tras_dialogo_deshacer(lote, dialogo, r))
+        dialogo.finished.connect(lambda r: self._tras_dialogo_deshacer(lote, dialogo, r, duenos))
         dialogo.open()
 
-    def _tras_dialogo_deshacer(self, lote: _Lote, dialogo: DialogoDeshacer, r: int) -> None:
+    def _tras_dialogo_deshacer(
+        self, lote: _Lote, dialogo: DialogoDeshacer, r: int, duenos: dict[int, _Lote]
+    ) -> None:
         elegidos = dialogo.elegidos() if r == QDialog.DialogCode.Accepted else []
         dialogo.deleteLater()
         sesion = self._sesion
@@ -1833,25 +1907,38 @@ class VentanaPrincipal(QMainWindow):
         )
         self.progreso_lote.establecer_fase(FaseLote.DESHACIENDO)
         self.statusBar().showMessage(self.tr("Eliminando las máquinas elegidas…"))
+        # Cada lote se deshace con su propio id y su propia política de etiquetas.
+        grupos: list[tuple[list[CandidatoRollback], str, bool]] = []
+        dueno_de_vmid: dict[int, _Lote] = {}
+        for lt in {id(x): x for x in (duenos.get(id(c), lote) for c in elegidos)}.values():
+            propios = [c for c in elegidos if duenos.get(id(c), lote) is lt]
+            grupos.append((propios, lt.plan.id_lote, lt.plan.definicion.etiquetar))
+            for c in propios:
+                dueno_de_vmid[c.entrada.elemento.vmid] = lt
         self._lanzador.lanzar(
-            deshacer_lote,
+            deshacer_lotes,
             sesion,
             self._deps.reloj,
-            elegidos,
+            grupos,
             lote.puente_rollback.observar,
             lote.control_rollback,
-            lote.plan.id_lote,
-            lote.plan.definicion.etiquetar,
-            al_terminar=lambda r2: self._tras_deshacer(lote, r2),
+            al_terminar=lambda r2: self._tras_deshacer(lote, r2, dueno_de_vmid),
             al_fallar=lambda e: self._fallo_deshacer(lote, e),
         )
         self._timer_lote.start()
 
-    def _tras_deshacer(self, lote: _Lote, resultados: list[ResultadoRollback]) -> None:
-        lote.resultados_rollback = [
-            *(r for r in lote.resultados_rollback if r.vmid not in {x.vmid for x in resultados}),
-            *resultados,
-        ]
+    def _tras_deshacer(
+        self,
+        lote: _Lote,
+        resultados: list[ResultadoRollback],
+        duenos: dict[int, _Lote] | None = None,
+    ) -> None:
+        for lt in {id(x): x for x in [lote, *(duenos or {}).values()]}.values():
+            propios = [r for r in resultados if (duenos or {}).get(r.vmid, lote) is lt]
+            lt.resultados_rollback = [
+                *(r for r in lt.resultados_rollback if r.vmid not in {x.vmid for x in propios}),
+                *propios,
+            ]
         self.progreso_lote.actualizar_rollback(resultados)
         error = lote.control_rollback.error_pausa if lote.control_rollback else None
         if error is not None:
@@ -1886,27 +1973,69 @@ class VentanaPrincipal(QMainWindow):
         self._nodo_reintento = None
         self._planificar(definicion, simulando=False)
 
-    def _informe_actual(self) -> InformeLote | None:
-        lote, sesion = self._lote, self._sesion
-        if lote is None:
-            return None
-        topologia = lote.inv.topologia
-        metadatos = MetadatosInforme(
-            nombre_perfil=lote.sesion.perfil.nombre,
-            version_proxmox=lote.sesion.version.texto,
+    def _metadatos_informe(self, sesion: Sesion, inv: Inventario) -> MetadatosInforme:
+        """Contexto del informe: nunca host, IP ni usuario (CA-L19.3)."""
+        topologia = inv.topologia
+        return MetadatosInforme(
+            nombre_perfil=sesion.perfil.nombre,
+            version_proxmox=sesion.version.texto,
             es_cluster=topologia.es_cluster,
             nombre_cluster=topologia.nombre_cluster,
             fecha_hora_local=datetime.now().astimezone().isoformat(timespec="seconds"),
         )
+
+    @staticmethod
+    def _valores_a_ocultar(sesion: Sesion) -> list[str]:
+        """Host(s) y usuario del perfil: se quitan literalmente de todo texto del informe."""
+        perfil = sesion.perfil
+        return [*perfil.hosts, sesion.host_activo, perfil.usuario, sesion.usuario_efectivo]
+
+    def _informe_actual(self) -> InformeLote | None:
+        lote = self._lote
+        if lote is None:
+            return None
+        metadatos = self._metadatos_informe(lote.sesion, lote.inv)
         rollback = tuple(lote.resultados_rollback)
+        ocultar = self._valores_a_ocultar(lote.sesion)
         if lote.libro is not None:
             return construir_informe(
-                lote.plan, lote.libro, metadatos, rollback=rollback, reloj=self._deps.reloj
+                lote.plan,
+                lote.libro,
+                metadatos,
+                rollback=rollback,
+                reloj=self._deps.reloj,
+                ocultar=ocultar,
             )
-        del sesion
         return informe_desde_entradas(
-            lote.plan, lote.puente.instantanea(), metadatos, rollback, self._deps.reloj.ahora()
+            lote.plan,
+            lote.puente.instantanea(),
+            metadatos,
+            rollback,
+            self._deps.reloj.ahora(),
+            ocultar,
         )
+
+    def _informe_de_simulacion(self) -> InformeLote | None:
+        """CA-L11.8: la simulación sale como informe RF-L19 con la misma función de generación."""
+        plan, sesion, inv = self.resumen_lote.plan, self._sesion, self._inv
+        if plan is None or sesion is None or inv is None or not plan.es_simulacion:
+            return None
+        return informe_desde_entradas(
+            plan,
+            tuple(EntradaLibro(e) for e in plan.elementos),
+            self._metadatos_informe(sesion, inv),
+            (),
+            self._deps.reloj.ahora(),
+            self._valores_a_ocultar(sesion),
+        )
+
+    def _informe_simulacion(self) -> None:
+        informe = self._informe_de_simulacion()
+        if informe is None:
+            return
+        dialogo = DialogoInforme(informe, self._deps.directorio_informes, self)
+        dialogo.finished.connect(lambda _r: dialogo.deleteLater())
+        dialogo.open()
 
     def _mostrar_informe(self) -> None:
         informe = self._informe_actual()
@@ -1955,6 +2084,9 @@ class VentanaPrincipal(QMainWindow):
     def _cerrar_lote_por_cambio_de_perfil(self, lote: _Lote) -> None:
         """CA-L17.4: con otro servidor el lote anterior queda cerrado y sin acciones."""
         lote.cerrado = True
+        for previo in self._lotes_previos:
+            previo.cerrado = True
+        self._lotes_previos.clear()
         lote.control.dejar_de_esperar()
         if lote.control_rollback is not None:
             lote.control_rollback.cancelar()

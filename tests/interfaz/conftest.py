@@ -5,6 +5,8 @@ from __future__ import annotations
 import pytest
 from PySide6.QtWidgets import QApplication, QMessageBox
 
+from proxlaunch.interfaz import trabajadores as tr
+from proxlaunch.interfaz import ventana_principal as vp
 from proxlaunch.interfaz.tema import GestorTema, ModoTema
 from proxlaunch.interfaz.ventana_principal import Dependencias
 from proxlaunch.nucleo.persistencia.huellas import RepositorioHuellas
@@ -108,3 +110,49 @@ def hacer_cfg_ui():
         return ConfiguracionVM(**base)
 
     return _hacer
+
+
+# --- Lotes (MVP 2): fixtures compartidos por las pruebas de la ventana -------------------------
+
+
+@pytest.fixture
+def confirmaciones(monkeypatch):
+    """Sustituye ``confirmar``: registra las preguntas y responde lo programado (sí por defecto)."""
+    from .apoyo_ventana_lote import Confirmaciones
+
+    c = Confirmaciones(True)
+    monkeypatch.setattr(vp, "confirmar", c)
+    return c
+
+
+@pytest.fixture
+def descubrimiento_falso(request, monkeypatch):
+    """Replanificar y reintentar releen el inventario de la prueba, sin tocar la red."""
+    entorno = request.getfixturevalue("entorno")
+    monkeypatch.setattr(tr, "descubrir", lambda sesion: entorno.inv)
+
+
+@pytest.fixture
+def limpieza(request, monkeypatch, descubrimiento_falso):
+    """Nunca bloquea al cerrar: libera puertas, abandona esperas y evita la confirmación."""
+    entorno = request.getfixturevalue("entorno")
+    monkeypatch.setattr(vp, "confirmar", lambda *a, **k: True)
+    yield
+    cr = entorno.creacion
+    for puerta in getattr(cr, "puertas", {}).values():
+        puerta.set()
+    cliente = getattr(entorno, "cliente", None)
+    if cliente is not None and cliente.puerta_eliminar is not None:
+        cliente.puerta_eliminar.set()
+    v = entorno.ventana
+    lote = v._lote
+    if lote is not None:
+        lote.control.dejar_de_esperar()
+        if lote.control_rollback is not None:
+            lote.control_rollback.cancelar()
+        lote.control.reanudar()
+    reloj = entorno.deps.reloj
+    if hasattr(reloj, "liberar"):
+        reloj.liberar.set()
+    v._lanzador.esperar(3000)
+    v._lote = None  # evita la confirmación de cierre de la ventana
