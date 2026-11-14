@@ -272,6 +272,27 @@ def test_m3_01_el_perfil_predeterminado_produce_el_mismo_post_que_la_configuraci
 # =========================================================================================
 
 
+def _plan_normalizado(plan: Plan) -> Plan:
+    """Plan sin lo que cambia por ejecución: ``id_lote``, hora, definición y la etiqueta ``lote-<id>``."""  # noqa: E501
+    marca = f"lote-{plan.id_lote}"
+    elementos = tuple(
+        dataclasses.replace(
+            e,
+            cfg=dataclasses.replace(
+                e.cfg, etiquetas=tuple("lote-*" if t == marca else t for t in e.cfg.etiquetas)
+            ),
+        )
+        for e in plan.elementos
+    )
+    return dataclasses.replace(
+        plan,
+        definicion=None,
+        id_lote="",
+        generado_en=0.0,
+        elementos=elementos,  # type: ignore[arg-type]
+    )
+
+
 def _plantilla_lab(**kw: Any) -> ConfiguracionVM:
     base: dict[str, Any] = {
         "vmid": 0,
@@ -316,14 +337,9 @@ def test_m3_02_un_lote_guardado_y_cargado_da_el_mismo_plan_y_se_crea_igual(
     assert [(e.nombre, e.vmid, e.nodo) for e in plan_cargado.elementos] == [
         (e.nombre, e.vmid, e.nodo) for e in plan_directo.elementos
     ]
-    assert dataclasses.replace(
-        plan_cargado, definicion=None, id_lote="", generado_en=0.0
-    ) == dataclasses.replace(  # type: ignore[arg-type]
-        plan_directo,
-        definicion=None,
-        id_lote="",
-        generado_en=0.0,  # type: ignore[arg-type]
-    )
+    for plan in (plan_directo, plan_cargado):  # cada plan lleva la etiqueta de SU id_lote
+        assert all(f"lote-{plan.id_lote}" in e.cfg.etiquetas for e in plan.elementos)
+    assert _plan_normalizado(plan_cargado) == _plan_normalizado(plan_directo)
     assert desajustes(cargado, inv) == ()
 
     libro = _ejecutar(sesion_plc, plan_cargado, inv)
