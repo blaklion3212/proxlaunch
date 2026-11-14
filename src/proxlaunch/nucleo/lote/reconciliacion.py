@@ -49,6 +49,17 @@ def etiquetas_de_config(config: dict[str, object] | None) -> frozenset[str]:
     return frozenset(t for t in _SEPARADOR_ETIQUETAS.split(bruto.strip().lower()) if t)
 
 
+def config_en_creacion(config: dict[str, object] | None) -> bool:
+    """``True`` si la config aún es parcial: ``lock: create`` (D2).
+
+    Mientras Proxmox crea la MV la config solo trae ``lock: create``; leer entonces las etiquetas
+    no demuestra nada, así que la propiedad todavía no se puede decidir.
+    """
+    if not config:
+        return False
+    return config.get("lock") == "create"
+
+
 def tiene_etiqueta_del_lote(config: dict[str, object] | None, id_lote: str) -> bool:
     return etiqueta_del_lote(id_lote) in etiquetas_de_config(config)
 
@@ -85,12 +96,15 @@ def reconciliar_incierta(
       ``creada_tras_comprobar``;
     - existe pero sin la etiqueta del lote (o sin poder leerla) ->
       ``EXISTE_SIN_CONFIRMAR_PROPIEDAD`` (no elegible para rollback);
+    - existe pero su config sigue en creación (``lock: create``) -> se relee en la comprobación
+      siguiente; si al final sigue así, ``CONEXION_PERDIDA`` (nunca ``OK`` sin etiqueta);
     - no existe en todas las comprobaciones -> ``NO_CREADA_SEGURA``;
     - no se pudo saber, o se canceló la espera -> ``CONEXION_PERDIDA`` con
       ``LOTE_EXISTENCIA_INDETERMINADA`` / ``LOTE_ENVIO_INCIERTO``.
     """
     params = {"nombre": cfg.nombre, "vmid": str(cfg.vmid)}
     anterior = 0.0
+    en_creacion = False
     for objetivo in COMPROBACIONES_EXISTENCIA_S:
         if not _esperar(reloj, objetivo - anterior, cancelado):
             return (
@@ -107,14 +121,27 @@ def reconciliar_incierta(
                 ErrorProxLaunch(CodigoError.LOTE_EXISTENCIA_INDETERMINADA, params),
             )
         if existe:
-            return _propiedad(cfg, id_lote, etiquetar, cliente)
+            decision = _propiedad(cfg, id_lote, etiquetar, cliente)
+            if decision is not None:
+                return decision
+            en_creacion = True  # config parcial: se vuelve a leer en la comprobación siguiente
+    if en_creacion:
+        # Seguía en creación tras todas las comprobaciones: dudosa, nunca OK sin etiqueta propia.
+        return (
+            EstadoMV.CONEXION_PERDIDA,
+            None,
+            ErrorProxLaunch(CodigoError.LOTE_EXISTENCIA_INDETERMINADA, params),
+        )
     return EstadoMV.NO_CREADA_SEGURA, None, None
 
 
 def _propiedad(
     cfg: ConfiguracionVM, id_lote: str, etiquetar: bool, cliente: _ClienteConfig
-) -> tuple[EstadoMV, str | None, ErrorProxLaunch | None]:
-    """La MV existe: comprueba que es de este lote (CA-L15.5)."""
+) -> tuple[EstadoMV, str | None, ErrorProxLaunch | None] | None:
+    """La MV existe: comprueba que es de este lote (CA-L15.5).
+
+    Devuelve ``None`` si la config aún está en creación (``lock: create``): no se decide.
+    """
     if not etiquetar:
         return EstadoMV.OK, AVISO_CREADA_TRAS_COMPROBAR, None
     try:
@@ -123,6 +150,8 @@ def _propiedad(
         # No se pudo leer: la propiedad no está demostrada, así que no es elegible.
         _log.warning("No se pudo leer la config para verificar la etiqueta (vmid=%s)", cfg.vmid)
         return EstadoMV.EXISTE_SIN_CONFIRMAR_PROPIEDAD, None, None
+    if config_en_creacion(config):
+        return None
     if tiene_etiqueta_del_lote(config, id_lote):
         return EstadoMV.OK, AVISO_CREADA_TRAS_COMPROBAR, None
     return EstadoMV.EXISTE_SIN_CONFIRMAR_PROPIEDAD, None, None

@@ -206,7 +206,16 @@ class TransporteHttp:
                 motivos.append((host, "huella_no_confiada"))
                 continue
             try:
-                resp = self._enviar(host, metodo, ruta, params, datos)
+                try:
+                    resp = self._enviar(host, metodo, ruta, params, datos)
+                except requests.exceptions.ConnectionError as e:
+                    if metodo not in _METODOS_SEGUROS or isinstance(
+                        e, requests.exceptions.SSLError | requests.exceptions.ConnectTimeout
+                    ):
+                        raise
+                    # Lectura: pveproxy cierra las conexiones inactivas (~5 s) y la reutilizada
+                    # puede fallar al reusarla. Un único reintento en el mismo host es inocuo.
+                    resp = self._enviar(host, metodo, ruta, params, datos)
             except requests.exceptions.SSLError as e:
                 if es_huella_distinta(e):
                     # Posible suplantación: nunca se prueba otro host por este camino.

@@ -204,7 +204,7 @@ class ServicioCreacion:
             error_envio = self._completar_permiso(self._con_siguiente_vmid(e), cfg)
             desenlace = (
                 Desenlace.CONEXION_PERDIDA
-                if e.codigo == CodigoError.SERVIDOR_NO_RESPONDE
+                if e.codigo == CodigoError.SERVIDOR_NO_RESPONDE or e.params.get("incierto") == "1"
                 else Desenlace.ERROR
             )
             return self._resultado(desenlace, cfg, error=error_envio)

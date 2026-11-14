@@ -211,6 +211,13 @@ def traducir_http(
 def traducir_exitstatus(exitstatus: str | None) -> ErrorProxLaunch:
     """Traduce el ``exitstatus`` de una tarea terminada con error (CA-20.4)."""
     texto = exitstatus or ""
+    # E-L15: con user-tag-access restringido el POST da 200 y la TAREA falla con este texto
+    # (el nombre de la etiqueta puede salir como ``HASH(0x...)``: no se usa).
+    me = _RE_ETIQUETA_RECHAZADA.search(texto)
+    if me:
+        tag = me.group("tag")
+        params = {"tag": tag} if tag and not tag.upper().startswith("HASH") else {}
+        return ErrorProxLaunch(CodigoError.ETIQUETA_RECHAZADA, params, limpiar_detalle(texto))
     clasificado = _clasificar_texto(texto)
     if clasificado is not None:
         return clasificado

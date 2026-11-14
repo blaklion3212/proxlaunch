@@ -36,7 +36,7 @@ from proxlaunch.nucleo.lote.modelos import (
 from proxlaunch.nucleo.lote.motor import ControlLote, MotorLote
 from proxlaunch.nucleo.lote.planificador import Planificador
 from proxlaunch.nucleo.lote.presupuesto import evaluar_espacio, uso_por_clave
-from proxlaunch.nucleo.lote.reconciliacion import tiene_etiqueta_del_lote
+from proxlaunch.nucleo.lote.reconciliacion import config_en_creacion, tiene_etiqueta_del_lote
 from proxlaunch.nucleo.lote.rollback import ServicioRollback
 from proxlaunch.nucleo.lote.simulacion import simular
 from proxlaunch.nucleo.modelos.inventario import Bridge, Inventario, Storage
@@ -300,6 +300,8 @@ def comprobar_existencia(
         # etiqueta antes de eliminar nada.
         _log.warning("No se pudo releer la config para verificar la etiqueta (vmid=%s)", cfg.vmid)
         return EstadoMV.OK
+    if config_en_creacion(config):
+        return None  # sigue en creación (lock: create): la propiedad aún no se puede decidir
     if tiene_etiqueta_del_lote(config, id_lote):
         return EstadoMV.OK
     return EstadoMV.EXISTE_SIN_CONFIRMAR_PROPIEDAD
