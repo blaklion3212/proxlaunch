@@ -801,7 +801,9 @@ def test_ca_c10_la_plantilla_se_puede_reimportar_sin_errores_de_capa_1(
         d.reject()
 
     _abrir_asistente(qtbot, v, modales, archivos, destino, _ver)
-    assert visto["filas"] == 2
+    # Enmienda aprobada (MVP 4, RF-O28 / CA-O28): la plantilla ahora trae 5 filas de ejemplo y las
+    # columnas origen, fuente, so, virtio y modo_clon; sigue reimportándose sin errores de capa 1.
+    assert visto["filas"] == 5
     assert visto["con_error"] is False, visto["resumen"]
 
 

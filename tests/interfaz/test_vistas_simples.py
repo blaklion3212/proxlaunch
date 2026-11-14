@@ -450,7 +450,9 @@ def test_todas_las_opciones_avanzadas_se_enumeran(hacer_cfg_ui):
         ("discos[1].bus", "Disco"),
         ("redes[0].vlan", "Red"),
         ("ballooning.minimo_mib", "Ballooning"),
-        ("raro", "raro"),
+        # Enmienda aprobada (orquestador, MVP 4): nunca se muestra un identificador crudo;
+        # un campo sin mapear da "".
+        ("raro", ""),
     ],
 )
 def test_nombre_corto_del_campo(campo, esperado):

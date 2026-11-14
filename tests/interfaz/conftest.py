@@ -162,3 +162,14 @@ def limpieza(request, monkeypatch, descubrimiento_falso):
         reloj.liberar.set()
     v._lanzador.esperar(3000)
     v._lote = None  # evita la confirmación de cierre de la ventana
+
+
+@pytest.fixture
+def widget_padre(qtbot):
+    """Widget visible que hace de padre de los diálogos que abre el controlador del origen."""
+    from PySide6.QtWidgets import QWidget
+
+    w = QWidget()
+    qtbot.addWidget(w)
+    w.show()
+    return w

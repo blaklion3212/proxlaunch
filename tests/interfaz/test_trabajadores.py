@@ -172,19 +172,22 @@ def test_descubrir_y_comprobar_permisos_combina_ambos(monkeypatch, inv_cluster):
 
 
 def test_recargar_nodo_devuelve_nodo_storages_y_bridges(monkeypatch):
-    monkeypatch.setattr(tr, "descubrir_nodo", lambda s, n: (["s"], ["b"]))
-    assert tr.recargar_nodo(sesion_falsa(), "pve1") == ("pve1", ["s"], ["b"])
+    # Enmienda aprobada (MVP 4, RF-O04): usa descubrir_nodo_completo -> (con_images, todos, bridges)
+    # y devuelve (nodo, con_images, bridges, todos) para mantener Inventario.storages_todos.
+    monkeypatch.setattr(tr, "descubrir_nodo_completo", lambda s, n: (["s"], ["t"], ["b"]))
+    assert tr.recargar_nodo(sesion_falsa(), "pve1") == ("pve1", ["s"], ["b"], ["t"])
 
 
 def test_reintentar_nodos_separa_recuperados_y_fallidos(monkeypatch):
     def descubrir_nodo(sesion, nodo):
         if nodo == "pve2":
             raise ErrorProxLaunch(CodigoError.NODO_NO_DISPONIBLE, {"nodo": nodo})
-        return (["s"], ["b"])
+        return (["s"], ["t"], ["b"])
 
-    monkeypatch.setattr(tr, "descubrir_nodo", descubrir_nodo)
+    # Enmienda aprobada (MVP 4, RF-O04): cada nodo recuperado trae (con_images, bridges, todos).
+    monkeypatch.setattr(tr, "descubrir_nodo_completo", descubrir_nodo)
     recuperados, fallidos = tr.reintentar_nodos(sesion_falsa(), ["pve1", "pve2"])
-    assert recuperados == {"pve1": (["s"], ["b"])}
+    assert recuperados == {"pve1": (["s"], ["b"], ["t"])}
     assert list(fallidos) == ["pve2"]
 
 
