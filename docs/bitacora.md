@@ -26,11 +26,11 @@ Nunca registres contraseñas, tokens ni datos personales.
 
 ## Estado actual (2026-11-13)
 
-- **Fase en curso:** MVP 2 (creación por lotes) cerrado y aprobado por el usuario
-  (2026-11-13). Siguiente: MVP 3 (perfiles predefinidos, guardar y cargar lotes, CSV).
+- **Fase en curso:** MVP 3 (perfiles de máquina, guardar y cargar lotes, CSV): requisitos
+  redactados; esperando la decisión del usuario sobre P-M01 (CSV heterogéneo frente a D-20).
 - **Laboratorio:** apagado y conservado (PVE 9.2, solo 127.0.0.1); limpio de MVs y ajustes.
   Se destruirá sin rastro al terminar todas las pruebas (D-15).
-- **Próximo paso:** requisitos del MVP 3.
+- **Próximo paso:** con P-M01 resuelta, registrar D-22 y diseñar la arquitectura del MVP 3.
 
 ---
 
@@ -232,6 +232,18 @@ Nunca registres contraseñas, tokens ni datos personales.
   commits f9e5bbc a b1dec89.
 - **Cierre:** ✅ aprobado por el usuario (2026-11-13).
 - **Siguientes pasos:** MVP 3.
+
+### 2026-11-13 · 15. Requisitos del MVP 3
+- **Responsable:** `analista-requisitos`; revisión del orquestador
+- **Qué se hizo:** `docs/requisitos/mvp3.md`: 12 RF de perfiles de máquina, 5 de archivos
+  seguros, 8 de lotes guardados y 15 de CSV; 12 RNF-M, 15 reglas V-M, 16 errores E-M,
+  8 invariantes, 4 pruebas de laboratorio, 6 perfiles de fábrica y 12 preguntas P-M.
+- **Resultado:** ⏳ el usuario pidió (estando ausente) avanzar solo y esperar únicamente
+  ante decisiones suyas. P-M01 (cómo encaja un CSV con MVs distintas en el lote homogéneo
+  de D-20) cambia una decisión aprobada: se le consulta. Las demás P-M (02 a 12) se adoptan
+  de forma provisional con la recomendación del analista, para revisión del usuario.
+- **Archivos:** `docs/requisitos/mvp3.md`.
+- **Siguientes pasos:** respuesta a P-M01, D-22, arquitectura del MVP 3.
 
 ---
 
