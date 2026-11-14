@@ -28,7 +28,7 @@ Nunca registres contraseñas, tokens ni datos personales.
 
 - **Fase en curso:** MVP 3 (perfiles de máquina, lotes guardados, CSV, lote por filas):
   implementado, probado (5823 pruebas normales y 154 de laboratorio) y revisado (QA y
-  seguridad corregidos). Falta cerrar la documentación (F7) y la aprobación del usuario.
+  seguridad corregidos) y documentado (F7). Falta la aprobación del usuario.
 - **Laboratorio:** apagado y conservado (PVE 9.2, solo 127.0.0.1); limpio de MVs y ajustes.
   Se destruirá sin rastro al terminar todas las pruebas (D-15).
 - **Pendiente del usuario:** revisar D-22 (P-M02..P-M12 provisionales) y D-23; aprobar el cierre del MVP 3.
@@ -262,7 +262,8 @@ Nunca registres contraseñas, tokens ni datos personales.
 - **Archivos:** `src/proxlaunch/nucleo/{archivos,perfiles_maquina,lotes_guardados,csv_importacion}/`,
   `nucleo/lote/filas.py`, `src/proxlaunch/interfaz/` (diálogos y vistas nuevos), `tests/`.
   Commits 849c35a, 30fdf45, 92a903d, 9625522, 8a29e08.
-- **Siguientes pasos:** documentación (F7), cierre del MVP 3 y aprobación del usuario.
+- **Siguientes pasos:** aprobación del usuario; después MVP 4 (requiere decidir D-13).
+  Documentación cerrada en e90b183.
 
 ---
 
