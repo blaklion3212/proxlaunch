@@ -26,10 +26,11 @@ Nunca registres contraseñas, tokens ni datos personales.
 
 ## Estado actual (2026-11-13)
 
-- **Fase en curso:** MVP 1 cerrado y aprobado por el usuario (2026-11-13). Siguiente: MVP 2.
-- **Laboratorio:** encendido (PVE 9.2, solo 127.0.0.1). Se destruirá sin rastro al terminar
-  todas las pruebas (D-15).
-- **Próximo paso:** requisitos del MVP 2 (creación por lotes, política de sobreasignación).
+- **Fase en curso:** MVP 2 (creación por lotes) terminado; pendiente de la aprobación del
+  usuario. Siguiente: MVP 3.
+- **Laboratorio:** apagado y conservado (PVE 9.2, solo 127.0.0.1); limpio de MVs y ajustes.
+  Se destruirá sin rastro al terminar todas las pruebas (D-15).
+- **Próximo paso:** aprobación del cierre del MVP 2; luego requisitos del MVP 3.
 
 ---
 
@@ -206,6 +207,31 @@ Nunca registres contraseñas, tokens ni datos personales.
 - **Archivos:** commit 03d736c.
 - **Siguientes pasos:** MVP 2.
 
+### 2026-11-13 · 14. MVP 2: creación por lotes (F1 a F6)
+- **Responsable:** `analista-requisitos`, orquestador (arquitectura), 3 × `implementador` (F3)
+  y varios en las correcciones, `probador` (F4, F5), `depurador`, `revisor-qa`,
+  `auditor-seguridad`, `documentador`; decisiones del usuario D-20 y D-21.
+- **Qué se hizo:** requisitos (24 RF-L, 11 RNF-L) y 12 decisiones de lotes (D-20); arquitectura
+  (planificación pura, reserva de VMIDs, reparto Equilibrado/Por turnos, presupuesto de
+  espacio con tope thin 3×, motor con colas por nodo, reconciliación del envío incierto,
+  pausas, rollback, simulación de solo lectura, informe saneado). Una sola MV también pasa por
+  el motor. Pruebas: unitarias con inyección de fallos en todos los puntos (INV-L1), contadores
+  de métodos, centinela de secretos e interfaz; LAB-L01..L13 en PVE 9.2.
+- **Resultado:** ✅ 3480 pruebas normales + 142 de integración en verde; INV-L1 (como máximo un
+  POST por VMID) sin excepción en ninguna ruta. El laboratorio encontró 3 defectos (etiqueta
+  rechazada en la tarea, config en `lock: create`, 596 tras entrega), corregidos. Revisión:
+  3 altas, 5 medias, 8 bajas; auditoría: 0 críticas/altas, 2 medias, 4 bajas; todas
+  corregidas. D-21 (usuario): deshacer sin borrar discos sueltos. Regresión detectada en la
+  documentación y corregida: una sola MV con etiquetas restringidas ofrece «Crear sin
+  etiquetas».
+- **Hallazgos del laboratorio:** ver `docs/investigacion/f1-api-proxmox.md` §8 (DELETE solo
+  exige `VM.Allocate`, efidisk de 4 MiB, normalización de etiquetas, MV recién creada sin
+  nombre ~4 s en `/cluster/resources`).
+- **Archivos:** `src/proxlaunch/nucleo/lote/`, `src/proxlaunch/interfaz/`, `tests/`,
+  `docs/requisitos/mvp2.md`, `docs/arquitectura/mvp2.md`, `docs/guia-usuario.md`, `README.md`;
+  commits f9e5bbc a b1dec89.
+- **Siguientes pasos:** aprobación del cierre del MVP 2; MVP 3.
+
 ---
 
 ## Pendientes y riesgos abiertos
@@ -214,9 +240,10 @@ Nunca registres contraseñas, tokens ni datos personales.
 |---|---|
 | Eliminación del laboratorio | Obligatoria al final de las pruebas, sin dejar rastro (D-15). |
 | D-13 pospuesta | Origen del SO (ISO, OVA, VMware): algunas importaciones exigen `root@pam` o SSH y dependen de la versión (MVP 4). |
-| Política de sobreasignación | Bloquear o advertir en pools thin: se define en el MVP 2. |
 | Python en Ubuntu 22.04 | Trae 3.10; la app exige ≥ 3.11. Resolver al empaquetar (MVP 5). |
 | Realms LDAP/AD | No probados. |
 | Firma de código en Windows | Pospuesta al MVP 5 (D-06). |
 | Respuestas sintéticas | Clúster multinodo, nodo caído y PVE 8.x solo con respuestas sintéticas (el laboratorio es un nodo 9.2). |
+| Clúster multinodo de lotes | Reparto, nodo caído y concurrencia entre nodos probados solo con dobles (laboratorio de un nodo). |
+| Aviso de nombre duplicado | Una MV creada hace ~4 s puede no aparecer con nombre en `/cluster/resources` (limitación de Proxmox). |
 | Sin Proxmox de pruebas en los sitios | Nunca crear ni borrar MVs contra producción (D-15). |
