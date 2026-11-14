@@ -135,11 +135,16 @@ class ServicioCreacion:
         cancelado: threading.Event,
         *,
         al_enviar: Callable[[str], None] | None = None,
+        puede_enviar: Callable[[], bool] | None = None,
     ) -> ResultadoCreacion:
         """Valida, envía y sigue la tarea hasta un desenlace.
 
         ``al_enviar`` (opcional) recibe el UPID justo después del POST exitoso y antes
         de empezar el sondeo.
+
+        ``puede_enviar`` (opcional) se evalúa justo antes de anunciar ``Etapa.ENVIANDO`` y de
+        hacer el POST: si devuelve ``False`` el desenlace es ``CANCELADO`` sin UPID y sin POST
+        (así una cancelación o pausa del lote impide enviar una MV que aún validaba).
 
         Si ``cancelado`` se activa se deja de esperar, sin borrar nada, y el desenlace es
         ``CANCELADO`` (con ``upid`` si la tarea ya se había enviado). Una vez enviada la
@@ -149,7 +154,7 @@ class ServicioCreacion:
         """
         ctx = _Contexto(cancelado=cancelado, inv=inv)
         try:
-            return self._crear(ctx, cfg, inv, al_cambiar_etapa, al_enviar)
+            return self._crear(ctx, cfg, inv, al_cambiar_etapa, al_enviar, puede_enviar)
         except _Cancelado:
             return self._cancelado(cfg, ctx.upid)
 
@@ -160,6 +165,7 @@ class ServicioCreacion:
         inv: Inventario,
         al_cambiar_etapa: Callable[[Etapa], None],
         al_enviar: Callable[[str], None] | None,
+        puede_enviar: Callable[[], bool] | None = None,
     ) -> ResultadoCreacion:
         cliente = self._sesion.cliente
         cancelado = ctx.cancelado
@@ -194,6 +200,8 @@ class ServicioCreacion:
         except ErrorProxLaunch as e:
             return self._resultado(Desenlace.ERROR, cfg, error=e)
         if cancelado.is_set():
+            return self._cancelado(cfg, None)
+        if puede_enviar is not None and not puede_enviar():
             return self._cancelado(cfg, None)
 
         # 2. Envío. No se reintenta: un POST repetido podría duplicar la operación.

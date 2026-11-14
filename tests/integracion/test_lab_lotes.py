@@ -544,7 +544,7 @@ def _crear_con_disco_suelto(sesion, vmid: int) -> tuple[Inventario, str]:
     return inv, suelto
 
 
-def test_l05_delete_con_rol_de_10_privilegios_params_en_consulta(sesion_plc, plc, vmids):
+def test_l05_delete_con_rol_de_10_privilegios_d21_no_borra_discos_sueltos(sesion_plc, plc, vmids):
     vmid = vmids(9050)
     _crear_con_disco_suelto(sesion_plc, vmid)
     api = _api_plc(plc)
@@ -563,7 +563,27 @@ def test_l05_delete_con_rol_de_10_privilegios_params_en_consulta(sesion_plc, plc
     assert sesion_plc.cliente.config_vm(lab.NODO, vmid) is None
     restos = _volumenes(STORAGE, vmid)
     evidencia("L05-delete-consulta", volumenes_restantes=restos.strip().splitlines()[1:])
-    assert f"vm-{vmid}-" not in restos  # destroy-unreferenced-disks=1 limpió disco y suelto
+    # D-21: con destroy-unreferenced-disks=0 y sin purge, el disco de la config se borra pero un
+    # volumen suelto del mismo VMID (que podría ser de otra persona) NO se toca.
+    assert f"vm-{vmid}-disk-0" not in restos
+    assert f"vm-{vmid}-disk-7" in restos
+
+
+def test_l05_rollback_d21_elimina_la_maquina_y_sus_discos_pero_no_un_volumen_suelto(
+    sesion_plc, vmids
+):
+    plan, inv = _planificar(sesion_plc, _defn(1, 9053, "plc-l05d"))
+    vmids(9053)
+    c = _ejecutar(sesion_plc, plan, inv)
+    assert _estados(c.libro) == {9053: EstadoMV.OK}
+    lab.ssh(f"sudo pvesm alloc {STORAGE} 9053 vm-9053-disk-7 1G")
+    _cands, res = _deshacer(sesion_plc, c.libro)
+    assert [r.estado for r in res] == [EstadoRollback.ELIMINADA]
+    assert sesion_plc.cliente.config_vm(lab.NODO, 9053) is None
+    restos = _volumenes(STORAGE, 9053)
+    evidencia("L05-rollback-d21", restos=restos.strip().splitlines()[1:])
+    assert "vm-9053-disk-0" not in restos  # el disco de la config sí se borra
+    assert "vm-9053-disk-7" in restos  # el suelto no: el rollback no destruye lo que no es suyo
 
 
 def test_l05_delete_sin_destroy_unreferenced_deja_el_disco_suelto(sesion_plc, plc, vmids):
@@ -1096,7 +1116,9 @@ def test_l09_596_tras_entrega_real_queda_conexion_perdida_sin_reenvio(
     plan, inv = _lote_de_uno(sesion_plc, 9095, "plc-l09d")
     vmids(9095)
     llamadas: list[int] = []
-    _perdida_tras_post(sesion_plc, monkeypatch, enviar=True, error=CodigoError.NODO_NO_DISPONIBLE)
+    # Lo que produce el transporte real ante un 596/597 tras enviar un POST: no hay respuesta y
+    # el envío es incierto (``SERVIDOR_NO_RESPONDE`` con ``incierto=1``), no un nodo caído.
+    _perdida_tras_post(sesion_plc, monkeypatch, enviar=True, error=CodigoError.SERVIDOR_NO_RESPONDE)
     original = sesion_plc.cliente.crear_vm
     monkeypatch.setattr(
         sesion_plc.cliente, "crear_vm", lambda n, p: (llamadas.append(1), original(n, p))[1]

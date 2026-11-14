@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import contextlib
 import copy
+import dataclasses
 import logging
 import secrets
 import threading
@@ -17,6 +18,7 @@ from typing import Any
 from PySide6.QtCore import QObject, QRunnable, Qt, QThreadPool, Signal
 
 from proxlaunch.nucleo.capacidades import Capacidades
+from proxlaunch.nucleo.constructor_peticion import construir_parametros
 from proxlaunch.nucleo.errores import CodigoError, ErrorProxLaunch
 from proxlaunch.nucleo.lote.constantes import ETIQUETA_APP, PREFIJO_ETIQUETA_LOTE
 from proxlaunch.nucleo.lote.libro import Libro
@@ -282,8 +284,9 @@ def comprobar_existencia(
     """Envío incierto sin UPID: ¿existe ya la máquina y es de este lote?
 
     ``None`` si no se pudo comprobar; ``NO_CREADA_SEGURA`` si no existe; si existe, la misma
-    misma regla de propiedad que la reconciliación del motor y el rollback: ``OK`` (lleva la
-    etiqueta del lote o el lote no etiqueta) o ``EXISTE_SIN_CONFIRMAR_PROPIEDAD`` (CA-L15.5).
+    regla de propiedad que la reconciliación del motor y el rollback: ``OK`` (lleva la
+    etiqueta del lote o el lote no etiqueta) o ``EXISTE_SIN_CONFIRMAR_PROPIEDAD`` (CA-L15.5),
+    también cuando no se puede releer la configuración (la propiedad no está demostrada).
     """
     existe = servicio.existe_vm(cfg)
     if existe is None:
@@ -295,11 +298,10 @@ def comprobar_existencia(
     try:
         config = cliente.config_vm(cfg.nodo, cfg.vmid)
     except Exception:
-        # ``existe_vm`` acaba de leer esa misma configuración; si ahora no se puede releer no se
-        # descarta la máquina (comportamiento del MVP 1). «Deshacer» vuelve a verificar la
-        # etiqueta antes de eliminar nada.
+        # Mismo criterio que la reconciliación del motor: si no se puede releer la config, la
+        # propiedad no está demostrada y la máquina no es elegible para «Deshacer».
         _log.warning("No se pudo releer la config para verificar la etiqueta (vmid=%s)", cfg.vmid)
-        return EstadoMV.OK
+        return EstadoMV.EXISTE_SIN_CONFIRMAR_PROPIEDAD
     if config_en_creacion(config):
         return None  # sigue en creación (lock: create): la propiedad aún no se puede decidir
     if tiene_etiqueta_del_lote(config, id_lote):
@@ -416,6 +418,34 @@ def simular_lote(
     return simular(sesion, definicion, inv, version_forzada=version_forzada, reloj=reloj)
 
 
+def simular_reintento(
+    sesion: Sesion,
+    reloj: Reloj,
+    elementos: tuple[ElementoPlan, ...],
+    definicion: DefinicionLote,
+    version_forzada: tuple[int, int] | None,
+    nodo_destino: str | None = None,
+) -> tuple[Inventario, ResultadoSimulacion]:
+    """Simula el plan del reintento (mismos nombres y VMIDs), solo con lecturas (RF-L11)."""
+    sesion_ro = dataclasses.replace(sesion, cliente=sesion.cliente.solo_lectura())
+    inv, plan = armar_reintento(
+        sesion_ro, reloj, elementos, definicion, version_forzada, nodo_destino
+    )
+    plan = dataclasses.replace(plan, es_simulacion=True)
+    peticiones: dict[int, dict[str, str]] = {}
+    for e in plan.elementos:
+        try:
+            peticiones[e.vmid] = construir_parametros(e.cfg, inv, plan.version_validacion)
+        except ErrorProxLaunch:
+            continue  # su problema ya consta en el plan
+    return inv, ResultadoSimulacion(
+        plan=plan,
+        peticiones=peticiones,
+        version_detectada=(inv.version.mayor, inv.version.menor),
+        version_forzada=version_forzada,
+    )
+
+
 def _motor(
     sesion: Sesion,
     reloj: Reloj,
@@ -435,9 +465,17 @@ def ejecutar_lote(
     observador: Callable[[EntradaLibro], None],
     control: ControlLote,
     fabrica: Callable[[Sesion, Reloj], ServicioCreacion] | None = None,
+    libro: Libro | None = None,
 ) -> Libro:
-    """Ejecuta el plan con el motor; bloquea hasta que termine (hilo de trabajo)."""
-    return _motor(sesion, reloj, fabrica).ejecutar(plan, inv, observador, control)
+    """Ejecuta el plan con el motor; bloquea hasta que termine (hilo de trabajo).
+
+    ``libro`` es el libro creado de antemano por la interfaz: así existe aunque el motor
+    falle y «Deshacer» y «Comprobar» siguen disponibles sobre lo ya creado.
+    """
+    motor = _motor(sesion, reloj, fabrica)
+    if libro is None:
+        return motor.ejecutar(plan, inv, observador, control)
+    return motor.ejecutar(plan, inv, observador, control, libro=libro)
 
 
 def comprobar_dudosas_lote(

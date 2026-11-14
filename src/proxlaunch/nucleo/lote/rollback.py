@@ -10,7 +10,7 @@ from __future__ import annotations
 
 import logging
 import threading
-from collections.abc import Callable
+from collections.abc import Callable, Collection
 from concurrent.futures import ThreadPoolExecutor
 from typing import Any
 
@@ -77,24 +77,33 @@ class ServicioRollback:
 
     # --- Elegibilidad -----------------------------------------------------------------
 
-    def elegibles(self, libro: Libro, *, etiquetado: bool) -> list[CandidatoRollback]:
+    def elegibles(
+        self, libro: Libro, *, etiquetado: bool, excluir_vmids: Collection[int] = ()
+    ) -> list[CandidatoRollback]:
         """Un candidato por cada MV del libro, en el orden del plan (CA-L18.1/18.2).
+
+        ``excluir_vmids`` quita del resultado esos VMIDs (la interfaz pasa los ya
+        ``ELIMINADA``/``YA_NO_EXISTIA`` de un intento anterior).
 
         Elegibles: ``OK``, ``CON_AVISOS`` y ``PARCIAL``. El motivo de las no elegibles es el
         valor de ``EstadoMV`` que lo impide (``no_enviada``, ``error``, ``no_creada_segura``,
-        ``existe_sin_confirmar_propiedad``, ``conexion_perdida``...). Con ``etiquetado`` falso,
-        una MV rescatada por reconciliación (sin UPID propio ni etiqueta que la ate al lote)
-        tiene la propiedad sin demostrar y no es elegible (``propiedad_no_demostrada``).
+        ``existe_sin_confirmar_propiedad``, ``conexion_perdida``...). Con ``etiquetado`` falso
+        no hay etiqueta que ate la MV al lote: solo es elegible si la creó una tarea nuestra
+        (entrada con UPID propio) y no fue rescatada por reconciliación; si no, la propiedad
+        no está demostrada (``propiedad_no_demostrada``).
 
         ``incompleta`` es verdadera para ``PARCIAL`` y ``CON_AVISOS`` (la tarea no terminó
         limpia) y para las rescatadas por reconciliación; es falsa para ``OK`` limpio.
         """
         candidatos: list[CandidatoRollback] = []
+        excluidos = frozenset(excluir_vmids)
         for entrada in libro.instantanea():
+            if entrada.elemento.vmid in excluidos:
+                continue
             rescatada = AVISO_CREADA_TRAS_COMPROBAR in entrada.avisos
             elegible = entrada.estado in ESTADOS_ELEGIBLES
             motivo: str | None = None if elegible else entrada.estado.value
-            if elegible and rescatada and entrada.upid is None and not etiquetado:
+            if elegible and not etiquetado and (rescatada or entrada.upid is None):
                 elegible = False
                 motivo = MOTIVO_PROPIEDAD_NO_DEMOSTRADA
             incompleta = elegible and (entrada.estado in ESTADOS_INCOMPLETOS or rescatada)
@@ -140,7 +149,7 @@ class ServicioRollback:
 
         def procesar_cola(cola: list[CandidatoRollback]) -> None:
             for posicion, candidato in enumerate(cola):
-                if control.cancelado.is_set() or detener.is_set():
+                if self._detenido(control, detener):
                     for resto in cola[posicion:]:
                         emitir(self._resultado(resto.entrada, EstadoRollback.NO_ENVIADA))
                     return
@@ -157,6 +166,11 @@ class ServicioRollback:
         return [resultados[c.entrada.elemento.vmid] for c in pendientes]
 
     # --- Una MV -----------------------------------------------------------------------
+
+    @staticmethod
+    def _detenido(control: ControlLote, detener: threading.Event) -> bool:
+        """Cancelado, en pausa (p. ej. error global de otro grupo) o detenido: no más DELETE."""
+        return control.cancelado.is_set() or detener.is_set() or control.motivo_pausa is not None
 
     @staticmethod
     def _resultado(
@@ -186,6 +200,8 @@ class ServicioRollback:
     ) -> ResultadoRollback:
         """Un error definitivo al comprobar o eliminar: FALLO (y parada si es global)."""
         el = entrada.elemento
+        if e.codigo == CodigoError.RECURSO_INEXISTENTE:
+            return self._resultado(entrada, EstadoRollback.YA_NO_EXISTIA)
         if e.codigo == CodigoError.PERMISO_INSUFICIENTE and not e.params.get("privilegio"):
             e.params["privilegio"] = "VM.Allocate"
             e.params["ruta"] = f"/vms/{el.vmid}"
@@ -229,7 +245,7 @@ class ServicioRollback:
             return self._resultado(entrada, EstadoRollback.FALLO, error=error)
         if omision is not None:
             return self._resultado(entrada, EstadoRollback.OMITIDA, error=omision)
-        if control.cancelado.is_set() or detener.is_set():
+        if self._detenido(control, detener):
             return self._resultado(entrada, EstadoRollback.NO_ENVIADA)
 
         # 2. DELETE. Una sola vez: un fallo incierto se resuelve leyendo, no reenviando.
@@ -260,8 +276,15 @@ class ServicioRollback:
     ) -> ErrorProxLaunch | None:
         el = entrada.elemento
         nombre = config.get("name")
-        propia = tiene_etiqueta_del_lote(config, id_lote) if etiquetado else True
-        if not propia or (isinstance(nombre, str) and nombre and nombre != el.nombre):
+        if etiquetado:
+            propia = tiene_etiqueta_del_lote(config, id_lote)
+            nombre_distinto = isinstance(nombre, str) and nombre and nombre != el.nombre
+        else:
+            # Sin etiquetas la única prueba es el nombre: debe ser str e igual al del plan
+            # (sin ``name`` no hay demostración de propiedad).
+            propia = True
+            nombre_distinto = not isinstance(nombre, str) or nombre != el.nombre
+        if not propia or nombre_distinto:
             return self._error(CodigoError.ROLLBACK_NO_PROPIA, entrada)
         if _verdadero(config.get("protection", 0)) or config.get("lock"):
             return self._error(CodigoError.ROLLBACK_BLOQUEADA, entrada)

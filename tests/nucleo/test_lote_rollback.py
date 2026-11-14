@@ -1,7 +1,7 @@
 """Rollback del lote (RF-L18, INV-L4, D-20 (1)): elegibilidad, comprobaciones previas y DELETE.
 
 El servidor simulado cuenta los métodos HTTP: el rollback solo puede borrar MVs del libro, con
-``destroy-unreferenced-disks=1`` y ``purge=0`` en la consulta, y nunca a ciegas.
+``destroy-unreferenced-disks=0`` (sin ``purge``, D-21) en la consulta, y nunca a ciegas.
 """
 
 import contextlib
@@ -171,7 +171,7 @@ def test_ca_l18_5_elimina_las_maquinas_del_libro_con_los_parametros_acordados(ba
     assert dict(banco.cluster.deletes) == {100: 1, 101: 1, 102: 1}
     assert banco.cluster.vms == {}
     for vmid in (100, 101, 102):
-        assert banco.cluster.params_delete[vmid] == {"destroy-unreferenced-disks": 1, "purge": 0}
+        assert banco.cluster.params_delete[vmid] == {"destroy-unreferenced-disks": 0}
     deletes = banco.cluster.llamadas_a("DELETE")
     assert all(c.datos is None for c in deletes)  # los parámetros van en la consulta
     assert all(r.upid and ":qmdestroy:" in r.upid for r in resultados)

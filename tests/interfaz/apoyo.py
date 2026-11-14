@@ -220,7 +220,9 @@ class CreacionFalsa:
         self.respuesta_existe_vm: bool | None = None
         self.cfgs_recibidas: list[Any] = []  # configuraciones tal como llegaron a ``crear``
 
-    def crear(self, cfg, inv, al_cambiar_etapa: Callable, cancelado, *, al_enviar=None):
+    def crear(
+        self, cfg, inv, al_cambiar_etapa: Callable, cancelado, *, al_enviar=None, puede_enviar=None
+    ):
         self.llamadas_crear += 1
         self.cfgs_recibidas.append(cfg)
         al_cambiar_etapa(Etapa.VALIDANDO)
@@ -232,6 +234,8 @@ class CreacionFalsa:
             and self.resultado.upid is None
         ):
             return self.resultado
+        if puede_enviar is not None and not puede_enviar():
+            return ResultadoCreacion(Desenlace.CANCELADO, cfg.vmid, cfg.nodo, None, None, [])
         al_cambiar_etapa(Etapa.ENVIANDO)
         if self.enviar_upid and al_enviar is not None:
             al_enviar(UPID)
@@ -293,7 +297,9 @@ class CreacionPorVmid(CreacionFalsa):
         with self._cerrojo:
             return self.entraron.setdefault(vmid, threading.Event())
 
-    def crear(self, cfg, inv, al_cambiar_etapa: Callable, cancelado, *, al_enviar=None):
+    def crear(
+        self, cfg, inv, al_cambiar_etapa: Callable, cancelado, *, al_enviar=None, puede_enviar=None
+    ):
         with self._cerrojo:
             self.llamadas_crear += 1
             self.vmids_creados.append(cfg.vmid)
@@ -310,6 +316,8 @@ class CreacionPorVmid(CreacionFalsa):
             and res.upid is None
         ):
             return res
+        if puede_enviar is not None and not puede_enviar():
+            return resultado(Desenlace.CANCELADO, upid=None, vmid=cfg.vmid, nodo=cfg.nodo)
         al_cambiar_etapa(Etapa.ENVIANDO)
         upid = res.upid if isinstance(res, ResultadoCreacion) else upid_de(cfg.vmid)
         if upid and al_enviar is not None:
@@ -340,7 +348,15 @@ class _VistaSoloLectura:
     """Cliente de solo lectura: cualquier escritura es un error de programación."""
 
     _LECTURAS = frozenset(
-        {"vmid_libre", "vms_visibles", "config_vm", "permisos", "estado_actual_vm", "estado_tarea"}
+        {
+            "vmid_libre",
+            "vms_visibles",
+            "config_vm",
+            "permisos",
+            "estado_actual_vm",
+            "estado_tarea",
+            "estado_nodo",
+        }
     )
 
     def __init__(self, base: ClienteLoteFalso) -> None:
@@ -381,6 +397,7 @@ class ClienteLoteFalso:
         # Creación directa (cuando el motor usa el ServicioCreacion real, p. ej. al continuar).
         self.creados: list[tuple[str, dict[str, str]]] = []
         self.crear_falla: dict[int, ErrorProxLaunch] = {}
+        self.nodos_caidos: dict[str, ErrorProxLaunch] = {}  # sonda ``estado_nodo`` que falla
         self.puerta_eliminar: threading.Event | None = None  # retiene el DELETE hasta liberarla
         self.llamadas: list[tuple] = []
         self.pidio_solo_lectura = 0
@@ -437,6 +454,13 @@ class ClienteLoteFalso:
     def config_vm(self, nodo: str, vmid: int):
         self._anotar("config_vm", nodo, vmid)
         return self.configs.get(vmid)
+
+    def estado_nodo(self, nodo: str) -> dict:
+        """``GET /nodes/{n}/status``: responde salvo que el nodo esté en ``nodos_caidos``."""
+        self._anotar("estado_nodo", nodo)
+        if nodo in self.nodos_caidos:
+            raise self.nodos_caidos[nodo]
+        return {"uptime": 1}
 
     def estado_actual_vm(self, nodo: str, vmid: int) -> dict:
         self._anotar("estado_actual_vm", nodo, vmid)

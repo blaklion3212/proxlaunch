@@ -42,6 +42,7 @@ from proxlaunch.nucleo.lote.modelos import (
     Plan,
     ResultadoRollback,
 )
+from proxlaunch.nucleo.registro import enmascarar
 
 _ESTADOS_EN_VUELO = frozenset(ESTADOS_EN_CURSO - {EstadoMV.PENDIENTE})
 
@@ -121,7 +122,7 @@ def texto_detalles_entrada(e: EntradaLibro) -> str:
             )
     if e.log_tarea:
         lineas += ["", QCoreApplication.translate("ProgresoLote", "Registro de la tarea:")]
-        lineas.extend(e.log_tarea)
+        lineas.extend(enmascarar(linea) for linea in e.log_tarea)  # defensa en profundidad
     return "\n".join(lineas)
 
 

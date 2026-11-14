@@ -63,8 +63,22 @@ class ClienteProxmox:
     hilos del descubrimiento no renueven a la vez.
     """
 
-    def __init__(self, transporte: Transporte, auth: Autenticador, reloj: Reloj) -> None:
+    def __init__(
+        self,
+        transporte: Transporte,
+        auth: Autenticador,
+        reloj: Reloj,
+        *,
+        transporte_renovacion: Transporte | None = None,
+        cerrada: threading.Event | None = None,
+    ) -> None:
         self._transporte = transporte
+        # Marca de sesión cerrada, compartida con los clientes de solo lectura derivados:
+        # tras cerrar, ninguna petición tardía de otro hilo pide un ticket nuevo.
+        self._cerrada = cerrada or threading.Event()
+        # Transporte con el que se renueva la credencial (POST /access/ticket). Solo difiere
+        # del principal en el cliente de solo lectura, cuyo transporte rechaza todo POST.
+        self._transporte_renovacion = transporte_renovacion or transporte
         self._auth = auth
         self._reloj = reloj
         self._cerrojo_renovacion = threading.Lock()
@@ -72,6 +86,7 @@ class ClienteProxmox:
 
     def cerrar(self) -> None:
         """Cierra la conexión: suelta el autenticador (ticket o token) y cierra el transporte."""
+        self._cerrada.set()
         olvidar = getattr(self._auth, "olvidar", None)
         if callable(olvidar):
             olvidar()
@@ -83,10 +98,17 @@ class ClienteProxmox:
     def solo_lectura(self) -> ClienteProxmox:
         """Cliente que comparte la sesión pero NO puede escribir (simulación, INV-L5).
 
-        No se debe llamar a ``cerrar()`` en el cliente devuelto: soltaría la credencial
-        compartida con el cliente original.
+        Renueva el ticket con el transporte subyacente (único POST permitido: el de
+        ``/access/ticket``, que hace el autenticador). Su ``cerrar()`` no hace nada: no
+        suelta la credencial compartida con el cliente original.
         """
-        return ClienteProxmox(TransporteSoloLectura(self._transporte), self._auth, self._reloj)
+        return _ClienteSoloLectura(
+            TransporteSoloLectura(self._transporte),
+            self._auth,
+            self._reloj,
+            transporte_renovacion=self._transporte,
+            cerrada=self._cerrada,
+        )
 
     # --- Base -------------------------------------------------------------------------
 
@@ -98,10 +120,13 @@ class ClienteProxmox:
         params: dict[str, Any] | None = None,
         datos: dict[str, Any] | None = None,
     ) -> Any:
+        if self._cerrada.is_set():
+            # Sesión cerrada: no se renueva con una credencial ya olvidada (hallazgo B1).
+            raise ErrorProxLaunch(CodigoError.SESION_EXPIRADA)
         if self._auth.necesita_renovar():
             with self._cerrojo_renovacion:
                 if self._auth.necesita_renovar():
-                    self._auth.renovar(self._transporte)
+                    self._auth.renovar(self._transporte_renovacion)
         return self._transporte.peticion(metodo, ruta, params=params, datos=datos)
 
     # --- Lecturas ---------------------------------------------------------------------
@@ -301,6 +326,11 @@ class ClienteProxmox:
             raise
         return data if isinstance(data, dict) else None
 
+    def estado_nodo(self, nodo: str) -> dict[str, Any]:
+        """``GET /nodes/{n}/status``: sonda barata de que el nodo responde (595/596 si cayó)."""
+        data = self._llamar("GET", f"/nodes/{_seg(nodo)}/status")
+        return data if isinstance(data, dict) else {}
+
     def estado_actual_vm(self, nodo: str, vmid: int) -> dict[str, Any]:
         """``GET /nodes/{n}/qemu/{vmid}/status/current`` (``VM.Audit``): ``status``, ``lock``..."""
         data = self._llamar("GET", f"/nodes/{_seg(nodo)}/qemu/{_seg(vmid)}/status/current")
@@ -311,8 +341,9 @@ class ClienteProxmox:
     def eliminar_vm(self, nodo: str, vmid: int) -> str:
         """``DELETE /nodes/{n}/qemu/{vmid}``. Devuelve el UPID de la tarea de borrado.
 
-        Los parámetros van en la CONSULTA, no en el cuerpo (LAB-L05). Método no seguro:
-        el transporte no hace failover de host.
+        Los parámetros van en la CONSULTA, no en el cuerpo (LAB-L05). Con
+        ``destroy-unreferenced-disks=0`` y sin ``purge`` nunca se borra un volumen suelto
+        (D-21). Método no seguro: el transporte no hace failover de host.
 
         Raises:
             ErrorProxLaunch: ``UPID_INVALIDO`` si la respuesta no trae un UPID válido.
@@ -320,8 +351,15 @@ class ClienteProxmox:
         data = self._llamar(
             "DELETE",
             f"/nodes/{_seg(nodo)}/qemu/{_seg(vmid)}",
-            params={"destroy-unreferenced-disks": 1, "purge": 0},
+            params={"destroy-unreferenced-disks": 0},
         )
         if not isinstance(data, str) or not _RE_UPID.match(data):
             raise ErrorProxLaunch(CodigoError.UPID_INVALIDO, {}, f"respuesta: {data!r}")
         return data
+
+
+class _ClienteSoloLectura(ClienteProxmox):
+    """Cliente de la simulación: su ``cerrar()`` no suelta la credencial compartida."""
+
+    def cerrar(self) -> None:
+        return None

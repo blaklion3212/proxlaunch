@@ -195,6 +195,7 @@ _RE_QEMU = re.compile(r"^/nodes/(?P<n>[^/]+)/qemu$")
 _RE_CONFIG = re.compile(r"^/nodes/(?P<n>[^/]+)/qemu/(?P<v>\d+)/config$")
 _RE_ACTUAL = re.compile(r"^/nodes/(?P<n>[^/]+)/qemu/(?P<v>\d+)/status/current$")
 _RE_QEMU_VM = re.compile(r"^/nodes/(?P<n>[^/]+)/qemu/(?P<v>\d+)$")
+_RE_ESTADO_NODO = re.compile(r"^/nodes/(?P<n>[^/]+)/status$")
 _RE_TAREA = re.compile(r"^/nodes/(?P<n>[^/]+)/tasks/(?P<u>.+)/(?P<q>status|log)$")
 
 
@@ -455,6 +456,9 @@ class Cluster:
             if "lock" in vm["config"]:
                 estado["lock"] = vm["config"]["lock"]
             return estado
+        if mt := _RE_ESTADO_NODO.match(ruta):
+            # Sonda de nodo (``estado_nodo``): responde salvo que una regla simule 595/596.
+            return {"uptime": 12345, "pveversion": "pve-manager/9.2.1"}
         if mt := _RE_TAREA.match(ruta):
             return self._tarea(mt["u"], mt["q"])
         raise AssertionError(f"ruta no simulada: GET {ruta}")

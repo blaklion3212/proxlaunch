@@ -17,7 +17,7 @@ from proxlaunch.nucleo.lote.modelos import EstadoMV, MotivoPausa
 
 from . import test_ventana_principal as _base
 from .apoyo import ClienteLoteFalso, CreacionPorVmid, sesion_falsa, upid_de
-from .apoyo_lote import res_error, res_perdida
+from .apoyo_lote import error_nodo_caido, res_error, res_perdida
 from .apoyo_ventana_lote import (
     crear_lote,
     esperar_fin,
@@ -89,23 +89,19 @@ def test_ca_l14_6_el_mensaje_llano_y_el_original_conviven_en_los_detalles(qtbot,
 
 
 def test_ca_l14_5_un_nodo_caido_deja_sin_enviar_solo_las_de_ese_nodo(qtbot, entorno):
-    def regla(cfg):
-        if cfg.nodo == "pve3":
-            return res_error(
-                cfg.vmid, CodigoError.NODO_NO_DISPONIBLE, con_upid=False, nodo=cfg.nodo
-            )
-        return None
-
-    creacion = CreacionPorVmid({v: regla for v in range(101, 107)})
-    lanzar(qtbot, entorno, cantidad=6, nodo=None, creacion=creacion)
+    # El nodo caído lo decide el sondeo de su estado (595/596), antes de su primera máquina.
+    cliente = ClienteLoteFalso()
+    cliente.nodos_caidos["pve3"] = error_nodo_caido("pve3", 596)
+    creacion = CreacionPorVmid()
+    lanzar(qtbot, entorno, cantidad=6, nodo=None, creacion=creacion, cliente=cliente)
     v = entorno.ventana
     snap = v._lote.libro.instantanea()
     en_pve3 = [e for e in snap if e.elemento.nodo == "pve3"]
     en_pve1 = [e for e in snap if e.elemento.nodo == "pve1"]
     assert len(en_pve3) >= 2 and en_pve1
     assert all(e.estado == EM.OK for e in en_pve1)  # las de los demás nodos continúan
-    assert en_pve3[0].estado == EM.ERROR
-    assert all(e.estado == EM.NO_ENVIADA for e in en_pve3[1:])
+    assert all(e.estado == EM.NO_ENVIADA for e in en_pve3)
+    assert all(e.vmid not in creacion.vmids_creados for e in (x.elemento for x in en_pve3))
     p = v.progreso_lote
     assert "el nodo no respondió" in p.modelo.data(p.modelo.index(snap.index(en_pve3[-1]), 4))
 

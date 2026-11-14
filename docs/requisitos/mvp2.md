@@ -517,7 +517,7 @@ Permite eliminar de Proxmox las MVs que **este lote creó en esta sesión**. Es 
   está en ejecución. Si falla una condición, **no se envía el DELETE** y se informa (E-L18, E-L19,
   E-L20).
 - CA-L18.5 El DELETE usa los parámetros definidos por LAB-L05 (propuestos:
-  `destroy-unreferenced-disks=1`, sin `purge`, **[LAB]**) y devuelve un UPID que se sondea como
+  `destroy-unreferenced-disks=0`, sin `purge`; D-21) y devuelve un UPID que se sondea como
   cualquier tarea (M1 RF-20). El resultado por MV es `eliminada`, `ya_no_existia`,
   `fallo_al_eliminar` (E-L17) o `eliminacion_incierta`.
 - CA-L18.6 Dado un 596/conexión abortada en un DELETE, entonces se verifica con `config_vm`: si ya

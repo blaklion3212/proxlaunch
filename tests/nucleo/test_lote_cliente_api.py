@@ -158,7 +158,7 @@ def test_ca_l18_5_eliminar_vm_envia_delete_con_los_parametros_en_la_consulta():
     assert upid == upid_de("pve1", 100, "qmdestroy")
     (llamada,) = cluster.llamadas
     assert (llamada.metodo, llamada.ruta) == ("DELETE", "/nodes/pve1/qemu/100")
-    assert llamada.params == {"destroy-unreferenced-disks": 1, "purge": 0}
+    assert llamada.params == {"destroy-unreferenced-disks": 0}  # D-21: sin purge
     assert llamada.datos is None  # nada en el cuerpo (LAB-L05)
 
 
@@ -167,7 +167,7 @@ def test_ca_l18_5_extremo_a_extremo_los_parametros_viajan_en_la_url_y_el_cuerpo_
     _cliente_http(A).eliminar_vm("pve1", 100)
     (llamada,) = rsps.calls
     consulta = parse_qs(urlsplit(llamada.request.url).query)
-    assert consulta == {"destroy-unreferenced-disks": ["1"], "purge": ["0"]}
+    assert consulta == {"destroy-unreferenced-disks": ["0"]}  # D-21: sin purge
     assert not llamada.request.body
 
 

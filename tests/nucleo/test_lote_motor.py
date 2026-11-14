@@ -226,10 +226,19 @@ def test_ca_l03_8_vmid_ocupado_detectado_por_el_propio_post_tambien_falla_esa_ma
 
 def test_ca_l12_8_una_excepcion_inesperada_antes_del_post_marca_error_y_no_aborta_el_lote(banco):
     class _Servicio(ServicioCreacion):
-        def crear(self, cfg, inv, al_cambiar_etapa, cancelado, *, al_enviar=None):
+        def crear(
+            self, cfg, inv, al_cambiar_etapa, cancelado, *, al_enviar=None, puede_enviar=None
+        ):
             if cfg.vmid == 101:
                 raise RuntimeError("fallo de programación")
-            return super().crear(cfg, inv, al_cambiar_etapa, cancelado, al_enviar=al_enviar)
+            return super().crear(
+                cfg,
+                inv,
+                al_cambiar_etapa,
+                cancelado,
+                al_enviar=al_enviar,
+                puede_enviar=puede_enviar,
+            )
 
     libro = banco.ejecutar(_lote(banco, 3), motor=banco.motor(fabrica_creacion=_Servicio))
     assert _estados(libro) == [EstadoMV.OK, EstadoMV.ERROR, EstadoMV.OK]
@@ -239,14 +248,23 @@ def test_ca_l12_8_una_excepcion_inesperada_antes_del_post_marca_error_y_no_abort
 
 def test_ca_l12_8_una_excepcion_tras_enviar_deja_la_maquina_incierta_sin_reenviar(banco):
     class _Servicio(ServicioCreacion):
-        def crear(self, cfg, inv, al_cambiar_etapa, cancelado, *, al_enviar=None):
+        def crear(
+            self, cfg, inv, al_cambiar_etapa, cancelado, *, al_enviar=None, puede_enviar=None
+        ):
             if cfg.vmid == 101:
                 al_cambiar_etapa(ServicioCreacion_ENVIANDO)
                 banco.cluster.atender(
                     "POST", f"/nodes/{cfg.nodo}/qemu", None, {"vmid": "101", "name": cfg.nombre}
                 )
                 raise RuntimeError("fallo tras enviar")
-            return super().crear(cfg, inv, al_cambiar_etapa, cancelado, al_enviar=al_enviar)
+            return super().crear(
+                cfg,
+                inv,
+                al_cambiar_etapa,
+                cancelado,
+                al_enviar=al_enviar,
+                puede_enviar=puede_enviar,
+            )
 
     from proxlaunch.nucleo.modelos.tarea import Etapa
 
@@ -393,29 +411,41 @@ def test_ca_l14_3_fallos_no_consecutivos_no_pausan(banco):
 
 
 def test_ca_l14_5_un_nodo_que_no_responde_solo_detiene_a_sus_maquinas():
+    # El nodo caído lo decide el sondeo GET /nodes/{n}/status antes de su primera MV.
     banco = crear_banco(("pve1", "pve2"))
     plan = banco.planificar(definicion(6, vmid_inicial=100, algoritmo=Algoritmo.POR_TURNOS))
     de_pve2 = {e.vmid for e in plan.elementos if e.nodo == "pve2"}
     assert len(de_pve2) == 3
-
-    def _nodo_caido(llamada):
-        if llamada.params and llamada.params.get("vmid") in de_pve2:
-            raise nodo_caido("pve2", 596)
-        return NORMAL
-
-    banco.cluster.regla("GET", r"^/cluster/nextid$", _nodo_caido)
+    banco.cluster.regla("GET", r"^/nodes/pve2/status$", nodo_caido("pve2", 595))
     control = ControlAutomatico("suspender")
     libro = banco.ejecutar(plan, control)
     for e in libro.instantanea():
         if e.elemento.nodo == "pve1":
             assert e.estado == EstadoMV.OK
     pve2 = [e for e in libro.instantanea() if e.elemento.nodo == "pve2"]
-    assert pve2[0].estado == EstadoMV.ERROR
-    assert pve2[0].error.codigo == CodigoError.NODO_NO_DISPONIBLE
-    assert [e.estado for e in pve2[1:]] == [EstadoMV.NO_ENVIADA] * 2
-    assert {e.motivo_no_enviada for e in pve2[1:]} == {MotivoNoEnviada.NODO_CAIDO}
+    assert [e.estado for e in pve2] == [EstadoMV.NO_ENVIADA] * 3
+    assert {e.motivo_no_enviada for e in pve2} == {MotivoNoEnviada.NODO_CAIDO}
     assert not set(banco.cluster.posts) & de_pve2
     assert control.pausas == []  # un nodo caído no pausa el lote entero
+
+
+def test_ca_l14_5_un_nodo_no_disponible_en_nextid_ya_no_marca_el_nodo():
+    # Un 596 aislado en /cluster/nextid es un error de esa MV: el sondeo del nodo responde.
+    banco = crear_banco(("pve1", "pve2"))
+    plan = banco.planificar(definicion(6, vmid_inicial=100, algoritmo=Algoritmo.POR_TURNOS))
+    de_pve2 = sorted(e.vmid for e in plan.elementos if e.nodo == "pve2")
+
+    def _una_vez(llamada):
+        if llamada.params and llamada.params.get("vmid") == de_pve2[0]:
+            raise nodo_caido("pve2", 596)
+        return NORMAL
+
+    banco.cluster.regla("GET", r"^/cluster/nextid$", _una_vez)
+    libro = banco.ejecutar(plan, ControlAutomatico("continuar"))
+    pve2 = {e.elemento.vmid: e for e in libro.instantanea() if e.elemento.nodo == "pve2"}
+    assert pve2[de_pve2[0]].estado == EstadoMV.ERROR
+    assert [pve2[v].estado for v in de_pve2[1:]] == [EstadoMV.OK, EstadoMV.OK]
+    assert all(banco.cluster.posts[v] == 1 for v in de_pve2[1:])
 
 
 # --- Cancelación (RF-L16) -------------------------------------------------------------------------

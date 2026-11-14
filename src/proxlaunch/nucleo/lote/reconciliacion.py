@@ -92,12 +92,12 @@ def reconciliar_incierta(
     instantes (acumulados) de ``COMPROBACIONES_EXISTENCIA_S``. Devuelve
     ``(estado, aviso, error)``:
 
-    - existe y (``etiquetar`` es falso o lleva la etiqueta del lote) -> ``OK`` con el aviso
-      ``creada_tras_comprobar``;
+    - existe y (``etiquetar`` es falso o lleva la etiqueta del lote) y su config ya no está en
+      creación -> ``OK`` con el aviso ``creada_tras_comprobar``;
     - existe pero sin la etiqueta del lote (o sin poder leerla) ->
       ``EXISTE_SIN_CONFIRMAR_PROPIEDAD`` (no elegible para rollback);
     - existe pero su config sigue en creación (``lock: create``) -> se relee en la comprobación
-      siguiente; si al final sigue así, ``CONEXION_PERDIDA`` (nunca ``OK`` sin etiqueta);
+      siguiente (con o sin etiquetas); si al final sigue así, ``CONEXION_PERDIDA``;
     - no existe en todas las comprobaciones -> ``NO_CREADA_SEGURA``;
     - no se pudo saber, o se canceló la espera -> ``CONEXION_PERDIDA`` con
       ``LOTE_EXISTENCIA_INDETERMINADA`` / ``LOTE_ENVIO_INCIERTO``.
@@ -142,16 +142,20 @@ def _propiedad(
 
     Devuelve ``None`` si la config aún está en creación (``lock: create``): no se decide.
     """
-    if not etiquetar:
-        return EstadoMV.OK, AVISO_CREADA_TRAS_COMPROBAR, None
     try:
         config = cliente.config_vm(cfg.nodo, cfg.vmid)
     except Exception:
+        if not etiquetar:
+            # Sin etiquetas no hay nada que verificar: existe y basta (como antes).
+            return EstadoMV.OK, AVISO_CREADA_TRAS_COMPROBAR, None
         # No se pudo leer: la propiedad no está demostrada, así que no es elegible.
         _log.warning("No se pudo leer la config para verificar la etiqueta (vmid=%s)", cfg.vmid)
         return EstadoMV.EXISTE_SIN_CONFIRMAR_PROPIEDAD, None, None
     if config_en_creacion(config):
+        # Aún se está creando (también sin etiquetas): no se declara OK todavía.
         return None
+    if not etiquetar:
+        return EstadoMV.OK, AVISO_CREADA_TRAS_COMPROBAR, None
     if tiene_etiqueta_del_lote(config, id_lote):
         return EstadoMV.OK, AVISO_CREADA_TRAS_COMPROBAR, None
     return EstadoMV.EXISTE_SIN_CONFIRMAR_PROPIEDAD, None, None

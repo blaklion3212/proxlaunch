@@ -210,6 +210,13 @@ El usuario aprobó las 12 recomendaciones de `docs/requisitos/mvp2.md` §9:
 11. **Lote homogéneo**, sin edición por MV (P-L12).
 12. **Informe final:** copiar y guardar `.txt` (P-L11).
 
+## D-21 · Deshacer sin borrar discos sueltos — Aprobada (2026-11-13)
+Al deshacer, el `DELETE` se envía con `destroy-unreferenced-disks=0` (sin `purge`): se
+borra la MV con sus discos referenciados y nunca un volumen suelto, que podría ser de
+otra MV antigua con el mismo VMID (hallazgo M2 de la auditoría F5). LAB-L05 comprobó que
+las creaciones de ProxLaunch no dejan discos sueltos. Sustituye lo propuesto en
+CA-L18.5. Si quedara alguno, el informe avisa para revisarlo en Proxmox (E-L21).
+
 ## Correcciones técnicas a `prompt.md`
 Errores o imprecisiones de la especificación original que los requisitos deben
 respetar:

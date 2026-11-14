@@ -22,7 +22,7 @@ from proxlaunch.nucleo.persistencia.preferencias import Modo
 
 from . import test_ventana_principal as _base
 from .apoyo import ClienteLoteFalso, CreacionPorVmid, resultado, sesion_falsa, upid_de
-from .apoyo_lote import res_error, res_perdida
+from .apoyo_lote import error_nodo_caido, res_error, res_perdida
 from .apoyo_ventana_lote import (
     crear_lote,
     esperar_fin,
@@ -766,15 +766,11 @@ def test_ca_l14_7_un_error_de_validacion_no_previsto_falla_solo_esa_maquina(qtbo
 def test_ca_l05_10_las_maquinas_de_un_nodo_caido_quedan_sin_enviar_y_se_ofrece_reintentar(
     qtbot, entorno
 ):
-    def regla(cfg):
-        if cfg.nodo == "pve3":
-            return res_error(
-                cfg.vmid, CodigoError.NODO_NO_DISPONIBLE, con_upid=False, nodo=cfg.nodo
-            )
-        return None
-
-    creacion = CreacionPorVmid({vm: regla for vm in range(101, 107)})
-    lanzar(qtbot, entorno, cantidad=6, nodo=None, creacion=creacion)
+    # El nodo caído lo decide el sondeo de su estado (595/596), antes de su primera máquina.
+    cliente = ClienteLoteFalso()
+    cliente.nodos_caidos["pve3"] = error_nodo_caido("pve3", 595)
+    creacion = CreacionPorVmid()
+    lanzar(qtbot, entorno, cantidad=6, nodo=None, creacion=creacion, cliente=cliente)
     v = entorno.ventana
     sin_enviar = [e for e in v._lote.libro.instantanea() if e.estado == EM.NO_ENVIADA]
     assert len(sin_enviar) >= 1 and all(e.elemento.nodo == "pve3" for e in sin_enviar)

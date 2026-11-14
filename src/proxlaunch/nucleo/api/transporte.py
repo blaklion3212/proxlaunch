@@ -2,8 +2,9 @@
 
 from __future__ import annotations
 
+import http.client
 import logging
-from collections.abc import Mapping, Sequence
+from collections.abc import Iterator, Mapping, Sequence
 from typing import TYPE_CHECKING, Any, Protocol
 
 import requests
@@ -92,13 +93,8 @@ class AdaptadorBloqueado(HTTPAdapter):
         raise requests.exceptions.InvalidURL("destino sin adaptador de huella: bloqueado")
 
 
-def _fallo_antes_de_enviar(exc: BaseException) -> bool:
-    """``True`` si hay certeza de que la petición no salió: falló al establecer la conexión.
-
-    Recorre la cadena de excepciones buscando ``NewConnectionError`` o un timeout de
-    conexión de urllib3. Cualquier otro fallo (p. ej. ``ProtocolError`` "Connection
-    aborted") se considera posterior al envío.
-    """
+def _cadena(exc: BaseException) -> Iterator[BaseException]:
+    """Recorre la excepción, sus ``args``, causas, contextos y ``reason`` (sin repetir)."""
     visto: set[int] = set()
     pendientes: list[Any] = [exc]
     while pendientes:
@@ -106,20 +102,61 @@ def _fallo_antes_de_enviar(exc: BaseException) -> bool:
         if id(actual) in visto:
             continue
         visto.add(id(actual))
-        if isinstance(
-            actual,
-            urllib3.exceptions.NewConnectionError
-            | urllib3.exceptions.ConnectTimeoutError
-            | requests.exceptions.ConnectTimeout,
-        ):
-            return True
         if isinstance(actual, BaseException):
+            yield actual
             pendientes.extend(actual.args)
             pendientes.extend(x for x in (actual.__cause__, actual.__context__) if x)
             razon = getattr(actual, "reason", None)
             if razon is not None:
                 pendientes.append(razon)
-    return False
+
+
+def _fallo_antes_de_enviar(exc: BaseException) -> bool:
+    """``True`` si hay certeza de que la petición no salió: falló al establecer la conexión.
+
+    Recorre la cadena de excepciones buscando ``NewConnectionError`` o un timeout de
+    conexión de urllib3. Cualquier otro fallo (p. ej. ``ProtocolError`` "Connection
+    aborted") se considera posterior al envío.
+    """
+    return any(
+        isinstance(
+            e,
+            urllib3.exceptions.NewConnectionError
+            | urllib3.exceptions.ConnectTimeoutError
+            | requests.exceptions.ConnectTimeout,
+        )
+        for e in _cadena(exc)
+    )
+
+
+def _desconexion_reutilizada(exc: BaseException) -> bool:
+    """``True`` si parece el cierre de una conexión reutilizada (keep-alive) al enviar.
+
+    Solo ``ProtocolError`` de urllib3, ``RemoteDisconnected`` o ``ConnectionResetError``; no
+    una conexión rechazada ni un timeout de lectura.
+    """
+    if _fallo_antes_de_enviar(exc):
+        return False
+    return any(
+        isinstance(
+            e,
+            urllib3.exceptions.ProtocolError
+            | http.client.RemoteDisconnected
+            | ConnectionResetError,
+        )
+        for e in _cadena(exc)
+    )
+
+
+# Errores locales de requests que ocurren antes de tocar la red (la petición no salió).
+_ERRORES_LOCALES = (
+    requests.exceptions.InvalidURL,
+    requests.exceptions.InvalidSchema,
+    requests.exceptions.MissingSchema,
+    requests.exceptions.InvalidHeader,
+    requests.exceptions.URLRequired,
+    requests.exceptions.InvalidProxyURL,
+)
 
 
 def _netloc(host: str, puerto: int) -> str:
@@ -209,12 +246,17 @@ class TransporteHttp:
                 try:
                     resp = self._enviar(host, metodo, ruta, params, datos)
                 except requests.exceptions.ConnectionError as e:
-                    if metodo not in _METODOS_SEGUROS or isinstance(
-                        e, requests.exceptions.SSLError | requests.exceptions.ConnectTimeout
+                    if (
+                        metodo not in _METODOS_SEGUROS
+                        or isinstance(
+                            e, requests.exceptions.SSLError | requests.exceptions.ConnectTimeout
+                        )
+                        or not _desconexion_reutilizada(e)
                     ):
                         raise
                     # Lectura: pveproxy cierra las conexiones inactivas (~5 s) y la reutilizada
-                    # puede fallar al reusarla. Un único reintento en el mismo host es inocuo.
+                    # puede fallar al reusarla. Un único reintento en el mismo host es inocuo;
+                    # no se reintenta una conexión rechazada ni un timeout.
                     resp = self._enviar(host, metodo, ruta, params, datos)
             except requests.exceptions.SSLError as e:
                 if es_huella_distinta(e):
@@ -254,6 +296,10 @@ class TransporteHttp:
                 motivos.append((host, "conexion"))
                 continue
             except requests.exceptions.RequestException as e:
+                if metodo not in _METODOS_SEGUROS and not isinstance(e, _ERRORES_LOCALES):
+                    # Fallo tras iniciar el envío (p. ej. cuerpo cortado o mal decodificado): el
+                    # POST/DELETE pudo llegar, así que el resultado es incierto.
+                    raise self._envio_incierto(host, "error", e) from None
                 raise ErrorProxLaunch(
                     CodigoError.DESCONOCIDO,
                     {"host": host},

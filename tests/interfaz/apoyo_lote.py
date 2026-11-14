@@ -196,3 +196,12 @@ def res_error(
         vmid=vmid,
         nodo=nodo,
     )
+
+
+def error_nodo_caido(nodo: str = "pve3", estado: int = 595) -> ErrorProxLaunch:
+    """El error del transporte real ante un 595/596/597 en una lectura (sonda del nodo)."""
+    from proxlaunch.nucleo.errores import CodigoError
+
+    return ErrorProxLaunch(
+        CodigoError.NODO_NO_DISPONIBLE, {"nodo": nodo, "estado_http": str(estado)}, f"HTTP {estado}"
+    )

@@ -425,7 +425,7 @@
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../../interfaz/vistas/bloque_lote.py" line="468"/>
+        <location filename="../../interfaz/vistas/bloque_lote.py" line="455"/>
         <source>Se llamarán: {nombres}</source>
         <translation type="unfinished"></translation>
     </message>
@@ -441,37 +441,37 @@
 <context>
     <name>Detalles</name>
     <message>
-        <location filename="../../interfaz/vistas/detalles_tecnicos.py" line="19"/>
+        <location filename="../../interfaz/vistas/detalles_tecnicos.py" line="20"/>
         <source>Resultado</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../../interfaz/vistas/detalles_tecnicos.py" line="20"/>
+        <location filename="../../interfaz/vistas/detalles_tecnicos.py" line="21"/>
         <source>Nodo</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../../interfaz/vistas/detalles_tecnicos.py" line="27"/>
+        <location filename="../../interfaz/vistas/detalles_tecnicos.py" line="28"/>
         <source>Código</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../../interfaz/vistas/detalles_tecnicos.py" line="28"/>
+        <location filename="../../interfaz/vistas/detalles_tecnicos.py" line="29"/>
         <source>Mensaje original</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../../interfaz/vistas/detalles_tecnicos.py" line="35"/>
+        <location filename="../../interfaz/vistas/detalles_tecnicos.py" line="36"/>
         <source>Registro de la tarea</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../../interfaz/vistas/detalles_tecnicos.py" line="65"/>
+        <location filename="../../interfaz/vistas/detalles_tecnicos.py" line="66"/>
         <source>Ocultar detalles técnicos</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../../interfaz/vistas/detalles_tecnicos.py" line="67"/>
+        <location filename="../../interfaz/vistas/detalles_tecnicos.py" line="68"/>
         <source>Ver detalles técnicos</source>
         <translation type="unfinished"></translation>
     </message>
@@ -1199,221 +1199,221 @@
 <context>
     <name>InformeLote</name>
     <message>
-        <location filename="../../interfaz/informe_lote.py" line="68"/>
+        <location filename="../../interfaz/informe_lote.py" line="70"/>
         <source>{s} s</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../../interfaz/informe_lote.py" line="69"/>
+        <location filename="../../interfaz/informe_lote.py" line="71"/>
         <source>{m} min {s} s</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../../interfaz/informe_lote.py" line="94"/>
+        <location filename="../../interfaz/informe_lote.py" line="96"/>
         <source>Procesadores: {n} ({s} × {c})</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../../interfaz/informe_lote.py" line="97"/>
+        <location filename="../../interfaz/informe_lote.py" line="99"/>
         <source>Memoria: {m:g} GiB</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../../interfaz/informe_lote.py" line="100"/>
+        <location filename="../../interfaz/informe_lote.py" line="102"/>
         <source>Arranque: {f}</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../../interfaz/informe_lote.py" line="106"/>
+        <location filename="../../interfaz/informe_lote.py" line="108"/>
         <source>Discos: {d}</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../../interfaz/informe_lote.py" line="108"/>
+        <location filename="../../interfaz/informe_lote.py" line="110"/>
         <source>Discos: ninguno</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../../interfaz/informe_lote.py" line="113"/>
+        <location filename="../../interfaz/informe_lote.py" line="115"/>
         <source>Redes: {r}</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../../interfaz/informe_lote.py" line="115"/>
+        <location filename="../../interfaz/informe_lote.py" line="117"/>
         <source>Redes: ninguna</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../../interfaz/informe_lote.py" line="124"/>
+        <location filename="../../interfaz/informe_lote.py" line="126"/>
         <source>Deshacer</source>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
-        <location filename="../../interfaz/informe_lote.py" line="130"/>
-        <location filename="../../interfaz/informe_lote.py" line="236"/>
-        <source>Nombre</source>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
-        <location filename="../../interfaz/informe_lote.py" line="131"/>
-        <location filename="../../interfaz/informe_lote.py" line="237"/>
-        <source>VMID</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
         <location filename="../../interfaz/informe_lote.py" line="132"/>
         <location filename="../../interfaz/informe_lote.py" line="238"/>
-        <source>Nodo</source>
+        <source>Nombre</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
         <location filename="../../interfaz/informe_lote.py" line="133"/>
         <location filename="../../interfaz/informe_lote.py" line="239"/>
-        <source>Resultado</source>
+        <source>VMID</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
         <location filename="../../interfaz/informe_lote.py" line="134"/>
+        <location filename="../../interfaz/informe_lote.py" line="240"/>
+        <source>Nodo</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <location filename="../../interfaz/informe_lote.py" line="135"/>
+        <location filename="../../interfaz/informe_lote.py" line="241"/>
+        <source>Resultado</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <location filename="../../interfaz/informe_lote.py" line="136"/>
         <source>Detalle</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../../interfaz/informe_lote.py" line="156"/>
+        <location filename="../../interfaz/informe_lote.py" line="158"/>
         <source>Permisos no verificados: no se pudieron leer los permisos del usuario, así que Proxmox pudo rechazar alguna máquina.</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../../interfaz/informe_lote.py" line="169"/>
+        <location filename="../../interfaz/informe_lote.py" line="171"/>
         <source>ProxLaunch — Simulación del lote {id}</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../../interfaz/informe_lote.py" line="171"/>
+        <location filename="../../interfaz/informe_lote.py" line="173"/>
         <source>ProxLaunch — Informe del lote {id}</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../../interfaz/informe_lote.py" line="175"/>
+        <location filename="../../interfaz/informe_lote.py" line="177"/>
         <source>SIMULACIÓN — no se creó nada.</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../../interfaz/informe_lote.py" line="177"/>
+        <location filename="../../interfaz/informe_lote.py" line="179"/>
         <source>Fecha: {f}</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../../interfaz/informe_lote.py" line="180"/>
+        <location filename="../../interfaz/informe_lote.py" line="182"/>
         <source>Perfil: {p}</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../../interfaz/informe_lote.py" line="183"/>
+        <location filename="../../interfaz/informe_lote.py" line="185"/>
         <source>Versión de Proxmox: {v}</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../../interfaz/informe_lote.py" line="189"/>
+        <location filename="../../interfaz/informe_lote.py" line="191"/>
         <source>Servidor: clúster «{n}»</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../../interfaz/informe_lote.py" line="194"/>
+        <location filename="../../interfaz/informe_lote.py" line="196"/>
         <source>Servidor: individual</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../../interfaz/informe_lote.py" line="198"/>
+        <location filename="../../interfaz/informe_lote.py" line="200"/>
         <source>Resumen</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../../interfaz/informe_lote.py" line="200"/>
+        <location filename="../../interfaz/informe_lote.py" line="202"/>
         <source>Pedidas: {n}</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../../interfaz/informe_lote.py" line="203"/>
+        <location filename="../../interfaz/informe_lote.py" line="205"/>
         <source>Creadas: {n}</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../../interfaz/informe_lote.py" line="206"/>
+        <location filename="../../interfaz/informe_lote.py" line="208"/>
         <source>Creadas con avisos: {n}</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../../interfaz/informe_lote.py" line="211"/>
+        <location filename="../../interfaz/informe_lote.py" line="213"/>
         <source>Con error: {n}</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../../interfaz/informe_lote.py" line="216"/>
+        <location filename="../../interfaz/informe_lote.py" line="218"/>
         <source>Sin confirmar (no sabemos si se crearon): {n}</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../../interfaz/informe_lote.py" line="228"/>
+        <location filename="../../interfaz/informe_lote.py" line="230"/>
         <source>No enviadas: {n}</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../../interfaz/informe_lote.py" line="233"/>
+        <location filename="../../interfaz/informe_lote.py" line="235"/>
         <source>Máquinas</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../../interfaz/informe_lote.py" line="235"/>
+        <location filename="../../interfaz/informe_lote.py" line="237"/>
         <source>N.º</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../../interfaz/informe_lote.py" line="240"/>
+        <location filename="../../interfaz/informe_lote.py" line="242"/>
         <source>Duración</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../../interfaz/informe_lote.py" line="241"/>
+        <location filename="../../interfaz/informe_lote.py" line="243"/>
         <source>UPID</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../../interfaz/informe_lote.py" line="249"/>
+        <location filename="../../interfaz/informe_lote.py" line="251"/>
         <source>Detalle de las máquinas con problemas</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../../interfaz/informe_lote.py" line="257"/>
+        <location filename="../../interfaz/informe_lote.py" line="259"/>
         <source>    Código: {c}</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../../interfaz/informe_lote.py" line="263"/>
+        <location filename="../../interfaz/informe_lote.py" line="265"/>
         <source>    Detalles técnicos: {d}</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../../interfaz/informe_lote.py" line="270"/>
+        <location filename="../../interfaz/informe_lote.py" line="272"/>
         <source>Configuración de las máquinas</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../../interfaz/informe_lote.py" line="278"/>
+        <location filename="../../interfaz/informe_lote.py" line="280"/>
         <source>Avisos del plan</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../../interfaz/informe_lote.py" line="292"/>
+        <location filename="../../interfaz/informe_lote.py" line="294"/>
         <source>Cómo encontrar estas máquinas en Proxmox: llevan las etiquetas «{e1}» y «{e2}{id}» (si el lote las activó) y sus números son {rangos}.</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../../interfaz/informe_lote.py" line="333"/>
+        <location filename="../../interfaz/informe_lote.py" line="345"/>
         <source>Guardar informe</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../../interfaz/informe_lote.py" line="335"/>
+        <location filename="../../interfaz/informe_lote.py" line="347"/>
         <source>Texto (*.txt)</source>
         <translation type="unfinished"></translation>
     </message>
@@ -1559,149 +1559,149 @@
 <context>
     <name>ProgresoLote</name>
     <message>
-        <location filename="../../interfaz/vistas/progreso_lote.py" line="69"/>
+        <location filename="../../interfaz/vistas/progreso_lote.py" line="70"/>
         <source>{t} de {n} terminadas</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../../interfaz/vistas/progreso_lote.py" line="75"/>
+        <location filename="../../interfaz/vistas/progreso_lote.py" line="76"/>
         <source>{c} con error</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../../interfaz/vistas/progreso_lote.py" line="79"/>
+        <location filename="../../interfaz/vistas/progreso_lote.py" line="80"/>
         <source>{c} sin confirmar</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../../interfaz/vistas/progreso_lote.py" line="83"/>
+        <location filename="../../interfaz/vistas/progreso_lote.py" line="84"/>
         <source>{c} sin enviar</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../../interfaz/vistas/progreso_lote.py" line="86"/>
+        <location filename="../../interfaz/vistas/progreso_lote.py" line="87"/>
         <source>{c} en curso</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../../interfaz/vistas/progreso_lote.py" line="94"/>
+        <location filename="../../interfaz/vistas/progreso_lote.py" line="95"/>
         <source>Estado: {estado} ({codigo})</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../../interfaz/vistas/progreso_lote.py" line="98"/>
+        <location filename="../../interfaz/vistas/progreso_lote.py" line="99"/>
         <source>Nodo: {nodo}</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../../interfaz/vistas/progreso_lote.py" line="104"/>
+        <location filename="../../interfaz/vistas/progreso_lote.py" line="105"/>
         <source>Motivo: {m}</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../../interfaz/vistas/progreso_lote.py" line="108"/>
+        <location filename="../../interfaz/vistas/progreso_lote.py" line="109"/>
         <source>Avisos: {a}</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../../interfaz/vistas/progreso_lote.py" line="112"/>
+        <location filename="../../interfaz/vistas/progreso_lote.py" line="113"/>
         <source>Código: {c}</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../../interfaz/vistas/progreso_lote.py" line="118"/>
+        <location filename="../../interfaz/vistas/progreso_lote.py" line="119"/>
         <source>Mensaje original: {d}</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../../interfaz/vistas/progreso_lote.py" line="123"/>
+        <location filename="../../interfaz/vistas/progreso_lote.py" line="124"/>
         <source>Registro de la tarea:</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../../interfaz/vistas/progreso_lote.py" line="158"/>
+        <location filename="../../interfaz/vistas/progreso_lote.py" line="159"/>
         <source>Avance del lote</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../../interfaz/vistas/progreso_lote.py" line="163"/>
+        <location filename="../../interfaz/vistas/progreso_lote.py" line="164"/>
         <source>Mostrar solo problemas</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../../interfaz/vistas/progreso_lote.py" line="169"/>
+        <location filename="../../interfaz/vistas/progreso_lote.py" line="170"/>
         <source>Estado de cada máquina del lote</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../../interfaz/vistas/progreso_lote.py" line="177"/>
+        <location filename="../../interfaz/vistas/progreso_lote.py" line="178"/>
         <source>Identificador de la tarea (UPID):</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../../interfaz/vistas/progreso_lote.py" line="184"/>
+        <location filename="../../interfaz/vistas/progreso_lote.py" line="185"/>
         <source>UPID de la máquina seleccionada</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../../interfaz/vistas/progreso_lote.py" line="186"/>
+        <location filename="../../interfaz/vistas/progreso_lote.py" line="187"/>
         <source>Copiar UPID</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../../interfaz/vistas/progreso_lote.py" line="196"/>
-        <location filename="../../interfaz/vistas/progreso_lote.py" line="379"/>
+        <location filename="../../interfaz/vistas/progreso_lote.py" line="197"/>
+        <location filename="../../interfaz/vistas/progreso_lote.py" line="380"/>
         <source>Deshaciendo el lote</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../../interfaz/vistas/progreso_lote.py" line="201"/>
+        <location filename="../../interfaz/vistas/progreso_lote.py" line="202"/>
         <source>Estado de cada máquina eliminada</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../../interfaz/vistas/progreso_lote.py" line="209"/>
-        <location filename="../../interfaz/vistas/progreso_lote.py" line="347"/>
+        <location filename="../../interfaz/vistas/progreso_lote.py" line="210"/>
+        <location filename="../../interfaz/vistas/progreso_lote.py" line="348"/>
         <source>Cancelar lote</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../../interfaz/vistas/progreso_lote.py" line="212"/>
+        <location filename="../../interfaz/vistas/progreso_lote.py" line="213"/>
         <source>Decidir qué hacer…</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../../interfaz/vistas/progreso_lote.py" line="217"/>
+        <location filename="../../interfaz/vistas/progreso_lote.py" line="218"/>
         <source>Comprobar ahora</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../../interfaz/vistas/progreso_lote.py" line="221"/>
+        <location filename="../../interfaz/vistas/progreso_lote.py" line="222"/>
         <source>Deshacer…</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../../interfaz/vistas/progreso_lote.py" line="223"/>
+        <location filename="../../interfaz/vistas/progreso_lote.py" line="224"/>
         <source>Reintentar pendientes</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../../interfaz/vistas/progreso_lote.py" line="225"/>
+        <location filename="../../interfaz/vistas/progreso_lote.py" line="226"/>
         <source>Informe</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../../interfaz/vistas/progreso_lote.py" line="227"/>
+        <location filename="../../interfaz/vistas/progreso_lote.py" line="228"/>
         <source>Volver al formulario</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../../interfaz/vistas/progreso_lote.py" line="374"/>
+        <location filename="../../interfaz/vistas/progreso_lote.py" line="375"/>
         <source>Lote terminado (1 máquina)</source>
         <translation type="unfinished"></translation>
     </message>
     <message numerus="yes">
-        <location filename="../../interfaz/vistas/progreso_lote.py" line="375"/>
+        <location filename="../../interfaz/vistas/progreso_lote.py" line="376"/>
         <source>Lote terminado (%n máquinas)</source>
         <translation type="unfinished">
             <numerusform></numerusform>
@@ -1709,17 +1709,17 @@
         </translation>
     </message>
     <message>
-        <location filename="../../interfaz/vistas/progreso_lote.py" line="381"/>
+        <location filename="../../interfaz/vistas/progreso_lote.py" line="382"/>
         <source>Comprobando las máquinas dudosas</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../../interfaz/vistas/progreso_lote.py" line="383"/>
+        <location filename="../../interfaz/vistas/progreso_lote.py" line="384"/>
         <source>Creando 1 máquina</source>
         <translation type="unfinished"></translation>
     </message>
     <message numerus="yes">
-        <location filename="../../interfaz/vistas/progreso_lote.py" line="384"/>
+        <location filename="../../interfaz/vistas/progreso_lote.py" line="385"/>
         <source>Creando %n máquinas</source>
         <translation type="unfinished">
             <numerusform></numerusform>
@@ -1727,22 +1727,22 @@
         </translation>
     </message>
     <message>
-        <location filename="../../interfaz/vistas/progreso_lote.py" line="340"/>
+        <location filename="../../interfaz/vistas/progreso_lote.py" line="341"/>
         <source>Dejar de esperar</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../../interfaz/vistas/progreso_lote.py" line="344"/>
+        <location filename="../../interfaz/vistas/progreso_lote.py" line="345"/>
         <source>Detener lo que falta</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../../interfaz/vistas/progreso_lote.py" line="352"/>
+        <location filename="../../interfaz/vistas/progreso_lote.py" line="353"/>
         <source>Comprobar la dudosa</source>
         <translation type="unfinished"></translation>
     </message>
     <message numerus="yes">
-        <location filename="../../interfaz/vistas/progreso_lote.py" line="356"/>
+        <location filename="../../interfaz/vistas/progreso_lote.py" line="357"/>
         <source>Comprobar las %n dudosas</source>
         <translation type="unfinished">
             <numerusform></numerusform>
@@ -3324,22 +3324,22 @@
 <context>
     <name>VentanaPrincipal</name>
     <message>
-        <location filename="../../interfaz/ventana_principal.py" line="204"/>
+        <location filename="../../interfaz/ventana_principal.py" line="207"/>
         <source>ahora hay errores que impiden crear el lote</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../../interfaz/ventana_principal.py" line="215"/>
+        <location filename="../../interfaz/ventana_principal.py" line="218"/>
         <source>el número {a} ya no está libre (ahora se usa el {b})</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../../interfaz/ventana_principal.py" line="221"/>
+        <location filename="../../interfaz/ventana_principal.py" line="224"/>
         <source>«{n}» pasa de {a} a {b}</source>
         <translation type="unfinished"></translation>
     </message>
     <message numerus="yes">
-        <location filename="../../interfaz/ventana_principal.py" line="229"/>
+        <location filename="../../interfaz/ventana_principal.py" line="232"/>
         <source>y %n cambios más</source>
         <translation type="unfinished">
             <numerusform></numerusform>
@@ -3347,229 +3347,229 @@
         </translation>
     </message>
     <message>
-        <location filename="../../interfaz/ventana_principal.py" line="239"/>
+        <location filename="../../interfaz/ventana_principal.py" line="242"/>
         <source>ProxLaunch</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../../interfaz/ventana_principal.py" line="316"/>
-        <location filename="../../interfaz/ventana_principal.py" line="628"/>
+        <location filename="../../interfaz/ventana_principal.py" line="319"/>
+        <location filename="../../interfaz/ventana_principal.py" line="631"/>
         <source>Sin conexión</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../../interfaz/ventana_principal.py" line="337"/>
+        <location filename="../../interfaz/ventana_principal.py" line="340"/>
         <source>Conecta con tu servidor Proxmox para empezar</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../../interfaz/ventana_principal.py" line="342"/>
-        <location filename="../../interfaz/ventana_principal.py" line="416"/>
+        <location filename="../../interfaz/ventana_principal.py" line="345"/>
+        <location filename="../../interfaz/ventana_principal.py" line="419"/>
         <source>Conectar...</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../../interfaz/ventana_principal.py" line="358"/>
+        <location filename="../../interfaz/ventana_principal.py" line="361"/>
         <source>Actualizar</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../../interfaz/ventana_principal.py" line="362"/>
+        <location filename="../../interfaz/ventana_principal.py" line="365"/>
         <source>Reintentar</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../../interfaz/ventana_principal.py" line="415"/>
+        <location filename="../../interfaz/ventana_principal.py" line="418"/>
         <source>&amp;Archivo</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../../interfaz/ventana_principal.py" line="419"/>
+        <location filename="../../interfaz/ventana_principal.py" line="422"/>
         <source>Cerrar sesión</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../../interfaz/ventana_principal.py" line="421"/>
+        <location filename="../../interfaz/ventana_principal.py" line="424"/>
         <source>Salir</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../../interfaz/ventana_principal.py" line="424"/>
+        <location filename="../../interfaz/ventana_principal.py" line="427"/>
         <source>Ver el último lote</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../../interfaz/ventana_principal.py" line="431"/>
+        <location filename="../../interfaz/ventana_principal.py" line="434"/>
         <source>&amp;Ajustes</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../../interfaz/ventana_principal.py" line="432"/>
+        <location filename="../../interfaz/ventana_principal.py" line="435"/>
         <source>Tema</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../../interfaz/ventana_principal.py" line="436"/>
+        <location filename="../../interfaz/ventana_principal.py" line="439"/>
         <source>Automático</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../../interfaz/ventana_principal.py" line="437"/>
+        <location filename="../../interfaz/ventana_principal.py" line="440"/>
         <source>Oscuro</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../../interfaz/ventana_principal.py" line="438"/>
+        <location filename="../../interfaz/ventana_principal.py" line="441"/>
         <source>Claro</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../../interfaz/ventana_principal.py" line="446"/>
+        <location filename="../../interfaz/ventana_principal.py" line="449"/>
         <source>Modo</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../../interfaz/ventana_principal.py" line="450"/>
+        <location filename="../../interfaz/ventana_principal.py" line="453"/>
         <source>Básico</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../../interfaz/ventana_principal.py" line="451"/>
+        <location filename="../../interfaz/ventana_principal.py" line="454"/>
         <source>Avanzado</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../../interfaz/ventana_principal.py" line="460"/>
+        <location filename="../../interfaz/ventana_principal.py" line="463"/>
         <source>A&amp;yuda</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../../interfaz/ventana_principal.py" line="461"/>
+        <location filename="../../interfaz/ventana_principal.py" line="464"/>
         <source>¿Cómo creo un API Token?</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../../interfaz/ventana_principal.py" line="463"/>
+        <location filename="../../interfaz/ventana_principal.py" line="466"/>
         <source>Acerca de ProxLaunch</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../../interfaz/ventana_principal.py" line="557"/>
+        <location filename="../../interfaz/ventana_principal.py" line="560"/>
         <source>Esa clave de recuperación ya no se puede volver a usar</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../../interfaz/ventana_principal.py" line="563"/>
+        <location filename="../../interfaz/ventana_principal.py" line="566"/>
         <source>Conectado a {b} ({a} no respondió)</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../../interfaz/ventana_principal.py" line="567"/>
+        <location filename="../../interfaz/ventana_principal.py" line="570"/>
         <source>Conectado</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../../interfaz/ventana_principal.py" line="662"/>
+        <location filename="../../interfaz/ventana_principal.py" line="665"/>
         <source>No se pudo leer el archivo de huellas (permisos)</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../../interfaz/ventana_principal.py" line="666"/>
+        <location filename="../../interfaz/ventana_principal.py" line="669"/>
         <source>Se dañó el archivo de huellas; se recuperaron {n} servidores. Los demás tendrás que confirmarlos de nuevo comparando la huella con tu administrador.</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../../interfaz/ventana_principal.py" line="673"/>
+        <location filename="../../interfaz/ventana_principal.py" line="676"/>
         <source>No se pudo leer el archivo de perfiles (permisos)</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../../interfaz/ventana_principal.py" line="677"/>
+        <location filename="../../interfaz/ventana_principal.py" line="680"/>
         <source>El archivo de perfiles estaba dañado: se guardó una copia y se empezó uno nuevo.</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../../interfaz/ventana_principal.py" line="682"/>
+        <location filename="../../interfaz/ventana_principal.py" line="685"/>
         <source>No se pudo leer el archivo de preferencias (permisos)</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../../interfaz/ventana_principal.py" line="701"/>
+        <location filename="../../interfaz/ventana_principal.py" line="704"/>
         <source>Buscando nodos, almacenamientos y redes...</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../../interfaz/ventana_principal.py" line="713"/>
+        <location filename="../../interfaz/ventana_principal.py" line="716"/>
         <source>No se pudo leer el servidor.</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../../interfaz/ventana_principal.py" line="722"/>
+        <location filename="../../interfaz/ventana_principal.py" line="725"/>
         <source>{n} nodo(s) encontrados.</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../../interfaz/ventana_principal.py" line="730"/>
+        <location filename="../../interfaz/ventana_principal.py" line="733"/>
         <source>Con este usuario no podrás crear máquinas: falta el permiso VM.Allocate</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../../interfaz/ventana_principal.py" line="746"/>
+        <location filename="../../interfaz/ventana_principal.py" line="749"/>
         <source>No se pudo leer el nodo {nodos}: aparece como «Sin conexión».</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../../interfaz/ventana_principal.py" line="1026"/>
+        <location filename="../../interfaz/ventana_principal.py" line="1029"/>
         <source>Todavía no sabemos si se creó</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../../interfaz/ventana_principal.py" line="1028"/>
+        <location filename="../../interfaz/ventana_principal.py" line="1031"/>
         <source>No hemos podido confirmar si la máquina se creó. Si vuelves al formulario y la creas otra vez, podrías duplicarla. ¿Volver de todos modos?</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../../interfaz/ventana_principal.py" line="1060"/>
+        <location filename="../../interfaz/ventana_principal.py" line="1063"/>
         <source>Comprobando si la máquina existe...</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../../interfaz/ventana_principal.py" line="1076"/>
+        <location filename="../../interfaz/ventana_principal.py" line="1079"/>
         <source>Comprobando la tarea...</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../../interfaz/ventana_principal.py" line="1078"/>
+        <location filename="../../interfaz/ventana_principal.py" line="1081"/>
         <source>Esperando a que termine la tarea...</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../../interfaz/ventana_principal.py" line="1119"/>
+        <location filename="../../interfaz/ventana_principal.py" line="1122"/>
         <source>La máquina sí se creó. Verifica en Proxmox que quedó como esperabas.</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../../interfaz/ventana_principal.py" line="1124"/>
+        <location filename="../../interfaz/ventana_principal.py" line="1130"/>
         <source>No se creó; puedes intentarlo de nuevo.</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../../interfaz/ventana_principal.py" line="1133"/>
+        <location filename="../../interfaz/ventana_principal.py" line="1139"/>
         <source>No se pudo comprobar si la máquina existe. Revisa la conexión e inténtalo de nuevo antes de volver a crearla.</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../../interfaz/ventana_principal.py" line="1180"/>
+        <location filename="../../interfaz/ventana_principal.py" line="1186"/>
         <source>El último lote se cerró sin terminar. Informe: {ruta}</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../../interfaz/ventana_principal.py" line="1405"/>
+        <location filename="../../interfaz/ventana_principal.py" line="1432"/>
         <source>Confirmar el envío</source>
         <translation type="unfinished"></translation>
     </message>
     <message numerus="yes">
-        <location filename="../../interfaz/ventana_principal.py" line="1406"/>
+        <location filename="../../interfaz/ventana_principal.py" line="1433"/>
         <source>Se enviarán %n máquinas a Proxmox. ¿Continuar?</source>
         <translation type="unfinished">
             <numerusform></numerusform>
@@ -3577,124 +3577,136 @@
         </translation>
     </message>
     <message>
-        <location filename="../../interfaz/ventana_principal.py" line="1412"/>
+        <location filename="../../interfaz/ventana_principal.py" line="1439"/>
         <source>Crear las máquinas</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../../interfaz/ventana_principal.py" line="1413"/>
-        <location filename="../../interfaz/ventana_principal.py" line="1563"/>
+        <location filename="../../interfaz/ventana_principal.py" line="1440"/>
+        <location filename="../../interfaz/ventana_principal.py" line="1595"/>
         <source>Cancelar</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../../interfaz/ventana_principal.py" line="1555"/>
+        <location filename="../../interfaz/ventana_principal.py" line="1587"/>
         <source>Seguir sin etiquetas</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../../interfaz/ventana_principal.py" line="1556"/>
+        <location filename="../../interfaz/ventana_principal.py" line="1588"/>
         <source>Se detendrá este lote y se armará uno nuevo con las máquinas que faltan, sin etiquetas. Después, «Deshacer» solo podrá eliminar las máquinas que ProxLaunch confirme que creó él mismo. Antes de crear nada verás el resumen.</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../../interfaz/ventana_principal.py" line="1562"/>
+        <location filename="../../interfaz/ventana_principal.py" line="1594"/>
         <source>Preparar el lote sin etiquetas</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../../interfaz/ventana_principal.py" line="1573"/>
+        <location filename="../../interfaz/ventana_principal.py" line="1605"/>
         <source>Esperando a que terminen las tareas en curso para continuar…</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../../interfaz/ventana_principal.py" line="1592"/>
-        <location filename="../../interfaz/ventana_principal.py" line="1598"/>
+        <location filename="../../interfaz/ventana_principal.py" line="1624"/>
+        <location filename="../../interfaz/ventana_principal.py" line="1630"/>
         <source>Cancelar el lote</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../../interfaz/ventana_principal.py" line="1593"/>
+        <location filename="../../interfaz/ventana_principal.py" line="1625"/>
         <source>Las máquinas que ya se enviaron seguirán creándose en Proxmox y se esperará su resultado. Las demás no se enviarán.</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../../interfaz/ventana_principal.py" line="1599"/>
+        <location filename="../../interfaz/ventana_principal.py" line="1631"/>
         <source>Seguir creando</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../../interfaz/ventana_principal.py" line="1640"/>
+        <location filename="../../interfaz/ventana_principal.py" line="1675"/>
         <source>El lote terminó de forma inesperada: {m}</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../../interfaz/ventana_principal.py" line="1660"/>
+        <location filename="../../interfaz/ventana_principal.py" line="1694"/>
         <source>Reconecta para continuar con las máquinas que faltan.</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../../interfaz/ventana_principal.py" line="1662"/>
+        <location filename="../../interfaz/ventana_principal.py" line="1696"/>
         <source>Reconecta para continuar con el lote.</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../../interfaz/ventana_principal.py" line="1909"/>
+        <location filename="../../interfaz/ventana_principal.py" line="1980"/>
         <source>Eliminando las máquinas elegidas…</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../../interfaz/ventana_principal.py" line="2055"/>
+        <location filename="../../interfaz/ventana_principal.py" line="2131"/>
         <source>Hay máquinas sin confirmar</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../../interfaz/ventana_principal.py" line="2056"/>
+        <location filename="../../interfaz/ventana_principal.py" line="2132"/>
         <source>No sabemos si algunas máquinas se crearon. Si vuelves y repites el lote, podrías duplicarlas. ¿Volver de todos modos?</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../../interfaz/ventana_principal.py" line="2061"/>
+        <location filename="../../interfaz/ventana_principal.py" line="2137"/>
         <source>Volver de todos modos</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../../interfaz/ventana_principal.py" line="2062"/>
+        <location filename="../../interfaz/ventana_principal.py" line="2138"/>
         <source>Quedarme aquí</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../../interfaz/ventana_principal.py" line="2118"/>
+        <location filename="../../interfaz/ventana_principal.py" line="2215"/>
+        <source>Hay un «Deshacer» en curso</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <location filename="../../interfaz/ventana_principal.py" line="2216"/>
+        <source>Se están eliminando máquinas. Si cierras, ProxLaunch dejará de esperar: las eliminaciones ya enviadas seguirán en Proxmox y el resto no se hará.</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <location filename="../../interfaz/ventana_principal.py" line="2194"/>
         <source>Hay un lote en curso</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../../interfaz/ventana_principal.py" line="2119"/>
+        <location filename="../../interfaz/ventana_principal.py" line="2195"/>
         <source>Hay un lote en curso ({x} de {n} terminadas). Si cierras, las tareas ya enviadas seguirán en Proxmox, pero ProxLaunch no enviará el resto ni podrá deshacer lo creado.</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../../interfaz/ventana_principal.py" line="2125"/>
+        <location filename="../../interfaz/ventana_principal.py" line="2201"/>
+        <location filename="../../interfaz/ventana_principal.py" line="2221"/>
         <source>Cerrar de todos modos</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../../interfaz/ventana_principal.py" line="2126"/>
+        <location filename="../../interfaz/ventana_principal.py" line="2202"/>
+        <location filename="../../interfaz/ventana_principal.py" line="2222"/>
         <source>Seguir en ProxLaunch</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../../interfaz/ventana_principal.py" line="2139"/>
+        <location filename="../../interfaz/ventana_principal.py" line="2235"/>
         <source>Hay una máquina en creación</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../../interfaz/ventana_principal.py" line="2141"/>
+        <location filename="../../interfaz/ventana_principal.py" line="2237"/>
         <source>Se está creando una máquina. Si cierras ProxLaunch, la tarea sigue ejecutándose en el servidor Proxmox, pero ya no verás su resultado. ¿Cerrar de todos modos?</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../../interfaz/ventana_principal.py" line="2155"/>
+        <location filename="../../interfaz/ventana_principal.py" line="2251"/>
         <source>Cerrando...</source>
         <translation type="unfinished"></translation>
     </message>

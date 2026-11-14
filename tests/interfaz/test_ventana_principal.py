@@ -477,8 +477,10 @@ def test_durante_la_creacion_el_formulario_esta_bloqueado_y_el_upid_visible(qtbo
     liberar = threading.Event()
     original = entorno.creacion.crear
 
-    def lenta(cfg, inv, al_cambiar_etapa, cancelado, *, al_enviar=None):
-        r = original(cfg, inv, al_cambiar_etapa, cancelado, al_enviar=al_enviar)
+    def lenta(cfg, inv, al_cambiar_etapa, cancelado, *, al_enviar=None, puede_enviar=None):
+        r = original(
+            cfg, inv, al_cambiar_etapa, cancelado, al_enviar=al_enviar, puede_enviar=puede_enviar
+        )
         liberar.wait(5)
         return r
 

@@ -17,6 +17,7 @@ from dataclasses import dataclass, field
 from enum import StrEnum
 from typing import Any
 
+from proxlaunch.nucleo.api.traductor_errores import CODIGOS_DE_RED
 from proxlaunch.nucleo.errores import CodigoError, ErrorProxLaunch
 from proxlaunch.nucleo.lote.constantes import MAX_NODOS_PARALELOS, UMBRAL_PAUSA_ERRORES
 from proxlaunch.nucleo.lote.libro import Libro
@@ -220,13 +221,17 @@ class MotorLote:
         inv: Inventario,
         observador: Observador,
         control: ControlLote,
+        *,
+        libro: Libro | None = None,
     ) -> Libro:
         """Ejecuta el plan completo y devuelve el libro. Bloqueante.
 
         Si el lote se pausa, bloquea hasta ``control.reanudar()``, ``cancelar()`` o
-        ``suspender()``.
+        ``suspender()``. Con ``libro`` (creado antes con ``Libro(plan)``, p. ej. por la
+        interfaz) se usa ese en vez de crear uno.
         """
-        libro = Libro(plan)
+        if libro is None:
+            libro = Libro(plan)
         corrida = _Corrida(libro, inv, observador, control, PoliticaPausa(self._umbral))
         self._correr(corrida, [e.elemento for e in libro.instantanea()])
         return libro
@@ -297,9 +302,13 @@ class MotorLote:
         """Procesa de forma secuencial una cola (≤ 1 creación en curso por nodo).
 
         Con ``max_nodos == 1`` la cola mezcla nodos: si uno cae, solo se saltan las MVs de ese nodo.
+        Antes de la primera MV de cada nodo, y tras cada fallo dudoso o de conexión en él, se
+        sondea el nodo (``GET /nodes/{n}/status``): si no responde (595/596) se vacía su cola
+        (CA-L14.5).
         """
         servicio = self._fabrica(self._sesion, self._reloj)
         caidos: set[str] = set()
+        sondeados: set[str] = set()
         for posicion, elemento in enumerate(cola):
             if elemento.nodo in caidos:
                 self._no_enviadas(c, [elemento], MotivoNoEnviada.NODO_CAIDO)
@@ -313,12 +322,35 @@ class MotorLote:
                     if turno == _Turno.CANCELADO
                     else MotivoNoEnviada.PAUSA
                 )
-                pendientes = [e for e in cola[posicion:] if e.nodo not in caidos]
-                self._no_enviadas(c, pendientes, motivo)
+                for resto in cola[posicion:]:
+                    if resto.nodo in caidos:
+                        self._no_enviadas(c, [resto], MotivoNoEnviada.NODO_CAIDO)
+                    else:
+                        self._no_enviadas(c, [resto], motivo)
                 return
+            if elemento.nodo not in sondeados:
+                sondeados.add(elemento.nodo)
+                if self._nodo_caido(elemento.nodo):
+                    caidos.add(elemento.nodo)
+                    self._no_enviadas(c, [elemento], MotivoNoEnviada.NODO_CAIDO)
+                    continue
             if self._procesar_elemento(c, servicio, elemento):
                 # Nodo caído: solo se vacía la cola de este nodo (CA-L14.5).
                 caidos.add(elemento.nodo)
+
+    def _nodo_caido(self, nodo: str) -> bool:
+        """Sonda barata del nodo: ``True`` solo si responde 595/596 (``NODO_NO_DISPONIBLE``).
+
+        Cualquier otro resultado (incluido un permiso insuficiente en ``/status``) no prueba
+        que el nodo esté caído y se sigue adelante.
+        """
+        try:
+            self._sesion.cliente.estado_nodo(nodo)
+        except ErrorProxLaunch as e:
+            return e.codigo == CodigoError.NODO_NO_DISPONIBLE
+        except Exception:
+            _log.debug("No se pudo sondear el nodo %s", nodo, exc_info=True)
+        return False
 
     @staticmethod
     def _esperar_turno(control: ControlLote) -> _Turno:
@@ -343,6 +375,17 @@ class MotorLote:
 
     def _procesar_elemento(self, c: _Corrida, servicio: ServicioCreacion, el: ElementoPlan) -> bool:
         """Crea una MV. Devuelve ``True`` si hay que vaciar la cola del nodo (nodo caído)."""
+        bloqueo: list[MotivoNoEnviada] = []
+
+        def puede_enviar() -> bool:
+            # Última puerta antes del POST: una cancelación o pausa posterior al inicio de la
+            # validación debe impedir el envío (la suspensión no: deja seguir lo ya iniciado).
+            if c.control.cancelado.is_set():
+                bloqueo.append(MotivoNoEnviada.CANCELADO)
+            elif c.control.motivo_pausa is not None:
+                bloqueo.append(MotivoNoEnviada.PAUSA)
+            return not bloqueo
+
         libro = c.libro
         with c.cerrojo:
             if el.vmid in c.intentados:
@@ -368,6 +411,7 @@ class MotorLote:
                 al_cambiar_etapa,
                 c.control.evento_abandono,
                 al_enviar=al_enviar,
+                puede_enviar=puede_enviar,
             )
         except AssertionError:
             raise
@@ -384,12 +428,21 @@ class MotorLote:
                 libro.entrada(el.vmid).upid,
                 error,
             )
-        return self._cerrar(c, servicio, el, resultado)
+        return self._cerrar(c, servicio, el, resultado, bloqueo[0] if bloqueo else None)
 
     def _cerrar(
-        self, c: _Corrida, servicio: ServicioCreacion, el: ElementoPlan, res: ResultadoCreacion
+        self,
+        c: _Corrida,
+        servicio: ServicioCreacion,
+        el: ElementoPlan,
+        res: ResultadoCreacion,
+        motivo_bloqueo: MotivoNoEnviada | None = None,
     ) -> bool:
-        """Traduce el ``ResultadoCreacion`` al estado final del libro y evalúa la pausa."""
+        """Traduce el ``ResultadoCreacion`` al estado final del libro y evalúa la pausa.
+
+        Devuelve ``True`` si el nodo debe darse por caído (fallo dudoso o de conexión y el
+        sondeo del nodo no responde).
+        """
         libro = c.libro
         vmid = el.vmid
         if res.upid is not None and not libro.entrada(vmid).post_intentado:
@@ -402,9 +455,8 @@ class MotorLote:
 
         if res.desenlace == Desenlace.CANCELADO:
             if upid is None and not enviado:
-                self._emitir(
-                    c, libro.marcar_no_enviada(vmid, MotivoNoEnviada.CANCELADO, self._reloj.ahora())
-                )
+                motivo = motivo_bloqueo or MotivoNoEnviada.CANCELADO
+                self._emitir(c, libro.marcar_no_enviada(vmid, motivo, self._reloj.ahora()))
                 return False
             estado = EstadoMV.CONEXION_PERDIDA  # dejó de esperarse una tarea en vuelo
             if upid is None:
@@ -454,11 +506,20 @@ class MotorLote:
         self._registrar(libro, entrada)
         self._emitir(c, entrada)
         self._evaluar_pausa(c, entrada)
-        return (
-            entrada.estado == EstadoMV.ERROR
-            and error is not None
-            and error.codigo == CodigoError.NODO_NO_DISPONIBLE
+        return self._fallo_de_nodo(entrada)
+
+    def _fallo_de_nodo(self, entrada: EntradaLibro) -> bool:
+        """``True`` si el nodo de la MV debe darse por caído tras este resultado.
+
+        Solo un fallo dudoso o de red dispara el sondeo del nodo (``GET`` barato): un 595/596
+        aislado en una petición no basta. Un 595/596 en el POST sigue siendo un envío incierto de
+        la MV (criterio conservador); aquí solo se decide qué pasa con las MVs aún sin enviar.
+        """
+        error = entrada.error
+        dudoso = entrada.estado in ESTADOS_DUDOSOS or (
+            error is not None and error.codigo in CODIGOS_DE_RED
         )
+        return dudoso and self._nodo_caido(entrada.elemento.nodo)
 
     def _evaluar_pausa(self, c: _Corrida, entrada: EntradaLibro) -> None:
         """Alimenta la política de pausa y pausa el lote si corresponde (RF-L14, E-L09)."""

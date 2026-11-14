@@ -11,10 +11,11 @@ from PySide6.QtWidgets import QMessageBox
 
 from proxlaunch.interfaz import ventana_principal as vp
 from proxlaunch.nucleo.errores import CodigoError, ErrorProxLaunch
+from proxlaunch.nucleo.lote.modelos import EstadoMV
 from proxlaunch.nucleo.modelos.tarea import Desenlace
 
 from . import test_ventana_principal as _base
-from .apoyo import UPID, CreacionFalsa, perfil, resultado, sesion_falsa
+from .apoyo import UPID, ClienteLoteFalso, CreacionFalsa, perfil, resultado, sesion_falsa
 from .test_ventana_principal import _textos_avisos, conectar, crear_y_esperar, poner_nombre
 
 # Se reutiliza el fixture de ensamblado de la ventana (con sus dobles) sin copiarlo.
@@ -60,11 +61,25 @@ def test_envio_incierto_explica_que_no_se_sabe_si_proxmox_recibio_la_orden(qtbot
     assert not v.formulario.isEnabled()
 
 
+def _crear_incierto_con_cliente(qtbot, entorno):
+    """Como ``_crear_incierto`` pero con un cliente falso que permite releer la config."""
+    v = entorno.ventana
+    cliente = ClienteLoteFalso()
+    entorno.creacion = CreacionFalsa(_incierto(), enviar_upid=False)
+    conectar(qtbot, entorno, sesion_falsa(cliente=cliente))
+    poner_nombre(qtbot, v)
+    crear_y_esperar(qtbot, v)
+    return v, cliente
+
+
 def test_comprobar_con_envio_incierto_y_maquina_existente_es_ok_con_aviso_y_crear_otra(
     qtbot, entorno
 ):
-    v = _crear_incierto(qtbot, entorno)
+    v, cliente = _crear_incierto_con_cliente(qtbot, entorno)
     antes = len(entorno.creacion.llamadas_existe_vm)  # las de la reconciliación del motor
+    cfg = v._lote.plan.elementos[0].cfg
+    # La config es legible y lleva la etiqueta del lote: la propiedad queda demostrada.
+    cliente.configs[cfg.vmid] = {"name": cfg.nombre, "tags": ";".join(cfg.etiquetas)}
     entorno.creacion.respuesta_existe_vm = True
     _comprobar_y_esperar(qtbot, v)
     assert len(entorno.creacion.llamadas_existe_vm) == antes + 1
@@ -72,6 +87,22 @@ def test_comprobar_con_envio_incierto_y_maquina_existente_es_ok_con_aviso_y_crea
     assert "sí se creó" in v.progreso.texto_mensaje
     assert "Verifica" in v.progreso.texto_mensaje
     assert v.progreso.boton_crear_otra.isVisible()
+
+
+def test_comprobar_con_la_config_ilegible_no_demuestra_la_propiedad(qtbot, entorno):
+    # Si no se puede releer la config tras ``existe_vm`` verdadero, no se da por propia.
+    v, cliente = _crear_incierto_con_cliente(qtbot, entorno)
+
+    def ilegible(nodo, vmid):
+        raise ErrorProxLaunch(CodigoError.SERVIDOR_NO_RESPONDE, {}, "sin respuesta")
+
+    cliente.config_vm = ilegible
+    entorno.creacion.respuesta_existe_vm = True
+    _comprobar_y_esperar(qtbot, v)
+    assert v._lote.libro.instantanea()[0].estado == EstadoMV.EXISTE_SIN_CONFIRMAR_PROPIEDAD
+    assert v._ultimo_resultado.desenlace != Desenlace.OK
+    assert "sí se creó" not in v.progreso.texto_mensaje
+    assert not v.progreso.boton_crear_otra.isVisible()
 
 
 def test_comprobar_con_envio_incierto_y_maquina_inexistente_desbloquea_el_formulario(
@@ -258,11 +289,13 @@ def test_excepcion_inesperada_sin_upid_tampoco_desbloquea(qtbot, entorno):
 class _CreacionBloqueada(CreacionFalsa):
     """Creación que espera a que la prueba la libere (sin dormir)."""
 
-    def crear(self, cfg, inv, al_cambiar_etapa, cancelado, *, al_enviar=None):
+    def crear(self, cfg, inv, al_cambiar_etapa, cancelado, *, al_enviar=None, puede_enviar=None):
         self.entro = threading.Event()
         self.entro.set()
         assert self.liberar.wait(5)
-        return super().crear(cfg, inv, al_cambiar_etapa, cancelado, al_enviar=al_enviar)
+        return super().crear(
+            cfg, inv, al_cambiar_etapa, cancelado, al_enviar=al_enviar, puede_enviar=puede_enviar
+        )
 
 
 def test_actualizar_y_reintentar_estan_deshabilitados_mientras_se_crea(qtbot, entorno):

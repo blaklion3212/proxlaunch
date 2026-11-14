@@ -8,7 +8,9 @@ escribe al cerrar la aplicación con un lote en curso (RF-L23).
 
 from __future__ import annotations
 
+import contextlib
 import logging
+import os
 from collections.abc import Iterable
 from pathlib import Path
 
@@ -34,7 +36,7 @@ from proxlaunch.nucleo.lote.modelos import (
     Severidad,
 )
 from proxlaunch.nucleo.modelos.vm import ConfiguracionVM
-from proxlaunch.nucleo.persistencia.rutas import NOMBRE_APP
+from proxlaunch.nucleo.persistencia.rutas import NOMBRE_APP, crear_carpeta_privada
 from proxlaunch.nucleo.registro import enmascarar
 
 _log = logging.getLogger("proxlaunch.interfaz.informe")
@@ -316,10 +318,20 @@ def nombre_archivo_sugerido(informe: InformeLote) -> str:
     return f"{prefijo}-{informe.id_lote}.txt"
 
 
+def _escribir_privado(ruta: Path, texto: str) -> None:
+    """Escribe el texto UTF-8 con permisos 0o600 (como el registro); en Windows se hereda."""
+    descriptor = os.open(ruta, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+    with os.fdopen(descriptor, "w", encoding="utf-8") as f:
+        f.write(texto)
+    if os.name == "posix":
+        with contextlib.suppress(OSError):
+            os.chmod(ruta, 0o600)  # el archivo ya existía con otros permisos
+
+
 def escribir_informe(ruta: Path, texto: str) -> None:
-    """Escribe el informe como texto UTF-8."""
+    """Escribe el informe como texto UTF-8 con permisos 0o600."""
     ruta.parent.mkdir(parents=True, exist_ok=True)
-    ruta.write_text(texto, encoding="utf-8")
+    _escribir_privado(ruta, texto)
 
 
 def guardar_con_dialogo(
@@ -348,9 +360,11 @@ def guardar_informe_parcial(informe: InformeLote, carpeta: Path | None = None) -
     """
     carpeta = carpeta or carpeta_informes()
     try:
+        # Carpeta privada (0o700) y archivos 0o600: el informe puede revelar nombres y nodos.
+        crear_carpeta_privada(carpeta)
         ruta = carpeta / f"parcial-{informe.id_lote}.txt"
-        escribir_informe(ruta, texto_informe(informe))
-        (carpeta / _ARCHIVO_AVISO).write_text(str(ruta), encoding="utf-8")
+        _escribir_privado(ruta, texto_informe(informe))
+        _escribir_privado(carpeta / _ARCHIVO_AVISO, str(ruta))
     except OSError:
         _log.warning("No se pudo guardar el informe parcial", exc_info=True)
         return None

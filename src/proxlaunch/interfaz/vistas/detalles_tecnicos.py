@@ -7,6 +7,7 @@ from PySide6.QtWidgets import QPlainTextEdit, QPushButton, QVBoxLayout, QWidget
 
 from proxlaunch.nucleo.errores import ErrorProxLaunch
 from proxlaunch.nucleo.modelos.tarea import ResultadoCreacion
+from proxlaunch.nucleo.registro import enmascarar
 
 
 def texto_detalles(
@@ -35,7 +36,7 @@ def texto_detalles(
         etiqueta_log = QCoreApplication.translate("Detalles", "Registro de la tarea")
         lineas.append("")
         lineas.append(f"{etiqueta_log}:")
-        lineas.extend(resultado.log_tarea)
+        lineas.extend(enmascarar(linea) for linea in resultado.log_tarea)  # defensa en profundidad
     return "\n".join(lineas)
 
 

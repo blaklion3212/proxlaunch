@@ -69,6 +69,7 @@ from proxlaunch.interfaz.trabajadores import (
     reintentar_nodos,
     replanificar_lote,
     simular_lote,
+    simular_reintento,
 )
 from proxlaunch.interfaz.vistas.barra_superior import BarraSuperior, cargar_svg, nombre_logotipo
 from proxlaunch.interfaz.vistas.bloque_lote import BloqueLote
@@ -99,6 +100,7 @@ from proxlaunch.nucleo.lote.modelos import (
     ElementoPlan,
     EntradaLibro,
     EstadoMV,
+    EstadoRollback,
     InformeLote,
     MetadatosInforme,
     ModoDestino,
@@ -110,6 +112,7 @@ from proxlaunch.nucleo.lote.modelos import (
     ResultadoSimulacion,
 )
 from proxlaunch.nucleo.lote.motor import ControlLote
+from proxlaunch.nucleo.lote.reconciliacion import AVISO_CREADA_TRAS_COMPROBAR
 from proxlaunch.nucleo.lote.rollback import ServicioRollback
 from proxlaunch.nucleo.modelos.inventario import Inventario
 from proxlaunch.nucleo.modelos.tarea import Desenlace, Etapa, ResultadoCreacion
@@ -1119,7 +1122,10 @@ class VentanaPrincipal(QMainWindow):
             texto = self.tr("La máquina sí se creó. Verifica en Proxmox que quedó como esperabas.")
             self._ultimo_resultado = ResultadoCreacion(Desenlace.OK, cfg.vmid, cfg.nodo, None, None)
             self.progreso.mostrar_resultado(texto, Desenlace.OK, None)
-            self._sincronizar_libro_uno(self._ultimo_resultado)
+            # M3: rescatada por «Comprobar»; el aviso consta en el libro y en el informe.
+            self._sincronizar_libro_uno(
+                self._ultimo_resultado, avisos=(AVISO_CREADA_TRAS_COMPROBAR,)
+            )
         elif existe is False:
             texto = self.tr("No se creó; puedes intentarlo de nuevo.")
             self._ultimo_resultado = ResultadoCreacion(
@@ -1218,7 +1224,20 @@ class VentanaPrincipal(QMainWindow):
         vf = self._version_forzada(sesion)
         reloj = self._deps.reloj
         gen = self._gen_plan
-        if simulando:
+        if simulando and self._reintento is not None:
+            # B6: con un reintento pendiente se simula el plan del reintento, no un lote nuevo.
+            self._lanzador.lanzar(
+                simular_reintento,
+                sesion,
+                reloj,
+                self._reintento,
+                definicion,
+                vf,
+                self._nodo_reintento,
+                al_terminar=self._si_vigente(gen, self._al_reintento_simulado),
+                al_fallar=self._si_vigente(gen, self._fallo_planificacion),
+            )
+        elif simulando:
             self._lanzador.lanzar(
                 simular_lote,
                 sesion,
@@ -1271,6 +1290,14 @@ class VentanaPrincipal(QMainWindow):
         inv, plan = resultado
         self._inv = inv
         self._al_planificado(plan)
+        self.resumen_lote.mostrar_selector_nodo(
+            [n.nombre for n in inv.topologia.nodos if n.en_linea], self._nodo_reintento
+        )
+
+    def _al_reintento_simulado(self, resultado: tuple[Inventario, ResultadoSimulacion]) -> None:
+        inv, simulacion = resultado
+        self._inv = inv
+        self._al_simulado(simulacion)
         self.resumen_lote.mostrar_selector_nodo(
             [n.nombre for n in inv.topologia.nodos if n.en_linea], self._nodo_reintento
         )
@@ -1430,7 +1457,11 @@ class VentanaPrincipal(QMainWindow):
         if anterior is not None and anterior.libro is not None and not anterior.cerrado:
             # El lote anterior (p. ej. el que se reintenta) conserva su libro y su rollback.
             self._lotes_previos.append(anterior)
-        self._lote = _Lote(plan, inv, sesion, self._perfil_id, control, puente, modo_uno)
+        # M4: el libro se crea aquí, antes de ejecutar, para que exista aunque el motor falle
+        # y «Deshacer» y «Comprobar» sigan disponibles sobre lo ya creado.
+        libro = Libro(plan)
+        lote = _Lote(plan, inv, sesion, self._perfil_id, control, puente, modo_uno, libro=libro)
+        self._lote = lote
         self._accion_ultimo_lote.setEnabled(False)
         self.formulario.bloquear(True)
         self.bloque_lote.bloquear(True)
@@ -1448,8 +1479,9 @@ class VentanaPrincipal(QMainWindow):
             puente.observar,
             control,
             adaptada,
-            al_terminar=self._al_lote_terminado,
-            al_fallar=self._fallo_lote,
+            libro,
+            al_terminar=lambda r: self._al_lote_terminado(lote, r),
+            al_fallar=lambda e: self._fallo_lote(lote, e),
         )
         self._timer_lote.start()
 
@@ -1627,10 +1659,13 @@ class VentanaPrincipal(QMainWindow):
 
     # --- Fin del lote ---
 
-    def _fallo_lote(self, error: ErrorProxLaunch) -> None:
+    def _vigente(self, lote: _Lote) -> bool:
+        """El resultado de un hilo solo vale si su lote sigue siendo el actual y no se cerró."""
+        return lote is self._lote and not lote.cerrado
+
+    def _fallo_lote(self, lote: _Lote, error: ErrorProxLaunch) -> None:
         """El motor falló fuera de lo previsto: la interfaz no se queda «ocupada» (RNF-L11)."""
-        lote = self._lote
-        if lote is None:
+        if not self._vigente(lote):
             return
         if lote.modo_uno:
             self._fin_uno(lote, None, error)
@@ -1641,9 +1676,8 @@ class VentanaPrincipal(QMainWindow):
         )
         self._finalizar_lote()
 
-    def _al_lote_terminado(self, libro: Libro) -> None:
-        lote = self._lote
-        if lote is None or lote.cerrado:
+    def _al_lote_terminado(self, lote: _Lote, libro: Libro) -> None:
+        if not self._vigente(lote):
             return
         lote.libro = libro
         self._cerrar_dialogo_pausa(lote)
@@ -1693,8 +1727,8 @@ class VentanaPrincipal(QMainWindow):
             lote.puente.observar,
             lote.control,
             comprobar,
-            al_terminar=self._al_lote_terminado,
-            al_fallar=self._fallo_lote,
+            al_terminar=lambda r: self._al_lote_terminado(lote, r),
+            al_fallar=lambda e: self._fallo_lote(lote, e),
         )
         self._timer_lote.start()
 
@@ -1712,7 +1746,9 @@ class VentanaPrincipal(QMainWindow):
         for lt in self._lotes_deshacibles() or ([lote] if lote.libro is not None else []):
             assert lt.libro is not None
             candidatos = ServicioRollback(lt.sesion, self._deps.reloj).elegibles(
-                lt.libro, etiquetado=lt.plan.definicion.etiquetar
+                lt.libro,
+                etiquetado=lt.plan.definicion.etiquetar,
+                excluir_vmids=self._vmids_eliminados(lt),
             )
             elegibles += sum(1 for c in candidatos if c.elegible)
         self.progreso_lote.establecer_fase(
@@ -1726,10 +1762,19 @@ class VentanaPrincipal(QMainWindow):
         self._refrescar_botones_red()
         self._timer_validar.start()
 
+    @staticmethod
+    def _vmids_eliminados(lote: _Lote) -> frozenset[int]:
+        """VMIDs que un «Deshacer» anterior ya eliminó (o ya no existían): no se ofrecen más."""
+        return frozenset(
+            r.vmid
+            for r in lote.resultados_rollback
+            if r.estado in (EstadoRollback.ELIMINADA, EstadoRollback.YA_NO_EXISTIA)
+        )
+
     def _fin_uno(self, lote: _Lote, libro: Libro | None, error: ErrorProxLaunch | None) -> None:
         """Una sola máquina: el resultado del motor se muestra con el panel del MVP 1."""
         lote.terminado = True
-        self._accion_ultimo_lote.setEnabled(libro is not None)
+        self._accion_ultimo_lote.setEnabled(lote.libro is not None)
         cfg = self._cfg_creacion
         if libro is None or cfg is None:
             self._fallo_creacion(error or ErrorProxLaunch(CodigoError.DESCONOCIDO))
@@ -1775,16 +1820,18 @@ class VentanaPrincipal(QMainWindow):
             " ".join(t for t in (texto_aviso_entrada(a) for a in e.avisos) if t),
         )
 
-    def _sincronizar_libro_uno(self, resultado: ResultadoCreacion) -> None:
+    def _sincronizar_libro_uno(
+        self, resultado: ResultadoCreacion, *, avisos: tuple[str, ...] = ()
+    ) -> None:
         """Tras «Comprobar» con una máquina, el libro refleja el resultado (Deshacer, informe)."""
         lote = self._lote
         if self._fin_uno_inicial or lote is None or not lote.modo_uno or lote.libro is None:
             return
-        estado = (
-            EstadoMV.NO_CREADA_SEGURA
-            if resultado.desenlace == Desenlace.CANCELADO
-            else EstadoMV(resultado.desenlace.value)
-        )
+        if resultado.desenlace == Desenlace.CANCELADO:
+            # B5: cancelado con UPID es dudosa (la tarea pudo seguir); sin UPID no se envió.
+            estado = EstadoMV.CONEXION_PERDIDA if resultado.upid else EstadoMV.NO_CREADA_SEGURA
+        else:
+            estado = EstadoMV(resultado.desenlace.value)
         try:
             nueva = lote.libro.resolver(
                 resultado.vmid,
@@ -1793,11 +1840,21 @@ class VentanaPrincipal(QMainWindow):
                 upid=resultado.upid,
                 error=resultado.error,
                 log=resultado.log_tarea,
+                avisos=avisos,
             )
         except (AssertionError, KeyError):
             _log.warning("No se pudo actualizar el libro tras comprobar", exc_info=True)
             return
         lote.puente.observar(nueva)
+        # «Deshacer…» solo se ofrece si la máquina es elegible (p. ej. una rescatada sin
+        # etiquetas no lo es: no hay forma de demostrar que es nuestra).
+        candidatos = ServicioRollback(lote.sesion, self._deps.reloj).elegibles(
+            lote.libro,
+            etiquetado=lote.plan.definicion.etiquetar,
+            excluir_vmids=self._vmids_eliminados(lote),
+        )
+        if not any(c.elegible for c in candidatos):
+            self.progreso.boton_deshacer.setVisible(False)
 
     def _resolver_uno_sin_confirmar(self, cfg: ConfiguracionVM) -> EntradaLibro | None:
         """Tras «Comprobar» halla una máquina sin etiqueta del lote: el libro la marca así."""
@@ -1837,11 +1894,12 @@ class VentanaPrincipal(QMainWindow):
         if lote is None or lote.libro is None or not lote.terminado or lote.deshaciendo:
             return
         sesion = self._sesion
-        if sesion is None:
-            return
+        if sesion is None or lote.cerrado or lote.perfil_id != self._perfil_id:
+            return  # nunca se comprueba un lote contra otro servidor
         lote.terminado = False
         control = ControlLote()
         lote.control = control
+        self._accion_ultimo_lote.setEnabled(False)
         self.progreso_lote.establecer_fase(FaseLote.COMPROBANDO)
         self._timer_lote.start()
         self._lanzador.lanzar(
@@ -1853,9 +1911,13 @@ class VentanaPrincipal(QMainWindow):
             control,
             None,
             vmids,
-            al_terminar=lambda _l: self._finalizar_lote(),
-            al_fallar=self._fallo_lote,
+            al_terminar=lambda _l: self._tras_comprobar(lote),
+            al_fallar=lambda e: self._fallo_lote(lote, e),
         )
+
+    def _tras_comprobar(self, lote: _Lote) -> None:
+        if self._vigente(lote):
+            self._finalizar_lote()
 
     def _lotes_deshacibles(self) -> list[_Lote]:
         """Lotes de la sesión que se pueden deshacer: los anteriores y el actual, mismo servidor."""
@@ -1877,7 +1939,11 @@ class VentanaPrincipal(QMainWindow):
         duenos: dict[int, _Lote] = {}  # id del candidato -> lote al que pertenece
         for lt in self._lotes_deshacibles():
             assert lt.libro is not None
-            for c in servicio.elegibles(lt.libro, etiquetado=lt.plan.definicion.etiquetar):
+            for c in servicio.elegibles(
+                lt.libro,
+                etiquetado=lt.plan.definicion.etiquetar,
+                excluir_vmids=self._vmids_eliminados(lt),
+            ):
                 candidatos.append(c)
                 duenos[id(c)] = lt
         dialogo = DialogoDeshacer(candidatos, self)
@@ -1892,7 +1958,21 @@ class VentanaPrincipal(QMainWindow):
         sesion = self._sesion
         if not elegidos or sesion is None or lote.deshaciendo:
             return
+        # A2: mientras el diálogo estaba abierto pudo cambiar el perfil o cerrarse el lote.
+        # Nunca se deshace un lote contra un servidor distinto del suyo.
+        if not self._vigente(lote) or lote.perfil_id != self._perfil_id:
+            return
+        elegidos = [
+            c
+            for c in elegidos
+            if (dueno := duenos.get(id(c), lote)) is not None
+            and not dueno.cerrado
+            and dueno.perfil_id == self._perfil_id
+        ]
+        if not elegidos:
+            return
         lote.deshaciendo = True
+        self._accion_ultimo_lote.setEnabled(False)
         lote.control_rollback = ControlLote()
         lote.puente_rollback = PuenteRollback(self)
         if lote.modo_uno:
@@ -1939,6 +2019,8 @@ class VentanaPrincipal(QMainWindow):
                 *(r for r in lt.resultados_rollback if r.vmid not in {x.vmid for x in propios}),
                 *propios,
             ]
+        if not self._vigente(lote):
+            return  # el lote se cerró (cambio de perfil o cierre): solo quedan los datos
         self.progreso_lote.actualizar_rollback(resultados)
         error = lote.control_rollback.error_pausa if lote.control_rollback else None
         if error is not None:
@@ -1949,6 +2031,8 @@ class VentanaPrincipal(QMainWindow):
         self._descubrir()  # CA-L18.12: refresca VMIDs y espacio libre
 
     def _fallo_deshacer(self, lote: _Lote, error: ErrorProxLaunch) -> None:
+        if not self._vigente(lote):
+            return
         self.progreso_lote.mostrar_error(texto_error(error))
         lote.deshaciendo = False
         lote.puente_rollback = None
@@ -1988,7 +2072,8 @@ class VentanaPrincipal(QMainWindow):
     def _valores_a_ocultar(sesion: Sesion) -> list[str]:
         """Host(s) y usuario del perfil: se quitan literalmente de todo texto del informe."""
         perfil = sesion.perfil
-        return [*perfil.hosts, sesion.host_activo, perfil.usuario, sesion.usuario_efectivo]
+        valores = [*perfil.hosts, sesion.host_activo, perfil.usuario, sesion.usuario_efectivo]
+        return [v for v in valores if v]
 
     def _informe_actual(self) -> InformeLote | None:
         lote = self._lote
@@ -2073,8 +2158,8 @@ class VentanaPrincipal(QMainWindow):
 
     def _ver_ultimo_lote(self) -> None:
         lote = self._lote
-        if lote is None or lote.libro is None:
-            return
+        if lote is None or lote.libro is None or lote.cerrado or self._lote_en_curso:
+            return  # A2: con un lote, rollback o comprobación en curso no se reinicia la vista
         self.progreso_lote.iniciar(lote.plan)
         self._pila_derecha.setCurrentIndex(2)
         self.formulario.bloquear(True)
@@ -2130,7 +2215,27 @@ class VentanaPrincipal(QMainWindow):
             lote.control.dejar_de_esperar()
             if lote.control_rollback is not None:
                 lote.control_rollback.cancelar()
+                lote.control_rollback.dejar_de_esperar()  # B1: el «Deshacer» también se corta
             self._guardar_informe_parcial(lote)
+        elif lote is not None and lote.modo_uno and lote.deshaciendo and not lote.cerrado:
+            # B1: un «Deshacer» de una sola máquina se corta al cerrar (con lotes, ver arriba).
+            if not confirmar(
+                self,
+                QCoreApplication.translate("VentanaPrincipal", "Hay un «Deshacer» en curso"),
+                QCoreApplication.translate(
+                    "VentanaPrincipal",
+                    "Se están eliminando máquinas. Si cierras, ProxLaunch dejará de esperar: "
+                    "las eliminaciones ya enviadas seguirán en Proxmox y el resto no se hará.",
+                ),
+                QCoreApplication.translate("VentanaPrincipal", "Cerrar de todos modos"),
+                QCoreApplication.translate("VentanaPrincipal", "Seguir en ProxLaunch"),
+            ):
+                ev.ignore()
+                return
+            if lote.control_rollback is not None:
+                lote.control_rollback.cancelar()
+                lote.control_rollback.dejar_de_esperar()
+            lote.control.dejar_de_esperar()
         elif lote is not None and lote.modo_uno and self._creando:
             lote.control.dejar_de_esperar()
         if self._creando:
@@ -2156,9 +2261,14 @@ class VentanaPrincipal(QMainWindow):
             self.setEnabled(False)
             QApplication.processEvents()
         self._lanzador.cancelar_todos()
-        self._lanzador.esperar(3000)
+        terminaron = self._lanzador.esperar(3000)
         sesion = self._sesion
-        if sesion is not None:
+        if sesion is not None and not terminaron:
+            # B1: un hilo sigue vivo y podría renovar el ticket tras cerrar la sesión (el
+            # cliente suelta el autenticador). No se cierra la sesión: el proceso termina de
+            # todos modos y los hilos del pool no lo retienen.
+            _log.warning("Hay hilos activos al cerrar: no se cierra la sesión para no renovar")
+        elif sesion is not None:
             try:
                 self._deps.servicio_conexion.cerrar_sesion(sesion)
             except Exception:  # cerrar la ventana nunca debe fallar

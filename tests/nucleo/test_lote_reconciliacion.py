@@ -130,10 +130,49 @@ def test_ca_l15_5_si_no_se_puede_leer_la_config_la_propiedad_no_esta_demostrada(
     assert estado == EstadoMV.EXISTE_SIN_CONFIRMAR_PROPIEDAD
 
 
-def test_ca_l24_3_sin_etiquetas_activadas_existe_es_ok_sin_leer_la_config():
-    (estado, aviso, _), _, cliente = _reconciliar(True, etiquetar=False)
+def test_ca_l24_3_sin_etiquetas_activadas_existe_es_ok_si_la_config_no_esta_en_lock_create():
+    # Sin etiquetas no hay propiedad que verificar, pero se lee la config para descartar
+    # que la máquina siga en creación (lock: create).
+    (estado, aviso, _), _, cliente = _reconciliar(True, etiquetar=False, config={"name": "web-01"})
     assert (estado, aviso) == (EstadoMV.OK, AVISO_CREADA_TRAS_COMPROBAR)
-    assert cliente.lecturas == 0
+    assert cliente.lecturas == 1
+
+
+def test_ca_l24_3_sin_etiquetas_y_sin_poder_leer_la_config_existe_sigue_siendo_ok():
+    (estado, aviso, _), _, _ = _reconciliar(True, etiquetar=False, error=RuntimeError("red"))
+    assert (estado, aviso) == (EstadoMV.OK, AVISO_CREADA_TRAS_COMPROBAR)
+
+
+def test_b2_sin_etiquetas_y_lock_create_persistente_es_dudosa_no_ok():
+    # Hallazgo B2 (QA): sin etiquetas, una máquina que sigue en creación no se declara OK.
+    (estado, aviso, _), servicio, _ = _reconciliar(
+        True, etiquetar=False, config={"name": "web-01", "lock": "create"}
+    )
+    assert estado == EstadoMV.CONEXION_PERDIDA
+    assert aviso is None
+    assert len(servicio.instantes) == 3  # se relee en cada comprobación
+
+
+def test_b2_sin_etiquetas_y_lock_create_que_termina_se_declara_ok():
+    reloj = RelojSimulado()
+    servicio = _Servicio(reloj, True)
+    configs = [{"name": "web-01", "lock": "create"}, {"name": "web-01"}]
+
+    class _ClienteLento(_Cliente):
+        def config_vm(self, nodo, vmid):
+            self.lecturas += 1
+            return configs[min(self.lecturas, len(configs)) - 1]
+
+    resultado = reconciliar_incierta(
+        servicio,
+        plantilla(vmid=100, nombre="web-01", nodo="pve1"),
+        reloj,
+        threading.Event(),
+        id_lote=ID,
+        etiquetar=False,
+        cliente=_ClienteLento(),
+    )
+    assert resultado[:2] == (EstadoMV.OK, AVISO_CREADA_TRAS_COMPROBAR)
 
 
 def test_cancelar_durante_la_espera_deja_la_maquina_incierta_sin_declararla_no_creada():

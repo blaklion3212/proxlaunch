@@ -158,10 +158,14 @@ def existe_con_etiqueta_del_lote(qtbot, entorno):
     poner_nombre(qtbot, v)
     original = entorno.creacion.crear
 
-    def crear_y_etiquetar(cfg, inv, al_cambiar_etapa, cancelado, *, al_enviar=None):
+    def crear_y_etiquetar(
+        cfg, inv, al_cambiar_etapa, cancelado, *, al_enviar=None, puede_enviar=None
+    ):
         # Proxmox sí recibió la orden: la MV existe con la etiqueta del lote.
         cliente.configs[cfg.vmid] = {"name": cfg.nombre, "tags": ";".join(cfg.etiquetas)}
-        return original(cfg, inv, al_cambiar_etapa, cancelado, al_enviar=al_enviar)
+        return original(
+            cfg, inv, al_cambiar_etapa, cancelado, al_enviar=al_enviar, puede_enviar=puede_enviar
+        )
 
     entorno.creacion.crear = crear_y_etiquetar
     crear_y_esperar(qtbot, v)
