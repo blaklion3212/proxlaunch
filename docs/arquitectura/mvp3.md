@@ -1,7 +1,9 @@
 # Arquitectura del MVP 3 — Perfiles de máquina, lotes guardados e importación CSV (ProxLaunch)
 
-Versión 0.1 (2026-11-14) · Autor: orquestador (borrador) · Estado: borrador para revisión antes de
-implementar
+Versión 0.2 (2026-11-14) · Autor: orquestador (borrador); §11, §14 y Anexo B actualizados por el
+documentador a partir del código final (commit `8a29e08`) · Estado: implementado y revisado (F6);
+el texto de §2–§10 y el Anexo A conservan el diseño original y, donde el código difiere, manda
+el Anexo B y las notas de §11
 
 Fuentes: `docs/requisitos/mvp3.md` (RF-P, RF-X, RF-G, RF-C, RNF-M, V-M, E-M, INV-M, LAB-M3; §9
 formatos, §14 enmiendas, §15 riesgos), `docs/decisiones.md` (D-20, D-21 y **D-22**: lote por filas),
@@ -497,7 +499,7 @@ escribe con `AlmacenJson.escribir` (ya atómico) envuelto para traducir `OSError
 
 ### 5.6 Escritor único de CSV (RF-C11)
 `texto_csv(encabezado, filas, *, separador)` (pura) y `escribir_csv` (= `texto_csv` +
-`escribir_atomico`): `csv.writer(QUOTE_MINIMAL, lineterminator="\r\n")`, UTF-8 **con BOM**. Cada
+`escribir_atomico`): `csv.writer(QUOTE_ALL, lineterminator="\r\n")`, UTF-8 **con BOM**. Cada
 celda:
 - `int` no booleano y ≥ 0 → tal cual (CA-C11.3). Cualquier otro tipo que no sea `str` → `TypeError`
   (fallo de programación, no de datos).
@@ -788,35 +790,81 @@ a la API siguen pasando por V-01/V-16/V-17/V-22/V-24 y por el constructor de M1.
 
 ## 11. Trazabilidad RF → módulo → flujo
 
+Versión final, verificada contra el código del commit `8a29e08` (tras F6). Las rutas son relativas
+a `src/proxlaunch/nucleo/` (columna Núcleo) y `src/proxlaunch/interfaz/` (columna Interfaz). Los
+nombres entre paréntesis son las funciones o clases que implementan el requisito. Donde el código
+difiere del diseño original de §2 se indica en la columna Interfaz o en las notas posteriores.
+
 | RF | Núcleo | Interfaz | Flujo |
 |---|---|---|---|
-| RF-P01 | `perfiles_maquina/modelos`, `validacion`, `archivos/esquema_config` | — | §6.2 |
-| RF-P02 | `perfiles_maquina/fabrica` | `selector_perfil`, `dialogos/perfiles_maquina` | §6.1 |
-| RF-P03, P04 | `perfiles_maquina/almacen`, `validacion`, `aplicar` | `dialogos/guardar_perfil`, `dialogos/perfiles_maquina` | §6.2 |
-| RF-P05, P06 | `perfiles_maquina/aplicar` | `selector_perfil`, `formulario_vm.aplicar_hardware` | §6.1 |
-| RF-P07 | `perfiles_maquina/compatibilidad` | panel de compatibilidad (`ventana_principal`) | §6.1 |
-| RF-P08, P09 | `perfiles_maquina/formato`, `almacen.importar` | `dialogos/perfiles_maquina`, `dialogos/importar_perfiles` | §6.3 |
-| RF-P10, P12 | `perfiles_maquina/almacen`, `persistencia/rutas` | arranque en `ventana_principal` | §6.2 |
-| RF-P11 | `perfiles_maquina/aplicar.resumen_perfil` | `selector_perfil`, `ayuda.py` | §7 |
-| RF-X01 | `archivos/envoltura` | — | §5.4 |
-| RF-X02 | `archivos/lector`, `json_estricto`, `esquema`, `texto` | `trabajadores` | §5.1–5.3 |
-| RF-X03 | `archivos/escritura`, `csv_seguro` | — | §5.5 |
-| RF-X04 | `archivos/esquema`, `texto`, serializadores | — | §5.3, §9 |
-| RF-X05 | — | `archivos_ui` | §7 |
-| RF-G01, G02, G07 | `lotes_guardados/formato`, `modelos` | `dialogos/guardar_lote` | §6.4 |
-| RF-G03, G06 | `lotes_guardados/formato` | `ventana_principal`, `bloque_lote.establecer_definicion` | §6.5 |
-| RF-G04, G05 | `lotes_guardados/revalidacion`, `lote/planificador` | `dialogos/lote_no_encaja`, `tabla_discos`, `tabla_redes` | §6.5 |
-| RF-G08 | `lotes_guardados/formato.lote_a_dict` | `ventana_principal` | §6.8 |
-| RF-C01 | `csv_importacion/*` | `dialogos/importar_csv`, `lote_filas` | §6.6 |
-| RF-C02 | `decodificacion`, `separador`, `lectura` | `dialogos/importar_csv` | §6.6 (2) |
-| RF-C03, C04 | `columnas`, `unidades` | — | §6.6 (3), §6.6.1 |
-| RF-C05..C07 | `interpretacion` | `dialogos/importar_csv`, `modelos_tabla_csv` | §6.6 (3–5) |
-| RF-C08, C09 | `lote/filas`, `planificador`, `reparto`, `presupuesto`, `informe` | `lote_filas`, `resumen_lote`, `modelos_tabla` | §4, §6.6 (6–8) |
-| RF-C10, C11 | `plantilla`, `archivos/csv_seguro` | menú Lote | §6.7, §5.6 |
-| RF-C12 | `errores_csv` | `dialogos/importar_csv` | §6.7 |
-| RF-C13 | `interpretacion` (+ `aplicar_perfil`) | selector de perfil base | §6.6 (3) |
-| RF-C14 | — (datos de `InformeLote`) | `informe_lote` | §6.7 |
-| RF-C15 | `lectura`, `lote/filas.validar_filas` (MAX_LOTE de M2) | — | §6.6 (2) |
+| RF-P01 | `perfiles_maquina/modelos.py` (`ConfigPerfil`, `PerfilMaquina`), `perfiles_maquina/validacion.py` (`validar_config_perfil`, `cfg_ficticia`), `archivos/esquema_config.py` (`leer_config_perfil`, `config_perfil_a_dict`) | — | §6.2 |
+| RF-P02 | `perfiles_maquina/fabrica.py` (`perfiles_fabrica`, `CLAVES_FABRICA`) | `vistas/selector_perfil.py` (`SelectorPerfil`), `dialogos/perfiles_maquina.py` (`DialogoPerfilesMaquina`), `textos.py` (`textos_perfiles_fabrica`) | §6.1 |
+| RF-P03, P04 | `perfiles_maquina/almacen.py` (`AlmacenPerfilesMaquina.crear/actualizar/renombrar/duplicar/eliminar`), `perfiles_maquina/validacion.py` (`validar_nombre_perfil`, `nombre_libre`), `perfiles_maquina/aplicar.py` (`config_desde_configuracion`) | `dialogos/guardar_perfil.py` (`DialogoGuardarPerfil`, `DialogoNombrePerfil`), `dialogos/perfiles_maquina.py`, `ventana_principal.py` (`_guardar_perfil`, `_actualizar_perfil`) | §6.2 |
+| RF-P05, P06 | `perfiles_maquina/aplicar.py` (`aplicar_perfil`, `aplicar_config`, `AvisoPista`, `hardware_igual`) | `vistas/selector_perfil.py`, `vistas/formulario_vm.py` (`aplicar_hardware`), `ventana_principal.py` (`_al_elegir_perfil`, `_aplicar_perfil_elegido`, `_al_cambiar_formulario`), `textos.py` (`texto_aviso_pista`) | §6.1 |
+| RF-P07 | `perfiles_maquina/compatibilidad.py` (`evaluar_compatibilidad`, `funciones_requeridas`) | `vistas/selector_perfil.py` (`mostrar_compatibilidad`), `ventana_principal.py` (`_actualizar_compatibilidad`) | §6.1 |
+| RF-P08, P09 | `perfiles_maquina/formato.py` (`perfiles_a_bytes`, `leer_perfiles`, `leer_archivo_perfiles`, `exportar_perfiles`), `perfiles_maquina/almacen.py` (`importar`) | `dialogos/perfiles_maquina.py` (exportar y importar), `dialogos/importar_perfiles.py` (`DialogoImportarPerfiles`, `ModeloRevisionPerfiles`), `trabajadores.py` (`leer_perfiles_de_archivo`, `exportar_perfiles_a_archivo`) | §6.3 |
+| RF-P10, P12 | `perfiles_maquina/almacen.py` (`cargar`, `EstadoAlmacen`), `persistencia/rutas.py` (`Rutas.perfiles_maquina`) | `app.py` (`AlmacenPerfilesMaquina`), `ventana_principal.py` (`Dependencias.perfiles_maquina`, `_preparar_almacen_perfiles`, `_avisos_perfiles_maquina`) | §6.2 |
+| RF-P11 | `perfiles_maquina/aplicar.py` (`resumen_perfil`) | `textos.py` (`texto_resumen_perfil`), `vistas/selector_perfil.py`, `ayuda.py` | §7 |
+| RF-X01 | `archivos/envoltura.py` (`abrir_envoltura`, `crear_envoltura`, `MIGRACIONES`) | — | §5.4 |
+| RF-X02 | `archivos/lector.py`, `archivos/json_estricto.py`, `archivos/esquema.py`, `archivos/texto.py` | `trabajadores.py` (lectores en hilo) | §5.1–5.3 |
+| RF-X03 | `archivos/escritura.py` (`escribir_atomico`, `motivo_oserror`), `archivos/csv_seguro.py`, `persistencia/rutas.py` (`crear_carpeta_privada`) | `ventana_principal.py` (`_carpeta_lotes`) | §5.5 |
+| RF-X04 | `archivos/esquema.py` (`es_clave_credencial`, `LectorEsquema`), `archivos/texto.py` (`contiene_token`, `exigir_sin_credencial`), `archivos/esquema_config.py`, serializadores de `perfiles_maquina/formato.py` y `lotes_guardados/formato.py` | `textos.py` (E-M08 `credencial`) | §5.3, §9 |
+| RF-X05 | — | `archivos_ui.py` (`elegir_para_abrir`, `elegir_para_guardar`, `TipoArchivo`, `carpeta_inicial`) | §7 |
+| RF-G01, G02, G07 | `lotes_guardados/formato.py` (`lote_a_dict`, `lote_a_bytes`, `guardar_lote`), `lotes_guardados/modelos.py` | `dialogos/guardar_lote.py` (`DialogoGuardarLote`), `ventana_principal.py` (`_guardar_lote`, `_lote_guardado`), `trabajadores.py` (`guardar_lote_guardado`) | §6.4 |
+| RF-G03, G06 | `lotes_guardados/formato.py` (`leer_lote`, `leer_archivo_lote`) | `ventana_principal.py` (`_abrir_lote`, `_lote_leido`), `vistas/bloque_lote.py` (`establecer_definicion`, `establecer_por_filas`), `trabajadores.py` (`leer_lote_guardado`) | §6.5 |
+| RF-G04, G05 | `lotes_guardados/revalidacion.py` (`desajustes`, `sustituir`), `lote/planificador.py` | `dialogos/lote_no_encaja.py` (`PanelLoteNoEncaja`), `vistas/tabla_discos.py`, `vistas/tabla_redes.py`, `vistas/formulario_vm.py` (valores «x (no existe)»), `vistas/bloque_lote.py` (nodos ausentes), `ventana_principal.py` (`_actualizar_desajustes`, `_sustituir_desajuste`; el bloqueo por nodo inexistente es solo de interfaz, ver §14.12), `textos.py` (`texto_desajuste`) | §6.5 |
+| RF-G08 | `lotes_guardados/formato.py` (`lote_a_dict` como huella) | `ventana_principal.py` (`_hay_cambios_sin_guardar`, `_preguntar_guardar_cambios`, `_confirmar_cambios`, `_evaluar_cierre`, `_SIN_GUARDAR`) | §6.8 |
+| RF-C01 | `csv_importacion/` (todo el paquete) | `dialogos/importar_csv.py` (`DialogoImportarCsv`), `vistas/lote_filas.py` (`PanelLoteFilas`), `ventana_principal.py` (`_importar_csv`, `_aplicar_importacion`, `_entrar_por_filas`, `_revisar_filas`) | §6.6 |
+| RF-C02 | `csv_importacion/decodificacion.py`, `separador.py`, `lectura.py` | `dialogos/importar_csv.py` (selectores de codificación y separador) | §6.6 (2) |
+| RF-C03, C04 | `csv_importacion/columnas.py` (`COLUMNAS`, `resolver_columnas`), `csv_importacion/unidades.py` | `textos.py` (`alias_columnas_csv`) | §6.6 (3), §6.6.1 |
+| RF-C05..C07 | `csv_importacion/interpretacion.py` (`interpretar`, `filas_lote`), `csv_importacion/saneado.py`, `csv_importacion/modelos.py` | `dialogos/importar_csv.py`, `modelos_tabla_csv.py` (`ModeloVistaPreviaCsv`, `FiltroProblemasCsv`), `textos.py` (`texto_linea_problema`, `texto_problema_celda`) | §6.6 (3–5) |
+| RF-C08, C09 | `lote/filas.py` (`filas_efectivas`, `validar_filas`, `definicion_por_filas`, `sin_filas`, `reemplazar_fila`, `definicion_para_reintento`), `lote/planificador.py` (`comprobar_vmids`), `lote/reparto.py` (`repartir_filas`), `lote/presupuesto.py` (`uso_de_filas`, `filas_que_exceden`), `lote/informe.py` | `vistas/lote_filas.py`, `vistas/resumen_lote.py` (`establecer_total_filas_archivo`, `establecer_reintento`, «Quitar las filas que no caben», «Asignar automáticamente»), `modelos_tabla.py` (`ModeloPlan` por filas, `ModeloFilasLote`), `ventana_principal.py` (`_quitar_filas`, `_quitar_filas_que_no_caben`, `_asignar_automaticamente`, `_salir_de_por_filas`, `_reintentar_pendientes`) | §4, §6.6 (6–8) |
+| RF-C10, C11 | `csv_importacion/plantilla.py` (`escribir_plantilla`), `archivos/csv_seguro.py` (`texto_csv`, `escribir_csv`, `sanear_celda`) | `archivos_ui.py` (`descargar_plantilla`, `pedir_separador_plantilla`), menú Lote en `ventana_principal.py` | §6.7, §5.6 |
+| RF-C12 | `csv_importacion/errores_csv.py` (`filas_con_error`, `escribir_filas_con_error`) | `dialogos/importar_csv.py` («Descargar filas con error…»), `textos.py` (`traductor_para_archivo`) | §6.7 |
+| RF-C13 | `csv_importacion/interpretacion.py` (+ `perfiles_maquina/aplicar.aplicar_config`) | `dialogos/importar_csv.py` (combo «Perfil base:») | §6.6 (3) |
+| RF-C14 | — (datos de `InformeLote`) | `informe_lote.py` (`datos_maquinas`, `filas_informe_csv`, `guardar_informe_csv`, `ENCABEZADO_INFORME_CSV`), `trabajadores.py` (`escribir_informe_csv`), menú «Guardar el informe del lote como CSV…» | §6.7 |
+| RF-C15 | `csv_importacion/lectura.py`, `lote/filas.py` (`validar_filas`; `MAX_LOTE` de M2) | — | §6.6 (2) |
+
+**Variante voraz de `filas_que_exceden`.** El diseño de §4.5 decía que un elemento excede si el
+acumulado supera lo libre. El código final (`lote/presupuesto.py`) es una variante **voraz**: recorre
+el plan en el orden de las filas con totales acumulados por clave de presupuesto y, **al marcar una
+fila como excedente, no la suma al acumulado**. Así las filas que sí caben (las anteriores y las
+posteriores que aún entran) no se marcan, y quitar exactamente las filas devueltas deja un lote que
+cabe. No es un cálculo de óptimo (no busca el máximo número de filas que caben, y el resultado
+depende del orden). Con `PoliticaThin.ADVERTIR`, un almacenamiento *thin* nunca hace exceder; con
+`CONFIRMAR_CON_TOPE` el límite es `FACTOR_THIN_MAX × libre`; con `BLOQUEAR`, `libre`.
+
+**Dos orígenes de `Plan.filas_excedentes`.** (1) Si el reparto no encuentra nodo por falta de espacio
+(`E-L01` con `motivo = sin_espacio`), el plan sale **sin elementos** y `filas_excedentes` lleva los
+índices de esas filas (`planificador.construir_plan`, rama `sin_sitio`). (2) Si todas las filas
+tienen nodo pero el espacio acumulado no alcanza (`V-L09`/`V-L10` en error), `filas_excedentes` es
+`filas_que_exceden(...)`. En ambos casos `capacidad_maxima` es `None` y la interfaz ofrece
+«Quitar las filas que no caben».
+
+**Divergencias de implementación respecto a §2–§7** (el código manda; el texto de arriba se conserva
+como diseño):
+
+- `csv_seguro` usa `csv.QUOTE_ALL` (todas las celdas entre comillas, también los enteros), no
+  `QUOTE_MINIMAL` como decía §5.6; acepta `;`, `,`, tabulador y `|`, y neutraliza fórmulas también
+  tras `,` `;` `|` o un control eliminado dentro de la celda.
+- La lista de módulos de §2 mencionaba `ModeloPerfilesImportados`: en el código existen
+  `ModeloPerfilesGestor` (`dialogos/perfiles_maquina.py`) y `ModeloRevisionPerfiles`
+  (`dialogos/importar_perfiles.py`). `csv_importacion/saneado.py` y `archivos_ui.descargar_plantilla`
+  no estaban en §2.
+- `usa_nombre_de_plantilla` vive en `lote/filas.py`; `lote/planificador.py` lo reexporta.
+- La fila de un lote por filas guardado conserva su `origen` (número de fila del CSV) en el
+  archivo (`por_filas.filas[i].origen`), además de `nombre`, `vmid`, `nodo` y `config`.
+- El informe CSV (`ENCABEZADO_INFORME_CSV`) tiene `numero`, `nombre`, `vmid`, `nodo`, `desenlace`,
+  `resultado`, `codigo_error`, `duracion_s`; la plantilla CSV usa el **id** del perfil de fábrica
+  (`fabrica.servidor-mediano`) en la columna `perfil`, no su nombre visible (requisitos §9.3).
+- `funciones_requeridas` devuelve el conjunto vacío en el MVP 3: el panel de compatibilidad solo
+  muestra lo que reporta `validar_vm` más `V-P07.cpu_host`.
+
+**Pruebas por área** (`tests/`): núcleo en `nucleo/test_archivos_*.py`, `test_perfiles_maquina_*.py`,
+`test_lotes_guardados_*.py`, `test_csv_*.py`, `test_lote_filas_*.py` y `test_f6_correcciones_*.py`;
+interfaz en `interfaz/test_mvp3_*.py` (perfiles, lotes, filas CSV, cambios sin guardar, bloqueo y
+privacidad, textos y accesibilidad, correcciones de F6); laboratorio en
+`integracion/test_lab_mvp3.py` (LAB-M3-01..04, solo con `PROXLAUNCH_LAB=1`).
 
 ## 12. Plan de fases y dueños de archivos (sin solapes)
 
@@ -904,6 +952,48 @@ que surjan durante la implementación se anotan en un Anexo B tras aprobarlas el
    mitiga sacando la lógica a `lote_filas.py`, `selector_perfil.py` y los diálogos de F4a.
 9. **`version_proxmox` en el lote.** Es informativo; si un revisor lo considera dato del sitio, se
    puede retirar sin cambiar `version_formato` (campo opcional).
+
+### Riesgos residuales tras F6 (commit `8a29e08`)
+
+Los riesgos 1 a 9 se mitigaron como se describe arriba (el riesgo 1 tiene su defensa en
+`planificador.construir_plan`: `ValueError` si los VMIDs del plan no son únicos). Quedan estos
+riesgos y pendientes, todos conocidos y aceptados para cerrar el MVP 3:
+
+10. **Windows real sin verificar.** El motivo «archivo bloqueado» (E-M05 y E-M08 `bloqueado`:
+    `winerror` 32/33, y 5 con el destino existente tras crear el temporal) y el límite de rutas
+    largas (> 260 caracteres, `ruta_larga`) están cubiertos por pruebas con errores simulados, no
+    en un Windows 10/11 real. Pendiente: probarlos con un CSV abierto en Excel y con una ruta
+    larga real. El código distingue esos casos con lógica específica de Windows
+    (`lector._motivo_acceso`, `escritura.motivo_oserror`, `escritura.escribir_atomico`), pero su
+    comportamiento con un sistema de archivos real no está comprobado.
+11. **Tooltips de MVP 1/2 con texto sin escapar (bajo).** Los textos de terceros del MVP 3 pasan por
+    `textos.tooltip_plano` (escapa HTML y fuerza `<qt>`), pero los tooltips de MVP 1/2 que muestran
+    nombres de almacenamientos, redes, nodos o texto del usuario no lo usan: Qt podría interpretar
+    HTML en ellos. El texto procede del propio servidor o del usuario, de ahí el riesgo bajo.
+    Pendiente: aplicar `tooltip_plano` en esos puntos.
+12. **El bloqueo por «nodo elegido inexistente» es solo de interfaz.** `ventana_principal._validar`
+    bloquea el resumen mientras `desajustes()` devuelva un desajuste de tipo `NODO` (nodo que el
+    servidor no tiene o está sin conexión), pero el núcleo (`validar_definicion`, V-L13) solo
+    rechaza `NODOS_ELEGIDOS` si **ninguno** de los nodos está en línea: con al menos uno en línea
+    no emite V-L13. Quien use el núcleo sin la interfaz obtiene ese comportamiento; la política
+    «nada se sustituye en silencio» para los nodos depende de la capa de interfaz.
+13. **Intermitencia del laboratorio justo tras arrancar.** En el laboratorio, durante los primeros
+    instantes tras iniciar el servidor, un nodo puede aparecer «sin conexión» y una prueba de
+    integración puede fallar y pasar al repetirla. Mitigación: esperar a que el nodo esté en línea
+    antes de lanzar las pruebas.
+14. **`filas_que_exceden` es voraz.** Devuelve un conjunto de filas que, quitadas, hacen que el
+    resto quepa, pero no el conjunto mínimo ni el que conserva más espacio útil, y depende del orden
+    del plan (ver §11). El usuario puede ignorar el botón y corregir el CSV.
+15. **Detección de credenciales por heurística.** `es_clave_credencial` (fragmentos `token`,
+    `password`, `contrasena`, `secreto`, `secret`, `ticket`, `csrf`, `apikey`, `credencial`) y
+    `contiene_token` (patrón `usuario@realm!id=secreto` o `PVEAPIToken=`) pueden dar falsos positivos
+    (un encabezado como `ticket_soporte` se descarta) y no detectan un secreto sin esas formas.
+    Es una red de seguridad, no una garantía: el usuario no debe escribir secretos en estos campos.
+16. **Permisos 0600 en carpetas elegidas por el usuario (POSIX).** `escribir_atomico` crea el archivo
+    con `mkstemp` (0600) incluso en una carpeta compartida: quien reciba un lote, perfil o CSV
+    exportado puede necesitar ajustar los permisos. En Windows no se aplica ningún modo explícito.
+17. **Texto de E-M02 (resuelto).** Ahora indica la ruta real: «usa «Importar perfiles» (menú
+    Perfiles › Administrar perfiles… › Importar…)».
 
 ## 15. Decisiones técnicas y alternativas descartadas
 
@@ -1057,3 +1147,209 @@ Todas puras salvo las marcadas «E/S». Los errores son `ErrorProxLaunch` con lo
 - `informe_lote.datos_maquinas(informe: InformeLote) -> list[DatosMaquina]`; `guardar_informe_csv(ruta: Path, informe: InformeLote) -> None`
 - `dialogos.importar_csv.DialogoImportarCsv(parent, *, perfiles: Sequence[PerfilMaquina], perfil_base_id: str, inv: Inventario | None, nodo_referencia: str | None, lanzador: Lanzador)`: `ejecutar() -> tuple[ResultadoImportacion, tuple[int, ...]] | None`
 - `dialogos.lote_no_encaja.PanelLoteNoEncaja`: señal `sustitucion_pedida(object, object)` (`Desajuste`, `str | None`)
+
+---
+
+## Anexo B · Firmas públicas nuevas o cambiadas respecto al Anexo A (código final, commit `8a29e08`)
+
+Léase junto con el Anexo A: **solo** se listan las firmas que el Anexo A no recogía o que cambiaron
+durante F3–F6. Lo que no aparece aquí coincide con el Anexo A. Las firmas se copiaron del código;
+`(E/S)` marca las que tocan disco.
+
+### B.1 Núcleo
+
+**`nucleo/archivos/texto.py`**
+- `exigir_sin_credencial(texto: str, campo: str) -> None` — INV-M2 al serializar: lanza
+  `ErrorProxLaunch(ARCHIVO_NO_GUARDABLE)` con `params = {"motivo": "credencial", "campo": campo}`
+  (el valor nunca viaja) si `contiene_token(texto)`. La usan `perfiles_maquina/formato.perfil_a_dict`,
+  `archivos/esquema_config.config_perfil_a_dict`/`configuracion_a_dict` y
+  `lotes_guardados/formato.lote_a_dict`/`_fila_a_dict`. Campos que comprueba: `nombre`,
+  `descripcion`, `tipo_cpu`, `storage`, `storage_efi`, `bridge`, `storage_preferido`,
+  `storage_efi_preferido`, `bridge_preferido`, `nombre_fila`, `nodo`, `nodos`, `prefijo`,
+  `separador`, `nombre_maquina` y `version_proxmox`.
+- `es_formato_invisible(c: str) -> bool` — `True` si `c` está en `CARACTERES_FORMATO_INVISIBLES` o su
+  categoría Unicode es `Cf`. La usan `csv_seguro` y `csv_importacion/saneado`.
+- `CARACTERES_FORMATO_INVISIBLES: frozenset[str]` — `CARACTERES_BIDI` (U+202A–U+202E,
+  U+2066–U+2069, U+200E, U+200F, U+061C) más U+200B, U+200C, U+200D, U+2060 y U+FEFF.
+- `analizar_texto(valor: str, *, maximo: int, multilinea: bool = False) -> tuple[str, str | None]` —
+  base de `texto_seguro`; el segundo valor es `None`, `MOTIVO_LONGITUD` o `MOTIVO_CARACTERES`.
+- `MAX_LONG_NOMBRE_ARCHIVO = 80`, `CARACTERES_BIDI: frozenset[str]`.
+
+**`nucleo/archivos/esquema.py`**
+- `LectorEsquema.error(ruta: str, motivo: MotivoCampo, **params: str) -> None` (tope
+  `MAX_ERRORES_CAMPO = 1000`).
+- `LectorEsquema.nombre(obj: Mapping[str, object], clave: str, ruta: str, *, maximo: int = LONG_NOMBRE_PERFIL, requerido: bool = True) -> str | None` — V-M01 sin unicidad, V-M04 y V-M05; `ErrorCampo.params` lleva `regla` y `maximo`.
+- `LectorEsquema.texto(...)` añade el parámetro `defecto: str | None = None`.
+- `combinar_avisos(avisos: Iterable[AvisoArchivo]) -> tuple[AvisoArchivo, ...]` — suma los avisos con
+  contador `n` (`CAMPOS_DESCONOCIDOS`, `CREDENCIAL_IGNORADA`) y conserva el resto.
+- `ErrorCampo.params`, `AvisoArchivo.params` y `Envoltura.avisos` tienen valor por defecto.
+- `es_clave_credencial`: sin el fragmento `api_key` literal (queda cubierto por `apikey` tras normalizar).
+
+**`nucleo/archivos/escritura.py`**
+- `motivo_oserror(exc: OSError) -> str` — `sin_espacio`, `sin_permiso`, `bloqueado`, `ruta_larga` u `otro`.
+- `escribir_atomico(ruta: Path, datos: bytes) -> None` (E/S) — igual firma; en Windows mide también el
+  temporal más largo posible (> 260) y reinterpreta «acceso denegado» como `bloqueado` si el destino existe.
+
+**`nucleo/archivos/csv_seguro.py`**
+- `DISPARADORES: frozenset[str]` = `{"=", "+", "-", "@", "\t", "\r"}`.
+- `texto_csv(...)`/`escribir_csv(...)`: `csv.QUOTE_ALL`, `separador` ∈ {`;`, `,`, tabulador, `|`}
+  (otro valor lanza `ValueError`); `bool` y tipos distintos de `str`/`int` lanzan `TypeError`.
+- `sanear_celda(valor: str) -> str` — además de lo del Anexo A, antepone `'` a cada segmento que
+  siga a `,` `;` `|` o a un control eliminado (`"a;=1+1"` → `"a;'=1+1"`) y elimina `Cc`, `Cs` y
+  formato invisible.
+
+**`nucleo/archivos/constantes.py`** — `MAX_LONG_CELDA = 256`, `LINEAS_DETECCION = 20`,
+`MAX_PROBLEMAS_FILA = 5`, `MEMORIA_AVISO_GIB = 1024` (además de las del §6 de los requisitos).
+
+**`nucleo/perfiles_maquina/`**
+- `validacion.validar_descripcion(descripcion: str) -> tuple[str, list[Problema]]`
+- `validacion.cfg_ficticia(config: ConfigPerfil) -> ConfiguracionVM` — configuración con
+  almacenamiento/red ficticios para aplicar la capa 1 a un perfil.
+- `formato.perfil_a_dict(perfil: PerfilMaquina, *, con_pistas: bool, con_id: bool = False) -> dict[str, object]`
+- `formato.leer_perfil_dict(lector: LectorEsquema, valor: object, ruta: str)` — un perfil del archivo.
+- `formato.CLAVES_PERFIL_ARCHIVO: frozenset[str]` (`nombre`, `descripcion`, `config`, `id`, `origen`).
+- `almacen.AlmacenPerfilesMaquina` expone como atributos públicos `ruta`, `fabrica`, `generador_id`,
+  `ahora` y `app_version`; `buscar_por_nombre` compara también por `id`.
+- `aplicar.ResultadoAplicacion.avisos` tiene valor por defecto `()`.
+
+**`nucleo/lotes_guardados/formato.py`**
+- `TipoLote(StrEnum)`: `HOMOGENEO = "homogeneo"`, `POR_FILAS = "por_filas"`.
+- `MAX_NODOS_ARCHIVO = 256`, `MAX_LONG_VERSION = 32`.
+- El archivo por filas conserva `origen` (número de fila del CSV) en cada fila:
+  `por_filas.filas[i] = {nombre, vmid, nodo, config, origen?}`.
+- `lote_a_dict(lote)`/`lote_a_bytes(...)` pueden lanzar `ARCHIVO_NO_GUARDABLE` con `motivo = "credencial"`.
+
+**`nucleo/csv_importacion/`**
+- `saneado.sin_control(texto: str) -> str`; `saneado.texto_visible(texto: str, maximo: int = LONG_VALOR_MOSTRADO) -> str`;
+  `saneado.LONG_VALOR_MOSTRADO = 40`.
+- `unidades.memoria_mib(texto: str, unidad_encabezado: str | None = None) -> tuple[int, frozenset[CodigoAvisoArchivo]]`
+  y `unidades.disco_gib(texto: str, unidad_encabezado: str | None = None) -> tuple[int | None, frozenset[CodigoAvisoArchivo]]`
+  — `unidad_encabezado` (`"mib"`/`"gib"`, derivada del nombre de columna, p. ej. `memoria_mib`)
+  sustituye al GiB por defecto de un número sin unidad. `ValorInvalido` usa las reglas `E-M11.*` y `V-M08`.
+- `separador.linea_sep(texto: str) -> tuple[str, int] | None`; `separador.CANDIDATOS = (";", ",", "\t")`.
+  Empate sin decimal con coma: gana `,` y `DeteccionSeparador.ambiguo = True`.
+- `lectura.OPCIONES_AUTOMATICAS = OpcionesCsv()` (valor por defecto de `leer_tabla` y `leer_archivo_csv`).
+- `columnas.MAX_DISCOS_CSV = 8`. Alias: ver el código; la tabla vigente está en la guía de usuario.
+- `plantilla.SEPARADORES_PLANTILLA = (";", ",")`; `escribir_plantilla` lanza `ValueError` con otro separador.
+  `filas_plantilla()` usa el id `fabrica.servidor-mediano` en la columna `perfil`.
+- `errores_csv.COLUMNAS_EXTRA = ("fila_original", "columna", "problema")` y `SEPARADOR_PROBLEMAS = " | "`.
+- `interpretacion.PREFIJO_EJEMPLO = "ejemplo-"` (V-M11), `MAX_DISPONIBLES = 5`, `MAX_NODOS_MOTIVOS = 5`.
+
+**`nucleo/lote/`**
+- `filas.usa_nombre_de_plantilla(definicion: DefinicionLote) -> bool` — definida aquí;
+  `planificador.usa_nombre_de_plantilla` la reexporta.
+- `modelos.FilaLote(nombre: str, cfg: ConfiguracionVM, vmid: int | None = None, nodo: str | None = None, origen: int | None = None)`.
+- `modelos.DefinicionLote.es_por_filas` (propiedad), `modelos.Plan.filas_excedentes: tuple[int, ...] = ()`,
+  `modelos.InformeLote.por_filas: bool = False`.
+- `presupuesto.filas_que_exceden(elementos, inv, politica) -> tuple[int, ...]` — **variante voraz**
+  (ver §11): las filas marcadas no se suman al acumulado.
+- `planificador.construir_plan` lanza `ValueError` si el número de VMIDs no coincide con el de filas o
+  si el plan tendría VMIDs repetidos (defensa de INV-L1).
+
+**`nucleo/persistencia/perfiles.py`**
+- `RepositorioPerfiles.ruta -> Path` (propiedad) — archivo de perfiles de conexión (`perfiles.json`);
+  la ventana deriva de ella la carpeta de `perfiles_maquina.json` si no se inyecta un almacén.
+
+### B.2 Interfaz
+
+**`interfaz/ventana_principal.py`**
+- `Dependencias` (dataclass) añade tres campos con valor por defecto:
+  `perfiles_maquina: AlmacenPerfilesMaquina | None = None` (si se inyecta debe venir ya `cargar()`ado;
+  si no, la ventana lo crea junto a `perfiles.json`), `directorio_lotes: Path | None = None`
+  (carpeta sugerida de lotes; por defecto `Rutas().lotes`) y `version_app: str = __version__`
+  (la que se escribe en `app_version` de los archivos). `app.py` los rellena con `rutas.perfiles_maquina`,
+  `rutas.lotes` y `__version__`.
+- Menús: **Lote** (`Abrir lote…` Ctrl+O, `Guardar lote…` Ctrl+S, `Guardar lote como…` Ctrl+Mayús+S,
+  `Importar desde CSV…`, `Descargar plantilla CSV…`, `Guardar el informe del lote como CSV…`) y
+  **Perfiles** (`Guardar como perfil de máquina…`, `Administrar perfiles…`, esta solo visible en avanzado).
+
+**`interfaz/vistas/bloque_lote.py` — `BloqueLote`**
+- `reiniciar() -> None` — deja el bloque como recién creado (cantidad 1, sin prefijo, Automático, sin
+  nodos ausentes, sin modo por filas); lo usa la ventana al reiniciar el formulario.
+- `establecer_definicion(definicion: DefinicionLote) -> None` — carga atómica; delega en
+  `establecer_por_filas` si la definición es por filas.
+- `establecer_por_filas(definicion: DefinicionLote) -> None`, `actualizar_filas(definicion: DefinicionLote) -> None`,
+  `salir_de_por_filas() -> None`, `es_por_filas -> bool` (propiedad), `es_lote -> bool`.
+
+**`interfaz/vistas/resumen_lote.py` — `ResumenLote`**
+- `establecer_reintento(es_reintento: bool) -> None` — marca que el plan es el de un reintento (oculta
+  «Quitar las filas que no caben» y «Asignar automáticamente»).
+- `establecer_total_filas_archivo(total: int | None) -> None` — para «Se van a crear N de las M filas del archivo.».
+- Señales nuevas: `quitar_excedentes_solicitado = Signal(object)` (`tuple[int, ...]`) y
+  `asignar_automatico_solicitado = Signal(object)` (`tuple[int, ...]`, posiciones de fila).
+- Funciones de módulo: `texto_boton_quitar_excedentes() -> str`, `texto_filas_del_archivo(n: int, total: int) -> str`.
+
+**`interfaz/vistas/lote_filas.py`**
+- `PanelLoteFilas(parent: QWidget | None = None)`: señales `resumen_solicitado`, `revisar_solicitado`,
+  `guardar_solicitado`, `salir_solicitado`, `quitar_solicitado(object)`; métodos
+  `establecer(definicion, *, origen: str | None, desde_archivo: bool, puede_revisar: bool = False)`,
+  `actualizar_filas(definicion, titulo: str)`, `mostrar_problemas(textos)`,
+  `establecer_bloqueo_resumen(motivo: str | None)`, `bloquear(bloqueado: bool)`,
+  `filas_seleccionadas() -> tuple[int, ...]`; propiedades `definicion`, `titulo`.
+- `texto_titulo_filas(n: int, origen: str | None, *, desde_archivo: bool) -> str`.
+
+**`interfaz/vistas/selector_perfil.py`**
+- `SelectorPerfil(parent=None)` (`QGroupBox`): señales `perfil_elegido(str)`, `guardar_solicitado`,
+  `actualizar_solicitado`, `administrar_solicitado`; `establecer_perfiles(perfiles, actual_id)`,
+  `marcar_aplicado(id_perfil: str | None)`, `marcar_modificado(modificado: bool)`, `restaurar()`,
+  `bloquear(bloqueado: bool)`, `establecer_modo(avanzado: bool)`, `mostrar_avisos(textos)`,
+  `mostrar_compatibilidad(errores, avisos)`; propiedades `perfil_actual_id`, `modificado`, `texto_combo`.
+- `PanelAvisos(nombre_accesible: str, parent=None)` con `mostrar(textos)` y `texto`.
+
+**`interfaz/vistas/formulario_vm.py` — `FormularioVM`**
+- `aplicar_hardware(cfg: ConfiguracionVM) -> None` (como en el Anexo A), más
+  `campos_no_numericos() -> list[str]`, `establecer_nombre(nombre: str) -> None` y
+  `nodo_efectivo() -> str`.
+
+**`interfaz/dialogos/`**
+- `importar_csv.DialogoImportarCsv(parent: QWidget | None, *, perfiles, perfil_base_id: str, inv, nodo_referencia, lanzador, avanzado: bool = False, alias_extra: Mapping[str, str] | None = None, tema: str = "oscuro", al_resultado_tardio: Callable[[str, bool], None] | None = None)`
+  — **cambia** respecto al Anexo A (el padre es posicional y hay parámetros nuevos).
+  `ejecutar(ruta: Path | None = None) -> tuple[ResultadoImportacion, tuple[int, ...]] | None`,
+  `cargar_archivo(ruta)`, `mostrar_resultado(tabla, resultado, nombre_archivo)`; propiedades
+  `resultado`, `nombre_archivo` (solo el nombre), `tabla_csv`, `perfil_base`, `ocupado`, `hay_errores`,
+  `puede_continuar`; `numeros_elegidos() -> tuple[int, ...]`. Funciones de módulo
+  `leer_e_interpretar(...)` y `reinterpretar(...)` (se ejecutan en hilo).
+- `lote_no_encaja.PanelLoteNoEncaja.establecer_desajustes(desajustes: Sequence[Desajuste], numeros: Sequence[int | None] = ()) -> None`
+  — `numeros` son los números de origen de las filas; atributos `botones_usar_otro`, `botones_automatico`.
+- `guardar_lote.DialogoGuardarLote(*, nombre_sugerido: str = "", hay_problemas: bool = False, archivo_origen: str | None = None, parent=None)`
+  con `ejecutar() -> bool`, `nombre`, `accion: AccionGuardarLote` (`NUEVO` | `SOBRESCRIBIR`) y `nombre_archivo_sugerido`.
+- `guardar_perfil.DialogoGuardarPerfil(almacen, cfg, *, avanzado: bool, nombre_sugerido: str = "", parent=None)`
+  (deja el `PerfilMaquina` creado en `perfil_creado`) y `DialogoNombrePerfil(existentes, *, titulo, texto_aceptar, nombre_inicial, descripcion_inicial=None, excluir_id=None, bloqueo=None, parent=None)`.
+- `perfiles_maquina.DialogoPerfilesMaquina(almacen, lanzador, *, app_version=__version__, tema="oscuro", al_resultado_tardio=None, parent=None)`:
+  señales `perfiles_cambiados(object)`, `usar_pedido(object)`, `crear_pedido()`.
+- `importar_perfiles.DialogoImportarPerfiles(archivo: ArchivoPerfiles, existentes: Sequence[PerfilMaquina], *, tema: str = "oscuro", parent: QWidget | None = None)`
+  con `ejecutar() -> tuple[EntradaImportacion, ...] | None`.
+
+**`interfaz/archivos_ui.py`** — `elegir_para_abrir(parent, tipo)` y `elegir_para_guardar(parent, tipo, nombre_sugerido, carpeta=None)`
+como en el Anexo A, más: `nombre_sugerido(tipo: TipoArchivo, base: str) -> str`, `filtro_de(tipo) -> str`,
+`carpeta_inicial() -> Path`, `olvidar_carpeta() -> None`, `pedir_separador_plantilla(parent) -> str | None`,
+`descargar_plantilla(parent, lanzador, *, al_terminar=None, al_fallar=None, separador: str | None = None) -> bool`,
+`boton_ayuda_texto(texto: str, parent=None) -> QToolButton`, `avisar_error(parent, titulo: str, error: ErrorProxLaunch) -> None`,
+`EXTENSION_SUGERIDA` (`.proxlaunch-perfiles.json`, `.proxlaunch-lote.json`, `.csv`).
+
+**`interfaz/informe_lote.py`** — `datos_maquinas(informe: InformeLote) -> list[DatosMaquina]`
+(`DatosMaquina`: `numero`, `nombre`, `vmid`, `nodo`, `estado`, `codigo_error`, `duracion_s`, `upid`),
+`ENCABEZADO_INFORME_CSV: tuple[str, ...]` (`numero`, `nombre`, `vmid`, `nodo`, `desenlace`, `resultado`,
+`codigo_error`, `duracion_s`), `filas_informe_csv(informe) -> list[list[str | int]]`,
+`guardar_informe_csv(ruta: Path, informe: InformeLote) -> None`,
+`nombre_archivo_csv_sugerido(informe: InformeLote) -> str` (`informe-lote-<código>.csv` o
+`simulacion-<código>.csv`). El UPID no se escribe.
+
+**`interfaz/trabajadores.py`** — envoltorios finos para hilo: `leer_lote_guardado(ruta) -> ArchivoLote`,
+`guardar_lote_guardado(ruta, lote, app_version) -> Path`, `leer_perfiles_de_archivo(ruta) -> ArchivoPerfiles`,
+`exportar_perfiles_a_archivo(ruta, perfiles, con_pistas, app_version) -> Path`,
+`escribir_plantilla_csv(ruta, separador) -> Path`, `escribir_informe_csv(ruta, informe) -> Path`.
+
+**`interfaz/textos.py`** — funciones públicas nuevas: `tooltip_plano(texto: str) -> str`,
+`texto_fallo(error: ErrorProxLaunch) -> str`, `texto_error_campo(error: ErrorCampo) -> str`,
+`texto_motivo_campo(motivo: MotivoCampo) -> str`, `texto_aviso_archivo(aviso: AvisoArchivo) -> str`,
+`texto_aviso_pista(aviso: AvisoPista) -> str`, `texto_regla_perfil(regla: str, campo: str = "") -> str`,
+`texto_resumen_perfil(config: ConfigPerfil) -> str`, `textos_perfiles_fabrica() -> dict[str, tuple[str, str]]`,
+`alias_columnas_csv() -> dict[str, str]`, `texto_estado_fila(estado)`, `texto_estado_con_simbolo(estado)`,
+`texto_problema_celda(p, columnas=None)`, `texto_linea_problema(p, columnas=None)`,
+`traductor_para_archivo(columnas) -> Callable[[ProblemaCelda], str]`, `texto_desajuste(d: Desajuste) -> str`,
+`texto_problema_lote(p, *, fila: str | None = None) -> str`.
+
+**`interfaz/ayuda.py`** — claves nuevas: `perfil`, `perfil_fabrica`, `perfil_pistas`, `perfil_guardar`,
+`perfil_exportar`, `perfil_importar`, `perfil_compatibilidad`, `lote_guardado`, `csv`, `csv_plantilla`,
+`csv_separador`, `csv_codificacion`, `csv_unidades`, `csv_vista_previa`, `lote_por_filas`.

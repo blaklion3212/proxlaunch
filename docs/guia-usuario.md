@@ -1,8 +1,12 @@
-# Guía de usuario de ProxLaunch (MVP 1 y MVP 2)
+# Guía de usuario de ProxLaunch (MVP 1, MVP 2 y MVP 3)
 
 ProxLaunch te ayuda a crear una o varias máquinas virtuales en un servidor Proxmox sin
 tener que conocer todos sus detalles. Esta guía te lleva paso a paso. No necesitas saber
 de Proxmox: cada término se explica la primera vez que aparece.
+
+Desde el MVP 3 también puedes **reutilizar configuraciones** (perfiles de máquina), **guardar
+y abrir lotes** como archivos, **importar máquinas desde una hoja de cálculo (CSV)** y crear
+un **lote por filas** en el que cada máquina tiene su propia configuración.
 
 Los nombres de botones, menús y mensajes de esta guía son los que ves en la aplicación.
 
@@ -19,9 +23,14 @@ Los nombres de botones, menús y mensajes de esta guía son los que ves en la ap
 5. [Modo avanzado](#modo-avanzado)
 6. [Entender el progreso y los resultados](#entender-el-progreso-y-los-resultados)
 7. [Crear varias máquinas de una vez (lotes)](#crear-varias-máquinas-de-una-vez-lotes)
-8. [Mensajes de error frecuentes](#mensajes-de-error-frecuentes)
-9. [Privacidad y seguridad](#privacidad-y-seguridad)
-10. [Preguntas frecuentes](#preguntas-frecuentes)
+8. [Perfiles de máquina](#perfiles-de-máquina)
+9. [Guardar y abrir lotes](#guardar-y-abrir-lotes)
+10. [Importar máquinas desde un CSV](#importar-máquinas-desde-un-csv)
+11. [Lote por filas](#lote-por-filas)
+12. [Cambios sin guardar](#cambios-sin-guardar)
+13. [Mensajes de error frecuentes](#mensajes-de-error-frecuentes)
+14. [Privacidad y seguridad](#privacidad-y-seguridad)
+15. [Preguntas frecuentes](#preguntas-frecuentes)
 
 ---
 
@@ -42,8 +51,12 @@ Los nombres de botones, menús y mensajes de esta guía son los que ves en la ap
 | **2FA (segundo factor)** | Un segundo paso de seguridad al iniciar sesión: normalmente un código de 6 números que muestra una aplicación en tu teléfono. |
 | **Tarea (UPID)** | Cuando pides crear una máquina, Proxmox abre una «tarea». El UPID es el identificador de esa tarea. |
 | **Firmware (tipo de arranque)** | El programa con el que arranca la máquina: SeaBIOS (clásico) o UEFI (moderno). |
-| **Lote** | Un grupo de máquinas iguales que se crean de una vez. Solo cambian el nombre, el número y, si hay clúster, el nodo. |
+| **Lote** | Un grupo de máquinas que se crean de una vez. Normalmente son iguales y solo cambian el nombre, el número y, si hay clúster, el nodo (ver también «Lote por filas»). |
 | **Etiqueta** | Una marca de texto que Proxmox muestra junto a la máquina. ProxLaunch usa dos para reconocer lo que creó. |
+| **Perfil de máquina** | Una configuración de hardware ya preparada (procesadores, memoria, discos y red) que rellena el formulario de un clic. No es una plantilla de Proxmox ni un perfil de conexión. |
+| **Lote guardado** | Un archivo `.json` con la definición de un lote, para repetirlo otro día. No guarda datos de conexión. |
+| **CSV** | Un archivo de texto con una tabla, que puedes crear y editar con Excel o LibreOffice Calc. Cada fila es una máquina. |
+| **Lote por filas** | Un lote en el que cada máquina trae su propia configuración (el caso de un CSV con máquinas distintas). |
 
 ---
 
@@ -413,6 +426,10 @@ Un **lote** crea de 1 a 100 máquinas iguales con un solo clic. Todas comparten 
 configuración del formulario (procesadores, memoria, discos, red...) y solo cambian el
 **nombre**, el **número** y, si tienes un clúster, el **nodo**. Como en el resto de
 ProxLaunch, las máquinas se crean **detenidas** y con el disco **vacío**.
+
+Si lo que necesitas son máquinas **distintas entre sí**, mira [Importar máquinas desde un CSV](#importar-máquinas-desde-un-csv)
+y [Lote por filas](#lote-por-filas). Para repetir un lote otro día, mira
+[Guardar y abrir lotes](#guardar-y-abrir-lotes).
 
 Un lote es de verdad más delicado que crear una sola máquina, así que ProxLaunch te enseña
 un resumen antes de enviar nada, te deja **simular** primero y te permite **deshacer** lo que
@@ -850,6 +867,472 @@ Si cierras de todos modos:
 
 ---
 
+## Perfiles de máquina
+
+Un **perfil de máquina** es una configuración de **hardware** ya preparada: procesadores,
+memoria, tipo de arranque, discos y red. Al elegirlo, ProxLaunch rellena el formulario por ti.
+Sirve para no volver a escribir lo mismo cada vez.
+
+Lo que un perfil **sí** aplica: el tipo de arranque, los sockets y núcleos, el tipo de CPU, la
+memoria, el ballooning, los discos (tamaño, conexión, formato y opciones) y las redes.
+
+Lo que un perfil **nunca** toca: el **nombre** de la máquina, su **número (VMID)**, el **nodo** y
+el bloque **Lote**. Tampoco instala ningún sistema operativo: el disco sigue siendo vacío.
+
+El grupo **Perfil de máquina** está arriba del formulario, en modo básico y en avanzado. Con un
+lote en marcha queda desactivado.
+
+### Perfiles de fábrica
+
+ProxLaunch trae seis perfiles. **No se pueden modificar ni borrar**; si quieres una variante,
+duplícala (ver [Administrar perfiles](#administrar-perfiles-modo-avanzado)). En la lista aparecen
+como «Servidor pequeño — De fábrica».
+
+| Perfil | Para qué | Núcleos | Memoria | Disco |
+|---|---|---|---|---|
+| **Servidor pequeño** (el que se aplica al abrir) | Para pruebas y servicios ligeros. | 2 | 2 GiB | 32 GiB |
+| **Servidor mediano** | Para aplicaciones web. | 4 | 4 GiB | 64 GiB |
+| **Base de datos** | Para bases de datos. | 4 | 8 GiB | 100 GiB |
+| **Servidor grande** | Para cargas pesadas. | 8 | 16 GiB | 128 GiB |
+| **Escritorio (hardware compatible)** | Para sistemas que aún no traen controladores virtio: disco SATA, tarjeta de red Intel E1000 y arranque UEFI. | 4 | 4 GiB | 80 GiB |
+| **Mínimo** | Disco y red básicos, para probar. | 1 | 512 MiB | 8 GiB |
+
+Todos usan un solo socket, una interfaz de red y un disco vacío.
+
+### Usar un perfil
+
+1. En **Perfil de máquina**, abre la lista y elige uno. Debajo verás un resumen («4 núcleos · 4 GiB ·
+   1 disco de 64 GiB») y su descripción.
+2. El formulario se rellena con el hardware del perfil. En la barra de estado aparece «Perfil
+   «Servidor mediano» aplicado». Tu nombre, número y nodo siguen como estaban.
+3. Sigue como siempre: **Crear máquina**, o **Ver resumen** si es un lote.
+
+**«(modificado)» y «Personalizado».** Si cambias cualquier dato de hardware después de elegir un
+perfil, la lista pasa a decir, por ejemplo, «Servidor mediano — De fábrica (modificado)». No
+pasa nada: el perfil guardado no cambia. Si abres un lote guardado, o el perfil que usabas se
+elimina o se cambia, la lista muestra «Personalizado» (el formulario tal como está, sin perfil).
+«Personalizado» es solo un estado: no se puede elegir para aplicar nada.
+
+**Si ya cambiaste cosas y eliges otro perfil,** ProxLaunch pregunta antes (**Cambiar de perfil**:
+«Se reemplazarán los ajustes de hardware que cambiaste.»). **Reemplazar** aplica el perfil;
+**Cancelar** deja todo como estaba.
+
+**Almacenamiento y red del perfil (pistas).** Un perfil puede recordar en qué almacenamiento y
+en qué red (bridge) estaba cada disco y cada interfaz. Esos nombres son **pistas**: si existen en
+el nodo, se usan. Si no existen, ProxLaunch usa los predeterminados del nodo y te avisa en un
+panel que puedes cerrar, por ejemplo: «El perfil pedía el almacenamiento «datos», que no existe
+en «pve1». Se usó «local-lvm».» Si el nodo no tiene ninguno apto, el aviso termina en «Elige uno
+antes de crear.» ProxLaunch nunca inventa un almacenamiento.
+
+**Compatibilidad del perfil.** Debajo del selector puede aparecer este panel: con ✕ lo que
+impide crear la máquina con este servidor y esta versión de Proxmox, y con ⚠ lo que solo
+conviene saber (por ejemplo, que el tipo de CPU «host» impide mover la máquina entre nodos con
+procesadores distintos). Los avisos no impiden crear; los errores sí.
+
+### Guardar tu propio perfil
+
+1. Deja el formulario como quieres el hardware.
+2. Pulsa **Guardar como perfil…** (en el grupo **Perfil de máquina**) o abre el menú **Perfiles >
+   Guardar como perfil de máquina…**.
+3. Escribe un **Nombre del perfil** (de 1 a 60 caracteres; no puede repetir el de otro perfil,
+   sea de fábrica o tuyo). En modo avanzado puedes añadir una **Descripción (opcional)**.
+4. La casilla **Recordar los nombres de almacenamiento y red (solo sirven en servidores que los
+   tengan)** viene marcada. Desmárcala si quieres un perfil que no dependa de tu servidor.
+5. Pulsa **Guardar perfil**. Verás «Perfil «X» guardado».
+
+El diálogo te recuerda qué se guarda: «el hardware actual del formulario: procesador, memoria,
+discos y redes. No se guarda el nombre de la máquina, su número ni el nodo.» Puedes tener hasta
+100 perfiles propios. Si el formulario tiene errores, el diálogo los lista («Corrige esto en el
+formulario antes de guardar el perfil») y no te deja guardar. **Guardar como perfil…** no está
+disponible en un [lote por filas](#lote-por-filas).
+
+**Guardar cambios en un perfil tuyo.** Si el perfil aplicado es **tuyo** y lo modificaste,
+aparece el botón **Guardar cambios en el perfil «X»**. Te pide confirmar («Se reemplazará el
+hardware guardado en el perfil «X».») con **Guardar cambios** o **Cancelar**. En un perfil de
+fábrica ese botón no aparece: usa **Guardar como perfil…** para crear el tuyo.
+
+### Administrar perfiles (modo avanzado)
+
+En **Ajustes > Modo > Avanzado**, el menú **Perfiles > Administrar perfiles…** (y un botón en el
+grupo **Perfil de máquina**) abre **Administrar perfiles de máquina**: una lista con **Nombre**,
+**Tipo** («De fábrica» o «Propio») y **Resumen**. Los botones son:
+
+| Botón | Qué hace |
+|---|---|
+| **Usar en el formulario** | Aplica el perfil elegido (igual que elegirlo en la lista). |
+| **Guardar el formulario como perfil…** | Lo mismo que **Guardar como perfil…**. |
+| **Duplicar…** | Hace una copia editable. Propone el nombre «Copia de X». Sirve para partir de un perfil de fábrica. |
+| **Renombrar…** | Cambia el nombre (y la descripción) de un perfil tuyo. |
+| **Eliminar…** | Pide confirmar («¿Eliminar el perfil «X»? Los lotes que ya guardaste no cambian.»). |
+| **Importar…** / **Exportar…** | Ver más abajo. |
+
+Con un perfil de fábrica, **Renombrar…** y **Eliminar…** están desactivados y la ventana explica:
+«Los perfiles de fábrica no se pueden cambiar. Duplícalo para hacer tu propia versión.»
+
+### Compartir perfiles: exportar e importar
+
+**Exportar.** Elige uno o varios perfiles y pulsa **Exportar…**. Aparece **Exportar perfiles**
+con la casilla **Incluir los nombres de almacenamiento y red**, **desmarcada** (esos nombres son de
+tu servidor y casi nunca existen en el de otra persona). Pulsa **Elegir dónde guardar…**. El
+archivo se llama, por ejemplo, `servidor-web.proxlaunch-perfiles.json` y nunca incluye
+contraseñas, tokens, direcciones ni nombres de usuario.
+
+**Importar.** Pulsa **Importar…** y elige un archivo de perfiles. Se abre **Importar perfiles de
+máquina** con una lista de lo que trae el archivo. **Todavía no se guardó nada.** Marca los que
+quieres (columna **Importar**) y mira la columna **Estado**:
+
+- «✔ Nuevo»: se importará tal cual.
+- «⚠ Nombre repetido: se conservan ambos»: ya tienes uno con ese nombre. En **Este nombre ya
+  existe** eliges **Conservar ambos (el importado se renombra)** (lo normal), **Reemplazar el
+  perfil que ya tengo** (solo con perfiles tuyos y con una confirmación más) u **Omitir este
+  perfil**. Un perfil de fábrica nunca se reemplaza.
+- «✖ No válido»: el archivo tiene ese perfil dañado; no se puede marcar.
+
+Pulsa **Importar N perfiles**. Los importados son siempre perfiles **tuyos**, aunque el archivo
+dijera otra cosa.
+
+### Dónde se guardan
+
+Tus perfiles van en `perfiles_maquina.json`, en la misma carpeta de configuración que
+`perfiles.json` (ver [Qué se guarda y dónde](#qué-se-guarda-y-dónde)). Si el archivo se dañó,
+ProxLaunch guarda una copia y empieza con la lista vacía: «Tu archivo de perfiles estaba dañado.
+Se guardó una copia («…») y se empezó con la lista vacía.» Si lo creó una versión más nueva de
+ProxLaunch, tus perfiles se muestran pero no se pueden modificar.
+
+---
+
+## Guardar y abrir lotes
+
+Un **lote guardado** es un archivo que recuerda cómo preparaste un lote, para repetirlo otro día
+o en otro servidor. Se guarda como `.proxlaunch-lote.json`. El menú es **Lote**:
+
+| Opción | Atajo | Qué hace |
+|---|---|---|
+| **Abrir lote…** | Ctrl+O | Carga un lote guardado. **Necesita estar conectado.** |
+| **Guardar lote…** | Ctrl+S | Guarda el lote actual. |
+| **Guardar lote como…** | Ctrl+Mayús+S | Guarda con otro nombre o en otro sitio. |
+
+### Qué se guarda
+
+El lote es **autocontenido**: lleva la configuración de hardware (con los nombres de
+almacenamiento y red que usaste), la cantidad, el patrón de nombres, el número de máquina
+inicial **solo si lo escribiste tú**, dónde crearlas, el reparto, si etiquetar, el nombre del lote
+y la versión de Proxmox con la que lo guardaste. En un [lote por filas](#lote-por-filas) guarda
+además cada fila: nombre, número, nodo y configuración.
+
+**No se guarda nunca:** datos de conexión (servidor, usuario, token, contraseña), el resumen, los
+números ya reservados, el código del lote ni la casilla de sobreasignar espacio (esa se vuelve a
+pedir). Si algún texto que escribiste parece una credencial (`usuario@realm!token=...`), ProxLaunch
+**no guarda** y te dice en qué campo: «No se guardó: el campo «nombre de la máquina» parece
+contener una credencial (usuario@realm!token). Bórrala y vuelve a guardar.» (el valor no se
+muestra).
+
+### Guardar
+
+1. Prepara el lote (también vale con **1** máquina).
+2. **Lote > Guardar lote…**. En **Guardar lote**, escribe el **Nombre del lote** (por ejemplo,
+   «Servidores web de pruebas»).
+3. Pulsa **Elegir dónde guardar…** y elige la carpeta. ProxLaunch sugiere la carpeta `lotes` de
+   tus datos de usuario.
+4. Verás «Lote guardado en «archivo.json»».
+
+Si el lote viene de un archivo que abriste o guardaste, el diálogo ofrece **Sobrescribir el
+archivo «x»** (con confirmación) o **Guardar como un archivo nuevo…**.
+
+**Puedes guardar un lote con errores.** Se guarda como borrador: el diálogo avisa «El lote tiene
+problemas; se comprobará otra vez al abrirlo.» La única excepción es un campo numérico con texto
+que no es un número: «No se puede guardar el lote: «Núcleos por socket» no es un número.
+Corrígelo e inténtalo de nuevo.» También puedes guardar mientras hay un lote en marcha.
+
+### Abrir
+
+1. Conéctate a un servidor. **Lote > Abrir lote…** y elige el archivo (si hay
+   [cambios sin guardar](#cambios-sin-guardar), antes te pregunta).
+2. ProxLaunch lee y comprueba **todo el archivo** antes de tocar nada. Si algo falla, el
+   formulario **no cambia** y ves el motivo con la lista de campos. Si va bien: «Lote «X» cargado».
+3. El formulario y el bloque **Lote** quedan rellenados. **No se crea nada**: revisa y pulsa
+   **Ver resumen** (o **Crear máquina** si el lote es de una sola máquina).
+
+El selector **Perfil de máquina** queda en «Personalizado». ProxLaunch **no vigila ni vuelve a
+leer** el archivo: si lo cambias después con otro programa, ábrelo de nuevo.
+
+**Avisos del archivo.** Un panel que puedes cerrar con **Cerrar** te cuenta lo que no se usó:
+campos que ProxLaunch no conoce, datos que parecen una credencial («El archivo traía datos que
+parecen una credencial. No se usaron. Si eran reales, cámbialas.»), o que el lote se guardó con
+una versión de Proxmox más nueva («El lote se guardó con Proxmox 9.2; este servidor tiene 8.4.
+Algunas opciones podrían no estar disponibles.»).
+
+### Si el lote «no encaja» en este servidor
+
+Un lote guardado en otro servidor puede nombrar un almacenamiento, una red o un nodo que **este**
+servidor no tiene. ProxLaunch **nunca los cambia por su cuenta**. Aparece el panel **Este lote no
+encaja en este servidor**: «Algunos valores guardados en el lote no existen aquí. Elige otros
+para poder continuar: ProxLaunch no cambia nada por su cuenta.» Cada línea dice qué falta («El
+almacenamiento «datos» no existe en este servidor o no admite discos.»). En un
+[lote por filas](#lote-por-filas) añade a cuántas máquinas afecta («Afecta a 3 máquinas (n.º 2,
+5, 7).»). Para cada una:
+
+- **Usar otro…** abre **Usar otro valor** con lo que sí hay en el servidor («Almacenamiento que
+  reemplaza a «datos»:»). Eliges y se cambia en todo el lote.
+- **Pasar a Automático** (solo para nodos): deja que ProxLaunch elija el nodo.
+
+Mientras tanto, en las tablas de discos y de red el valor aparece como «datos (no existe)» con un
+error, y no puedes seguir. Si el lote usa **Nodos elegidos** y alguno no existe, ProxLaunch lo dice
+(«Este servidor no tiene uno de los nodos del lote. Quítalo de la lista o pasa a Automático para
+continuar.») y no avanza hasta que lo resuelvas: desmarca ese nodo en la lista (en modo avanzado)
+o usa **Pasar a Automático**. Con **Nodos elegidos** en modo básico, la lista se ve pero no se
+cambia: «Este lote usa nodos elegidos; cámbialo en modo avanzado.»
+
+Si cambias de servidor con un lote abierto, el lote se queda en pantalla y todo se vuelve a
+comprobar con el servidor nuevo.
+
+---
+
+## Importar máquinas desde un CSV
+
+Con **Importar desde CSV…** creas un lote con **una máquina por cada fila** de una hoja de
+cálculo. Cada fila puede tener su propia configuración; el resultado es un
+[lote por filas](#lote-por-filas). **Nada se crea** al importar: después hay un resumen que debes
+confirmar, como en cualquier lote.
+
+### Paso a paso
+
+1. **Lote > Descargar plantilla CSV…** Elige el separador (**; (Excel en español)** o **, (Excel
+   en inglés)**) y dónde guardarla (`plantilla-proxlaunch.csv`).
+2. Ábrela en Excel o LibreOffice Calc, cambia los datos y guarda como **CSV UTF-8**.
+3. **Lote > Importar desde CSV…** y elige tu archivo. Si tienes
+   [cambios sin guardar](#cambios-sin-guardar), antes te pregunta.
+4. Revisa la **vista previa** (ver más abajo) y pulsa **Continuar**.
+5. Aparece el [lote por filas](#lote-por-filas): pulsa **Ver resumen**.
+
+### La plantilla
+
+La plantilla trae las columnas más usadas y dos filas de ejemplo (los nombres de las filas
+empiezan por `ejemplo-`; si las importas tal cual, ProxLaunch avisa «Parece una fila de ejemplo
+de la plantilla.»). Abierta en una hoja de cálculo se ve así:
+
+| nombre | perfil | cpu | memoria | disco | almacenamiento | red | vlan | nodo | vmid |
+|---|---|---|---|---|---|---|---|---|---|
+| ejemplo-01 | fabrica.servidor-mediano | | 8 | 100 | local-lvm | vmbr0 | | | |
+| ejemplo-02 | | 2 | 4 GiB | 40 | | vmbr1 | 20 | pve2 | 250 |
+
+Y así es el texto del archivo (separador `;`; ProxLaunch escribe **todas las celdas entre
+comillas**):
+
+```text
+"nombre";"perfil";"cpu";"memoria";"disco";"almacenamiento";"red";"vlan";"nodo";"vmid"
+"ejemplo-01";"fabrica.servidor-mediano";"";"8";"100";"local-lvm";"vmbr0";"";"";""
+"ejemplo-02";"";"2";"4 GiB";"40";"";"vmbr1";"20";"pve2";"250"
+```
+
+Cámbialo por **tus** datos: `local-lvm`, `vmbr0`, `vmbr1` y `pve2` son ejemplos y quizá tu
+servidor no los tenga. Una celda vacía significa «usa lo del perfil» (o, en `nodo` y `vmid`,
+«elige ProxLaunch»).
+
+### Columnas
+
+Solo **`nombre`** es obligatoria. Los nombres de columna no distinguen mayúsculas ni acentos, y
+espacio y guion valen como guion bajo (`Tipo CPU`, `tipo-cpu` y `tipo_cpu` son lo mismo). También se
+aceptan estos alias:
+
+| Columna | Alias aceptados | Qué es | Si está vacía |
+|---|---|---|---|
+| `nombre` (obligatoria) | `name`, `hostname` | Nombre de la máquina. | Error: «Falta el nombre.» |
+| `perfil` | `profile` | Perfil de la fila: su nombre (como en la lista, sin importar mayúsculas ni acentos) o su identificador, por ejemplo `fabrica.servidor-mediano`. | El **perfil base**. |
+| `vmid` | `id` | Número de máquina. | Automático. |
+| `nodo` | `node` | Nodo donde crearla. | Automático. |
+| `cpu` | `cores`, `nucleos` | **Núcleos por socket**. | Lo del perfil. |
+| `sockets` | `zocalos` | Sockets. | Lo del perfil. |
+| `memoria` | `ram`, `memoria_gib`, `memoria_mib` | Memoria (ver unidades). | Lo del perfil. |
+| `disco` | `disco1`, `disco_gib`, `tamano_disco` | Tamaño del primer disco (ver unidades). | Lo del perfil. |
+| `almacenamiento` | `storage`, `almacenamiento1` | Almacenamiento del primer disco. | Lo del perfil, o el de más espacio libre. |
+| `disco2` … `disco8` | | Tamaño de los discos 2 a 8. | No hay ese disco (o el del perfil). |
+| `almacenamiento2` … `almacenamiento8` | `storage2` … `storage8` | Almacenamiento de los discos 2 a 8. | El del primer disco. |
+| `red` | `bridge`, `red1` | Red (bridge) de la primera interfaz. | Lo del perfil. |
+| `vlan` | `vlan1` | VLAN de la primera interfaz (1 a 4094). | Lo del perfil. |
+| `modelo_red` | `tarjeta_red` | Tarjeta de red: `virtio` o `e1000`. | Lo del perfil. |
+| `firmware` | `bios` | Arranque: `seabios` o `bios`; `ovmf` o `uefi`. | Lo del perfil. |
+| `tipo_cpu` | `cpu_tipo` | Tipo de CPU (por ejemplo `x86-64-v2-AES`). | Lo del perfil. |
+
+Reglas de lectura:
+
+- Una columna que ProxLaunch no conoce se **ignora** y se avisa («La columna «notas» no se usa y
+  se ignoró.»).
+- Una columna cuyo nombre parece una credencial (contiene `token`, `password`, `contraseña`,
+  `secreto`, `ticket`, `csrf`, `apikey` o `credencial`) se ignora **sin leer sus celdas**.
+- Una columna repetida («La columna «cpu» aparece dos veces.»), o datos en una columna sin
+  encabezado, o la falta de `nombre`, impiden leer el archivo.
+- Tu archivo se **lee y nunca se modifica**.
+
+**Qué manda cuando hay varios valores.** De menor a mayor: los valores normales de ProxLaunch,
+luego el **perfil** (el de la columna `perfil`, o el **Perfil base** si la celda está vacía), y por
+último las **columnas del archivo**. Si una fila dice `memoria` = 8 y su perfil trae 4 GiB, se
+crea con 8 GiB.
+
+### Unidades y números
+
+| Dato | Qué puedes escribir | Notas |
+|---|---|---|
+| `memoria` | `8` (se entiende **GiB**), `4 GiB`, `512 MiB`, `1 TiB`; también `M`, `G`, `T`, `MB`, `GB`, `TB` | `MB`, `GB` y `TB` se toman como `MiB`, `GiB` y `TiB` (1 GB = 1024 MiB) y ProxLaunch lo avisa. Debe dar una cantidad entera de MiB (`0,5` = 512 MiB vale; `0,3` no). |
+| `disco`, `disco2`… | `100` (se entiende **GiB**), `500 GiB`, `1 TiB`, `2048 MiB` | Debe dar un número entero de GiB, de 1 en adelante. `0`, `ninguno`, `ninguna`, `sin disco` o `sin_disco` = **sin disco**. |
+| `cpu`, `sockets`, `vmid`, `vlan` | `2` o `2.0` | `2.5` no vale. |
+| decimales | `0,5` o `0.5` | Con coma se avisa («se usó la coma como separador decimal»). |
+| miles | **no los uses** | `1.000` o `1,000` es ambiguo: «¿Quisiste decir mil o uno? Escribe 1000 o 1.» |
+
+Si la columna se llama `memoria_mib`, un número sin unidad se entiende como **MiB** (y con
+`memoria_gib` o `disco_gib`, como GiB). Una unidad escrita en la celda manda sobre el nombre de la
+columna. No se admiten signos, exponentes, hexadecimales ni `NaN`. Si una memoria pasa de
+1024 GiB (o de la memoria libre del nodo que más tiene) ProxLaunch avisa «Pides 4096 GiB de
+memoria. ¿Querías MiB?» pero no lo bloquea.
+
+### La vista previa
+
+Al elegir el archivo se abre **Importar desde CSV**. Arriba ves el archivo, el **Perfil base:** (por
+defecto el que tengas aplicado, o «Servidor pequeño»; si lo cambias, todo se revisa de nuevo), y
+una línea de resumen: «Codificación UTF-8 · separador «;» · 10 filas: 7 correctas, 1 con aviso, 2
+con error».
+
+La tabla tiene una fila por fila del archivo, con **Incluir**, **Fila**, **Nombre**, **Perfil**,
+**VMID**, **Nodo**, **Núcleos**, **Memoria**, **Disco**, **Almacenamiento**, **Red** y **Estado**:
+«✔ Correcta», «⚠ Con aviso» o «✖ Con error». El número de **Fila** es el que ves en Excel (el
+encabezado es la fila 1, así que tu primera máquina es la fila 2). Al seleccionar una fila, el
+detalle muestra sus problemas («Fila 7, columna «memoria»: «abc» no es un número. Escribe, por
+ejemplo, 4 GiB.») y el **Valor del archivo** de cada celda. Si una fila tiene muchos problemas, se
+muestran los primeros cinco y «y N más».
+
+Herramientas:
+
+- **Mostrar solo problemas**: oculta las filas correctas.
+- **Copiar errores**: copia al portapapeles la lista de errores.
+- **Descargar filas con error…**: guarda un CSV (`tu-archivo-errores.csv`) con **solo** las filas con
+  error, tus mismas columnas más `fila_original`, `columna` y `problema`. Corrígelo y vuélvelo a
+  importar: esas tres columnas se ignoran al leerlo.
+- **Elegir otro archivo…** y **Descargar plantilla…**.
+- La casilla **Incluir** de cada fila deja fuera las que no quieras. Las filas con error no se
+  pueden marcar.
+
+**Codificación y separador.** ProxLaunch los detecta solo. La **codificación** es cómo el archivo
+guarda los acentos (prueba UTF-8 con y sin marca, UTF-16 y Windows-1252). El **separador** es el
+carácter entre columnas (`;`, `,` o tabulador, o la línea `sep=;` que escribe Excel). Si no puede
+decidir entre dos, usa `,` y avisa: «No se pudo saber qué separador usa el archivo. Elige uno en la
+lista «Separador».» Las listas **Codificación:** y **Separador:** se ven siempre en modo avanzado;
+en modo básico, el separador solo aparece cuando hay duda. Si ves símbolos raros, guarda el archivo
+como **CSV UTF-8** desde Excel.
+
+**Límites.** Hasta **100 filas** (sin contar la de encabezados ni las vacías), 40 columnas, 256
+caracteres por celda y 1 MiB por archivo. Si te pasas, ProxLaunch no recorta: te pide dividir el
+archivo («El archivo tiene 130 filas; el máximo por lote es 100. Divide el archivo en partes.»).
+
+**Sin conexión.** Puedes abrir la vista previa sin conexión, pero se comprueba solo lo que no
+depende del servidor, aparece «Sin conexión: aún no se comprobó contra el servidor. Conéctate a
+un servidor para poder continuar.» y **Continuar** queda desactivado.
+
+### Confirmar la importación
+
+- **Todo correcto** (sin errores): pulsa **Continuar**. Los avisos no impiden continuar.
+- **Hay errores**: el botón principal es **Corregir el archivo**; cierra la vista previa sin
+  cambiar nada, para que arregles el CSV y lo importes otra vez. La alternativa es **Importar
+  solo las N filas correctas**: ProxLaunch lista las filas que se quedarían fuera («Se importarán 8
+  de 10 filas del archivo. No se importarán estas filas: …») y te pide confirmar con **Importar
+  esas filas** o **Cancelar**.
+
+Al terminar verás «Se importaron N máquinas desde «archivo.csv»» y el [lote por filas](#lote-por-filas).
+
+### Seguridad de los archivos CSV
+
+- ProxLaunch **solo lee** tu CSV; nunca lo modifica.
+- Las celdas se tratan como texto: nunca se ejecuta una fórmula ni se abre un enlace.
+- Los CSV que **escribe** ProxLaunch (plantilla, filas con error, informe) llevan todas las
+  celdas entre comillas, en UTF-8 con marca (BOM), y si una celda empieza por `=`, `+`, `-` o
+  `@` se le antepone un apóstrofo (`'`) para que Excel no la tome por una fórmula. Al reimportar
+  un archivo así, ese apóstrofo se quita una vez.
+
+---
+
+## Lote por filas
+
+Un **lote por filas** es un lote en el que **cada máquina tiene su propia configuración**. Nace al
+[importar un CSV](#importar-máquinas-desde-un-csv) o al abrir un lote que se guardó así. Es un
+solo lote: un resumen, una confirmación, un informe y un **Deshacer…**.
+
+### Cómo se ve
+
+El formulario y el selector de perfil desaparecen y en su lugar hay una tabla de solo lectura.
+Arriba dice, por ejemplo, «8 máquinas desde el archivo «servidores.csv»» (o «del lote «Aula 3»»),
+con la nota «Cada máquina trae su propia configuración. Para cambiar algo, corrige el archivo e
+impórtalo de nuevo, o quita las filas que no quieras.» La tabla tiene **Fila**, **Nombre**,
+**VMID**, **Nodo**, **Procesadores**, **Memoria (GiB)**, **Discos (GiB)**, **Almacenamiento** y
+**Red**.
+
+El bloque **Lote** oculta la cantidad, el prefijo y el destino (cada fila trae lo suyo) y deja el
+reparto (modo avanzado), el número de máquina inicial para las filas sin número (modo avanzado)
+y **Etiquetar las máquinas** (modo avanzado).
+
+### Botones
+
+| Botón | Qué hace |
+|---|---|
+| **Ver resumen** | Prepara el resumen del lote. Si hay errores en las filas, queda desactivado y aparece «Corrige los errores marcados para poder ver el resumen.» |
+| **Revisar filas…** | Solo si viene de un CSV: reabre la vista previa. Se vuelve a comprobar contra el servidor actual. |
+| **Guardar lote…** | Guarda el lote por filas (ver [Guardar y abrir lotes](#guardar-y-abrir-lotes)). |
+| **Quitar las filas seleccionadas** | Saca del lote las filas que marques en la tabla. Tu CSV no cambia. Si quitas todas, vuelves al formulario. |
+| **Salir del lote por filas** | Vuelve al formulario normal. Si hay [cambios sin guardar](#cambios-sin-guardar), pregunta antes. |
+
+No hay forma de editar una fila dentro de la aplicación: corrige el CSV e impórtalo otra vez.
+
+### El resumen de un lote por filas
+
+Es el resumen de siempre ([El resumen y la confirmación](#el-resumen-y-la-confirmación)), con
+estas diferencias:
+
+- La tabla muestra **Fila** (el número de tu archivo), **Procesadores** y **Memoria (GiB)** de
+  cada máquina, y los errores dicen «Fila 4: …».
+- Si importaste solo una parte del archivo, lo recuerda: «Se van a crear 8 de las 10 filas del
+  archivo.»
+- **No caben todas.** En lugar de **Reducir a N**, el resumen dice qué filas sobran («No caben las
+  filas: 3, 7.») y ofrece **Quitar las filas que no caben**, que las saca y vuelve a calcular. Si
+  prefieres otra solución, no lo pulses: libera espacio o cambia el CSV.
+- **Un número de máquina ocupado.** Si una fila pide un `vmid` que otra máquina ya usa, ves
+  «Fila 4: el número 150 ya lo usa otra máquina.» ProxLaunch **no lo cambia solo**. Pulsa
+  **Asignar automáticamente** (por fila, o **Asignar automáticamente a las N filas**) para que
+  tome el siguiente libre.
+- **Un nodo que no sirve.** Si una fila nombra un nodo apagado o que no tiene el almacenamiento o la
+  red que pide, ves por qué («Fila 3: «pve2» está sin conexión.»).
+
+Después, como siempre: **Simular** (opcional) y **Crear N máquinas**. El
+[informe](#informe) incluye la configuración de cada máquina. **Reintentar pendientes** conserva
+la configuración, el nombre, el número y el nodo de cada fila. Con **Lote > Guardar el informe del
+lote como CSV…** guardas el resultado en una hoja de cálculo (`numero`, `nombre`, `vmid`, `nodo`,
+`desenlace`, `resultado`, `codigo_error`, `duracion_s`; sin direcciones ni identificadores de tarea).
+
+---
+
+## Cambios sin guardar
+
+ProxLaunch no quiere que pierdas un lote por descuido. Si hay un lote **cargado, importado o
+editado** y todavía no lo guardaste (o cambiaste algo desde que lo guardaste), antes de continuar
+te pregunta:
+
+> **Cambios sin guardar**: ¿Guardar el lote antes de continuar? Si no lo guardas, se perderán los
+> cambios del lote.
+
+Con tres botones: **Guardar**, **No guardar** y **Cancelar**. El foco está en **Cancelar**, así que
+pulsar Intro sin mirar no pierde nada.
+
+- **Guardar**: abre **Guardar lote**; cuando termina de guardar, sigue con lo que ibas a hacer.
+- **No guardar**: sigue y descarta los cambios.
+- **Cancelar**: no hace nada; sigues donde estabas.
+
+Pregunta en estos momentos: **cerrar ProxLaunch**, **Archivo > Cerrar sesión**, **Lote > Abrir
+lote…**, **Lote > Importar desde CSV…**, **cambiar de servidor** (**Archivo > Conectar...**) y **Salir
+del lote por filas**. También cuenta si lo único que hiciste fue cambiar el formulario o el bloque
+**Lote** a mano.
+
+Si cierras con un lote **en marcha**, solo ves el aviso de siempre
+([Cerrar ProxLaunch con un lote en curso](#cerrar-proxlaunch-con-un-lote-en-curso)).
+
+---
+
 ## Mensajes de error frecuentes
 
 Los textos de la columna «Mensaje» son los que muestra ProxLaunch. El mensaje original de
@@ -883,6 +1366,40 @@ Proxmox está en «Ver detalles técnicos»; se comprobó con Proxmox VE 9.2.
 | No se pudo leer el nodo X: aparece como «Sin conexión». | Falló la lectura de un nodo. Los demás siguen disponibles. | Pulsa **Reintentar** (junto a **Actualizar**). |
 | No hay un llavero disponible en este equipo; las credenciales no se guardarán | Marcaste «Recordar credenciales», pero tu sistema no tiene llavero. | La conexión continúa; tendrás que escribir el secreto cada vez. |
 
+### Mensajes de archivos, perfiles y CSV
+
+Estos mensajes aparecen al guardar, abrir o importar archivos (perfiles, lotes y CSV). En todos,
+**tu archivo original no se modifica** y, si falla al abrir o importar, el formulario queda como
+estaba.
+
+| Mensaje | Qué significa | Qué hacer |
+|---|---|---|
+| No se pudo leer el archivo. Si está abierto en otro programa (como Excel), ciérralo o guarda una copia. (puede empezar por «El archivo no existe.» o «No tienes permiso para leer ese archivo.») | El archivo no existe, no tienes permiso o otro programa lo tiene bloqueado. | Cierra Excel u otro programa que lo tenga abierto, o trabaja con una copia. Revisa la ruta y los permisos. |
+| No se puede abrir este archivo: es demasiado grande (límite 1 MiB). / …no es un archivo normal. / …tiene demasiados elementos (máximo 100). | Superó el tamaño permitido (1 MiB para lotes y CSV, 256 KiB para perfiles), es una carpeta u otro tipo de elemento, o trae más de 100 perfiles. | Elige un archivo normal y más pequeño. Divide el contenido en varios archivos. |
+| Este archivo no es un archivo de ProxLaunch del tipo que buscas. (a veces sigue «Parece un archivo de perfiles de máquina…» o «Parece un archivo de lote guardado.») | Elegiste un archivo de otro tipo (por ejemplo, un lote donde se esperaban perfiles). | Usa la opción que corresponde: perfiles en **Administrar perfiles… > Importar…**, lotes en **Lote > Abrir lote…**, CSV en **Lote > Importar desde CSV…**. |
+| Este archivo lo creó una versión más nueva de ProxLaunch. Actualiza la aplicación para abrirlo. | El formato del archivo es más nuevo que esta versión. | Actualiza ProxLaunch. |
+| El archivo está dañado o tiene datos no válidos: … (seguido de la lista de campos, por ejemplo «por_filas.filas[2].config.memoria_mib: fuera de rango») | Falta un dato, tiene un tipo o un valor que no corresponde, o el texto no es JSON válido. Se muestran hasta 10 campos y «y N más». | Corrige esos campos con un editor de texto, o vuelve a guardar el archivo desde ProxLaunch. |
+| El archivo tiene 130 filas; el máximo por lote es 100. Divide el archivo en partes. (también para columnas y celdas demasiado grandes) | El CSV supera los límites. | Divide el CSV en archivos de hasta 100 filas, 40 columnas y 256 caracteres por celda. |
+| No pude leer el archivo CSV (fila 12). Guárdalo como «CSV UTF-8» desde Excel. / Hay unas comillas sin cerrar en la fila 12… | El archivo tiene caracteres que no se pueden leer o unas comillas sin cerrar. | En Excel: **Guardar como > CSV UTF-8**. Revisa la fila que indica el mensaje (numerada como en Excel). |
+| El archivo no tiene máquinas. | El CSV tiene encabezado pero ninguna fila de datos. | Añade filas. |
+| Falta la columna «nombre». Columnas reconocidas: … / La columna «cpu» aparece dos veces. / Hay datos en columnas que no tienen encabezado (columnas 7). | El encabezado del CSV no sirve. | Añade o renombra la columna `nombre`, quita las repetidas o ponle encabezado a la columna que tiene datos. Ver [Columnas](#columnas). |
+| «abc» no es un número. Escribe, por ejemplo, 4 GiB. (y variantes: «…no es un número entero», «…no da una cantidad entera de GiB/MiB», ««xx» no es una unidad válida. Usa MiB, GiB, TiB…») | Una celda no se puede leer como número o unidad. | Corrige la celda. Ver [Unidades y números](#unidades-y-números). |
+| ¿Quisiste decir mil o uno? Escribe 1000 o 1. | Un número con punto o coma de miles (`1.000`) es ambiguo. | Escríbelo sin separador de miles. |
+| No existe el perfil «x». Perfiles disponibles: … / Hay más de un perfil llamado «x». Escribe el nombre exacto. | La columna `perfil` nombra un perfil que no existe o que está repetido. | Escribe el nombre tal como está en la lista, o su identificador (por ejemplo `fabrica.servidor-mediano`). |
+| Las filas 3, 9 tienen el mismo nombre «web-01». / …el mismo número de máquina «150». | Hay nombres o números repetidos entre filas del archivo. | Cambia uno de los dos; ambas filas quedan marcadas con error hasta entonces. |
+| Fila 5: «pve2» está sin conexión. / El nodo no existe en este servidor. / Ningún nodo del servidor puede alojar esta máquina. | La fila nombra un nodo (o un almacenamiento o red) que este servidor no tiene o no puede usar. | Corrige la celda, o déjala vacía para que ProxLaunch elija. |
+| No se pudo guardar el archivo: … No se cambió nada. (el motivo puede ser «no hay espacio en el disco», «no tienes permiso para escribir ahí», «el archivo está abierto en otro programa», «la ruta es demasiado larga» u «ocurrió un error al escribir») | No se pudo escribir el archivo. El anterior sigue intacto. | Libera espacio, elige otra carpeta, cierra el programa que lo tiene abierto o usa una ruta más corta. |
+| No se guardó: el campo «…» parece contener una credencial (usuario@realm!token). Bórrala y vuelve a guardar. | Un nombre, prefijo u otro texto tiene la forma de un API Token. ProxLaunch nunca guarda eso en archivos. | Borra el texto de ese campo y guarda de nuevo. |
+| Los perfiles de fábrica no se pueden cambiar. Duplícalo para hacer tu propia versión. | Intentaste modificar, renombrar o borrar un perfil de fábrica. | Usa **Duplicar…** y trabaja con la copia. |
+| Tus perfiles se crearon con una versión más nueva de ProxLaunch; no se pueden modificar. | Tu `perfiles_maquina.json` es de una versión más nueva. | Actualiza ProxLaunch. Mientras tanto puedes usarlos, no cambiarlos. |
+| Este lote no encaja en este servidor: … | El lote nombra un almacenamiento, red o nodo que este servidor no tiene. | Ver [Si el lote «no encaja»](#si-el-lote-no-encaja-en-este-servidor). |
+| Escribe un nombre de 1 a 60 caracteres. / Ya existe un perfil con ese nombre. / Llegaste al máximo de 100 perfiles. Elimina alguno para crear otro. / Parece un token de acceso. No lo escribas aquí. | El nombre del perfil o del lote no es válido. | Elige otro nombre, o elimina un perfil que ya no uses. |
+
+Además verás avisos (⚠) que no impiden seguir: «Se ignoró 1 campo que ProxLaunch no conoce.» (el
+archivo tenía datos que esta versión no usa), «El archivo traía datos que parecen una credencial.
+No se usaron. Si eran reales, cámbialas.», «En la columna «memoria» había números sin unidad: se
+entendieron como GiB.» y «En la columna «disco», «GB» se tomó como GiB (1 GB = 1024 MiB).»
+
 ---
 
 ## Privacidad y seguridad
@@ -905,10 +1422,21 @@ carpeta de datos; la segunda, la del registro.
 | `perfiles.json` | Tus perfiles: nombre, servidores, puerto, método, usuario, realm y si recuerdas credenciales. **Nunca** contiene token, contraseña ni tickets. |
 | `huellas.json` | Las huellas de los servidores en los que confiaste, por servidor y puerto. |
 | `preferencias.json` | Tema, modo (básico o avanzado) y versión forzada. |
+| `perfiles_maquina.json` | Tus [perfiles de máquina](#perfiles-de-máquina): solo hardware, y los nombres de almacenamiento y red si lo dejaste marcado. Nunca nombres de máquina, números, nodos, servidores, usuarios ni secretos. |
 | `proxlaunch.log` (carpeta de registro) | Registro de lo que hace la aplicación. Se rota solo (hasta 5 copias de 1 MB). |
 | `informes/` (carpeta de datos del usuario) | Carpeta que **sugiere** ProxLaunch al guardar un informe de lote (puedes elegir otra) y donde deja el informe parcial (`parcial-<código>.txt`) si cierras con un lote en curso. No llevan host, IP, usuario ni secretos, pero sí nombres de máquinas y nodos. |
+| `lotes/` (carpeta de datos del usuario) | Carpeta que **sugiere** ProxLaunch al guardar un [lote](#guardar-y-abrir-lotes) (puedes elegir otra). Se crea la primera vez que abres el diálogo de guardado. Los lotes llevan la configuración y los nombres de las máquinas y de almacenamientos, redes y nodos, pero **no** servidor, usuario ni secretos. |
 
-En Linux y otros sistemas tipo Unix, el registro se crea con permisos solo para tu usuario.
+En Linux y otros sistemas tipo Unix, el registro y todos los archivos que escribe ProxLaunch (perfiles,
+lotes, CSV e informes) se crean con permisos solo para tu usuario (0600), y sus carpetas propias
+(`lotes/`, `informes/`, la de configuración) también (0700). Si compartes un archivo guardado con
+otra persona, ella tendrá que poder leerlo: cópialo con sus permisos.
+
+**Archivos de otras personas.** Los perfiles, lotes y CSV que abres o importas se **leen y nunca
+se modifican**. ProxLaunch comprueba su tamaño y su contenido antes de usarlos y no ejecuta nada
+de lo que traen. Nada que parezca una credencial (`usuario@realm!token=...`) se guarda en un lote,
+un perfil ni un CSV; si lo encuentra, te avisa **qué campo** lo tiene, sin mostrar el valor. Los
+CSV que genera ProxLaunch neutralizan las fórmulas para que Excel no las ejecute.
 
 ### Tu token o contraseña
 
@@ -950,8 +1478,11 @@ No. Se crea detenida.
 
 **¿Puedo crear varias máquinas a la vez?**
 Sí, hasta 100 por lote. Ver [Crear varias máquinas de una vez (lotes)](#crear-varias-máquinas-de-una-vez-lotes).
-Todas comparten la configuración y solo cambian el nombre, el número y el nodo. No se puede
-editar una máquina suelta dentro del lote: si necesitas otra configuración, haz otro lote.
+En un lote normal todas comparten la configuración y solo cambian el nombre, el número y el
+nodo. Si necesitas máquinas **distintas** en el mismo lote, usa un
+[lote por filas](#lote-por-filas) (se crea [importando un CSV](#importar-máquinas-desde-un-csv)).
+En ningún caso se edita una máquina suelta dentro del lote: corrige el archivo e impórtalo otra
+vez, o quita esa fila.
 
 **¿Puedo editar o borrar máquinas existentes?**
 No, salvo una cosa: **Deshacer…** borra las máquinas que **creó el lote que acabas de
@@ -969,6 +1500,63 @@ Sí: con **Simular**. Solo lee del servidor. Ver [Simulación](#simulación).
 
 **¿Qué versiones de Proxmox funcionan?**
 De la 8.0 a la 9.2. Una versión más nueva se admite con un aviso.
+
+**¿Qué diferencia hay entre un perfil de máquina y un lote guardado?**
+Un perfil guarda **solo el hardware** de una máquina y se aplica al formulario; no guarda el
+nombre, el número ni el nodo. Un lote guardado recuerda **todo el lote**: hardware, cantidad,
+nombres, números y dónde crearlas. Los perfiles se gestionan en el menú **Perfiles**; los lotes, en
+el menú **Lote**.
+
+**Usé un perfil, ¿se cambió mi nombre o mi número de máquina?**
+No. Un perfil nunca cambia el nombre, el VMID, el nodo ni el bloque **Lote**.
+
+**Elegí un perfil y me dijo que el almacenamiento «x» no existe.**
+Es normal si el perfil recordaba nombres de otro servidor (son solo pistas). ProxLaunch usó el
+almacenamiento o la red predeterminados de este nodo y te lo dijo. Revisa que te sirvan, o cámbialos.
+
+**¿Puedo modificar o borrar un perfil de fábrica?**
+No. Duplícalo (**Perfiles > Administrar perfiles… > Duplicar…**, en modo avanzado) y modifica tu copia.
+
+**Abrí un lote guardado y no me deja avanzar.**
+Mira el panel **Este lote no encaja en este servidor**: nombra un almacenamiento, red o nodo que
+este servidor no tiene. Elige otros con **Usar otro…** o, para un nodo, **Pasar a Automático**.
+ProxLaunch nunca cambia esos valores solo.
+
+**¿Por qué «Abrir lote…» está desactivado?**
+Porque hace falta estar conectado: el lote se comprueba contra el servidor al abrirlo.
+**Importar desde CSV…** sí te deja ver la vista previa sin conexión, pero no continuar.
+
+**Mi CSV sale con letras raras o todo en una sola columna.**
+En Excel, **Guardar como > CSV UTF-8**. En modo avanzado puedes elegir a mano la **Codificación** y el
+**Separador** en la vista previa.
+
+**Los números de fila no coinciden con mi lista.**
+La numeración es la de Excel: el encabezado es la fila 1, así que tu primera máquina es la fila 2.
+
+**¿Qué pasa con las filas de ejemplo de la plantilla?**
+Se importan, pero con un aviso («Parece una fila de ejemplo de la plantilla.»). Cámbialas o
+desmárcalas en la columna **Incluir** de la vista previa.
+
+**Importé 10 filas y solo se crean 8.**
+Hubo filas con error y elegiste **Importar solo las N filas correctas**, o las desmarcaste. El resumen
+lo dice («Se van a crear 8 de las 10 filas del archivo.»). Usa **Revisar filas…** para volver a la
+vista previa.
+
+**¿ProxLaunch cambia mi CSV?**
+No. Los archivos que abres se leen y nunca se modifican. Para corregir errores, usa **Descargar
+filas con error…** y trabaja con ese archivo nuevo.
+
+**Me avisó de «credencial» pero yo no puse ninguna.**
+ProxLaunch ignora (sin leer) las columnas cuyo nombre contiene `token`, `password`, `contraseña`,
+`secreto`, `ticket`, `csrf`, `apikey` o `credencial`, y rechaza al guardar textos con forma de
+`usuario@realm!token=...`. Renombra la columna o cambia el texto.
+
+**Cerré ProxLaunch y me preguntó si quería guardar, ¿por qué?**
+Había un lote cargado, importado o editado sin guardar. Ver [Cambios sin guardar](#cambios-sin-guardar).
+
+> **Pendiente de verificar:** en Windows, los mensajes «el archivo está abierto en otro programa»
+> (por ejemplo, un CSV abierto en Excel) y «la ruta es demasiado larga» (más de 260 caracteres)
+> no se han verificado todavía en un Windows real.
 
 **¿Por qué no hay botón para saltarme el aviso de huella en modo básico?**
 Por seguridad. Solo el modo avanzado permite reemplazar una huella, y siempre con

@@ -604,72 +604,72 @@
 <context>
     <name>ColumnasCsv</name>
     <message>
-        <location filename="../../interfaz/textos.py" line="1733"/>
+        <location filename="../../interfaz/textos.py" line="1735"/>
         <source>nombre</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../../interfaz/textos.py" line="1734"/>
+        <location filename="../../interfaz/textos.py" line="1736"/>
         <source>perfil</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../../interfaz/textos.py" line="1735"/>
+        <location filename="../../interfaz/textos.py" line="1737"/>
         <source>vmid</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../../interfaz/textos.py" line="1736"/>
+        <location filename="../../interfaz/textos.py" line="1738"/>
         <source>nodo</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../../interfaz/textos.py" line="1737"/>
+        <location filename="../../interfaz/textos.py" line="1739"/>
         <source>cpu</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../../interfaz/textos.py" line="1738"/>
+        <location filename="../../interfaz/textos.py" line="1740"/>
         <source>sockets</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../../interfaz/textos.py" line="1739"/>
+        <location filename="../../interfaz/textos.py" line="1741"/>
         <source>memoria</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../../interfaz/textos.py" line="1740"/>
+        <location filename="../../interfaz/textos.py" line="1742"/>
         <source>disco</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../../interfaz/textos.py" line="1741"/>
+        <location filename="../../interfaz/textos.py" line="1743"/>
         <source>almacenamiento</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../../interfaz/textos.py" line="1742"/>
+        <location filename="../../interfaz/textos.py" line="1744"/>
         <source>red</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../../interfaz/textos.py" line="1743"/>
+        <location filename="../../interfaz/textos.py" line="1745"/>
         <source>vlan</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../../interfaz/textos.py" line="1744"/>
+        <location filename="../../interfaz/textos.py" line="1746"/>
         <source>modelo_red</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../../interfaz/textos.py" line="1745"/>
+        <location filename="../../interfaz/textos.py" line="1747"/>
         <source>firmware</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../../interfaz/textos.py" line="1746"/>
+        <location filename="../../interfaz/textos.py" line="1748"/>
         <source>tipo_cpu</source>
         <translation type="unfinished"></translation>
     </message>
@@ -3084,62 +3084,62 @@
 <context>
     <name>PerfilesFabrica</name>
     <message>
-        <location filename="../../interfaz/textos.py" line="1696"/>
+        <location filename="../../interfaz/textos.py" line="1698"/>
         <source>Servidor pequeño</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../../interfaz/textos.py" line="1697"/>
+        <location filename="../../interfaz/textos.py" line="1699"/>
         <source>Para pruebas y servicios ligeros.</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../../interfaz/textos.py" line="1700"/>
+        <location filename="../../interfaz/textos.py" line="1702"/>
         <source>Servidor mediano</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../../interfaz/textos.py" line="1701"/>
+        <location filename="../../interfaz/textos.py" line="1703"/>
         <source>Para aplicaciones web.</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../../interfaz/textos.py" line="1704"/>
+        <location filename="../../interfaz/textos.py" line="1706"/>
         <source>Base de datos</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../../interfaz/textos.py" line="1705"/>
+        <location filename="../../interfaz/textos.py" line="1707"/>
         <source>Para bases de datos.</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../../interfaz/textos.py" line="1708"/>
+        <location filename="../../interfaz/textos.py" line="1710"/>
         <source>Servidor grande</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../../interfaz/textos.py" line="1709"/>
+        <location filename="../../interfaz/textos.py" line="1711"/>
         <source>Para cargas pesadas.</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../../interfaz/textos.py" line="1712"/>
+        <location filename="../../interfaz/textos.py" line="1714"/>
         <source>Escritorio (hardware compatible)</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../../interfaz/textos.py" line="1713"/>
+        <location filename="../../interfaz/textos.py" line="1715"/>
         <source>Para sistemas que aún no traen controladores virtio: disco SATA y tarjeta de red Intel E1000.</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../../interfaz/textos.py" line="1720"/>
+        <location filename="../../interfaz/textos.py" line="1722"/>
         <source>Mínimo</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../../interfaz/textos.py" line="1721"/>
+        <location filename="../../interfaz/textos.py" line="1723"/>
         <source>Disco y red básicos, para probar.</source>
         <translation type="unfinished"></translation>
     </message>
@@ -4712,7 +4712,7 @@
     </message>
     <message>
         <location filename="../../interfaz/textos.py" line="851"/>
-        <location filename="../../interfaz/textos.py" line="1911"/>
+        <location filename="../../interfaz/textos.py" line="1913"/>
         <source>Con error</source>
         <translation type="unfinished"></translation>
     </message>
@@ -5276,220 +5276,220 @@
     </message>
     <message>
         <location filename="../../interfaz/textos.py" line="1488"/>
-        <source>Parece un archivo de perfiles de máquina; usa «Importar perfiles».</source>
+        <source>Parece un archivo de perfiles de máquina; usa «Importar perfiles» (menú Perfiles › Administrar perfiles… › Importar…).</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../../interfaz/textos.py" line="1492"/>
+        <location filename="../../interfaz/textos.py" line="1494"/>
         <source>Parece un archivo de lote guardado.</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../../interfaz/textos.py" line="1497"/>
+        <location filename="../../interfaz/textos.py" line="1499"/>
         <source>Este archivo lo creó una versión más nueva de ProxLaunch. Actualiza la aplicación para abrirlo.</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../../interfaz/textos.py" line="1506"/>
+        <location filename="../../interfaz/textos.py" line="1508"/>
         <source>El archivo está dañado o tiene datos no válidos: {campo}.</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../../interfaz/textos.py" line="1511"/>
+        <location filename="../../interfaz/textos.py" line="1513"/>
         <source>El archivo está dañado o no tiene un formato válido.</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../../interfaz/textos.py" line="1515"/>
+        <location filename="../../interfaz/textos.py" line="1517"/>
         <source>No se pudo leer el archivo. Si está abierto en otro programa (como Excel), ciérralo o guarda una copia.</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../../interfaz/textos.py" line="1527"/>
+        <location filename="../../interfaz/textos.py" line="1529"/>
         <source>Hay unas comillas sin cerrar en la fila {fila}. Revisa el archivo o guárdalo de nuevo como «CSV UTF-8» desde Excel.</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../../interfaz/textos.py" line="1535"/>
+        <location filename="../../interfaz/textos.py" line="1537"/>
         <source>No pude leer el archivo CSV (fila {fila}). Guárdalo como «CSV UTF-8» desde Excel.</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../../interfaz/textos.py" line="1544"/>
+        <location filename="../../interfaz/textos.py" line="1546"/>
         <source>El archivo no tiene máquinas.</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../../interfaz/textos.py" line="1549"/>
+        <location filename="../../interfaz/textos.py" line="1551"/>
         <source>el valor «{valor}» no es válido. Ejemplo: {ejemplo}.</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../../interfaz/textos.py" line="1556"/>
-        <location filename="../../interfaz/textos.py" line="2049"/>
+        <location filename="../../interfaz/textos.py" line="1558"/>
+        <location filename="../../interfaz/textos.py" line="2051"/>
         <source>Fila {fila}, columna «{columna}»: {detalle}</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../../interfaz/textos.py" line="1561"/>
+        <location filename="../../interfaz/textos.py" line="1563"/>
         <source>No existe el perfil «{nombre}».</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../../interfaz/textos.py" line="1564"/>
+        <location filename="../../interfaz/textos.py" line="1566"/>
         <source>Perfiles disponibles: {disponibles}.</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../../interfaz/textos.py" line="1568"/>
+        <location filename="../../interfaz/textos.py" line="1570"/>
         <source>Los perfiles de fábrica no se pueden cambiar. Duplícalo para hacer tu propia versión.</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../../interfaz/textos.py" line="1573"/>
+        <location filename="../../interfaz/textos.py" line="1575"/>
         <source>Tus perfiles se crearon con una versión más nueva de ProxLaunch; no se pueden modificar.</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../../interfaz/textos.py" line="1591"/>
+        <location filename="../../interfaz/textos.py" line="1593"/>
         <source>Este lote no encaja en este servidor: {detalle}</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../../interfaz/textos.py" line="1602"/>
+        <location filename="../../interfaz/textos.py" line="1604"/>
         <source>El perfil pedía la red «{pedido}», que no existe en «{nodo}».</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../../interfaz/textos.py" line="1606"/>
+        <location filename="../../interfaz/textos.py" line="1608"/>
         <source>El perfil pedía el almacenamiento de UEFI «{pedido}», que no existe en «{nodo}».</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../../interfaz/textos.py" line="1611"/>
+        <location filename="../../interfaz/textos.py" line="1613"/>
         <source>El perfil pedía el almacenamiento «{pedido}», que no existe en «{nodo}».</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../../interfaz/textos.py" line="1616"/>
+        <location filename="../../interfaz/textos.py" line="1618"/>
         <source>Se usó «{usado}».</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../../interfaz/textos.py" line="1620"/>
+        <location filename="../../interfaz/textos.py" line="1622"/>
         <source>Elige uno antes de crear.</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../../interfaz/textos.py" line="1630"/>
-        <location filename="../../interfaz/textos.py" line="1831"/>
+        <location filename="../../interfaz/textos.py" line="1632"/>
+        <location filename="../../interfaz/textos.py" line="1833"/>
         <source>Escribe un nombre de 1 a {maximo} caracteres.</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../../interfaz/textos.py" line="1635"/>
+        <location filename="../../interfaz/textos.py" line="1637"/>
         <source>Ya existe un perfil con ese nombre.</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../../interfaz/textos.py" line="1638"/>
+        <location filename="../../interfaz/textos.py" line="1640"/>
         <source>Llegaste al máximo de {max} perfiles.</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../../interfaz/textos.py" line="1645"/>
+        <location filename="../../interfaz/textos.py" line="1647"/>
         <source>La descripción no es válida: máximo {maximo} caracteres y sin caracteres de control.</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../../interfaz/textos.py" line="1653"/>
+        <location filename="../../interfaz/textos.py" line="1655"/>
         <source>El texto no es válido.</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../../interfaz/textos.py" line="1655"/>
-        <location filename="../../interfaz/textos.py" line="1849"/>
+        <location filename="../../interfaz/textos.py" line="1657"/>
+        <location filename="../../interfaz/textos.py" line="1851"/>
         <source>Parece un token de acceso. No lo escribas aquí.</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../../interfaz/textos.py" line="1659"/>
-        <location filename="../../interfaz/textos.py" line="1984"/>
+        <location filename="../../interfaz/textos.py" line="1661"/>
+        <location filename="../../interfaz/textos.py" line="1986"/>
         <source>Falta el nombre.</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../../interfaz/textos.py" line="1664"/>
+        <location filename="../../interfaz/textos.py" line="1666"/>
         <source>Las filas {filas} tienen el mismo número de máquina «{vmid}».</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../../interfaz/textos.py" line="1671"/>
+        <location filename="../../interfaz/textos.py" line="1673"/>
         <source>Las filas {filas} tienen el mismo nombre «{nombre}».</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../../interfaz/textos.py" line="1679"/>
+        <location filename="../../interfaz/textos.py" line="1681"/>
         <source>Este perfil requiere Proxmox {version} o superior.</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../../interfaz/textos.py" line="1685"/>
+        <location filename="../../interfaz/textos.py" line="1687"/>
         <source>El tipo de CPU «host» impide mover la máquina entre nodos con procesadores distintos.</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../../interfaz/textos.py" line="1756"/>
+        <location filename="../../interfaz/textos.py" line="1758"/>
         <source>falta</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../../interfaz/textos.py" line="1757"/>
+        <location filename="../../interfaz/textos.py" line="1759"/>
         <source>tipo de dato incorrecto</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../../interfaz/textos.py" line="1758"/>
+        <location filename="../../interfaz/textos.py" line="1760"/>
         <source>fuera de rango</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../../interfaz/textos.py" line="1759"/>
+        <location filename="../../interfaz/textos.py" line="1761"/>
         <source>longitud no válida</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../../interfaz/textos.py" line="1760"/>
+        <location filename="../../interfaz/textos.py" line="1762"/>
         <source>valor no admitido</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../../interfaz/textos.py" line="1761"/>
+        <location filename="../../interfaz/textos.py" line="1763"/>
         <source>texto no válido</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../../interfaz/textos.py" line="1764"/>
+        <location filename="../../interfaz/textos.py" line="1766"/>
         <source>parece un token de acceso</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../../interfaz/textos.py" line="1767"/>
+        <location filename="../../interfaz/textos.py" line="1769"/>
         <source>hay demasiados</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../../interfaz/textos.py" line="1768"/>
+        <location filename="../../interfaz/textos.py" line="1770"/>
         <source>está repetido</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../../interfaz/textos.py" line="1786"/>
+        <location filename="../../interfaz/textos.py" line="1788"/>
         <source>Se ignoró 1 campo que ProxLaunch no conoce.</source>
         <translation type="unfinished"></translation>
     </message>
     <message numerus="yes">
-        <location filename="../../interfaz/textos.py" line="1789"/>
+        <location filename="../../interfaz/textos.py" line="1791"/>
         <source>Se ignoraron %n campos que ProxLaunch no conoce.</source>
         <translation type="unfinished">
             <numerusform></numerusform>
@@ -5497,57 +5497,57 @@
         </translation>
     </message>
     <message>
-        <location filename="../../interfaz/textos.py" line="1793"/>
+        <location filename="../../interfaz/textos.py" line="1795"/>
         <source>El archivo traía datos que parecen una credencial. No se usaron. Si eran reales, cámbialas.</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../../interfaz/textos.py" line="1799"/>
+        <location filename="../../interfaz/textos.py" line="1801"/>
         <source>El archivo era de la versión {desde} del formato y se convirtió a la {hasta}.</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../../interfaz/textos.py" line="1804"/>
+        <location filename="../../interfaz/textos.py" line="1806"/>
         <source>La columna «{columna}» no se usa y se ignoró.</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../../interfaz/textos.py" line="1808"/>
+        <location filename="../../interfaz/textos.py" line="1810"/>
         <source>En la columna «{columna}» había números sin unidad: se entendieron como GiB.</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../../interfaz/textos.py" line="1813"/>
+        <location filename="../../interfaz/textos.py" line="1815"/>
         <source>En la columna «{columna}» se usó la coma como separador decimal.</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../../interfaz/textos.py" line="1816"/>
+        <location filename="../../interfaz/textos.py" line="1818"/>
         <source>En la columna «{columna}», «GB» se tomó como GiB (1 GB = 1024 MiB).</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../../interfaz/textos.py" line="1835"/>
+        <location filename="../../interfaz/textos.py" line="1837"/>
         <source>Ya existe un perfil con ese nombre. Elige otro.</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../../interfaz/textos.py" line="1839"/>
+        <location filename="../../interfaz/textos.py" line="1841"/>
         <source>El identificador del perfil no es válido.</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../../interfaz/textos.py" line="1841"/>
+        <location filename="../../interfaz/textos.py" line="1843"/>
         <source>Llegaste al máximo de {maximo} perfiles. Elimina alguno para crear otro.</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../../interfaz/textos.py" line="1845"/>
+        <location filename="../../interfaz/textos.py" line="1847"/>
         <source>El texto de «{campo}» no es válido. No uses caracteres especiales.</source>
         <translation type="unfinished"></translation>
     </message>
     <message numerus="yes">
-        <location filename="../../interfaz/textos.py" line="1869"/>
+        <location filename="../../interfaz/textos.py" line="1871"/>
         <source>y %n más</source>
         <translation type="unfinished">
             <numerusform></numerusform>
@@ -5555,12 +5555,12 @@
         </translation>
     </message>
     <message>
-        <location filename="../../interfaz/textos.py" line="1878"/>
+        <location filename="../../interfaz/textos.py" line="1880"/>
         <source>1 núcleo</source>
         <translation type="unfinished"></translation>
     </message>
     <message numerus="yes">
-        <location filename="../../interfaz/textos.py" line="1880"/>
+        <location filename="../../interfaz/textos.py" line="1882"/>
         <source>%n núcleos</source>
         <translation type="unfinished">
             <numerusform></numerusform>
@@ -5568,17 +5568,17 @@
         </translation>
     </message>
     <message>
-        <location filename="../../interfaz/textos.py" line="1884"/>
+        <location filename="../../interfaz/textos.py" line="1886"/>
         <source>sin disco</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../../interfaz/textos.py" line="1886"/>
+        <location filename="../../interfaz/textos.py" line="1888"/>
         <source>1 disco de {gib} GiB</source>
         <translation type="unfinished"></translation>
     </message>
     <message numerus="yes">
-        <location filename="../../interfaz/textos.py" line="1890"/>
+        <location filename="../../interfaz/textos.py" line="1892"/>
         <source>%n discos</source>
         <translation type="unfinished">
             <numerusform></numerusform>
@@ -5586,142 +5586,142 @@
         </translation>
     </message>
     <message>
-        <location filename="../../interfaz/textos.py" line="1892"/>
+        <location filename="../../interfaz/textos.py" line="1894"/>
         <source> ({gib} GiB en total)</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../../interfaz/textos.py" line="1908"/>
+        <location filename="../../interfaz/textos.py" line="1910"/>
         <source>Correcta</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../../interfaz/textos.py" line="1910"/>
+        <location filename="../../interfaz/textos.py" line="1912"/>
         <source>Con aviso</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../../interfaz/textos.py" line="1922"/>
+        <location filename="../../interfaz/textos.py" line="1924"/>
         <source>«{valor}» mezcla punto y coma. Escribe el número sin separador de miles, por ejemplo 1000.</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../../interfaz/textos.py" line="1927"/>
+        <location filename="../../interfaz/textos.py" line="1929"/>
         <source>¿Quisiste decir mil o uno? Escribe {mil} o {uno}.</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../../interfaz/textos.py" line="1936"/>
+        <location filename="../../interfaz/textos.py" line="1938"/>
         <source>El texto de «{columna}» no es válido. No uses caracteres especiales.</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../../interfaz/textos.py" line="1941"/>
+        <location filename="../../interfaz/textos.py" line="1943"/>
         <source>Indicaste un almacenamiento, pero la fila no tiene disco.</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../../interfaz/textos.py" line="1945"/>
+        <location filename="../../interfaz/textos.py" line="1947"/>
         <source>Indicaste un almacenamiento, pero falta el tamaño de ese disco.</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../../interfaz/textos.py" line="1948"/>
+        <location filename="../../interfaz/textos.py" line="1950"/>
         <source>«{valor}» no es un valor válido. Valores válidos: {validos}.</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../../interfaz/textos.py" line="1975"/>
+        <location filename="../../interfaz/textos.py" line="1977"/>
         <source>Hay más de un perfil llamado «{nombre}». Escribe el nombre exacto.</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../../interfaz/textos.py" line="1979"/>
+        <location filename="../../interfaz/textos.py" line="1981"/>
         <source>No existe el perfil «{nombre}». Perfiles disponibles: {disponibles}.</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../../interfaz/textos.py" line="1988"/>
+        <location filename="../../interfaz/textos.py" line="1990"/>
         <source>Pides {gib} GiB de memoria. ¿Querías MiB?</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../../interfaz/textos.py" line="1993"/>
+        <location filename="../../interfaz/textos.py" line="1995"/>
         <source>Las filas {filas} tienen el mismo número de máquina «{valor}».</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../../interfaz/textos.py" line="1996"/>
+        <location filename="../../interfaz/textos.py" line="1998"/>
         <source>Las filas {filas} tienen el mismo nombre «{valor}».</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../../interfaz/textos.py" line="2000"/>
+        <location filename="../../interfaz/textos.py" line="2002"/>
         <source>Parece una fila de ejemplo de la plantilla.</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../../interfaz/textos.py" line="2002"/>
+        <location filename="../../interfaz/textos.py" line="2004"/>
         <source>«{valor}» no es un número. Escribe, por ejemplo, {ejemplo}.</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../../interfaz/textos.py" line="2006"/>
+        <location filename="../../interfaz/textos.py" line="2008"/>
         <source>«{valor}» no es un número entero. Escribe, por ejemplo, {ejemplo}.</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../../interfaz/textos.py" line="2010"/>
+        <location filename="../../interfaz/textos.py" line="2012"/>
         <source>«{valor}» no da una cantidad entera de MiB. Escribe, por ejemplo, {ejemplo}.</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../../interfaz/textos.py" line="2015"/>
+        <location filename="../../interfaz/textos.py" line="2017"/>
         <source>«{valor}» no da una cantidad entera de GiB. Escribe, por ejemplo, {ejemplo}.</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../../interfaz/textos.py" line="2020"/>
+        <location filename="../../interfaz/textos.py" line="2022"/>
         <source>«{unidad}» no es una unidad válida. Usa {validas}.</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../../interfaz/textos.py" line="2028"/>
+        <location filename="../../interfaz/textos.py" line="2030"/>
         <source>Ningún nodo del servidor puede alojar esta máquina.</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../../interfaz/textos.py" line="2033"/>
+        <location filename="../../interfaz/textos.py" line="2035"/>
         <source>El nodo no existe en este servidor.</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../../interfaz/textos.py" line="2035"/>
+        <location filename="../../interfaz/textos.py" line="2037"/>
         <source>El nodo está sin conexión.</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../../interfaz/textos.py" line="2052"/>
+        <location filename="../../interfaz/textos.py" line="2054"/>
         <source>Fila {fila}: {detalle}</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../../interfaz/textos.py" line="2070"/>
+        <location filename="../../interfaz/textos.py" line="2072"/>
         <source>El almacenamiento «{valor}» no existe en este servidor o no admite discos.</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../../interfaz/textos.py" line="2074"/>
+        <location filename="../../interfaz/textos.py" line="2076"/>
         <source>El almacenamiento «{valor}» para la configuración UEFI no existe en este servidor o no admite discos.</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../../interfaz/textos.py" line="2080"/>
+        <location filename="../../interfaz/textos.py" line="2082"/>
         <source>La red «{valor}» no existe en este servidor.</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../../interfaz/textos.py" line="2083"/>
+        <location filename="../../interfaz/textos.py" line="2085"/>
         <source>El nodo «{valor}» no existe o está sin conexión.</source>
         <translation type="unfinished"></translation>
     </message>

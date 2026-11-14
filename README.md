@@ -9,8 +9,9 @@ Solutions GmbH. La aplicación solo se presenta como «Compatible con Proxmox VE
 
 ## Estado del proyecto
 
-**MVP 2** (creación por lotes) sobre la base del MVP 1 (versión `0.1.0`). Por ahora se
-ejecuta desde el código fuente. Los instaladores llegan en el MVP 5.
+**MVP 3** (perfiles de máquina, lotes guardados e importación CSV) sobre el MVP 2 (creación por
+lotes) y el MVP 1 (versión `0.1.0`). Por ahora se ejecuta desde el código fuente. Los
+instaladores llegan en el MVP 5.
 
 Qué hace el MVP 1:
 
@@ -47,15 +48,38 @@ Qué añade el MVP 2 (**creación por lotes**, D-20 y D-21):
 - **Informe** del lote en texto plano (copiar o guardar `.txt`), sin host, IP, usuario ni
   secretos, e informe parcial si se cierra la aplicación con un lote en curso.
 
-Fuera del MVP 2: perfiles predefinidos de MV y guardar o cargar lotes (MVP 3), ISO/OVA/migración
-desde VMware (MVP 4), contenedores LXC, alta disponibilidad, editar o borrar MV que no creó un
-lote, instaladores (MVP 5), interfaz en otros idiomas y macOS. El plan completo está en
-[`docs/decisiones.md`](docs/decisiones.md) (D-12).
+Qué añade el MVP 3 (**perfiles, lotes guardados y CSV**, D-22):
+
+- **Perfiles de máquina**: seis de fábrica (solo lectura) y los tuyos (crear, guardar cambios,
+  duplicar, renombrar, eliminar, exportar e importar). Aplican solo hardware y redes; nunca el
+  nombre, el VMID ni el nodo. El almacenamiento y el bridge son pistas: si no existen en el
+  nodo se usan los predeterminados y se avisa. Panel de compatibilidad.
+- **Lotes guardados**: archivo JSON autocontenido (sin datos de conexión ni secretos). Se
+  guarda aunque tenga errores; abrirlo requiere conexión y lo que no encaja con el servidor se
+  muestra como desajuste para elegir otro valor, sin sustituir nada en silencio.
+- **Importación desde CSV**: separador y codificación detectados, hasta 100 filas, columna de
+  perfil por fila, unidades (GiB por defecto), vista previa con errores por fila (numeradas
+  como en Excel), importar solo las filas correctas, CSV de errores reimportable, plantilla
+  descargable e informe del lote en CSV. Todo CSV exportado lleva las celdas entre comillas y
+  las fórmulas neutralizadas.
+- **Lote por filas**: cada fila es una MV con su propia configuración, en un solo resumen,
+  confirmación, informe y «Deshacer…». Permite quitar filas, asignar VMID automáticamente y
+  quitar las filas que no caben.
+- **Cambios sin guardar**: pregunta (Guardar / No guardar / Cancelar) al cerrar, cerrar sesión,
+  abrir otro lote, importar, cambiar de servidor y salir del lote por filas.
+- **Seguridad de archivos**: los archivos de terceros nunca se modifican; nada que parezca una
+  credencial se guarda en lotes, perfiles ni CSV; archivos 0600 y carpetas 0700 (POSIX); límites
+  de tamaño, filas y profundidad.
+
+Fuera del MVP 3: ISO/OVA/migración desde VMware (MVP 4), contenedores LXC, alta disponibilidad,
+editar o borrar MV que no creó un lote, instaladores (MVP 5), interfaz en otros idiomas y macOS.
+El plan completo está en [`docs/decisiones.md`](docs/decisiones.md) (D-12).
 
 > Validado contra Proxmox VE 9.2 real en laboratorio (rol mínimo, parámetros, 2FA, mensajes
 > de error, y en el MVP 2 lotes de hasta 30 MV con deshacer; ver `tests/integracion/`).
 > Clústeres multinodo (incluido el reparto entre nodos) y Proxmox 8.x solo con respuestas
-> simuladas. Ver [`docs/bitacora.md`](docs/bitacora.md).
+> simuladas. Pendiente en el MVP 3: verificar en un Windows real los mensajes de «archivo
+> bloqueado» y de rutas largas. Ver [`docs/bitacora.md`](docs/bitacora.md).
 
 ### Permisos de Proxmox
 
@@ -200,12 +224,16 @@ recursos/marca/  Logos originales y el generador (generador/generar_logo.py)
 ## Documentación
 
 - [Guía de usuario](docs/guia-usuario.md): paso a paso, sin jerga (incluye los
-  [lotes](docs/guia-usuario.md#crear-varias-máquinas-de-una-vez-lotes)).
-- [Decisiones](docs/decisiones.md): decisiones del proyecto (D-01 a D-21).
-- [Requisitos del MVP 1](docs/requisitos/mvp1.md) y [del MVP 2](docs/requisitos/mvp2.md):
-  requisitos, reglas de validación y errores.
-- [Arquitectura del MVP 1](docs/arquitectura/mvp1.md) y [del MVP 2](docs/arquitectura/mvp2.md):
-  módulos e interfaces.
+  [lotes](docs/guia-usuario.md#crear-varias-máquinas-de-una-vez-lotes), los
+  [perfiles de máquina](docs/guia-usuario.md#perfiles-de-máquina), los
+  [lotes guardados](docs/guia-usuario.md#guardar-y-abrir-lotes), la
+  [importación CSV](docs/guia-usuario.md#importar-máquinas-desde-un-csv) y el
+  [lote por filas](docs/guia-usuario.md#lote-por-filas)).
+- [Decisiones](docs/decisiones.md): decisiones del proyecto (D-01 a D-22).
+- [Requisitos del MVP 1](docs/requisitos/mvp1.md), [del MVP 2](docs/requisitos/mvp2.md) y
+  [del MVP 3](docs/requisitos/mvp3.md): requisitos, reglas de validación y errores.
+- [Arquitectura del MVP 1](docs/arquitectura/mvp1.md), [del MVP 2](docs/arquitectura/mvp2.md) y
+  [del MVP 3](docs/arquitectura/mvp3.md): módulos, trazabilidad y firmas públicas.
 - [Investigación de la API de Proxmox](docs/investigacion/f1-api-proxmox.md): permisos,
   2FA, parámetros de creación y hechos verificados en laboratorio.
 - [Bitácora](docs/bitacora.md): historial y estado actual.
@@ -217,6 +245,9 @@ recursos/marca/  Logos originales y el generador (generador/generar_logo.py)
 - Se verifica la huella SHA-256 del certificado del servidor. «Ignorar verificación SSL»
   existe solo en modo avanzado.
 - La conexión es directa: se ignoran las variables de proxy del sistema y `.netrc` (D-18).
+- Los archivos de terceros (perfiles, lotes y CSV) solo se leen, con límites de tamaño y
+  contenido; no se ejecuta nada de lo que traen. Los que escribe ProxLaunch son atómicos y, en
+  POSIX, 0600 (carpetas propias 0700).
 
 Detalles para usuarios en la [guía](docs/guia-usuario.md#privacidad-y-seguridad).
 

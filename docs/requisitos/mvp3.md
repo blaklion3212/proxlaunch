@@ -868,7 +868,7 @@ Se exporta CSV en: plantilla (RF-C10), filas con error (RF-C12), informe CSV (RF
   anterior), entonces se quita **una** apóstrofe inicial solo en ese caso (ida y vuelta); en cualquier otro
   caso el texto se deja tal cual (y suele fallar V-01 con un mensaje claro).
 - CA-C11.6 Dado un valor con el separador, comillas o saltos de línea, entonces se entrecomilla según RFC 4180
-  (`QUOTE_MINIMAL` con escapado correcto); un test de ida y vuelta con el módulo `csv` lo verifica.
+  (todas las celdas entre comillas, `QUOTE_ALL`, con escapado correcto; D-23); un test de ida y vuelta con el módulo `csv` lo verifica.
 - CA-C11.7 Dado un valor con caracteres de control o de dirección de texto, entonces se eliminan antes de
   escribir.
 - CA-C11.8 Ningún CSV exportado contiene secretos, host, IP ni usuario (INV-M2, centinela).
@@ -1035,7 +1035,7 @@ con el usuario (P-M05).
 | `fabrica.servidor-mediano` | Servidor mediano | Aplicaciones web | 1 × 4 | 4 GiB | 64 GiB | SeaBIOS | scsi / virtio |
 | `fabrica.base-de-datos` | Base de datos | Bases de datos | 1 × 4 | 8 GiB | 100 GiB (discard, ssd) | SeaBIOS | scsi / virtio |
 | `fabrica.servidor-grande` | Servidor grande | Cargas pesadas | 1 × 8 | 16 GiB | 128 GiB | SeaBIOS | scsi / virtio |
-| `fabrica.escritorio-compatible` | Escritorio (hardware compatible) | Sistemas que aún no traen controladores virtio | 1 × 4 | 4 GiB | 80 GiB (sin iothread) | UEFI (OVMF) con `q35`: **pendiente de LAB-M3-01** | sata / e1000 |
+| `fabrica.escritorio-compatible` | Escritorio (hardware compatible) | Sistemas que aún no traen controladores virtio | 1 × 4 | 4 GiB | 80 GiB (sin iothread) | UEFI (OVMF) con `q35` (confirmado en LAB-M3-01) | sata / e1000 |
 | `fabrica.minimo` | Mínimo | Disco y red básicos de prueba | 1 × 1 | 512 MiB | 8 GiB | SeaBIOS | scsi / virtio |
 
 Notas: (a) "Windows 11" **no** se ofrece: exige TPM (CT-7, M1 P-04), que queda para el MVP 4; (b) el perfil

@@ -233,6 +233,28 @@ indica revisarlos en Proxmox si se sospecha que quedó alguno.
    (rechazar más de 100 filas), P-M11 A (columna `perfil` por fila), P-M12 A («Perfil de
    máquina»).
 
+## D-23 · Decisiones técnicas del MVP 3 tomadas por el orquestador — Provisional (2026-11-14)
+Tomadas mientras el usuario estaba ausente; son técnicas y se pueden cambiar si el usuario lo pide.
+1. **Lote leído como borrador:** un lote guardado se abre aunque no cumpla las reglas del
+   formulario (M1); el lector solo aplica topes anti-abuso (256 elementos, 1024 caracteres).
+   Las reglas M1 se aplican al validar antes de crear. Los perfiles conservan los topes estrictos.
+2. **Nada se sustituye en silencio:** un storage, bridge o nodo del lote que no existe en el
+   servidor es un desajuste que el usuario resuelve. Un nodo elegido inexistente bloquea el
+   resumen aunque queden otros válidos; «Nodos elegidos» se respeta también en modo básico.
+3. **Cambios sin guardar (RF-G08) literal:** se pregunta también por ediciones manuales y en
+   cerrar sesión y salir del lote por filas, además de cerrar, abrir, importar y cambiar de servidor.
+4. **CSV exportados:** todas las celdas entre comillas (`QUOTE_ALL`) y neutralización de
+   fórmulas también tras separadores internos (`, ; | tab`); el CSV de errores conserva el
+   separador del archivo de origen para poder reimportarlo.
+5. **Separador empatado:** se elige `,` (CA-C02.4) y se avisa de la ambigüedad.
+6. **Credenciales:** ningún texto libre que parezca `usuario@realm!token` se guarda en lotes
+   ni perfiles; se avisa qué campo, sin mostrar el valor.
+7. **Permisos:** todo archivo que escribe la app queda 0600 (también al sobrescribir uno del
+   usuario) y sus carpetas 0700 nivel a nivel.
+8. **Menús:** «Lote» y «Perfiles» como menús de nivel superior (arquitectura §7).
+9. **Avisos de clúster sin número de fila:** solo lleva «Fila N» el aviso de una fila que pidió
+   ese nodo de forma fija. `filas_que_exceden` usa la variante voraz.
+
 ## Correcciones técnicas a `prompt.md`
 Errores o imprecisiones de la especificación original que los requisitos deben
 respetar:

@@ -4,7 +4,7 @@
 
 Registro cronológico de lo que se hizo en el proyecto y con qué resultado, para
 que cualquiera pueda retomarlo. Las decisiones de fondo viven en
-`decisiones.md` (D-01 a D-15); aquí solo se remite a ellas. La especificación
+`decisiones.md` (D-01 a D-23); aquí solo se remite a ellas. La especificación
 original es `prompt.md`; si difieren, manda `decisiones.md`.
 
 **Cómo agregar una entrada:** añádela al final de "Entradas", con este formato
@@ -24,13 +24,15 @@ Nunca registres contraseñas, tokens ni datos personales.
 
 ---
 
-## Estado actual (2026-11-13)
+## Estado actual (2026-11-14)
 
-- **Fase en curso:** MVP 3 (perfiles de máquina, guardar y cargar lotes, CSV): requisitos
-  listos y D-22 aprobada (lote por filas). Arquitectura en curso.
+- **Fase en curso:** MVP 3 (perfiles de máquina, lotes guardados, CSV, lote por filas):
+  implementado, probado (5823 pruebas normales y 154 de laboratorio) y revisado (QA y
+  seguridad corregidos). Falta cerrar la documentación (F7) y la aprobación del usuario.
 - **Laboratorio:** apagado y conservado (PVE 9.2, solo 127.0.0.1); limpio de MVs y ajustes.
   Se destruirá sin rastro al terminar todas las pruebas (D-15).
-- **Próximo paso:** arquitectura del MVP 3 y, después, implementación.
+- **Pendiente del usuario:** revisar D-22 (P-M02..P-M12 provisionales) y D-23; aprobar el cierre del MVP 3.
+- **Próximo paso:** MVP 4 (origen del SO, D-13) tras la aprobación.
 
 ---
 
@@ -246,6 +248,22 @@ Nunca registres contraseñas, tokens ni datos personales.
 - **Decisión:** el usuario eligió P-M01 A, lote por filas (D-22, 2026-11-14).
 - **Siguientes pasos:** arquitectura del MVP 3.
 
+### 2026-11-14 · 16. MVP 3: arquitectura, implementación, pruebas y revisión (F2 a F7)
+- **Responsable:** orquestador; `implementador` (núcleo A/B/C, interfaz F4a/F4b y correcciones),
+  `probador` (núcleo, interfaz, laboratorio), `revisor-qa`, `auditor-seguridad`, `documentador`
+- **Qué se hizo:** arquitectura (`docs/arquitectura/mvp3.md`); núcleo de archivos seguros,
+  perfiles de máquina, lotes guardados, importación CSV y lote por filas por un único camino
+  (`filas_efectivas`; motor, libro, rollback y simulación sin cambios); interfaz (selector de
+  perfil, menús «Lote» y «Perfiles», 6 diálogos, panel de lote por filas, cambios sin guardar).
+- **Resultado:** ✅ 5823 pruebas normales y 154 de laboratorio en verde; ruff, mypy y catálogo
+  de traducción limpios. Las pruebas encontraron 11 defectos (corregidos). QA: 2 altos, 2 medios,
+  6 bajos; seguridad: 0 críticos, 1 alto (JSON con coste cuadrático), 1 medio (fórmulas tras
+  separador interno), 7 bajos; todos corregidos y con pruebas. Decisiones técnicas en D-23.
+- **Archivos:** `src/proxlaunch/nucleo/{archivos,perfiles_maquina,lotes_guardados,csv_importacion}/`,
+  `nucleo/lote/filas.py`, `src/proxlaunch/interfaz/` (diálogos y vistas nuevos), `tests/`.
+  Commits 849c35a, 30fdf45, 92a903d, 9625522, 8a29e08.
+- **Siguientes pasos:** documentación (F7), cierre del MVP 3 y aprobación del usuario.
+
 ---
 
 ## Pendientes y riesgos abiertos
@@ -261,3 +279,7 @@ Nunca registres contraseñas, tokens ni datos personales.
 | Clúster multinodo de lotes | Reparto, nodo caído y concurrencia entre nodos probados solo con dobles (laboratorio de un nodo). |
 | Aviso de nombre duplicado | Una MV creada hace ~4 s puede no aparecer con nombre en `/cluster/resources` (limitación de Proxmox). |
 | Sin Proxmox de pruebas en los sitios | Nunca crear ni borrar MVs contra producción (D-15). |
+| Windows real (MVP 3) | «Archivo bloqueado» (WinError 5 al reemplazar) y rutas largas del temporal probados solo con simulación. |
+| Bloqueo por nodo elegido inexistente | Solo en la interfaz; el núcleo acepta el lote si queda algún nodo válido. |
+| Tooltips de MVP 1/2 | Muestran texto del propio usuario sin escapar (riesgo bajo). |
+| Intermitencia del laboratorio | Justo tras arrancar, el nodo puede verse «sin conexión» unos instantes (3 fallos en 2 ejecuciones; luego 12/12). |

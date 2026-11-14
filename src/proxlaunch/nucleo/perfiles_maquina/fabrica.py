@@ -45,7 +45,7 @@ _CONFIGS: dict[str, ConfigPerfil] = {
     "servidor-mediano": _config(4, 4096, 64),
     "base-de-datos": _config(4, 8192, 100),
     "servidor-grande": _config(8, 16384, 128),
-    # UEFI (OVMF) con q35 lo añade el constructor de la petición; pendiente de LAB-M3-01.
+    # UEFI (OVMF) con q35 lo añade el constructor de la petición; confirmado en LAB-M3-01 (PVE 9.2).
     "escritorio-compatible": _config(
         4,
         4096,
