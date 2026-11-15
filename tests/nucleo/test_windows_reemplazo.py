@@ -248,6 +248,10 @@ def test_escribir_atomico_con_otro_winerror_falla_a_la_primera(tmp_path, monkeyp
     assert [p.name for p in tmp_path.iterdir()] == ["datos.json"]
 
 
+@pytest.mark.skipif(
+    os.name != "posix",
+    reason="control de POSIX: en Windows real el sistema sí reintenta y limita la ruta",
+)
 def test_escribir_atomico_en_posix_no_reintenta(tmp_path, monkeypatch):
     destino = tmp_path / "datos.json"
     destino.write_bytes(b"anterior")
@@ -343,6 +347,10 @@ def test_en_windows_una_ruta_de_260_caracteres_es_ruta_larga(tmp_path, monkeypat
     assert list(ruta.parent.iterdir()) == []  # ni temporal
 
 
+@pytest.mark.skipif(
+    os.name != "posix",
+    reason="control de POSIX: en Windows real el sistema sí reintenta y limita la ruta",
+)
 def test_en_posix_una_ruta_de_260_caracteres_no_se_rechaza_por_longitud(tmp_path):
     ruta = _ruta_de_largo(tmp_path, 260)
     escribir_atomico(ruta, b"contenido")

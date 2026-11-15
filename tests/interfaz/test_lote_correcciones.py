@@ -665,6 +665,9 @@ def test_e_l03_con_una_sola_maquina_usa_el_texto_de_m1_con_el_siguiente_libre(qt
     conectar(qtbot, entorno)
     poner_nombre(qtbot, v)
     crear_y_esperar(qtbot, v)
+    # El error llega por una señal en cola tras terminar la creación: se espera al texto
+    # (en la MV de Windows, más lenta, la lectura inmediata lo encontraba vacío).
+    qtbot.waitUntil(lambda: v.formulario.fila_vmid._error.text() != "", timeout=4000)
     texto = v.formulario.fila_vmid._error.text()
     assert "ya lo usa otra máquina" in texto and "102" in texto
     assert "lo usó otra persona" not in texto
