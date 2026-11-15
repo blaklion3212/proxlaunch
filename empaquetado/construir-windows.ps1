@@ -205,7 +205,7 @@ Invoke-Principal {
             (Join-Path $script:Raiz 'empaquetado\windows\proxlaunch.iss'))
         if (-not (Test-Path -LiteralPath $setup)) { throw "ISCC no produjo $nombreSetup" }
         $info = (Get-Item -LiteralPath $setup).VersionInfo
-        if ($info.FileVersion -ne $versionWin) { throw "la versión del instalador es '$($info.FileVersion)', se esperaba $versionWin" }
+        if (([string]$info.FileVersion).Trim() -ne $versionWin) { throw "la versión del instalador es '$($info.FileVersion)', se esperaba $versionWin" }
     }
 
     Invoke-Paso 'Presupuesto de tamaño (CA-E19.1)' {
