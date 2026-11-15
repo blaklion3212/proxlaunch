@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import contextlib
+import faulthandler
 import json
 import os
 import shutil
@@ -13,6 +14,7 @@ import time
 from dataclasses import asdict, dataclass
 from importlib import resources
 from pathlib import Path
+from typing import IO
 
 import keyring
 import keyring.backends.fail
@@ -24,6 +26,7 @@ from PySide6.QtWidgets import QApplication
 from proxlaunch import __version__
 from proxlaunch.interfaz.app import (
     NOMBRE_APP,
+    adjuntar_consola_del_padre,
     cargar_traductor,
     crear_dependencias,
     crear_icono,
@@ -36,7 +39,7 @@ from proxlaunch.interfaz.fuentes import (
 from proxlaunch.interfaz.tema import GestorTema, ModoTema
 from proxlaunch.interfaz.ventana_principal import VentanaPrincipal
 from proxlaunch.nucleo.persistencia.rutas import Rutas
-from proxlaunch.nucleo.registro import configurar_registro
+from proxlaunch.nucleo.registro import cerrar_registro, configurar_registro
 
 # Variable con la ruta de un archivo donde copiar el informe (Windows sin consola).
 VARIABLE_SALIDA = "PROXLAUNCH_HUMO_SALIDA"
@@ -45,6 +48,8 @@ VARIABLE_SALIDA = "PROXLAUNCH_HUMO_SALIDA"
 # antivirus analiza sus bibliotecas), así que el límite cubre todo el arranque, no solo la espera.
 LIMITE_VIGILANTE_S = 15.0
 CODIGO_VIGILANTE = 3
+# Holgura del respaldo de faulthandler sobre el límite del vigilante (el Timer va primero).
+_MARGEN_RESPALDO_S = 2.0
 _TAMANOS_ICONO = (16, 24, 32, 48, 64, 128, 256)
 
 
@@ -119,18 +124,34 @@ def _backend_inutil() -> bool:
     )
 
 
+def _escribir_archivo_salida(destino: str, texto: str) -> None:
+    """Escribe sin seguir enlaces simbólicos (POSIX) y, si el archivo no existe, en creación
+    exclusiva. Si ya existe (p. ej. lo precreó quien lanza el proceso) lo trunca."""
+    sin_enlaces = getattr(os, "O_NOFOLLOW", 0)  # no existe en Windows
+    datos = (texto + "\n").encode("utf-8")
+    try:
+        try:
+            fd = os.open(destino, os.O_WRONLY | os.O_CREAT | os.O_EXCL | sin_enlaces, 0o600)
+        except FileExistsError:
+            fd = os.open(destino, os.O_WRONLY | os.O_TRUNC | sin_enlaces)
+        with os.fdopen(fd, "wb") as flujo:
+            flujo.write(datos)
+    except OSError:
+        pass
+
+
 def _escribir_salida(texto: str) -> None:
     """Escribe ``texto`` en stdout (si existe) y en el archivo de la variable (si está definida)."""
     destino = os.environ.get(VARIABLE_SALIDA)
     if sys.stdout is not None:
         print(texto, flush=True)
     if destino:
-        with contextlib.suppress(OSError):
-            Path(destino).write_text(texto + "\n", encoding="utf-8")
+        _escribir_archivo_salida(destino, texto)
 
 
 def escribir_texto_plano(texto: str) -> None:
     """Salida de ``--version``: stdout y, si procede, el archivo de ``PROXLAUNCH_HUMO_SALIDA``."""
+    adjuntar_consola_del_padre()
     _escribir_salida(texto)
 
 
@@ -147,12 +168,84 @@ class _Progreso:
     def __init__(self) -> None:
         self.paso = "inicio"
         self.inicio = time.monotonic()
+        # Arbitraje con el hilo principal y respaldo de faulthandler (los fija el humo).
+        self.cierre: _Cierre | None = None
+        self.respaldo: _RespaldoFaulthandler | None = None
+
+
+class _Cierre:
+    """Arbitra quién da el resultado final: el hilo principal o el vigilante (nunca ambos)."""
+
+    def __init__(self) -> None:
+        self._lock = threading.Lock()
+        self._marcado = False
+        self._abortando = False
+
+    def reclamar_emision(self) -> bool:
+        """El principal marca antes de emitir; False si el vigilante ya empezó a abortar."""
+        with self._lock:
+            if self._abortando:
+                return False
+            self._marcado = True
+            return True
+
+    def reclamar_aborto(self) -> bool:
+        """El vigilante no hace nada si el principal ya marcó."""
+        with self._lock:
+            if self._marcado:
+                return False
+            self._abortando = True
+            return True
+
+
+class _RespaldoFaulthandler:
+    """Respaldo del vigilante que no depende del GIL (``faulthandler``).
+
+    Es solo un respaldo: el ``Timer`` sigue siendo el camino normal y el único que escribe el
+    informe. Si el intérprete queda atascado con el GIL tomado, el Timer no corre y
+    ``faulthandler`` vuelca la traza y sale (con código 1) pasado el límite más un margen.
+    """
+
+    def __init__(self, carpeta: Path) -> None:
+        self._archivo: IO[str] | None = None
+        destino: IO[str] | None = None
+        # Con ``console=False`` (Windows) ``sys.stderr`` es None o no tiene descriptor.
+        try:
+            if sys.stderr is not None:
+                sys.stderr.fileno()
+                destino = sys.stderr
+        except (OSError, ValueError, AttributeError):
+            destino = None
+        if destino is None:
+            try:
+                self._archivo = destino = (carpeta / "faulthandler.txt").open("w", encoding="utf-8")
+            except OSError:
+                return
+        try:
+            faulthandler.dump_traceback_later(
+                LIMITE_VIGILANTE_S + _MARGEN_RESPALDO_S, exit=True, file=destino
+            )
+        except (OSError, ValueError, RuntimeError):
+            self.cancelar()
+
+    def cancelar(self) -> None:
+        with contextlib.suppress(Exception):
+            faulthandler.cancel_dump_traceback_later()
+        if self._archivo is not None:
+            with contextlib.suppress(OSError):
+                self._archivo.close()
+            self._archivo = None
 
 
 def _arrancar_vigilante(carpeta: Path, progreso: _Progreso | None = None) -> threading.Timer:
     """Hilo que, pasado el límite, informa, borra la carpeta temporal y sale con error."""
 
+    cierre = progreso.cierre if progreso is not None else None
+    respaldo = progreso.respaldo if progreso is not None else None
+
     def _abortar() -> None:
+        if cierre is not None and not cierre.reclamar_aborto():
+            return  # el hilo principal ya está emitiendo el informe final
         mensaje = f"La prueba de humo superó {LIMITE_VIGILANTE_S:g} s y se abortó"
         if progreso is not None:
             transcurrido = time.monotonic() - progreso.inicio
@@ -163,6 +256,10 @@ def _arrancar_vigilante(carpeta: Path, progreso: _Progreso | None = None) -> thr
         )
         if sys.stderr is not None:
             print(f"PROBLEMA: {mensaje}", file=sys.stderr, flush=True)
+        if respaldo is not None:
+            respaldo.cancelar()
+        # En Windows el log abierto impide borrar la carpeta temporal.
+        cerrar_registro()
         shutil.rmtree(carpeta, ignore_errors=True)
         os._exit(CODIGO_VIGILANTE)
 
@@ -177,7 +274,10 @@ def ejecutar_prueba_de_humo(
 ) -> int:
     """Arranca la app con carpetas temporales y sin red; devuelve 0 solo si no hay problemas."""
     carpeta = Path(tempfile.mkdtemp(prefix="proxlaunch-humo-"))
+    adjuntar_consola_del_padre()
     progreso = _Progreso()
+    cierre = progreso.cierre = _Cierre()
+    respaldo_gil = progreso.respaldo = _RespaldoFaulthandler(carpeta)
     vigilante = _arrancar_vigilante(carpeta, progreso)
     problemas: list[str] = []
     plataforma = ""
@@ -257,7 +357,13 @@ def ejecutar_prueba_de_humo(
         problemas.append(f"Excepción {type(exc).__name__}: {exc}")
     finally:
         vigilante.cancel()
+        respaldo_gil.cancelar()
+        cerrar_registro()
         shutil.rmtree(carpeta, ignore_errors=True)
+
+    if not cierre.reclamar_emision():
+        # El vigilante ya empezó a abortar: él informa y el proceso termina con 3.
+        return CODIGO_VIGILANTE
 
     informe = InformeHumo(
         version=__version__,

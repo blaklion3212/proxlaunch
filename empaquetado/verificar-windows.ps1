@@ -9,19 +9,29 @@
 #   4. desinstala en silencio sin borrar datos y comprueba residuos con los datos de prueba intactos (CA-E13.1);
 #   5. reinstala (dos veces: una sola entrada, CA-E14.1) y desinstala con /BORRARDATOS=1: se borran SOLO las
 #      carpetas de datos de ProxLaunch del usuario y nada más (CA-E13.2); el llavero no se toca (CA-E13.3);
-#   6. escribe el sello de verificación en build\verificacion\ (lo recoge verificar-todo.sh).
+#   6. instala «para todos los usuarios» (/ALLUSERS) y comprueba que el desinstalador IGNORA
+#      /BORRARDATOS=1 (no borra datos y lo anota en el registro de Inno, QA-M5-06);
+#   7. escribe el sello de verificación en build\verificacion\ (lo recoge verificar-todo.sh).
+#
+# Modo actualización (-SoloActualizacion, QA-M5-07): en lugar de los pasos anteriores instala
+# -InstaladorAnterior (p. ej. 0.5.0) por usuario, siembra datos de prueba, instala encima el -Instalador
+# (build de prueba 0.5.1) y comprueba: --version nueva, DisplayVersion nueva, una sola entrada de
+# desinstalación, datos idénticos (SHA-256) y humo correcto; después desinstala. No escribe sello.
 #
 # Parámetro del desinstalador definido en proxlaunch.iss: /BORRARDATOS=1 (la pregunta interactiva
 # «Borrar también mis datos» tiene «No» por defecto).
 #
 # Uso: empaquetado\verificar-windows.ps1 [-Instalador <ruta>] [-VersionEsperada X.Y.Z] [-PermitirFueraDeLaMV]
+#                                        [-SoloActualizacion -InstaladorAnterior <ruta>]
 #   -PermitirFueraDeLaMV  el script modifica el cortafuegos, instala y borra datos de prueba: por seguridad
 #                         solo corre en la MV marcada por preparar.ps1, salvo que se indique esto.
 [CmdletBinding()]
 param(
     [string]$Instalador = '',
     [string]$VersionEsperada = '',
-    [switch]$PermitirFueraDeLaMV
+    [switch]$PermitirFueraDeLaMV,
+    [switch]$SoloActualizacion,
+    [string]$InstaladorAnterior = ''
 )
 
 . (Join-Path $PSScriptRoot 'comun\lib.ps1')
@@ -69,8 +79,9 @@ function Get-Listado {
 }
 
 function Install-ProxLaunch {
-    param([string]$Setup, [string]$Registro)
-    $parametros = @('/VERYSILENT', '/SUPPRESSMSGBOXES', '/NORESTART', '/CURRENTUSER', "/LOG=`"$Registro`"")
+    param([string]$Setup, [string]$Registro, [switch]$TodosLosUsuarios)
+    $ambito = if ($TodosLosUsuarios) { '/ALLUSERS' } else { '/CURRENTUSER' }
+    $parametros = @('/VERYSILENT', '/SUPPRESSMSGBOXES', '/NORESTART', $ambito, "/LOG=`"$Registro`"")
     $codigo = Start-ProcesoEspera -Ruta $Setup -Argumentos $parametros -LimiteSegundos 300
     if ($codigo -ne 0) { throw "el instalador terminó con el código $codigo" }
     if (-not (Wait-Hasta -Segundos 30 -Condicion { $null -ne (Get-EntradaDesinstalacion) })) {
@@ -222,6 +233,122 @@ Set-Content -LiteralPath '$(& $q $codigoArchivo)' -Value `$c
     return [pscustomobject]@{ Codigo = $codigo; Informe = $informe }
 }
 
+# Texto de «--version» del ejecutable instalado (la salida del congelado va a PROXLAUNCH_HUMO_SALIDA).
+function Get-TextoVersion {
+    param([string]$Exe, [string]$Temporal)
+    $salida = Join-Path $Temporal 'version.txt'
+    Remove-Item -LiteralPath $salida -Force -ErrorAction SilentlyContinue
+    $codigo = Start-ProcesoEspera -Ruta $Exe -Argumentos @('--version') -LimiteSegundos 60 `
+        -Entorno @{ PROXLAUNCH_HUMO_SALIDA = $salida }
+    $texto = if (Test-Path -LiteralPath $salida) { (Get-Content -LiteralPath $salida -Raw).Trim() } else { '' }
+    if ($codigo -ne 0) { throw "--version terminó con el código $codigo ('$texto')" }
+    return $texto
+}
+
+# Humo con escritorio, sin red (cortafuegos de salida) y con el llavero real; el informe debe ser
+# completo, con la versión esperada, y las carpetas de datos no deben cambiar (CA-E17.1/E17.2/E09.1).
+function Test-HumoInstalado {
+    param([string]$Exe, [string]$Temporal, [string]$Version)
+    if (-not (Test-SesionInteractiva)) {
+        throw "no hay sesión interactiva de «$($env:USERNAME)»: reinicie la MV (inicio de sesión automático) o inicie sesión en su ventana"
+    }
+    Get-NetFirewallRule -DisplayName $script:NombreRegla -ErrorAction SilentlyContinue | Remove-NetFirewallRule
+    New-NetFirewallRule -DisplayName $script:NombreRegla -Direction Outbound -Action Block `
+        -Program $Exe -Profile Any | Out-Null
+    try {
+        if (-not (Get-NetFirewallRule -DisplayName $script:NombreRegla -ErrorAction SilentlyContinue)) {
+            throw 'no se pudo crear la regla de cortafuegos de salida'
+        }
+        $antes = Get-Listado -Carpetas (Get-CarpetasDeDatos)
+        $humo = Invoke-HumoInteractivo -Exe $Exe -Temporal $Temporal
+    } finally {
+        Get-NetFirewallRule -DisplayName $script:NombreRegla -ErrorAction SilentlyContinue | Remove-NetFirewallRule
+    }
+    Write-Msg "humo: código $($humo.Codigo); informe: $($humo.Informe)"
+    if ($humo.Codigo -ne 0) { throw "la prueba de humo salió con el código $($humo.Codigo)" }
+    $informe = $humo.Informe | ConvertFrom-Json
+    if (@($informe.problemas).Count -ne 0) { throw "el informe de humo trae problemas: $(@($informe.problemas) -join '; ')" }
+    if (@($informe.recursos_faltantes).Count -ne 0) { throw 'faltan recursos en el congelado instalado' }
+    if (-not ($informe.traductor -and $informe.icono_ok -and $informe.ventana_mostrada)) { throw 'el informe de humo no está completo' }
+    if ([string]$informe.version -ne $Version) { throw "el humo informa la versión '$($informe.version)'" }
+    if ([string]$informe.backend_llavero -match 'fail|null|Null|Fail') {
+        throw "el backend del llavero es '$($informe.backend_llavero)', no el de Windows (CA-E09.1)"
+    }
+    Write-Msg "backend del llavero: $($informe.backend_llavero)"
+    $despues = Get-Listado -Carpetas (Get-CarpetasDeDatos)
+    if ($antes -ne $despues) { throw 'el humo modificó las carpetas de datos (CA-E17.2)' }
+}
+
+# Verificación de la actualización (QA-M5-07): versión anterior -> nueva con datos del usuario.
+function Invoke-VerificacionActualizacion {
+    param(
+        [string]$SetupNuevo, [string]$VersionNueva, [string]$SetupAnterior,
+        [string]$Temporal, [string]$Registros
+    )
+    $m = [regex]::Match((Split-Path -Leaf $SetupAnterior), '^proxlaunch-(\d+\.\d+\.\d+)-windows-x64-setup\.exe$')
+    if (-not $m.Success) { throw "nombre del instalador anterior inesperado: $(Split-Path -Leaf $SetupAnterior)" }
+    $versionAnterior = $m.Groups[1].Value
+    if ([version]$versionAnterior -ge [version]$VersionNueva) {
+        throw "el instalador anterior ($versionAnterior) debe ser menor que el nuevo ($VersionNueva)"
+    }
+    $carpetaInstalacion = Join-Path $env:LOCALAPPDATA 'Programs\ProxLaunch'
+    $exe = Join-Path $carpetaInstalacion 'proxlaunch.exe'
+    Write-Msg "MODO ACTUALIZACIÓN: $versionAnterior -> $VersionNueva (build de prueba; no se publica ni se sella)"
+
+    Invoke-Paso 'Estado inicial limpio (sin instalación previa; datos de prueba nuevos)' {
+        if (Get-EntradaDesinstalacion) {
+            Write-Msg 'AVISO: había una instalación previa; se desinstala antes de empezar'
+            Uninstall-ProxLaunch -Registro (Join-Path $Registros 'inno-actualizacion-desinstalar-previo.txt')
+        }
+        Remove-DatosDePrueba
+        New-DatosDePrueba
+    }
+    Invoke-Paso "Instalación de la versión anterior $versionAnterior (por usuario)" {
+        Install-ProxLaunch -Setup $SetupAnterior -Registro (Join-Path $Registros 'inno-actualizacion-instalar-anterior.txt')
+        $entrada = Get-EntradaDesinstalacion
+        if ([string]$entrada.DisplayVersion -ne $versionAnterior) {
+            throw "DisplayVersion es '$($entrada.DisplayVersion)' y se esperaba $versionAnterior"
+        }
+        $texto = Get-TextoVersion -Exe $exe -Temporal $Temporal
+        if ($texto -ne "ProxLaunch $versionAnterior") { throw "--version devolvió '$texto'" }
+        Write-Msg "versión anterior instalada: $texto"
+    }
+    # Los datos de usuario sembrados con la versión anterior se anotan (ruta, tamaño y SHA-256).
+    $datosAntes = Get-Listado -Carpetas (Get-CarpetasDeDatos)
+
+    Invoke-Paso "Actualización encima a $VersionNueva (una sola entrada, versión nueva, datos intactos)" {
+        Install-ProxLaunch -Setup $SetupNuevo -Registro (Join-Path $Registros 'inno-actualizacion-instalar-nueva.txt')
+        $clave = Get-AppIdClave
+        $entradas = @(Get-ChildItem -Path 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Uninstall' |
+                Where-Object { $_.PSChildName -eq $clave })
+        if (@($entradas).Count -ne 1) { throw "hay $(@($entradas).Count) entradas de desinstalación en HKCU" }
+        if (Test-Path -LiteralPath "HKLM:\Software\Microsoft\Windows\CurrentVersion\Uninstall\$clave") {
+            throw 'hay además una entrada de desinstalación en HKLM'
+        }
+        $entrada = Get-EntradaDesinstalacion
+        if ([string]$entrada.DisplayVersion -ne $VersionNueva) {
+            throw "DisplayVersion es '$($entrada.DisplayVersion)' y se esperaba $VersionNueva"
+        }
+        Write-Msg "DisplayVersion: $($entrada.DisplayVersion)"
+        if (-not (Test-Path -LiteralPath (Join-Path $carpetaInstalacion 'unins000.exe'))) { throw 'falta unins000.exe' }
+        $texto = Get-TextoVersion -Exe $exe -Temporal $Temporal
+        if ($texto -ne "ProxLaunch $VersionNueva") { throw "--version devolvió '$texto' y se esperaba la versión nueva" }
+        Write-Msg "--version: $texto"
+        $datosDespues = Get-Listado -Carpetas (Get-CarpetasDeDatos)
+        if ($datosAntes -ne $datosDespues) { throw 'la actualización cambió los datos del usuario' }
+        Write-Msg 'datos de usuario idénticos (misma suma) tras actualizar'
+    }
+    Invoke-Paso 'Humo tras actualizar (escritorio, sin red, llavero)' {
+        Test-HumoInstalado -Exe $exe -Temporal $Temporal -Version $VersionNueva
+    }
+    Invoke-Paso 'Desinstalación sin borrar datos y comprobación de residuos' {
+        Uninstall-ProxLaunch -Registro (Join-Path $Registros 'inno-actualizacion-desinstalar.txt')
+        Test-SinResiduos -CarpetaInstalacion $carpetaInstalacion
+        $datosFinal = Get-Listado -Carpetas (Get-CarpetasDeDatos)
+        if ($datosAntes -ne $datosFinal) { throw 'la desinstalación cambió los datos del usuario' }
+    }
+}
+
 # --- Cuerpo ----------------------------------------------------------------------------------------
 
 Invoke-Principal {
@@ -270,6 +397,18 @@ Invoke-Principal {
     $script:LlaveroCreado = $false
 
     try {
+        if ($SoloActualizacion) {
+            if (-not $InstaladorAnterior -or -not (Test-Path -LiteralPath $InstaladorAnterior)) {
+                throw '-SoloActualizacion necesita -InstaladorAnterior <ruta del instalador de la versión anterior>'
+            }
+            $anterior = (Resolve-Path -LiteralPath $InstaladorAnterior).Path
+            Invoke-VerificacionActualizacion -SetupNuevo $setup -VersionNueva $version -SetupAnterior $anterior `
+                -Temporal $temporal -Registros $registros
+            Write-ResumenTiempos
+            Write-Msg "ACTUALIZACIÓN WINDOWS CORRECTA ($(Split-Path -Leaf $anterior) -> $nombreSetup)"
+            return
+        }
+
         Invoke-Paso 'Estado inicial limpio' {
             if (Get-EntradaDesinstalacion) {
                 Write-Msg 'AVISO: había una instalación previa; se desinstala antes de empezar'
@@ -320,34 +459,7 @@ Invoke-Principal {
         }
 
         Invoke-Paso 'Humo con escritorio, sin red (cortafuegos de salida) y con el llavero real de Windows' {
-            if (-not (Test-SesionInteractiva)) {
-                throw "no hay sesión interactiva de «$($env:USERNAME)»: reinicie la MV (inicio de sesión automático) o inicie sesión en su ventana"
-            }
-            Get-NetFirewallRule -DisplayName $script:NombreRegla -ErrorAction SilentlyContinue | Remove-NetFirewallRule
-            New-NetFirewallRule -DisplayName $script:NombreRegla -Direction Outbound -Action Block `
-                -Program $exe -Profile Any | Out-Null
-            try {
-                if (-not (Get-NetFirewallRule -DisplayName $script:NombreRegla -ErrorAction SilentlyContinue)) {
-                    throw 'no se pudo crear la regla de cortafuegos de salida'
-                }
-                $antes = Get-Listado -Carpetas (Get-CarpetasDeDatos)
-                $humo = Invoke-HumoInteractivo -Exe $exe -Temporal $temporal
-            } finally {
-                Get-NetFirewallRule -DisplayName $script:NombreRegla -ErrorAction SilentlyContinue | Remove-NetFirewallRule
-            }
-            Write-Msg "humo: código $($humo.Codigo); informe: $($humo.Informe)"
-            if ($humo.Codigo -ne 0) { throw "la prueba de humo salió con el código $($humo.Codigo)" }
-            $informe = $humo.Informe | ConvertFrom-Json
-            if (@($informe.problemas).Count -ne 0) { throw "el informe de humo trae problemas: $(@($informe.problemas) -join '; ')" }
-            if (@($informe.recursos_faltantes).Count -ne 0) { throw 'faltan recursos en el congelado instalado' }
-            if (-not ($informe.traductor -and $informe.icono_ok -and $informe.ventana_mostrada)) { throw 'el informe de humo no está completo' }
-            if ([string]$informe.version -ne $version) { throw "el humo informa la versión '$($informe.version)'" }
-            if ([string]$informe.backend_llavero -match 'fail|null|Null|Fail') {
-                throw "el backend del llavero es '$($informe.backend_llavero)', no el de Windows (CA-E09.1)"
-            }
-            Write-Msg "backend del llavero: $($informe.backend_llavero)"
-            $despues = Get-Listado -Carpetas (Get-CarpetasDeDatos)
-            if ($antes -ne $despues) { throw 'el humo modificó las carpetas de datos (CA-E17.2)' }
+            Test-HumoInstalado -Exe $exe -Temporal $temporal -Version $version
         }
 
         Invoke-Paso 'Desinstalación sin borrar datos y comprobación de residuos (CA-E13.1)' {
@@ -390,6 +502,27 @@ Invoke-Principal {
             } else {
                 Write-Msg 'omitido: no se pudo crear la credencial de prueba'
             }
+        }
+
+        Invoke-Paso 'Instalación para todos los usuarios: el desinstalador ignora /BORRARDATOS=1 (QA-M5-06)' {
+            Remove-DatosDePrueba
+            New-DatosDePrueba
+            $antesTodos = Get-Listado -Carpetas (Get-CarpetasDeDatos)
+            Install-ProxLaunch -Setup $setup -Registro (Join-Path $registros 'inno-todos-instalar.txt') -TodosLosUsuarios
+            $entrada = Get-EntradaDesinstalacion
+            if (-not $entrada -or $entrada.PSPath -notlike 'Microsoft.PowerShell.Core\Registry::HKEY_LOCAL_MACHINE*') {
+                throw 'la instalación para todos los usuarios no quedó en HKLM'
+            }
+            $registroDesinstalar = Join-Path $registros 'inno-todos-desinstalar.txt'
+            Uninstall-ProxLaunch -Registro $registroDesinstalar -BorrarDatos
+            Test-SinResiduos -CarpetaInstalacion (Join-Path $env:ProgramFiles 'ProxLaunch')
+            $despuesTodos = Get-Listado -Carpetas (Get-CarpetasDeDatos)
+            if ($antesTodos -ne $despuesTodos) { throw 'con «todos los usuarios» el desinstalador borró datos (debía ignorar /BORRARDATOS=1)' }
+            $registroInno = Get-Content -LiteralPath $registroDesinstalar -Raw
+            if ($registroInno -notmatch 'Se ignora /BORRARDATOS=1') {
+                throw 'el registro de Inno no anota que se ignoró /BORRARDATOS=1'
+            }
+            Write-Msg 'instalación para todos los usuarios: /BORRARDATOS=1 ignorado, datos intactos y anotado en el registro de Inno'
         }
 
         # Sello de verificación (lo recoge verificar-todo.sh; INV-E6). Un artefacto provisional no se sella.

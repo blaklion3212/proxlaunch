@@ -185,7 +185,7 @@ from proxlaunch.nucleo.persistencia.preferencias import (
     RepositorioPreferencias,
     Tema,
 )
-from proxlaunch.nucleo.persistencia.rutas import Rutas, crear_carpeta_privada
+from proxlaunch.nucleo.persistencia.rutas import crear_carpeta_privada
 from proxlaunch.nucleo.persistencia.secretos import AlmacenSecretos
 from proxlaunch.nucleo.reloj import Reloj
 from proxlaunch.nucleo.servicios.conexion import CodigoAviso, ServicioConexion, Sesion
@@ -209,13 +209,13 @@ class Dependencias:
     # Carpeta de los informes parciales (``Rutas.informes``); obligatoria para que ningún
     # camino de escritura salga de ``Rutas``.
     directorio_informes: Path
+    # Carpeta sugerida para guardar lotes (``Rutas.lotes``); obligatoria, como la de informes.
+    directorio_lotes: Path
     # Permite ajustar el intervalo de sondeo (por defecto el del núcleo).
     fabrica_creacion: Callable[[Sesion], ServicioCreacion] | None = None
     # Perfiles de máquina (MVP 3). Si no se inyecta, la ventana crea el almacén junto al archivo
     # de perfiles de conexión y lo carga. Uno inyectado debe venir ya cargado (``cargar()``).
     perfiles_maquina: AlmacenPerfilesMaquina | None = None
-    # Carpeta sugerida para guardar lotes (por defecto, ``Rutas().lotes``).
-    directorio_lotes: Path | None = None
     # Versión que se escribe en los archivos propios (``app_version``).
     version_app: str = __version__
 
@@ -2911,7 +2911,7 @@ class VentanaPrincipal(QMainWindow):
 
     def _carpeta_lotes(self) -> Path | None:
         """Carpeta sugerida de lotes, creada con permisos privados al usarla (CA-X03.2)."""
-        carpeta = self._deps.directorio_lotes or Rutas().lotes
+        carpeta = self._deps.directorio_lotes
         try:
             crear_carpeta_privada(carpeta)
         except OSError:

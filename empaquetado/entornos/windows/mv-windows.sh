@@ -279,8 +279,10 @@ windows_esperar_ssh() {
 
 windows_instrucciones() {
     [ -f "$DIR/contrasena-prueba" ] || die "la MV windows11 no existe: ejecute 'mv.sh crear windows11'"
-    local clave
-    clave="$(cat "$DIR/contrasena-prueba")"
+    # La contraseña de «prueba» NUNCA se imprime (SEG-M5-01): queda en un archivo de modo 600 y se
+    # indica cómo verla; así no llega a pantalla ni a los registros de build/registros/.
+    local ruta_clave="$DIR/contrasena-prueba"
+    ruta_clave="${ruta_clave/#$HOME/\~}"
     cat <<EOF
 
 ============================================================================================
@@ -304,9 +306,10 @@ La ventana de la MV ya está abierta. Haga clic dentro de ella para usar el tecl
     y siga el asistente de cuenta local. Datos de la cuenta:
 
         Nombre de usuario:  prueba
-        Contraseña:         $clave
+        Contraseña:         (no se muestra aquí; está en un archivo de modo 600 del anfitrión)
 
-    (Escriba la contraseña exactamente así. Si pide preguntas de seguridad, responda lo que quiera.
+    Para verla, en OTRA terminal del anfitrión (no en una sesión que se registre):  cat $ruta_clave
+    (Escríbala exactamente así. Si pide preguntas de seguridad, responda lo que quiera.
     Desactive los permisos de privacidad que no quiera: da igual para las pruebas.)
  5. Cuando llegue al escritorio de Windows, abra PowerShell como administrador: pulse la tecla Windows,
     escriba «powershell», clic derecho en «Windows PowerShell» > «Ejecutar como administrador» > «Sí».

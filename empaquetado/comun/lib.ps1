@@ -3,8 +3,14 @@
 # con PowerShell 7. El archivo es UTF-8 con BOM: PowerShell 5.1 lo necesita para leer los acentos.
 #
 # Define: Write-Msg, Invoke-Principal, Invoke-Paso, Invoke-Nativo, Start-ProcesoEspera,
-# Initialize-Registro, Write-ResumenTiempos, Test-Entorno, Get-PythonBuild, New-EntornoPython,
-# Get-Iscc, Wait-Hasta, Get-HashArchivo.
+# Initialize-Registro, Write-ResumenTiempos, Test-Entorno, Assert-HerramientaFijada, Get-PythonBuild,
+# New-EntornoPython, Get-Iscc, Wait-Hasta, Get-HashArchivo.
+#
+# Cómo corta un fallo (equivalente de `paso` en lib.sh, QA-M5-01/02): $ErrorActionPreference = 'Stop'
+# convierte los errores de cmdlets en excepciones dentro de cada bloque de Invoke-Paso, y los
+# ejecutables NATIVOS solo se invocan con Invoke-Nativo (o Start-ProcesoEspera), que comprueban el
+# código de salida y lanzan una excepción si no es válido; Invoke-Paso la reenvía con el nombre del paso
+# e Invoke-Principal sale con 1. Un ejecutable nativo llamado a pelo con `&` NO corta el paso.
 
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
@@ -85,6 +91,10 @@ function Invoke-Nativo {
         [switch]$Capturar,
         [int[]]$CodigosValidos = @(0)
     )
+    # Un ejecutable que no existe no debe pasar por un código de salida «0» heredado.
+    if (-not (Get-Command -Name $Ejecutable -ErrorAction SilentlyContinue)) {
+        throw "no se encontró el ejecutable $Ejecutable"
+    }
     $anteriores = @{}
     foreach ($k in $Entorno.Keys) {
         $anteriores[$k] = [Environment]::GetEnvironmentVariable($k, 'Process')
@@ -169,19 +179,46 @@ function Test-Entorno {
     if ($PSVersionTable.PSVersion.Major -lt 5) { throw 'se necesita PowerShell 5.1 o posterior' }
 }
 
-# Get-PythonBuild : ruta del CPython 3.13 fijado (el de herramientas\python313 o el del PATH).
-function Get-PythonBuild {
-    $candidatos = @()
-    if ($env:PROXLAUNCH_PYTHON) { $candidatos += $env:PROXLAUNCH_PYTHON }
-    $candidatos += (Join-Path $HOME 'herramientas\python313\python.exe')
-    $enRuta = Get-Command python.exe -ErrorAction SilentlyContinue
-    if ($enRuta) { $candidatos += $enRuta.Source }
-    foreach ($c in $candidatos) {
-        if (-not (Test-Path -LiteralPath $c)) { continue }
-        $v = & $c -c "import sys; print('%d.%d' % sys.version_info[:2])" 2>$null
-        if ($LASTEXITCODE -eq 0 -and "$v".Trim() -eq '3.13') { return (Resolve-Path -LiteralPath $c).Path }
+# Assert-HerramientaFijada <python|innosetup> <ruta> : exige que <ruta> sea el ejecutable que
+# preparar-build.ps1 instaló a partir del instalador cuyo SHA-256 fija herramientas.json (SEG-M5-04).
+# preparar-build.ps1 escribe ~\herramientas\verificadas.json con el SHA-256 del instalador fijado y el
+# del ejecutable instalado; aquí se vuelve a calcular el del ejecutable y se compara.
+function Assert-HerramientaFijada {
+    param(
+        [Parameter(Mandatory = $true)][ValidateSet('python', 'innosetup')][string]$Nombre,
+        [Parameter(Mandatory = $true)][string]$Ruta
+    )
+    $registro = Join-Path $HOME 'herramientas\verificadas.json'
+    if (-not (Test-Path -LiteralPath $registro)) {
+        throw "falta $registro: ejecute empaquetado\windows\preparar-build.ps1"
     }
-    throw 'no se encontró CPython 3.13: ejecute empaquetado\windows\preparar-build.ps1'
+    $datos = Get-Content -LiteralPath $registro -Raw -Encoding UTF8 | ConvertFrom-Json
+    $inventario = Get-Content -LiteralPath (Join-Path $script:Raiz 'empaquetado\entornos\windows\herramientas.json') `
+        -Raw -Encoding UTF8 | ConvertFrom-Json
+    $fijada = $inventario.herramientas.$Nombre
+    if (-not $datos.PSObject.Properties[$Nombre]) { throw "el registro de herramientas no incluye '$Nombre'" }
+    $anotada = $datos.$Nombre
+    if ([string]$anotada.instalador_sha256 -ne [string]$fijada.sha256) {
+        throw "'$Nombre' se instaló con otro instalador que el fijado en herramientas.json: vuelva a ejecutar preparar-build.ps1"
+    }
+    if (-not (Test-Path -LiteralPath $Ruta)) { throw "no existe $Ruta: ejecute empaquetado\windows\preparar-build.ps1" }
+    $real = Get-HashArchivo -Ruta $Ruta
+    if ($real -ne [string]$anotada.ejecutable_sha256) {
+        throw "el SHA-256 de $(Split-Path -Leaf $Ruta) no es el verificado por preparar-build.ps1 (¿cambió la herramienta?)"
+    }
+}
+
+# Get-PythonBuild : ruta del CPython 3.13 fijado. SOLO el de ~\herramientas\python313 instalado y
+# verificado por preparar-build.ps1; no se acepta el del PATH ni una variable de entorno (SEG-M5-04).
+function Get-PythonBuild {
+    $ruta = Join-Path $HOME 'herramientas\python313\python.exe'
+    if (-not (Test-Path -LiteralPath $ruta)) {
+        throw 'no se encontró CPython 3.13: ejecute empaquetado\windows\preparar-build.ps1'
+    }
+    Assert-HerramientaFijada -Nombre 'python' -Ruta $ruta
+    $v = & $ruta -c "import sys; print('%d.%d' % sys.version_info[:2])" 2>$null
+    if ($LASTEXITCODE -ne 0 -or "$v".Trim() -ne '3.13') { throw "$ruta no es CPython 3.13" }
+    return (Resolve-Path -LiteralPath $ruta).Path
 }
 
 # New-EntornoPython <carpeta> <lockfile...> : venv con el CPython fijado e instalación con hashes obligatorios.
@@ -200,15 +237,13 @@ function New-EntornoPython {
     return $venvPy
 }
 
-# Get-Iscc : ruta del compilador de Inno Setup instalado por preparar-build.ps1.
+# Get-Iscc : ruta del compilador de Inno Setup. SOLO el de ~\herramientas\innosetup6 instalado y
+# verificado por preparar-build.ps1 (no se buscan otras instalaciones; SEG-M5-04).
 function Get-Iscc {
-    $candidatos = @(
-        (Join-Path $HOME 'herramientas\innosetup6\ISCC.exe'),
-        (Join-Path ${env:ProgramFiles(x86)} 'Inno Setup 6\ISCC.exe'),
-        (Join-Path $env:LOCALAPPDATA 'Programs\Inno Setup 6\ISCC.exe')
-    )
-    foreach ($c in $candidatos) {
-        if (Test-Path -LiteralPath $c) { return $c }
+    $ruta = Join-Path $HOME 'herramientas\innosetup6\ISCC.exe'
+    if (-not (Test-Path -LiteralPath $ruta)) {
+        throw 'no se encontró ISCC.exe: ejecute empaquetado\windows\preparar-build.ps1'
     }
-    throw 'no se encontró ISCC.exe: ejecute empaquetado\windows\preparar-build.ps1'
+    Assert-HerramientaFijada -Nombre 'innosetup' -Ruta $ruta
+    return $ruta
 }

@@ -5,7 +5,8 @@
 ; Este archivo es UTF-8 sin BOM (Inno Setup 6.3 o posterior lo lee bien; igual que LICENSE).
 ;
 ; Decisiones: ámbito «solo para mí» por defecto (sin administrador) con diálogo para elegir «todos
-; los usuarios»; datos del usuario conservados al desinstalar salvo que se pida lo contrario;
+; los usuarios»; datos del usuario conservados al desinstalar salvo que se pida lo contrario (y solo
+; en la instalación por usuario: con «todos los usuarios» nunca se borran datos);
 ; el llavero (Administrador de credenciales) NUNCA se toca; sin firma de código (RF-E24).
 
 #ifndef Version
@@ -101,24 +102,38 @@ begin
       Result := True;
 end;
 
-{ Casilla «Borrar también mis datos»: por defecto NO (la respuesta predeterminada es «No»). }
+{ Casilla «Borrar también mis datos»: por defecto NO (la respuesta predeterminada es «No»).
+  Si la instalación es «para todos los usuarios» (modo administrador), el desinstalador NO pregunta ni
+  borra datos: las carpetas de datos son de cada usuario y quien desinstala como administrador no
+  puede borrar con seguridad las de los demás. Un /BORRARDATOS=1 en ese modo se IGNORA y queda anotado
+  en el registro de Inno Setup (opción /LOG). En la instalación por usuario todo sigue igual. }
 function InitializeUninstall(): Boolean;
 begin
   Result := True;
-  BorrarDatos := ParametroBorrarDatos();
-  if (not BorrarDatos) and (not UninstallSilent()) then
-    BorrarDatos := MsgBox(CustomMessage('PreguntaBorrarDatos'), mbConfirmation,
-      MB_YESNO or MB_DEFBUTTON2) = IDYES;
+  BorrarDatos := False;
+  if IsAdminInstallMode then
+  begin
+    if ParametroBorrarDatos() then
+      Log('Se ignora /BORRARDATOS=1: la instalacion es para todos los usuarios y no se borran datos de ningun usuario.');
+  end
+  else
+  begin
+    BorrarDatos := ParametroBorrarDatos();
+    if (not BorrarDatos) and (not UninstallSilent()) then
+      BorrarDatos := MsgBox(CustomMessage('PreguntaBorrarDatos'), mbConfirmation,
+        MB_YESNO or MB_DEFBUTTON2) = IDYES;
+  end;
 end;
 
 { Borra SOLO las carpetas de datos de ProxLaunch del usuario que desinstala. Son las de platformdirs
   en Windows (sin appauthor y sin roaming): %LOCALAPPDATA%\ProxLaunch\ProxLaunch (configuración,
-  datos, lotes y registro cuelgan de ahí). Nunca se toca el llavero ni nada ajeno. }
+  datos, lotes y registro cuelgan de ahí). Nunca se toca el llavero ni nada ajeno. Con instalación
+  para todos los usuarios BorrarDatos es siempre falso (ver InitializeUninstall). }
 procedure CurUninstallStepChanged(CurUninstallStep: TUninstallStep);
 var
   Autor, Carpeta: String;
 begin
-  if (CurUninstallStep = usPostUninstall) and BorrarDatos then
+  if (CurUninstallStep = usPostUninstall) and BorrarDatos and (not IsAdminInstallMode) then
   begin
     Autor := ExpandConstant('{localappdata}\ProxLaunch');
     Carpeta := Autor + '\ProxLaunch';

@@ -221,6 +221,23 @@ def revisar_guardas(rev: Revision) -> None:
             rev.error("CA-E33.1", f"empaquetado/{nombre}", None, "falta la guarda de laboratorio")
 
 
+def revisar_paso(rev: Revision) -> None:
+    """QA-M5-01/02: ``paso`` de lib.sh debe correr la orden con ``set -e`` activo (subshell).
+
+    Con ``if ! "$@"`` Bash ignora ``set -e`` dentro de las funciones y un fallo intermedio pasa
+    inadvertido. El comportamiento se prueba con ``comun/autotest-lib.sh``.
+    """
+    ruta = rev.raiz / "empaquetado" / "comun" / "lib.sh"
+    if not ruta.is_file():
+        return
+    rel = ruta.relative_to(rev.raiz).as_posix()
+    sin_comentarios = "\n".join(ln for _, ln in lineas_de(ruta) if not es_comentario(ln))
+    if re.search(r'\bif\s+!\s+"\$@"', sin_comentarios):
+        rev.error("QA-M5-01", rel, None, 'paso no debe ejecutar la orden dentro de `if ! "$@"`')
+    if not re.search(r'\(\s*set -e;\s*"\$@"\s*\)', sin_comentarios):
+        rev.error("QA-M5-01", rel, None, 'paso debe ejecutar `( set -e; "$@" )` (set -e activo)')
+
+
 def revisar_codificacion_ps1(rev: Revision, archivos: list[Path]) -> None:
     """Windows PowerShell 5.1 lee como ANSI un .ps1 sin BOM: con acentos exige BOM UTF-8."""
     emp = rev.raiz / "empaquetado"
@@ -443,6 +460,7 @@ def revisar(raiz: Path) -> list[str]:
     revisar_certificados(rev, archivos)
     revisar_texto(rev, archivos)
     revisar_guardas(rev)
+    revisar_paso(rev)
     revisar_plantilla(rev)
     revisar_codificacion_ps1(rev, archivos)
     revisar_sintaxis_powershell(rev, archivos)

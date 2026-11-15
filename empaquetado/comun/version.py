@@ -23,7 +23,7 @@ from pathlib import Path
 RAIZ = Path(__file__).resolve().parents[2]
 INIT = RAIZ / "src" / "proxlaunch" / "__init__.py"
 PYPROJECT = RAIZ / "pyproject.toml"
-_SEMVER = re.compile(r"^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)$")
+_SEMVER = re.compile(r"(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)")
 
 
 class ErrorVersion(Exception):
@@ -39,7 +39,8 @@ def version_del_codigo() -> str:
 
 
 def validar_semver(version: str) -> str:
-    if not _SEMVER.match(version):
+    # fullmatch: rechaza también un salto de línea final («1.2.3\n»), que `$` aceptaba.
+    if not _SEMVER.fullmatch(version):
         raise ErrorVersion(
             f"la versión '{version}' no cumple SemVer X.Y.Z (sin sufijos de preliberación)"
         )

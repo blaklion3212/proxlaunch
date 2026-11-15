@@ -15,11 +15,42 @@ from __future__ import annotations
 
 import argparse
 import hashlib
+import importlib.util
+import os
+import re
 import sys
 from pathlib import Path
 
 RAIZ = Path(__file__).resolve().parents[2]
 PATRONES = ("*.deb", "*-setup.exe")
+# Artefactos con la versión en el nombre; los que no siguen este formato no se filtran por versión.
+NOMBRE_CON_VERSION = (
+    re.compile(r"proxlaunch_(\d+\.\d+\.\d+)_amd64\.deb"),
+    re.compile(r"proxlaunch-(\d+\.\d+\.\d+)-windows-x64-setup\.exe"),
+)
+
+
+def version_vigente() -> str:
+    """Versión del código (``version.py`` de esta carpeta, cargado por ruta: ``python -I``)."""
+    spec = importlib.util.spec_from_file_location(
+        "sumas_version", Path(__file__).resolve().with_name("version.py")
+    )
+    if spec is None or spec.loader is None:
+        raise SystemExit("SUMAS: no se pudo cargar version.py")
+    modulo = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(modulo)
+    try:
+        return modulo.validar_semver(modulo.version_del_codigo())
+    except modulo.ErrorVersion as exc:
+        raise SystemExit(f"SUMAS: no se pudo determinar la versión vigente: {exc}") from exc
+
+
+def version_del_nombre(nombre: str) -> str | None:
+    for patron in NOMBRE_CON_VERSION:
+        m = patron.fullmatch(nombre)
+        if m:
+            return m.group(1)
+    return None
 
 
 def sha256(ruta: Path) -> str:
@@ -49,11 +80,25 @@ def artefactos(dist: Path) -> list[Path]:
     )
 
 
-def publicar(dist: Path) -> int:
-    """Escribe ``SHA256SUMS`` solo con artefactos sellados. Devuelve 1 si alguno no lo está."""
+def publicar(dist: Path, version: str | None = None) -> int:
+    """Escribe ``SHA256SUMS`` solo con artefactos sellados de la versión vigente.
+
+    Devuelve 1 si algún artefacto de la versión vigente no está sellado. Los artefactos de OTRA
+    versión (restos de construcciones anteriores o de pruebas) se omiten con un aviso (QA-M5-11).
+    ``SHA256SUMS`` se escribe de forma atómica (temporal + ``os.replace``).
+    """
+    vigente = version if version is not None else version_vigente()
     lineas: list[str] = []
     sin_sello: list[str] = []
     for art in artefactos(dist):
+        de_version = version_del_nombre(art.name)
+        if de_version is not None and de_version != vigente:
+            print(
+                f"SUMAS: {art.name} es de la versión {de_version} y la vigente es {vigente}; "
+                "se omite",
+                file=sys.stderr,
+            )
+            continue
         sello = ruta_sello(art)
         actual = sha256(art)
         if sello.is_file() and sello.read_text("utf-8").split()[:1] == [actual]:
@@ -62,7 +107,12 @@ def publicar(dist: Path) -> int:
             sin_sello.append(art.name)
     destino = dist / "SHA256SUMS"
     if lineas:
-        destino.write_text("\n".join(lineas) + "\n", encoding="utf-8")
+        temporal = dist / f".SHA256SUMS.{os.getpid()}.tmp"
+        try:
+            temporal.write_text("\n".join(lineas) + "\n", encoding="utf-8")
+            os.replace(temporal, destino)
+        finally:
+            temporal.unlink(missing_ok=True)
         print(f"SHA256SUMS con {len(lineas)} artefacto(s)")
     elif destino.exists():
         destino.unlink()

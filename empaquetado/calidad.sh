@@ -10,6 +10,9 @@ cd "$RAIZ"
 [ -n "${REGISTRO_YA_INICIADO:-}" ] || { iniciar_registro calidad; export REGISTRO_YA_INICIADO=1; }
 guardia_laboratorio
 
+# Autotest de lib.sh: `paso` debe cortar en cuanto falle un comando intermedio (QA-M5-01/02).
+paso "Autotest de paso (set -e activo dentro de la orden)" bash empaquetado/comun/autotest-lib.sh
+
 preparar_uv
 VENV="$RAIZ/build/venv-calidad"
 PY="$VENV/bin/python"

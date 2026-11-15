@@ -87,6 +87,25 @@ def crear_dependencias(rutas: Rutas, gestor_tema: GestorTema) -> Dependencias:
     )
 
 
+def adjuntar_consola_del_padre() -> None:
+    """Con ``console=False`` (Windows) stdout es None: intenta usar la consola del proceso padre.
+
+    Solo para los caminos de consola (``--version``, ayuda, humo). Si falla no hace nada: el
+    archivo de ``PROXLAUNCH_HUMO_SALIDA`` sigue siendo el camino fiable.
+    """
+    if sys.platform != "win32" or sys.stdout is not None:
+        return
+    try:
+        import ctypes
+
+        if not ctypes.windll.kernel32.AttachConsole(-1):  # ATTACH_PARENT_PROCESS
+            return
+        sys.stdout = open("CONOUT$", "w", encoding="utf-8")  # noqa: SIM115
+        sys.stderr = open("CONOUT$", "w", encoding="utf-8")  # noqa: SIM115
+    except (OSError, AttributeError):
+        return
+
+
 def _analizar_argumentos(argv: Sequence[str]) -> tuple[argparse.Namespace, list[str]]:
     """Separa las opciones propias de las de Qt (que pasan intactas a ``QApplication``)."""
     analizador = argparse.ArgumentParser(add_help=True, prog="proxlaunch", allow_abbrev=False)
@@ -110,6 +129,8 @@ def main(argv: Sequence[str] | None = None) -> int:
     argumentos = list(sys.argv if argv is None else argv)
     if not argumentos:
         argumentos = ["proxlaunch"]
+    if any(a in ("--version", "-h", "--help", "--prueba-de-humo") for a in argumentos[1:]):
+        adjuntar_consola_del_padre()
     propios, argv_qt = _analizar_argumentos(argumentos)
     if propios.version:
         from proxlaunch.interfaz.humo import escribir_texto_plano

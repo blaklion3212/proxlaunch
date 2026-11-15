@@ -49,6 +49,18 @@ PYB="$(python_build)"
 VERSION="$("$PYB" -I empaquetado/comun/version.py --comprobar)" || die "versión no válida (vea arriba)"
 msg "versión $VERSION"
 
+# Nombre y destino del artefacto. Antes de construir se BORRA el artefacto de la misma versión y sus
+# sellos de verificación: si un paso posterior fallara, nunca quedaría un .deb viejo que pudiera
+# tomarse por el recién construido (QA-M5-01).
+NOMBRE_DEB="proxlaunch_${VERSION}_amd64.deb"
+if [ "$PROVISIONAL" -eq 1 ]; then
+    DESTINO="$RAIZ/dist/provisional"
+else
+    DESTINO="$RAIZ/dist"
+fi
+rm -f -- "${DESTINO:?}/${NOMBRE_DEB:?}" "${DESTINO:?}/.verificado-${NOMBRE_DEB:?}" \
+    "${RAIZ:?}/build/deb/${NOMBRE_DEB:?}"
+
 if [ "$SIN_CALIDAD" -eq 0 ]; then
     paso "Calidad completa" bash empaquetado/calidad.sh
 else
@@ -120,7 +132,6 @@ paso "Humo previo (fuentes y congelado, offscreen)" humo_previo
 paso "glibc <= 2.35 (CA-E05.1)" "$PY" -I empaquetado/comun/analisis_elf.py glibc "$CONGELADO" --maximo 2.35
 
 # --- Árbol del paquete ---------------------------------------------------------------------
-NOMBRE_DEB="proxlaunch_${VERSION}_amd64.deb"
 STAGE="$RAIZ/build/deb/proxlaunch_${VERSION}_amd64"
 
 preparar_arbol_deb() {
@@ -191,11 +202,6 @@ paso "Presupuesto de tamaño (CA-E19.1)" "$PY" -I empaquetado/comun/presupuesto.
     "build/deb/$NOMBRE_DEB" "$STAGE"
 
 # --- Publicación local en dist/ (solo si todo salió bien) -----------------------------------------
-if [ "$PROVISIONAL" -eq 1 ]; then
-    DESTINO="$RAIZ/dist/provisional"
-else
-    DESTINO="$RAIZ/dist"
-fi
 mkdir -p "$DESTINO"
 cp -f "build/deb/$NOMBRE_DEB" "$DESTINO/$NOMBRE_DEB"
 if [ "$PROVISIONAL" -eq 1 ]; then

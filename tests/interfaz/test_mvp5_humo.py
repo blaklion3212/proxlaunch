@@ -16,6 +16,7 @@ Estrategia (decisión justificada):
 
 from __future__ import annotations
 
+import contextlib
 import importlib.util
 import inspect
 import json
@@ -715,13 +716,6 @@ def test_humo_con_variable_de_salida_y_sin_stdout_solo_escribe_el_archivo(
     assert json.loads(destino.read_text("utf-8"))["problemas"] == []
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason="DEFECTO: tras el humo el logger 'proxlaunch' conserva el manejador de archivo "
-    "abierto sobre la carpeta temporal ya borrada (configurar_registro no se deshace). En "
-    "Windows ese archivo abierto impide que rmtree borre la carpeta (CA-E17.2: no deja "
-    "archivos) y en Linux los registros posteriores van a un archivo desvinculado.",
-)
 def test_humo_no_deja_un_manejador_de_registro_sobre_la_carpeta_temporal(
     entorno_humo, catalogo_qm, capsys
 ):
@@ -1016,3 +1010,432 @@ def test_con_base_explicita_todo_cuelga_de_ella(tmp_path):
 
 def test_el_humo_usa_la_misma_fuente_de_nombre_que_el_modo_normal():
     assert humo.NOMBRE_APP == app_mod.NOMBRE_APP == "ProxLaunch"
+
+
+# =============================================================================================
+# Correcciones de la revisión de calidad y seguridad (arbitraje, respaldo, salida, consola)
+# =============================================================================================
+
+
+class _FaulthandlerEspia:
+    """Doble de ``faulthandler``: registra las llamadas y NUNCA arma un volcado real.
+
+    Un ``dump_traceback_later(exit=True)`` real que sobreviviera a la prueba mataría a pytest.
+    """
+
+    def __init__(self) -> None:
+        self.armados: list[tuple[float, bool, object]] = []
+        self.cancelaciones = 0
+        self.fallo: BaseException | None = None
+
+    def dump_traceback_later(self, timeout, repeat=False, file=None, exit=False):
+        if self.fallo is not None:
+            raise self.fallo
+        self.armados.append((timeout, exit, file))
+
+    def cancel_dump_traceback_later(self):
+        self.cancelaciones += 1
+
+
+@pytest.fixture
+def fh(monkeypatch):
+    """Sustituye ``humo.faulthandler`` por el espía (ninguna prueba arma un volcado real)."""
+    espia = _FaulthandlerEspia()
+    monkeypatch.setattr(humo, "faulthandler", espia)
+    return espia
+
+
+class _StderrConDescriptor:
+    """``sys.stderr`` falso que sí expone ``fileno()`` (como una consola real)."""
+
+    def fileno(self) -> int:
+        return 2
+
+    def write(self, texto: str) -> int:
+        return len(texto)
+
+    def flush(self) -> None:
+        pass
+
+
+# --- _Cierre: arbitraje entre el hilo principal y el vigilante --------------------------------
+
+
+def test_cierre_si_el_principal_reclama_primero_el_vigilante_no_aborta():
+    cierre = humo._Cierre()
+    assert cierre.reclamar_emision() is True
+    assert cierre.reclamar_aborto() is False
+
+
+def test_cierre_si_el_vigilante_reclama_primero_el_principal_no_emite():
+    cierre = humo._Cierre()
+    assert cierre.reclamar_aborto() is True
+    assert cierre.reclamar_emision() is False
+
+
+def test_cierre_con_carrera_real_gana_exactamente_uno():
+    """Muchas carreras entre dos hilos: nunca ganan los dos ni ninguno."""
+    for _ in range(200):
+        cierre = humo._Cierre()
+        barrera = threading.Barrier(2)
+        resultados: dict[str, bool] = {}
+
+        def principal(c=cierre, b=barrera, r=resultados):
+            b.wait()
+            r["principal"] = c.reclamar_emision()
+
+        def vigilante(c=cierre, b=barrera, r=resultados):
+            b.wait()
+            r["vigilante"] = c.reclamar_aborto()
+
+        hilos = [threading.Thread(target=principal), threading.Thread(target=vigilante)]
+        for h in hilos:
+            h.start()
+        for h in hilos:
+            h.join(5)
+        assert sorted(resultados.values()) == [False, True], resultados
+
+
+def test_vigilante_no_aborta_si_el_principal_ya_reclamo_la_emision(
+    monkeypatch, tmp_path, salida_exit
+):
+    evento, codigos = salida_exit
+    monkeypatch.setattr(humo, "LIMITE_VIGILANTE_S", 0.05)
+    carpeta = tmp_path / "proxlaunch-humo-cierre"
+    carpeta.mkdir()
+    progreso = humo._Progreso()
+    progreso.cierre = humo._Cierre()
+    assert progreso.cierre.reclamar_emision() is True
+    vigilante = humo._arrancar_vigilante(carpeta, progreso)
+    vigilante.join(5)  # el temporizador ya expiró y su función volvió sin abortar
+    assert not evento.is_set() and codigos == []
+    assert carpeta.exists()
+
+
+def test_vigilante_reclama_el_aborto_y_el_principal_devuelve_3_sin_informe(
+    entorno_humo, catalogo_qm, monkeypatch, tmp_path, capsys
+):
+    """Si el vigilante ya empezó a abortar, ``ejecutar_prueba_de_humo`` devuelve 3 y no informa."""
+    destino = tmp_path / "informe.json"
+    monkeypatch.setenv(SALIDA, str(destino))
+    original = humo._arrancar_vigilante
+
+    def vigilante_que_gana(carpeta, progreso=None):
+        assert progreso is not None and progreso.cierre is not None
+        assert progreso.cierre.reclamar_aborto() is True  # simula que el vigilante llegó antes
+        return original(carpeta, progreso)
+
+    monkeypatch.setattr(humo, "_arrancar_vigilante", vigilante_que_gana)
+    rc, out, _ = ejecutar(capsys)
+    assert rc == humo.CODIGO_VIGILANTE == 3
+    assert out.strip() == ""
+    assert not destino.exists()
+
+
+def test_vigilante_cierra_el_registro_antes_de_borrar_la_carpeta(
+    monkeypatch, tmp_path, salida_exit
+):
+    evento, codigos = salida_exit
+    monkeypatch.setattr(humo, "LIMITE_VIGILANTE_S", 0.05)
+    orden: list[str] = []
+    rmtree_real = shutil.rmtree
+    monkeypatch.setattr(humo, "cerrar_registro", lambda: orden.append("registro"))
+
+    def rmtree(ruta, *a, **k):
+        orden.append("rmtree")
+        rmtree_real(ruta, *a, **k)
+
+    monkeypatch.setattr(humo.shutil, "rmtree", rmtree)
+    carpeta = tmp_path / "proxlaunch-humo-orden"
+    carpeta.mkdir()
+    humo._arrancar_vigilante(carpeta, humo._Progreso())
+    assert evento.wait(10)
+    assert orden == ["registro", "rmtree"]
+    assert codigos == [3]
+
+
+def test_vigilante_cancela_el_respaldo_de_faulthandler_al_abortar(
+    monkeypatch, tmp_path, salida_exit, fh
+):
+    evento, _ = salida_exit
+    monkeypatch.setattr(humo, "LIMITE_VIGILANTE_S", 0.05)
+    carpeta = tmp_path / "proxlaunch-humo-resp"
+    carpeta.mkdir()
+    progreso = humo._Progreso()
+    progreso.respaldo = humo._RespaldoFaulthandler(carpeta)
+    humo._arrancar_vigilante(carpeta, progreso)
+    assert evento.wait(10)
+    assert fh.cancelaciones >= 1
+
+
+# --- _RespaldoFaulthandler --------------------------------------------------------------------
+
+
+def test_respaldo_arma_el_volcado_sobre_stderr_con_descriptor_y_margen(monkeypatch, tmp_path, fh):
+    stderr = _StderrConDescriptor()
+    monkeypatch.setattr(sys, "stderr", stderr)
+    respaldo = humo._RespaldoFaulthandler(tmp_path)
+    assert len(fh.armados) == 1
+    plazo, sale, archivo = fh.armados[0]
+    assert plazo > humo.LIMITE_VIGILANTE_S  # el Timer va primero; el respaldo, después
+    assert sale is True
+    assert archivo is stderr
+    assert not (tmp_path / "faulthandler.txt").exists()
+    respaldo.cancelar()
+    assert fh.cancelaciones == 1
+
+
+@pytest.mark.parametrize("variante", ["none", "sin_fileno"])
+def test_respaldo_sin_descriptor_usa_un_archivo_en_la_carpeta_y_lo_cierra(
+    monkeypatch, tmp_path, fh, variante
+):
+    # io.StringIO.fileno() lanza UnsupportedOperation; con None no hay flujo en absoluto.
+    import io
+
+    monkeypatch.setattr(sys, "stderr", None if variante == "none" else io.StringIO())
+    respaldo = humo._RespaldoFaulthandler(tmp_path)
+    assert len(fh.armados) == 1
+    archivo = fh.armados[0][2]
+    assert Path(archivo.name) == tmp_path / "faulthandler.txt"
+    assert (tmp_path / "faulthandler.txt").is_file()
+    assert not archivo.closed
+    respaldo.cancelar()
+    assert archivo.closed
+    assert fh.cancelaciones == 1
+
+
+def test_respaldo_cancelar_es_idempotente(monkeypatch, tmp_path, fh):
+    monkeypatch.setattr(sys, "stderr", None)
+    respaldo = humo._RespaldoFaulthandler(tmp_path)
+    respaldo.cancelar()
+    respaldo.cancelar()  # no debe lanzar aunque el archivo ya esté cerrado
+
+
+def test_respaldo_si_faulthandler_falla_no_propaga_y_cierra_el_archivo(monkeypatch, tmp_path, fh):
+    monkeypatch.setattr(sys, "stderr", None)
+    fh.fallo = RuntimeError("sin soporte")
+    humo._RespaldoFaulthandler(tmp_path)  # no debe lanzar
+    assert fh.armados == []
+    assert fh.cancelaciones >= 1
+
+
+def test_respaldo_si_no_puede_crear_el_archivo_no_arma_nada(monkeypatch, tmp_path, fh):
+    monkeypatch.setattr(sys, "stderr", None)
+    humo._RespaldoFaulthandler(tmp_path / "no-existe")  # la carpeta no existe: no debe lanzar
+    assert fh.armados == []
+
+
+def test_humo_arma_y_cancela_el_respaldo_en_cada_ejecucion(
+    entorno_humo, catalogo_qm, monkeypatch, capsys, fh
+):
+    monkeypatch.setenv("PYTHONFAULTHANDLER", "0")  # sin efecto en el hilo; solo claridad
+    rc, _, _ = ejecutar(capsys)
+    assert rc == 0
+    assert len(fh.armados) == 1
+    assert fh.cancelaciones >= 1
+
+
+def test_humo_cancela_el_respaldo_aunque_haya_una_excepcion(
+    entorno_humo, catalogo_qm, monkeypatch, capsys, fh
+):
+    monkeypatch.setattr(
+        humo, "cargar_fuentes", lambda: (_ for _ in ()).throw(RuntimeError("falla simulada"))
+    )
+    rc, _, _ = ejecutar(capsys)
+    assert rc != 0
+    assert len(fh.armados) == 1 and fh.cancelaciones >= 1
+
+
+# --- _escribir_archivo_salida -----------------------------------------------------------------
+
+solo_posix = pytest.mark.skipif(sys.platform == "win32", reason="permisos y enlaces de POSIX")
+
+
+@solo_posix
+def test_salida_crea_el_archivo_con_permisos_0600(tmp_path):
+    destino = tmp_path / "salida.json"
+    previa = os.umask(0)  # sin máscara: el modo lo fija la propia llamada, no el entorno
+    try:
+        humo._escribir_archivo_salida(str(destino), "hola")
+    finally:
+        os.umask(previa)
+    assert destino.read_text("utf-8") == "hola\n"
+    assert (destino.stat().st_mode & 0o777) == 0o600
+
+
+def test_salida_trunca_un_archivo_existente(tmp_path):
+    destino = tmp_path / "salida.json"
+    destino.write_text("contenido anterior mucho más largo que el nuevo", encoding="utf-8")
+    humo._escribir_archivo_salida(str(destino), "nuevo")
+    assert destino.read_text("utf-8") == "nuevo\n"
+
+
+@solo_posix
+def test_salida_no_sigue_un_enlace_simbolico_y_no_lanza(tmp_path):
+    objetivo = tmp_path / "objetivo.txt"
+    objetivo.write_text("intacto", encoding="utf-8")
+    enlace = tmp_path / "enlace.json"
+    enlace.symlink_to(objetivo)
+    humo._escribir_archivo_salida(str(enlace), "no debe llegar")
+    assert objetivo.read_text("utf-8") == "intacto"
+    assert enlace.is_symlink()
+
+
+@solo_posix
+def test_salida_no_crea_el_destino_de_un_enlace_roto(tmp_path):
+    objetivo = tmp_path / "no-existe.txt"
+    enlace = tmp_path / "enlace.json"
+    enlace.symlink_to(objetivo)
+    humo._escribir_archivo_salida(str(enlace), "no debe llegar")
+    assert not objetivo.exists()
+
+
+def test_salida_suprime_los_errores_de_es(tmp_path):
+    humo._escribir_archivo_salida(str(tmp_path / "no-existe" / "salida.json"), "x")
+    humo._escribir_archivo_salida(str(tmp_path), "es un directorio")  # tampoco debe lanzar
+    assert not (tmp_path / "no-existe").exists()
+
+
+# --- adjuntar_consola_del_padre ---------------------------------------------------------------
+
+
+class _Kernel32Falso:
+    def __init__(self, resultado: int = 0, excepcion: BaseException | None = None) -> None:
+        self.llamadas: list[int] = []
+        self._resultado = resultado
+        self._excepcion = excepcion
+
+    def AttachConsole(self, pid):  # noqa: N802 - nombre de la API de Windows
+        self.llamadas.append(pid)
+        if self._excepcion is not None:
+            raise self._excepcion
+        return self._resultado
+
+
+@pytest.fixture
+def windows_simulado(monkeypatch):
+    """Simula Windows sin consola: ``sys.platform`` win32, stdout/stderr ``None`` y un ``windll``
+    falso. Devuelve una función para elegir el comportamiento de ``AttachConsole``."""
+    import ctypes
+    import types
+
+    abiertos: list[tuple] = []
+
+    def abrir_falso(*a, **k):
+        abiertos.append(a)
+        return types.SimpleNamespace(nombre=a[0], write=lambda t: len(t), flush=lambda: None)
+
+    def configurar(kernel32):
+        # Se aplica dentro de la prueba: pytest reemplaza sys.stdout al empezar cada fase.
+        monkeypatch.setattr(sys, "stdout", None)
+        monkeypatch.setattr(sys, "stderr", None)
+        monkeypatch.setattr(sys, "platform", "win32")
+        monkeypatch.setattr(app_mod, "open", abrir_falso, raising=False)
+        monkeypatch.setattr(
+            ctypes, "windll", types.SimpleNamespace(kernel32=kernel32), raising=False
+        )
+        return abiertos
+
+    return configurar
+
+
+def test_consola_no_hace_nada_fuera_de_windows(monkeypatch, windows_simulado):
+    kernel32 = _Kernel32Falso(resultado=1)
+    abiertos = windows_simulado(kernel32)
+    monkeypatch.setattr(sys, "platform", "linux")
+    app_mod.adjuntar_consola_del_padre()
+    assert kernel32.llamadas == [] and abiertos == []
+    assert sys.stdout is None and sys.stderr is None
+
+
+def test_consola_no_hace_nada_si_stdout_existe(monkeypatch, windows_simulado, capsys):
+    kernel32 = _Kernel32Falso(resultado=1)
+    abiertos = windows_simulado(kernel32)
+    flujo = _StderrConDescriptor()
+    monkeypatch.setattr(sys, "stdout", flujo)
+    app_mod.adjuntar_consola_del_padre()
+    assert kernel32.llamadas == [] and abiertos == []
+    assert sys.stdout is flujo
+
+
+def test_consola_con_attachconsole_que_devuelve_0_no_cambia_stdout(windows_simulado):
+    kernel32 = _Kernel32Falso(resultado=0)
+    abiertos = windows_simulado(kernel32)
+    app_mod.adjuntar_consola_del_padre()
+    assert kernel32.llamadas == [-1]  # ATTACH_PARENT_PROCESS
+    assert abiertos == []
+    assert sys.stdout is None and sys.stderr is None
+
+
+def test_consola_con_attachconsole_correcto_abre_conout_para_stdout_y_stderr(windows_simulado):
+    kernel32 = _Kernel32Falso(resultado=1)
+    abiertos = windows_simulado(kernel32)
+    app_mod.adjuntar_consola_del_padre()
+    assert [a[0] for a in abiertos] == ["CONOUT$", "CONOUT$"]
+    assert sys.stdout is not None and sys.stderr is not None
+
+
+@pytest.mark.parametrize("excepcion", [OSError("sin consola"), AttributeError("sin windll")])
+def test_consola_si_la_api_falla_no_propaga_ni_cambia_nada(windows_simulado, excepcion):
+    abiertos = windows_simulado(_Kernel32Falso(excepcion=excepcion))
+    app_mod.adjuntar_consola_del_padre()
+    assert abiertos == [] and sys.stdout is None
+
+
+@pytest.mark.parametrize("opcion", ["--version", "-h", "--help", "--prueba-de-humo"])
+def test_main_adjunta_la_consola_en_los_modos_de_consola(monkeypatch, opcion):
+    llamadas: list[int] = []
+    monkeypatch.setattr(app_mod, "adjuntar_consola_del_padre", lambda: llamadas.append(1))
+    monkeypatch.setattr(humo, "ejecutar_prueba_de_humo", lambda *a, **k: 0)
+    monkeypatch.delenv(SALIDA, raising=False)
+    with contextlib.suppress(SystemExit):  # la ayuda de argparse termina con SystemExit(0)
+        app_mod.main(["proxlaunch", opcion])
+    assert llamadas, f"{opcion} debe adjuntar la consola del padre"
+
+
+def test_main_no_adjunta_la_consola_en_el_modo_normal(entorno_humo, monkeypatch):
+    llamadas: list[int] = []
+    monkeypatch.setattr(app_mod, "adjuntar_consola_del_padre", lambda: llamadas.append(1))
+
+    class VentanaFalsa:
+        def __init__(self, deps):
+            pass
+
+        def show(self):
+            pass
+
+    monkeypatch.setattr(app_mod, "crear_dependencias", lambda rutas, gestor: object())
+    monkeypatch.setattr(app_mod, "VentanaPrincipal", VentanaFalsa)
+    monkeypatch.setattr(app_mod, "GestorTema", _GestorFalso)
+    monkeypatch.setattr(app_mod, "cargar_traductor", lambda app: None)
+    monkeypatch.setattr(app_mod, "configurar_registro", lambda carpeta: None)
+    monkeypatch.setattr(QApplication, "exec", lambda *a, **k: 0)
+    assert app_mod.main([]) == 0
+    assert llamadas == []
+
+
+# --- Dependencias.directorio_lotes obligatorio --------------------------------------------------
+
+
+def test_directorio_lotes_es_obligatorio_en_dependencias():
+    from proxlaunch.interfaz.ventana_principal import Dependencias
+
+    parametro = inspect.signature(Dependencias).parameters["directorio_lotes"]
+    assert parametro.default is inspect.Parameter.empty
+
+
+def test_la_ventana_usa_la_carpeta_de_lotes_inyectada_y_nunca_rutas_real(
+    deps, qtbot, monkeypatch, tmp_path
+):
+    from proxlaunch.interfaz import ventana_principal as vp
+
+    monkeypatch.setattr(
+        vp, "Rutas", lambda *a, **k: pytest.fail("la ventana no debe usar Rutas()"), raising=False
+    )
+    inyectada = tmp_path / "lotes-inyectados"
+    deps.directorio_lotes = inyectada
+    ventana = vp.VentanaPrincipal(deps)
+    qtbot.addWidget(ventana)
+    # Se consulta el método privado porque el diálogo de guardado no se puede abrir en pruebas.
+    assert ventana._carpeta_lotes() == inyectada
+    assert inyectada.is_dir()

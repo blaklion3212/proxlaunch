@@ -95,11 +95,6 @@ def test_semver_invalido_se_rechaza(version, v):
         version.validar_semver(v)
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason="DEFECTO: validar_semver usa re.match con '$', que acepta un salto de línea final "
-    "('1.2.3\\n' pasa como válida). Debería usar fullmatch o '\\Z'.",
-)
 def test_semver_con_salto_de_linea_final_se_rechaza(version):
     with pytest.raises(version.ErrorVersion):
         version.validar_semver("1.2.3\n")
@@ -1029,3 +1024,292 @@ def test_herramientas_con_url_http_se_rechazan(estatico, repo_copia):
     primera["url"] = "http://ejemplo.invalid/x.zip"
     ruta.write_text(json.dumps(datos), encoding="utf-8")
     assert any("la URL debe ser HTTPS" in x for x in _problemas(estatico, repo_copia))
+
+
+# =============================================================================================
+# Correcciones de la revisión: SemVer ASCII, publicar (versión y atomicidad), lib.sh, exclusión
+# =============================================================================================
+
+
+@pytest.mark.parametrize("v", ["１.２.３", "1.2.٣", "1.².3", "१.२.३"])
+def test_semver_rechaza_digitos_no_ascii(version, v):
+    with pytest.raises(version.ErrorVersion):
+        version.validar_semver(v)
+
+
+@pytest.mark.parametrize("v", ["1.2.3\n", "1.2.3\r\n", "1.2.3 ", "\n1.2.3"])
+def test_semver_rechaza_espacios_y_saltos_alrededor(version, v):
+    with pytest.raises(version.ErrorVersion):
+        version.validar_semver(v)
+
+
+def test_publicar_omite_los_artefactos_de_otra_version(sumas, tmp_path, capsys):
+    dist = tmp_path / "dist"
+    vieja = _artefacto(dist, "proxlaunch_0.4.0_amd64.deb", b"viejo")
+    vieja_exe = _artefacto(dist, "proxlaunch-0.4.0-windows-x64-setup.exe", b"viejo-exe")
+    vigente = _artefacto(dist, "proxlaunch_0.5.0_amd64.deb", b"vigente")
+    for art in (vieja, vieja_exe, vigente):
+        sumas.sellar(art)
+    assert sumas.publicar(dist, "0.5.0") == 0
+    texto = (dist / "SHA256SUMS").read_text("utf-8")
+    assert "proxlaunch_0.5.0_amd64.deb" in texto
+    assert "0.4.0" not in texto
+    assert "0.4.0" in capsys.readouterr().err  # se avisa de la omisión
+
+
+def test_publicar_un_artefacto_de_otra_version_sin_sello_no_hace_fallar(sumas, tmp_path):
+    dist = tmp_path / "dist"
+    _artefacto(dist, "proxlaunch_0.4.0_amd64.deb", b"viejo sin sellar")
+    sumas.sellar(_artefacto(dist, "proxlaunch_0.5.0_amd64.deb", b"vigente"))
+    assert sumas.publicar(dist, "0.5.0") == 0
+
+
+def test_publicar_si_la_vigente_no_esta_sellada_sigue_fallando(sumas, tmp_path):
+    dist = tmp_path / "dist"
+    _artefacto(dist, "proxlaunch_0.5.0_amd64.deb", b"sin sello")
+    assert sumas.publicar(dist, "0.5.0") == 1
+
+
+def test_publicar_incluye_los_artefactos_sin_version_en_el_nombre(sumas, tmp_path):
+    dist = tmp_path / "dist"
+    for nombre in ("sin-version.deb", "otro-setup.exe"):
+        sumas.sellar(_artefacto(dist, nombre, nombre.encode()))
+    assert sumas.publicar(dist, "9.9.9") == 0
+    texto = (dist / "SHA256SUMS").read_text("utf-8")
+    assert "sin-version.deb" in texto and "otro-setup.exe" in texto
+
+
+def test_publicar_sin_version_explicita_usa_la_del_codigo(sumas, tmp_path):
+    dist = tmp_path / "dist"
+    vigente = sumas.version_vigente()
+    propio = _artefacto(dist, f"proxlaunch_{vigente}_amd64.deb", b"a")
+    ajeno = _artefacto(dist, "proxlaunch_99.99.99_amd64.deb", b"b")
+    sumas.sellar(propio)
+    sumas.sellar(ajeno)
+    assert sumas.publicar(dist) == 0
+    texto = (dist / "SHA256SUMS").read_text("utf-8")
+    assert propio.name in texto and ajeno.name not in texto
+
+
+def test_publicar_no_deja_temporales(sumas, tmp_path):
+    dist = tmp_path / "dist"
+    sumas.sellar(_artefacto(dist, "a.deb", b"a"))
+    sumas.publicar(dist)
+    assert [p.name for p in dist.iterdir() if p.name.endswith(".tmp")] == []
+
+
+def test_publicar_con_fallo_al_reemplazar_conserva_el_sha256sums_previo(
+    sumas, tmp_path, monkeypatch
+):
+    dist = tmp_path / "dist"
+    sumas.sellar(_artefacto(dist, "a.deb", b"a"))
+    (dist / "SHA256SUMS").write_text("previo completo\n", encoding="utf-8")
+
+    def falla(origen, destino):
+        raise OSError("disco lleno")
+
+    monkeypatch.setattr(sumas.os, "replace", falla)
+    with pytest.raises(OSError):
+        sumas.publicar(dist)
+    assert (dist / "SHA256SUMS").read_text("utf-8") == "previo completo\n"
+    assert [p.name for p in dist.iterdir() if p.name.endswith(".tmp")] == []
+
+
+def test_publicar_con_fallo_a_mitad_de_escritura_no_deja_un_sha256sums_truncado(
+    sumas, tmp_path, monkeypatch
+):
+    dist = tmp_path / "dist"
+    sumas.sellar(_artefacto(dist, "a.deb", b"a"))
+    original = Path.write_text
+
+    def escribe_a_medias(self, datos, *a, **k):
+        if self.name.endswith(".tmp"):
+            original(self, datos[:5], *a, **k)  # contenido parcial en el temporal
+            raise OSError("se cortó la escritura")
+        return original(self, datos, *a, **k)
+
+    monkeypatch.setattr(Path, "write_text", escribe_a_medias)
+    with pytest.raises(OSError):
+        sumas.publicar(dist)
+    assert not (dist / "SHA256SUMS").exists()
+    assert [p.name for p in dist.iterdir() if p.name.endswith(".tmp")] == []
+
+
+# --- lib.sh y su autotest (requieren bash de POSIX) ---------------------------------------------
+
+BASH = shutil.which("bash")
+requiere_bash = pytest.mark.skipif(
+    sys.platform == "win32" or BASH is None, reason="requiere bash de POSIX"
+)
+
+
+def _entorno_sh(tmp_path: Path) -> dict[str, str]:
+    """Entorno mínimo del subproceso: todo lo que escriba cae bajo ``tmp_path``."""
+    import os
+
+    base = tmp_path / "entorno"
+    env = {"PATH": os.environ.get("PATH", "/usr/bin:/bin"), "LC_ALL": "C.UTF-8"}
+    for nombre, sub in {
+        "HOME": "home",
+        "XDG_DATA_HOME": "xdg/data",
+        "XDG_CONFIG_HOME": "xdg/config",
+        "XDG_STATE_HOME": "xdg/state",
+        "XDG_CACHE_HOME": "xdg/cache",
+        "TMPDIR": "tmp",
+    }.items():
+        (base / sub).mkdir(parents=True, exist_ok=True)
+        env[nombre] = str(base / sub)
+    return env
+
+
+def _correr_sh(args: list[str], tmp_path: Path) -> subprocess.CompletedProcess[str]:
+    return subprocess.run(
+        [BASH or "bash", *args],
+        env=_entorno_sh(tmp_path),
+        cwd=tmp_path,
+        capture_output=True,
+        text=True,
+        timeout=120,
+        check=False,
+    )
+
+
+@requiere_bash
+def test_autotest_lib_sale_0(tmp_path):
+    res = _correr_sh([str(COMUN / "autotest-lib.sh")], tmp_path)
+    assert res.returncode == 0, (res.stdout, res.stderr)
+    assert "autotest de lib.sh correcto" in res.stdout
+    assert "FALLÓ" not in res.stdout
+
+
+def _script_con_paso(tmp_path: Path, cuerpo: str) -> Path:
+    script = tmp_path / "caso.sh"
+    script.write_text(
+        "set -euo pipefail\n"
+        "NOMBRE_SCRIPT=caso\n"
+        f". '{COMUN / 'lib.sh'}'\n"
+        f"{cuerpo}\n"
+        'echo "llegó al final"\n',
+        encoding="utf-8",
+    )
+    return script
+
+
+@requiere_bash
+def test_paso_falla_si_un_comando_intermedio_falla_y_no_sigue(tmp_path):
+    script = _script_con_paso(tmp_path, 'f() { false; echo sigue; }\npaso "caso" f')
+    res = _correr_sh([str(script)], tmp_path)
+    assert res.returncode != 0, (res.stdout, res.stderr)
+    assert "sigue" not in res.stdout
+    assert "llegó al final" not in res.stdout
+    assert "falló el paso: caso" in res.stderr
+
+
+@requiere_bash
+def test_paso_correcto_si_ejecuta_toda_la_funcion(tmp_path):
+    """Control de la prueba anterior: sin fallo, la función llega a su última orden."""
+    script = _script_con_paso(tmp_path, 'f() { true; echo sigue; }\npaso "caso" f')
+    res = _correr_sh([str(script)], tmp_path)
+    assert res.returncode == 0, (res.stdout, res.stderr)
+    assert "sigue" in res.stdout and "llegó al final" in res.stdout
+
+
+# --- revisar_estatico: reglas de lib.sh ----------------------------------------------------------
+
+LINEA_PASO = '( set -e; "$@" )'
+
+
+def test_la_revision_detecta_que_paso_pierda_el_set_e(estatico, repo_copia):
+    lib = repo_copia / "empaquetado" / "comun" / "lib.sh"
+    texto = lib.read_text("utf-8")
+    assert LINEA_PASO in texto
+    lib.write_text(texto.replace(LINEA_PASO, '"$@"'), encoding="utf-8")
+    p = _problemas(estatico, repo_copia)
+    assert any("QA-M5-01" in x and "set -e" in x for x in p), p
+
+
+def test_la_revision_detecta_if_negado_alrededor_de_la_orden(estatico, repo_copia):
+    lib = repo_copia / "empaquetado" / "comun" / "lib.sh"
+    lib.write_text(lib.read_text("utf-8") + '\notro() { if ! "$@"; then return 1; fi; }\n', "utf-8")
+    p = _problemas(estatico, repo_copia)
+    assert any("QA-M5-01" in x and "if !" in x for x in p), p
+
+
+def test_la_revision_ignora_el_if_negado_en_un_comentario(estatico, repo_copia):
+    lib = repo_copia / "empaquetado" / "comun" / "lib.sh"
+    lib.write_text(lib.read_text("utf-8") + '\n# antes: if ! "$@"; then ...\n', "utf-8")
+    assert _problemas(estatico, repo_copia) == []
+
+
+# --- exclusion-laboratorio.sh con un puerto sustituible ------------------------------------------
+
+EXCLUSION = COMUN / "exclusion-laboratorio.sh"
+
+
+def _comprobar_exclusion(tmp_path: Path, puerto: int) -> subprocess.CompletedProcess[str]:
+    """Carga la guarda con el puerto prohibido sustituido y una marca de proceso inexistente.
+
+    Nunca se usan 8006 ni 2222: el puerto es el de un oyente efímero de esta prueba.
+    """
+    script = tmp_path / "exclusion.sh"
+    script.write_text(
+        "set -euo pipefail\n"
+        "NOMBRE_SCRIPT=exclusion\n"
+        'die() { echo "ERROR: $*" >&2; exit 1; }\n'
+        f". '{EXCLUSION}'\n"
+        f'LAB_PUERTOS_PROHIBIDOS="{puerto}"\n'
+        'LAB_MARCA_PROCESO="marca-que-no-existe-en-ningun-proceso-7f3a9c"\n'
+        "comprobar_exclusion_laboratorio\n"
+        'echo "sin conflicto"\n',
+        encoding="utf-8",
+    )
+    return _correr_sh([str(script)], tmp_path)
+
+
+@pytest.fixture
+def oyente_local(tmp_path):
+    """Proceso aparte con un puerto efímero en escucha en 127.0.0.1 (solo bucle local).
+
+    Se lanza en un subproceso porque pytest-socket bloquea los sockets del propio proceso.
+    """
+    codigo = (
+        "import socket, sys\n"
+        "s = socket.socket(); s.bind(('127.0.0.1', 0)); s.listen(1)\n"
+        "print(s.getsockname()[1], flush=True)\n"
+        "sys.stdin.read()\n"
+    )
+    proceso = subprocess.Popen(
+        [sys.executable, "-I", "-c", codigo],
+        stdin=subprocess.PIPE,
+        stdout=subprocess.PIPE,
+        text=True,
+        cwd=tmp_path,
+    )
+    assert proceso.stdout is not None and proceso.stdin is not None
+    puerto = int(proceso.stdout.readline())
+    assert puerto not in (8006, 2222)
+    try:
+        yield puerto
+    finally:
+        proceso.stdin.close()
+        proceso.wait(timeout=10)
+
+
+@requiere_bash
+@pytest.mark.skipif(not Path("/proc/net/tcp").exists(), reason="requiere /proc/net/tcp (Linux)")
+def test_exclusion_detecta_un_puerto_en_escucha_en_127_0_0_1(tmp_path, oyente_local):
+    res = _comprobar_exclusion(tmp_path, oyente_local)
+    assert res.returncode != 0, (res.stdout, res.stderr)
+    assert str(oyente_local) in res.stderr
+    assert "sin conflicto" not in res.stdout
+
+
+@requiere_bash
+@pytest.mark.skipif(not Path("/proc/net/tcp").exists(), reason="requiere /proc/net/tcp (Linux)")
+def test_exclusion_no_se_queja_si_el_puerto_prohibido_esta_libre(tmp_path, oyente_local):
+    # Un puerto distinto del que escucha el oyente (y nunca 8006 ni 2222).
+    libre = oyente_local + 1 if oyente_local < 65000 else oyente_local - 1
+    assert libre not in (8006, 2222)
+    res = _comprobar_exclusion(tmp_path, libre)
+    assert res.returncode == 0, (res.stdout, res.stderr)
+    assert "sin conflicto" in res.stdout

@@ -80,7 +80,7 @@ class AlmacenJson:
             destino = self.ruta.with_name(f"{self.ruta.name}.danado-{sello}-{contador}")
             contador += 1
         try:
-            os.replace(self.ruta, destino)
+            reemplazar_con_reintentos(self.ruta, destino)
         except OSError:
             return ResultadoLectura({}, hubo_corrupcion=True, error_lectura=True)
         return ResultadoLectura({}, hubo_corrupcion=True, copia_danada=destino)

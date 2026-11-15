@@ -3,6 +3,9 @@
 # empaquetado\entornos\windows\herramientas.json) y los copia por scp a ~\herramientas. Aquí se
 # VUELVE a comprobar la suma y la firma Authenticode antes de ejecutar nada. Todo se instala para el
 # usuario actual (sin administrador) y no se modifica el PATH.
+# Al terminar escribe ~\herramientas\verificadas.json con el SHA-256 de cada instalador fijado y el de
+# los ejecutables instalados: lib.ps1 (Get-PythonBuild y Get-Iscc) solo acepta esas herramientas y las
+# vuelve a comprobar con ese registro antes de usarlas (SEG-M5-04).
 #
 # Uso: empaquetado\windows\preparar-build.ps1 [-Carpeta <carpeta con los instaladores>]
 [CmdletBinding()]
@@ -31,7 +34,9 @@ Invoke-Principal {
         }
         $firma = Get-AuthenticodeSignature -LiteralPath $ruta
         $sujeto = if ($firma.SignerCertificate) { $firma.SignerCertificate.Subject } else { '' }
-        if ($firma.Status -ne 'Valid' -or $sujeto -notlike "*$($Herramienta.editor_authenticode)*") {
+        # El editor debe ser EXACTAMENTE el valor O= del sujeto del certificado (no una subcadena).
+        $patronEditor = '(^|,\s*)O="?' + [regex]::Escape([string]$Herramienta.editor_authenticode) + '"?(,|$)'
+        if ($firma.Status -ne 'Valid' -or -not [regex]::IsMatch($sujeto, $patronEditor)) {
             throw "la firma de $($Herramienta.archivo) no es válida o no es de '$($Herramienta.editor_authenticode)' (estado $($firma.Status))"
         }
         Write-Msg "$($Herramienta.nombre): SHA-256 y firma Authenticode correctos"
@@ -45,6 +50,7 @@ Invoke-Principal {
         $ya = $false
         if (Test-Path -LiteralPath $pythonExe) {
             $v = (& $pythonExe -c 'import sys; print(sys.version.split()[0])').Trim()
+            if ($LASTEXITCODE -ne 0) { throw "$pythonExe no se pudo ejecutar" }
             $ya = ($v -eq $herramientas.python.version)
         }
         if ($ya) {
@@ -58,6 +64,7 @@ Invoke-Principal {
             if ($codigo -ne 0) { throw "el instalador de Python terminó con el código $codigo" }
         }
         $v = (& $pythonExe -c 'import sys; print(sys.version.split()[0])').Trim()
+        if ($LASTEXITCODE -ne 0) { throw "$pythonExe no se pudo ejecutar" }
         if ($v -ne $herramientas.python.version) { throw "Python instalado es $v, se esperaba $($herramientas.python.version)" }
         Write-Msg "Python $v listo en ~\herramientas\python313"
     }
@@ -78,6 +85,28 @@ Invoke-Principal {
             throw 'Inno Setup no trae Languages\Spanish.isl'
         }
         Write-Msg "Inno Setup $($herramientas.innosetup.version) listo en ~\herramientas\innosetup6"
+    }
+
+    Invoke-Paso 'Registro de las herramientas verificadas (SHA-256 de instaladores y ejecutables)' {
+        $registro = [ordered]@{
+            generado  = (Get-Date -Format 's')
+            python    = [ordered]@{
+                version            = [string]$herramientas.python.version
+                instalador_sha256  = [string]$herramientas.python.sha256
+                ejecutable         = 'python313\python.exe'
+                ejecutable_sha256  = (Get-HashArchivo -Ruta (Join-Path $destinoPython 'python.exe'))
+            }
+            innosetup = [ordered]@{
+                version            = [string]$herramientas.innosetup.version
+                instalador_sha256  = [string]$herramientas.innosetup.sha256
+                ejecutable         = 'innosetup6\ISCC.exe'
+                ejecutable_sha256  = (Get-HashArchivo -Ruta (Join-Path $destinoInno 'ISCC.exe'))
+            }
+        }
+        $destinoRegistro = Join-Path $HOME 'herramientas\verificadas.json'
+        New-Item -ItemType Directory -Force -Path (Split-Path -Parent $destinoRegistro) | Out-Null
+        [System.IO.File]::WriteAllText($destinoRegistro, ($registro | ConvertTo-Json -Depth 4), $script:Utf8SinBom)
+        Write-Msg 'registro escrito en ~\herramientas\verificadas.json'
     }
 
     Write-ResumenTiempos

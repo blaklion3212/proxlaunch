@@ -15,8 +15,10 @@
 #
 # Firma (RF-E24): DESACTIVADA. Se activa solo si la variable PROXLAUNCH_FIRMA_CONFIG apunta a un
 # archivo JSON FUERA del repositorio con: certificado (ruta al archivo del certificado),
-# variable_contrasena (nombre de la variable de entorno que contiene la contraseña) y,
-# opcionalmente, url_marca_de_tiempo. La clave y su contraseña nunca viven en el repositorio.
+# variable_contrasena (nombre de la variable de entorno que contiene la contraseña) y
+# url_marca_de_tiempo (OBLIGATORIA: sin marca de tiempo la firma deja de valer al caducar el
+# certificado). La clave y su contraseña nunca viven en el repositorio; la contraseña se borra de
+# la variable de entorno en cuanto se lee y el certificado se carga solo en memoria (EphemeralKeySet).
 [CmdletBinding()]
 param(
     [switch]$IconosProvisionales,
@@ -45,16 +47,28 @@ function Invoke-PasoFirma {
         throw 'el certificado debe estar FUERA del repositorio'
     }
     $variable = [string]$cfg.variable_contrasena
+    # La marca de tiempo es obligatoria (SEG-M5-06): una firma sin ella caduca con el certificado.
+    $urlMarca = if ($cfg.PSObject.Properties.Name -contains 'url_marca_de_tiempo') { [string]$cfg.url_marca_de_tiempo } else { '' }
+    if (-not $urlMarca) { throw 'la configuración de firma debe incluir url_marca_de_tiempo' }
+    if ($urlMarca -notmatch '^https?://') { throw 'url_marca_de_tiempo no es una URL http(s)' }
     $valor = [Environment]::GetEnvironmentVariable($variable, 'Process')
     if (-not $valor) { throw "la variable '$variable' (contraseña del certificado) no está definida" }
     $segura = ConvertTo-SecureString -String $valor -AsPlainText -Force
-    $cert = New-Object System.Security.Cryptography.X509Certificates.X509Certificate2($certificado, $segura)
-    $parametros = @{ FilePath = $Archivo; Certificate = $cert; HashAlgorithm = 'SHA256' }
-    if ($cfg.PSObject.Properties.Name -contains 'url_marca_de_tiempo' -and $cfg.url_marca_de_tiempo) {
-        $parametros['TimestampServer'] = [string]$cfg.url_marca_de_tiempo
+    # La contraseña ya no se necesita en claro: se borra de la variable de entorno y de esta función.
+    $valor = $null
+    [Environment]::SetEnvironmentVariable($variable, $null, 'Process')
+    $cert = $null
+    try {
+        # EphemeralKeySet: la clave privada solo vive en memoria y no se escribe en el almacén del usuario.
+        $banderas = [System.Security.Cryptography.X509Certificates.X509KeyStorageFlags]::EphemeralKeySet
+        $cert = New-Object System.Security.Cryptography.X509Certificates.X509Certificate2($certificado, $segura, $banderas)
+        $resultado = Set-AuthenticodeSignature -FilePath $Archivo -Certificate $cert -HashAlgorithm 'SHA256' `
+            -TimestampServer $urlMarca
+        if ($resultado.Status -ne 'Valid') { throw "la firma no quedó válida: $($resultado.Status)" }
+    } finally {
+        if ($cert) { $cert.Dispose() }
+        $segura.Dispose()
     }
-    $resultado = Set-AuthenticodeSignature @parametros
-    if ($resultado.Status -ne 'Valid') { throw "la firma no quedó válida: $($resultado.Status)" }
     Write-Msg "Firma Authenticode aplicada a $(Split-Path -Leaf $Archivo) (sin mostrar clave ni contraseña)."
 }
 
@@ -84,6 +98,15 @@ Invoke-Principal {
     $version = $script:Version
     $versionWin = $script:VersionWin
     Write-Msg "versión $version"
+
+    # Nombre y destino del artefacto. Antes de construir se BORRA el instalador de la misma versión y
+    # sus sellos: si un paso posterior fallara, nunca quedaría uno viejo que pudiera tomarse por el
+    # recién construido (QA-M5-01).
+    $nombreSetup = "proxlaunch-$version-windows-x64-setup.exe"
+    $destino = if ($provisional) { Join-Path $script:Raiz 'dist\provisional' } else { Join-Path $script:Raiz 'dist' }
+    Remove-Item -LiteralPath (Join-Path $destino $nombreSetup), (Join-Path $destino ".verificado-$nombreSetup"), `
+        (Join-Path $script:Raiz "build\verificacion\$nombreSetup.ok"), `
+        (Join-Path $script:Raiz "build\inno\$nombreSetup") -Force -ErrorAction SilentlyContinue
 
     if (-not $SinCalidad) {
         Invoke-Paso 'Calidad completa' {
@@ -192,7 +215,6 @@ Invoke-Principal {
     # --- Instalador con Inno Setup ----------------------------------------------------------------
     $iconos = Join-Path $script:Raiz 'build\iconos'
     $salidaInno = Join-Path $script:Raiz 'build\inno'
-    $nombreSetup = "proxlaunch-$version-windows-x64-setup.exe"
     $setup = Join-Path $salidaInno $nombreSetup
     Invoke-Paso 'Inno Setup (ISCC)' {
         $iscc = Get-Iscc
@@ -217,7 +239,6 @@ Invoke-Principal {
     }
 
     # --- Publicación local en dist\ (solo si todo salió bien) -------------------------------------
-    $destino = if ($provisional) { Join-Path $script:Raiz 'dist\provisional' } else { Join-Path $script:Raiz 'dist' }
     New-Item -ItemType Directory -Force -Path $destino | Out-Null
     Copy-Item -LiteralPath $setup -Destination (Join-Path $destino $nombreSetup) -Force
     if ($provisional) {

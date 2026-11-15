@@ -8,6 +8,12 @@
 # y binutils. No toca el laboratorio ni usa red salvo `apt` para las dependencias del paquete.
 #
 # Uso: empaquetado/verificar-deb.sh <paquete.deb> [--version-esperada X.Y.Z] [--sin-negativa]
+#                                  [--actualizar-desde <anterior.deb>]
+#   --actualizar-desde  modo actualización (QA-M5-07): en lugar de la verificación completa, instala el
+#                       .deb anterior, siembra datos de usuario, actualiza al <paquete.deb> y comprueba
+#                       versión nueva (dpkg y --version), una sola entrada instalada, datos idénticos
+#                       (SHA-256) y humo correcto tras actualizar. Pensado para una build de prueba
+#                       0.5.1 que no se publica nunca.
 set -euo pipefail
 
 NOMBRE_SCRIPT="verificar-deb"
@@ -16,17 +22,19 @@ cd "$RAIZ"
 
 DEB=""
 VERSION_ESPERADA=""
+ANTERIOR=""
 NEGATIVA=1
 while [ "$#" -gt 0 ]; do
     case "$1" in
         --version-esperada) VERSION_ESPERADA="${2:?falta la versión}"; shift 2 ;;
         --sin-negativa) NEGATIVA=0; shift ;;
-        -h | --help) sed -n '2,13p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//'; exit 0 ;;
+        --actualizar-desde) ANTERIOR="${2:?falta el .deb de la versión anterior}"; shift 2 ;;
+        -h | --help) sed -n '2,19p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//'; exit 0 ;;
         -*) die "argumento desconocido: $1" ;;
         *) DEB="$1"; shift ;;
     esac
 done
-[ -n "$DEB" ] || die "uso: verificar-deb.sh <paquete.deb> [--version-esperada X.Y.Z] [--sin-negativa]"
+[ -n "$DEB" ] || die "uso: verificar-deb.sh <paquete.deb> [--version-esperada X.Y.Z] [--sin-negativa] [--actualizar-desde <anterior.deb>]"
 [ -f "$DEB" ] || die "no existe el paquete: $DEB"
 DEB="$(realpath "$DEB")"
 
@@ -45,14 +53,23 @@ if [ -n "$VERSION_ESPERADA" ] && [ "$VERSION" != "$VERSION_ESPERADA" ]; then
     die "el .deb es ${VERSION} y se esperaba ${VERSION_ESPERADA}"
 fi
 sudo -n true || die "se necesita sudo sin contraseña (use la MV de prueba)"
+VERSION_ANTERIOR=""
+if [ -n "$ANTERIOR" ]; then
+    [ -f "$ANTERIOR" ] || die "no existe el .deb anterior: $ANTERIOR"
+    ANTERIOR="$(realpath "$ANTERIOR")"
+    VERSION_ANTERIOR="$(dpkg-deb --field "$ANTERIOR" Version)"
+    dpkg --compare-versions "$VERSION_ANTERIOR" lt "$VERSION" \
+        || die "el .deb anterior ($VERSION_ANTERIOR) debe ser menor que el nuevo ($VERSION)"
+fi
 
 # Listado del $HOME sin lo que cambia por la propia ejecución (copia del repositorio, cachés).
 listado_home() {
-    find "$HOME" -mindepth 1 \
+    # `|| true`: un archivo que desaparece durante el recorrido no debe abortar el paso (set -e activo).
+    { find "$HOME" -mindepth 1 \
         \( -path "$RAIZ" -o -path "$HOME/.cache" -o -path "$HOME/.local/share/uv" \
         -o -path "$HOME/.local/bin" -o -path "$HOME/herramientas" -o -path "$HOME/venv-build" \
         -o -path "$HOME/.ssh" -o -path "$HOME/.bash_history" -o -path "$HOME/.sudo_as_admin_successful" \) -prune \
-        -o -printf '%P %y %s %T@\n' | sort
+        -o -printf '%P %y %s %T@\n' || true; } | sort
 }
 
 # --- Pasos ---------------------------------------------------------------------------------
@@ -78,10 +95,11 @@ asegurar_no_instalado() {
 instalar() {
     sudo -n env DEBIAN_FRONTEND=noninteractive apt-get update -qq
     sudo -n env DEBIAN_FRONTEND=noninteractive apt-get install -y -qq "$DEB"
-    dpkg -s proxlaunch | grep -q "^Status: install ok installed$"
+    grep -q "^Status: install ok installed$" <<< "$(dpkg -s proxlaunch)"
     [ "$(dpkg-query -W -f='${Version}' proxlaunch)" = "$VERSION" ]
     msg "dpkg -s: versión $(dpkg-query -W -f='${Version}' proxlaunch)"
-    [ -L /usr/bin/proxlaunch ] && [ -x /opt/proxlaunch/proxlaunch ]
+    [ -L /usr/bin/proxlaunch ] || { msg "falta el enlace /usr/bin/proxlaunch"; return 1; }
+    [ -x /opt/proxlaunch/proxlaunch ] || { msg "falta el ejecutable /opt/proxlaunch/proxlaunch"; return 1; }
     msg "instalado en /opt/proxlaunch: $(du -sh --apparent-size /opt/proxlaunch | cut -f1) ($(du -sb /opt/proxlaunch | cut -f1) bytes)"
 }
 
@@ -237,8 +255,87 @@ desinstalar_y_purgar() {
     rm -rf -- "${HOME:?}/.config/ProxLaunch" "${HOME:?}/.local/share/ProxLaunch" "${HOME:?}/.local/state/ProxLaunch"
 }
 
+# --- Actualización (QA-M5-07) ---------------------------------------------------------------
+# Datos de usuario sembrados con la versión anterior; deben sobrevivir byte a byte (SHA-256).
+DIRS_DATOS=(.config/ProxLaunch .local/share/ProxLaunch .local/state/ProxLaunch)
+
+instalar_anterior() {
+    sudo -n env DEBIAN_FRONTEND=noninteractive apt-get update -qq
+    sudo -n env DEBIAN_FRONTEND=noninteractive apt-get install -y -qq "$ANTERIOR"
+    [ "$(dpkg-query -W -f='${Version}' proxlaunch)" = "$VERSION_ANTERIOR" ]
+    local salida
+    salida="$(env -i HOME="$HOME" PATH=/nonexistent /usr/bin/proxlaunch --version)"
+    msg "versión anterior instalada: $salida"
+    [ "$salida" = "ProxLaunch $VERSION_ANTERIOR" ]
+}
+
+sembrar_datos() {
+    local d unico
+    for d in "${DIRS_DATOS[@]}"; do mkdir -p "$HOME/$d"; done
+    unico="$(od -An -N16 -tx1 /dev/urandom | tr -d ' \n')"
+    printf '{"prueba": "%s"}\n' "$unico" > "$HOME/.config/ProxLaunch/perfiles.json"
+    printf 'dato %s\n' "$unico" > "$HOME/.local/share/ProxLaunch/lote.json"
+    printf 'registro %s\n' "$unico" > "$HOME/.local/state/ProxLaunch/proxlaunch.log"
+    (cd "$HOME" && sha256sum .config/ProxLaunch/* .local/share/ProxLaunch/* .local/state/ProxLaunch/*) \
+        > "$TRABAJO/datos-sembrados.sha"
+    listado_home > "$TRABAJO/home-sembrado"
+    msg "datos de usuario sembrados con $VERSION_ANTERIOR: $(wc -l < "$TRABAJO/datos-sembrados.sha") archivos"
+}
+
+datos_intactos() {
+    (cd "$HOME" && sha256sum --check --status "$TRABAJO/datos-sembrados.sha") \
+        || { msg "los datos del usuario cambiaron (SHA-256) tras actualizar"; return 1; }
+    listado_home > "$TRABAJO/home-actual"
+    diff -u "$TRABAJO/home-sembrado" "$TRABAJO/home-actual" \
+        || { msg "\$HOME cambió tras actualizar"; return 1; }
+    msg "datos de usuario idénticos (misma suma) y \$HOME sin cambios"
+}
+
+actualizar() {
+    sudo -n env DEBIAN_FRONTEND=noninteractive apt-get install -y -qq "$DEB"
+    local version_dpkg entradas salida sin_dueno
+    version_dpkg="$(dpkg-query -W -f='${Version}' proxlaunch)"
+    msg "dpkg -s: versión $version_dpkg (antes $VERSION_ANTERIOR)"
+    [ "$version_dpkg" = "$VERSION" ] || { msg "la versión instalada no es la nueva"; return 1; }
+    grep -q "^Status: install ok installed$" <<< "$(dpkg -s proxlaunch)"
+    # Una sola entrada instalada del paquete.
+    entradas="$(dpkg -l | awk '$2 == "proxlaunch" && $1 == "ii"' | wc -l)"
+    [ "$entradas" -eq 1 ] || { msg "hay $entradas entradas instaladas de proxlaunch"; return 1; }
+    salida="$(env -i HOME="$HOME" PATH=/nonexistent /usr/bin/proxlaunch --version)"
+    msg "proxlaunch --version -> $salida"
+    [ "$salida" = "ProxLaunch $VERSION" ] || { msg "--version no informa la versión nueva"; return 1; }
+    # Nada de la versión anterior debe quedar sin dueño dentro de /opt/proxlaunch.
+    sin_dueno="$(comm -13 <(dpkg -L proxlaunch | sort) <(find /opt/proxlaunch -not -type d | sort) | head -n 5)" || true
+    [ -z "$sin_dueno" ] || { msg "archivos sin dueño tras actualizar: $sin_dueno"; return 1; }
+    datos_intactos
+}
+
+purgar_actualizacion() {
+    sudo -n env DEBIAN_FRONTEND=noninteractive apt-get purge -y -qq proxlaunch >/dev/null
+    if dpkg -L proxlaunch >/dev/null 2>&1; then msg "dpkg -L aún lista archivos tras el purge"; return 1; fi
+    [ ! -e /opt/proxlaunch ] || { msg "queda /opt/proxlaunch tras el purge"; return 1; }
+    local d
+    for d in "${DIRS_DATOS[@]}"; do rm -rf -- "${HOME:?}/$d"; done
+}
+
 # --- Ejecución -----------------------------------------------------------------------------
 msg "Ubuntu $(. /etc/os-release && echo "$VERSION_ID"), paquete $(basename "$DEB") $VERSION"
+if [ -n "$ANTERIOR" ]; then
+    msg "MODO ACTUALIZACIÓN: $VERSION_ANTERIOR -> $VERSION (build de prueba; no se publica)"
+    paso "Inspección del paquete nuevo (dpkg-deb --info)" inspeccionar
+    paso "Sin instalación previa" asegurar_no_instalado
+    paso "Instalación de la versión anterior ($VERSION_ANTERIOR)" instalar_anterior
+    paso "Siembra de datos de usuario con la versión anterior" sembrar_datos
+    paso "Actualización a $VERSION (versión, una sola entrada, datos intactos)" actualizar
+    paso "--version sin Python en el PATH" version_sin_python
+    paso "Humo con xcb real tras actualizar" humo_con_pantalla
+    paso "Humo con plataforma offscreen tras actualizar" humo_offscreen
+    paso "Datos de usuario intactos tras el humo" datos_intactos
+    paso "apt purge y limpieza de los datos de prueba" purgar_actualizacion
+    resumen_tiempos
+    msg "ACTUALIZACIÓN CORRECTA $VERSION_ANTERIOR -> $VERSION en Ubuntu $(. /etc/os-release && echo "$VERSION_ID")"
+    exit 0
+fi
 paso "Inspección del paquete (dpkg-deb --info)" inspeccionar
 paso "Sin instalación previa" asegurar_no_instalado
 paso "Instalación con apt (resuelve Depends)" instalar

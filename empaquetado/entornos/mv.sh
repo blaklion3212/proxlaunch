@@ -9,6 +9,10 @@
 #
 # Reglas: red de usuario de QEMU con reenvíos solo en 127.0.0.1 (SSH: 2241, 2242, 2243),
 # todo en ~/aprovprox-empaquetado/, sin sudo en el anfitrión y sin tocar el laboratorio Proxmox.
+# `crear` y `arrancar` se niegan si el laboratorio parece activo (puertos 8006/2222 o procesos
+# «aprovprox-lab»; comun/exclusion-laboratorio.sh, SEG-M5-02).
+# Semilla de cloud-init: disco NoCloud (vvfat con etiqueta CIDATA), sin servidor HTTP (SEG-M5-03).
+# Variable opcional PROXLAUNCH_SEMILLA=http usa un servidor HTTP efímero en un puerto libre (plan B).
 set -euo pipefail
 
 AQUI="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -22,6 +26,9 @@ SNAPSHOT_LIMPIO="limpio"
 
 msg() { printf '[mv] %s\n' "$*"; }
 die() { printf '[mv] ERROR: %s\n' "$*" >&2; exit 1; }
+
+# shellcheck source=../comun/exclusion-laboratorio.sh
+. "$AQUI/../comun/exclusion-laboratorio.sh"
 
 # --- Configuración por MV -------------------------------------------------------------------
 configurar() {
@@ -64,12 +71,50 @@ en_marcha() {
     [ -n "$pid" ] && kill -0 "$pid" 2>/dev/null && grep -q "aprovprox-empaquetado" "/proc/$pid/cmdline" 2>/dev/null
 }
 
-puerto_libre() {
-    python3 -I -c 'import socket
-s = socket.socket()
-s.bind(("127.0.0.1", 0))
-print(s.getsockname()[1])
-s.close()'
+# Plan B de la semilla (PROXLAUNCH_SEMILLA=http): servidor HTTP efímero SOLO en 127.0.0.1 que se enlaza
+# al puerto 0 (lo elige el sistema, sin la carrera de «buscar un puerto libre y usarlo después»), escribe
+# el puerto real en $DIR/semilla.puerto y sirve únicamente la carpeta de la semilla. Deja SEMILLA_PUERTO
+# y SEMILLA_PID; el llamador lo detiene con semilla_http_detener.
+semilla_http_iniciar() {
+    rm -f -- "${DIR:?}/semilla.puerto"
+    python3 -I -c 'import functools, http.server, sys
+manejador = functools.partial(http.server.SimpleHTTPRequestHandler, directory=sys.argv[2])
+servidor = http.server.ThreadingHTTPServer(("127.0.0.1", 0), manejador)
+with open(sys.argv[1], "w", encoding="ascii") as f:
+    f.write(str(servidor.server_address[1]))
+servidor.serve_forever()' "$DIR/semilla.puerto" "$DIR/semilla" >/dev/null 2>&1 &
+    SEMILLA_PID=$!
+    echo "$SEMILLA_PID" > "$DIR/semilla.pid"
+    local t=0
+    until [ -s "$DIR/semilla.puerto" ]; do
+        t=$((t + 1))
+        if [ "$t" -gt 50 ] || ! kill -0 "$SEMILLA_PID" 2>/dev/null; then
+            semilla_http_detener
+            die "el servidor HTTP de la semilla no arrancó"
+        fi
+        sleep 0.2
+    done
+    SEMILLA_PUERTO="$(cat "$DIR/semilla.puerto")"
+    # Se comprueba que el servidor vive antes de lanzar QEMU.
+    kill -0 "$SEMILLA_PID" 2>/dev/null || die "el servidor HTTP de la semilla terminó antes de lanzar QEMU"
+    msg "semilla por HTTP en 127.0.0.1:$SEMILLA_PUERTO (puerto asignado por el sistema)"
+}
+
+semilla_http_detener() {
+    local pid
+    pid="$(cat "$DIR/semilla.pid" 2>/dev/null || true)"
+    if [ -n "$pid" ] && kill -0 "$pid" 2>/dev/null; then kill "$pid" 2>/dev/null || true; fi
+    rm -f -- "${DIR:?}/semilla.pid" "${DIR:?}/semilla.puerto"
+}
+
+# MVs creadas por versiones anteriores de este script no tienen la marca «creada»: si el disco ya trae
+# la instantánea «limpio» (se tomó al final de la creación), se les pone la marca.
+migrar_marca_creada() {
+    if [ -f "$DIR/creada" ] || [ ! -f "$DISCO" ] || en_marcha; then return 0; fi
+    if qemu-img snapshot -l "$DISCO" 2>/dev/null | awk -v s="$SNAPSHOT_LIMPIO" '$2 == s { f = 1 } END { exit !f }'; then
+        : > "$DIR/creada"
+        msg "$MV creada con una versión anterior del script: se registra la marca «creada»"
+    fi
 }
 
 ssh_mv() { ssh "${SSH_OPCIONES[@]}" prueba@127.0.0.1 "$@"; }
@@ -88,7 +133,9 @@ esperar_ssh() {
 descargar_imagen() {
     local dest="$RAIZ/imagenes/$CODIGO"
     mkdir -p -m 700 "$dest"
-    if [ ! -f "$dest/$IMG_NOMBRE" ] || [ ! -f "$dest/.verificada" ]; then
+    if [ -f "$dest/$IMG_NOMBRE" ] && [ -f "$dest/.verificada" ]; then
+        verificar_imagen_base "$dest"
+    else
         msg "descargando SHA256SUMS y firma de Ubuntu $CODIGO"
         curl --proto '=https' --tlsv1.2 -fsSL -o "$dest/SHA256SUMS" "$IMG_URL/SHA256SUMS"
         curl --proto '=https' --tlsv1.2 -fsSL -o "$dest/SHA256SUMS.gpg" "$IMG_URL/SHA256SUMS.gpg"
@@ -123,6 +170,18 @@ descargar_imagen() {
     IMAGEN="$dest/$IMG_NOMBRE"
 }
 
+# Al reutilizar la imagen cloud se vuelve a calcular su SHA-256 y se compara con el valor guardado en
+# .verificada cuando se descargó y verificó (SEG-M5-05). Es la base (backing file) de los discos.
+verificar_imagen_base() {
+    local dest="${1:-$RAIZ/imagenes/$CODIGO}" esperada real
+    [ -f "$dest/$IMG_NOMBRE" ] && [ -f "$dest/.verificada" ] \
+        || die "falta la imagen base verificada en $dest"
+    esperada="$(awk '{print $1}' "$dest/.verificada")"
+    real="$(sha256sum "$dest/$IMG_NOMBRE" | awk '{print $1}')"
+    [ -n "$esperada" ] && [ "$real" = "$esperada" ] \
+        || die "la imagen base $IMG_NOMBRE ya no coincide con la suma verificada: borre $dest y repita 'crear'"
+}
+
 # --- QEMU -----------------------------------------------------------------------------------
 lanzar_qemu() {
     local extra=("$@")
@@ -141,32 +200,48 @@ lanzar_qemu() {
 # --- Acciones -------------------------------------------------------------------------------
 cmd_crear() {
     if es_windows; then delegar_windows crear "$@"; return; fi
-    if [ -f "$DISCO" ]; then
+    command -v qemu-img >/dev/null || die "falta qemu-img"
+    migrar_marca_creada
+    if [ -f "$DIR/creada" ]; then
         msg "$MV ya existe (idempotente); use 'destruir' para rehacerla"
         return 0
     fi
-    command -v qemu-img >/dev/null || die "falta qemu-img"
+    # Sin la marca «creada» (se escribe solo tras la instantánea «limpio») cualquier resto viene de una
+    # creación interrumpida: se limpia y se rehace desde cero (QA-M5-08).
+    if [ -e "$DIR" ]; then
+        msg "restos de una creación interrumpida de $MV: se limpian y se rehace"
+        detener_qemu 2>/dev/null || true
+        semilla_http_detener
+        rm -rf -- "${DIR:?}"
+    fi
     local t0=$SECONDS
     mkdir -p -m 700 "$RAIZ" "$DIR/semilla"
     descargar_imagen
-    ssh-keygen -q -t ed25519 -N "" -C "aprovprox-$MV" -f "$CLAVE"
+    rm -f -- "$CLAVE" "$CLAVE.pub"
+    ssh-keygen -q -t ed25519 -N "" -C "aprovprox-$MV" -f "$CLAVE" < /dev/null
     qemu-img create -q -f qcow2 -b "$IMAGEN" -F qcow2 "$DISCO" 20G
     sed -e "s|@NOMBRE_MV@|$MV|g" -e "s|@CLAVE_PUBLICA@|$(cut -d' ' -f1,2 "$CLAVE.pub")|g" \
         "$AQUI/semilla-ubuntu/user-data.plantilla" > "$DIR/semilla/user-data"
     sed -e "s|@NOMBRE_MV@|$MV|g" "$AQUI/semilla-ubuntu/meta-data.plantilla" > "$DIR/semilla/meta-data"
 
-    # Servidor HTTP efímero de la semilla: solo 127.0.0.1 y solo la carpeta de la semilla.
-    local pto_semilla
-    pto_semilla="$(puerto_libre)"
-    python3 -I -m http.server "$pto_semilla" --bind 127.0.0.1 --directory "$DIR/semilla" \
-        >/dev/null 2>&1 &
-    local pid_http=$!
-    echo "$pid_http" > "$DIR/semilla.pid"
-    # shellcheck disable=SC2064
-    trap "kill $pid_http 2>/dev/null || true" EXIT
+    # Semilla NoCloud: unidad FAT (vvfat de solo lectura) con la etiqueta CIDATA, sin red ni puertos.
+    local extra=()
+    case "${PROXLAUNCH_SEMILLA:-disco}" in
+        disco)
+            extra=(-blockdev "driver=vvfat,node-name=semilla,dir=$DIR/semilla,read-only=on,label=CIDATA"
+                -device "virtio-blk-pci,drive=semilla")
+            ;;
+        http)
+            semilla_http_iniciar
+            # shellcheck disable=SC2064
+            trap "semilla_http_detener" EXIT
+            extra=(-smbios "type=1,serial=ds=nocloud;s=http://10.0.2.2:${SEMILLA_PUERTO}/")
+            ;;
+        *) die "PROXLAUNCH_SEMILLA debe ser «disco» o «http»" ;;
+    esac
 
     msg "arrancando $MV por primera vez (cloud-init instala paquetes; unos minutos)"
-    lanzar_qemu -smbios "type=1,serial=ds=nocloud;s=http://10.0.2.2:${pto_semilla}/"
+    lanzar_qemu "${extra[@]}"
     esperar_ssh 300
     local t=0
     until ssh_mv 'test -f /var/lib/aprovprox-listo' 2>/dev/null; do
@@ -176,20 +251,23 @@ cmd_crear() {
     done
     ssh_mv 'cloud-init status --wait >/dev/null 2>&1 || true; dpkg -s xvfb gnome-keyring >/dev/null' \
         || die "faltan paquetes de la semilla en $MV"
-    kill "$pid_http" 2>/dev/null || true
-    rm -f -- "${DIR:?}/semilla.pid"
+    semilla_http_detener
     trap - EXIT
     detener_qemu
     qemu-img snapshot -c "$SNAPSHOT_LIMPIO" "$DISCO"
+    # La marca se escribe al final: su existencia significa «creación completa con instantánea limpia».
+    : > "$DIR/creada"
     msg "$MV creada y detenida con la instantánea '$SNAPSHOT_LIMPIO' ($((SECONDS - t0)) s)"
 }
 
 cmd_arrancar() {
     if es_windows; then delegar_windows arrancar "$@"; return; fi
-    [ -f "$DISCO" ] || die "$MV no existe: ejecute 'mv.sh crear $MV'"
+    migrar_marca_creada
+    [ -f "$DIR/creada" ] || die "$MV no existe o su creación quedó incompleta: ejecute 'mv.sh crear $MV'"
     if en_marcha; then
         msg "$MV ya está en marcha"
     else
+        verificar_imagen_base
         lanzar_qemu
     fi
     esperar_ssh 240
@@ -224,6 +302,8 @@ cmd_detener() {
 cmd_restaurar() {
     if es_windows; then die "restaurar no aplica a windows11"; fi
     if en_marcha; then die "detenga $MV antes de restaurarla"; fi
+    migrar_marca_creada
+    [ -f "$DIR/creada" ] || die "$MV no existe o su creación quedó incompleta: ejecute 'mv.sh crear $MV'"
     qemu-img snapshot -a "$SNAPSHOT_LIMPIO" "$DISCO"
     msg "$MV restaurada a la instantánea '$SNAPSHOT_LIMPIO'"
 }
@@ -271,11 +351,13 @@ cmd_estado() {
 }
 
 # --- Limpieza total (RF-E41, 6.3) --------------------------------------------------------------
-# Solo termina procesos cuya línea de órdenes apunta a ~/aprovprox-empaquetado (nunca el laboratorio).
+# Solo termina procesos DEL USUARIO ACTUAL cuya línea de órdenes apunta a ~/aprovprox-empaquetado
+# (nunca el laboratorio ni procesos de otros usuarios).
 procesos_propios() {
-    local pid linea exe
+    local pid linea exe uid
+    uid="$(id -u)"
     # Por la carpeta de las MVs y también por el directorio corto de sockets de swtpm/QMP (CL-E22).
-    for pid in $( { pgrep -f -- "$RAIZ/" || true; pgrep -f -- "/tmp/plw-" || true; } | sort -u); do
+    for pid in $( { pgrep -u "$uid" -f -- "$RAIZ/" || true; pgrep -u "$uid" -f -- "/tmp/plw-" || true; } | sort -u); do
         [ "$pid" = "$$" ] && continue
         # Se identifica por el ejecutable (no por texto de la línea de órdenes): así un intérprete
         # de órdenes que solo mencione estas rutas nunca se confunde con una MV.
@@ -288,7 +370,14 @@ procesos_propios() {
     done
 }
 
+# Temporales del usuario actual que dejan estos scripts en /tmp: sockets de las MVs (plw-), gpg (plg-) y
+# listas o árboles de enviar-arbol.sh y comprobar_lock.py (plk-). Solo lo que es DEL usuario.
+temporales_propios() {
+    find /tmp -maxdepth 1 -user "$(id -un)" \( -name 'plw-*' -o -name 'plg-*' -o -name 'plk-*' \) -print0 2>/dev/null
+}
+
 destruir_todo() {
+    [ "$(id -u)" -ne 0 ] || die "destruir-todo no se ejecuta como root (solo toca lo del usuario actual)"
     mkdir -p "$REGISTROS"
     local reg
     reg="$REGISTROS/limpieza-$(date +%Y%m%d-%H%M%S).txt"
@@ -308,16 +397,15 @@ destruir_todo() {
             find "$RAIZ" -maxdepth 2 -printf '  %p (%s bytes)\n' 2>/dev/null || true
             rm -rf -- "${RAIZ:?}"
         fi
-        for d in /tmp/plw-* /tmp/plg-*; do
-            [ -e "$d" ] || continue
+        while IFS= read -r -d '' d; do
             echo "temporal eliminado: $d"
             rm -rf -- "${d:?}"
-        done
+        done < <(temporales_propios)
         echo "--- comprobación ---"
         echo "procesos propios restantes: $(procesos_propios | wc -l)"
         echo "puertos 2241-2243 en escucha:"
         ss -ltn 2>/dev/null | grep -E ':(2241|2242|2243)\b' || echo "  ninguno"
-        echo "sockets /tmp/plw-* restantes: $(find /tmp -maxdepth 2 -path '/tmp/plw-*' 2>/dev/null | wc -l)"
+        echo "temporales /tmp/plw-*, plg-*, plk-* restantes (propios): $(temporales_propios | tr -cd '\0' | wc -c)"
         echo "ISO de Windows y estado del TPM: $([ -e "$RAIZ/iso" ] || [ -e "$RAIZ/windows11/tpm" ] && echo 'AÚN EXISTEN' || echo 'eliminados')"
         echo "carpeta de MVs: $([ -e "$RAIZ" ] && echo 'AÚN EXISTE' || echo 'no existe')"
     } | tee "$reg"
@@ -330,6 +418,8 @@ accion="$1"; shift
 if [ "$accion" = "destruir-todo" ]; then destruir_todo; exit 0; fi
 [ "$#" -ge 1 ] || die "falta el nombre de la MV"
 configurar "$1"; shift
+# Exclusión mutua con el laboratorio Proxmox: solo al crear o arrancar (nunca al detener o limpiar).
+case "$accion" in crear | arrancar) comprobar_exclusion_laboratorio ;; esac
 case "$accion" in
     instrucciones)
         es_windows || die "solo windows11 tiene instrucciones de instalación"

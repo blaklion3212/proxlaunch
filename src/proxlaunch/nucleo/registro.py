@@ -132,3 +132,16 @@ def configurar_registro(
     logger.setLevel(nivel)
     logger.propagate = False  # evita que un manejador raíz escriba sin filtrar
     return logger
+
+
+def cerrar_registro() -> None:
+    """Quita y cierra los manejadores que añadió ``configurar_registro``.
+
+    Libera el archivo de log (en Windows impide borrar su carpeta mientras siga abierto).
+    """
+    logger = logging.getLogger(NOMBRE_LOGGER)
+    for h in list(logger.handlers):
+        if getattr(h, "_proxlaunch", False):
+            logger.removeHandler(h)
+            with contextlib.suppress(Exception):
+                h.close()
