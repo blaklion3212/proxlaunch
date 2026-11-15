@@ -3,8 +3,10 @@
 from __future__ import annotations
 
 from collections.abc import Sequence
+from typing import cast
 
 from PySide6.QtCore import QCoreApplication, Qt, Signal
+from PySide6.QtGui import QStandardItemModel
 from PySide6.QtWidgets import (
     QComboBox,
     QGridLayout,
@@ -259,7 +261,7 @@ class TablaRedes(QWidget):
             f.bridge.addItem(b.nombre, b.nombre)
         if f.ausente and f.ausente not in {b.nombre for b in self._bridges}:
             f.bridge.addItem(texto_ausente(f.ausente), f.ausente)
-            f.bridge.model().item(f.bridge.count() - 1).setEnabled(False)
+            cast(QStandardItemModel, f.bridge.model()).item(f.bridge.count() - 1).setEnabled(False)
         f.bridge.blockSignals(False)
 
     def _nueva_fila(self, red: InterfazRed, *, conservar_ausente: bool = False) -> None:

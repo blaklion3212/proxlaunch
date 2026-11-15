@@ -10,8 +10,10 @@ from __future__ import annotations
 
 import math
 from collections.abc import Callable, Sequence
+from typing import cast
 
 from PySide6.QtCore import Signal
+from PySide6.QtGui import QStandardItemModel
 from PySide6.QtWidgets import (
     QButtonGroup,
     QCheckBox,
@@ -682,7 +684,9 @@ class FormularioVM(QWidget):
             texto = n.nombre if n.en_linea else f"{n.nombre} — {self.tr('Sin conexión')}"
             self.combo_nodo.addItem(texto, n.nombre)
             if not n.en_linea:
-                self.combo_nodo.model().item(self.combo_nodo.count() - 1).setEnabled(False)
+                cast(QStandardItemModel, self.combo_nodo.model()).item(
+                    self.combo_nodo.count() - 1
+                ).setEnabled(False)
         idx = self.combo_nodo.findData(previo) if previo else -1
         if idx < 0:
             idx = next((i for i, n in enumerate(inv.topologia.nodos) if n.en_linea), -1)
@@ -748,7 +752,9 @@ class FormularioVM(QWidget):
             self._efi_ausente = seleccionado
         if self._efi_ausente and self._efi_ausente not in activos:
             self.combo_efi.addItem(texto_ausente(self._efi_ausente), self._efi_ausente)
-            self.combo_efi.model().item(self.combo_efi.count() - 1).setEnabled(False)
+            cast(QStandardItemModel, self.combo_efi.model()).item(
+                self.combo_efi.count() - 1
+            ).setEnabled(False)
         elif self._efi_ausente in activos:
             self._efi_ausente = None
         idx = self.combo_efi.findData(seleccionado) if seleccionado else 0

@@ -10,12 +10,15 @@ from __future__ import annotations
 
 import dataclasses
 from collections.abc import Callable, Sequence
+from typing import cast
 
 from PySide6.QtCore import QCoreApplication, Signal
+from PySide6.QtGui import QStandardItemModel
 from PySide6.QtWidgets import (
     QButtonGroup,
     QCheckBox,
     QComboBox,
+    QGridLayout,
     QGroupBox,
     QHBoxLayout,
     QLineEdit,
@@ -248,7 +251,7 @@ class BloqueLote(QGroupBox):
             "lote_equilibrado",
         )
         self._boton_por_turnos = boton_ayuda("lote_por_turnos")
-        self.fila_algoritmo.layout().addWidget(self._boton_por_turnos, 0, 3)
+        cast(QGridLayout, self.fila_algoritmo.layout()).addWidget(self._boton_por_turnos, 0, 3)
         for w in (self.fila_destino, self.fila_algoritmo):
             capa.addWidget(w)
             self._solo_lote.append(w)
@@ -376,8 +379,9 @@ class BloqueLote(QGroupBox):
             self.combo_nodo.clear()
             while self._capa_nodos.count():
                 item = self._capa_nodos.takeAt(0)
-                if item is not None and item.widget() is not None:
-                    item.widget().deleteLater()
+                widget = item.widget() if item is not None else None
+                if widget is not None:
+                    widget.deleteLater()
             self._checks_nodos = {}
             self._en_linea = {n.nombre for n in inv.topologia.nodos if n.en_linea}
             sin_conexion = QCoreApplication.translate("BloqueLote", "Sin conexión")
@@ -391,7 +395,7 @@ class BloqueLote(QGroupBox):
                 self._capa_nodos.addWidget(check)
                 self._checks_nodos[n.nombre] = check
                 if not n.en_linea:
-                    modelo = self.combo_nodo.model()
+                    modelo = cast(QStandardItemModel, self.combo_nodo.model())
                     modelo.item(self.combo_nodo.count() - 1).setEnabled(False)
             existentes = {n.nombre for n in inv.topologia.nodos}
             self._nodos_ausentes = [n for n in self._nodos_ausentes if n not in existentes]
@@ -422,7 +426,9 @@ class BloqueLote(QGroupBox):
         """Un nodo del lote cargado que el servidor no tiene: visible, marcado y deshabilitado."""
         texto = QCoreApplication.translate("BloqueLote", "{nodo} (no existe)").format(nodo=nodo)
         self.combo_nodo.addItem(texto, nodo)
-        self.combo_nodo.model().item(self.combo_nodo.count() - 1).setEnabled(False)
+        cast(QStandardItemModel, self.combo_nodo.model()).item(
+            self.combo_nodo.count() - 1
+        ).setEnabled(False)
         check = QCheckBox(texto)
         check.setEnabled(self._avanzado)  # en avanzado se puede quitar de la lista
         check.setChecked(marcado)

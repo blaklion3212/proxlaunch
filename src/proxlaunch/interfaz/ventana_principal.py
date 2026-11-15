@@ -866,8 +866,9 @@ class VentanaPrincipal(QMainWindow):
     def _pintar_avisos(self) -> None:
         while self._zona_avisos.count():
             item = self._zona_avisos.takeAt(0)
-            if item is not None and item.widget() is not None:
-                item.widget().deleteLater()
+            widget = item.widget() if item is not None else None
+            if widget is not None:
+                widget.deleteLater()
         textos_aviso = list(self._avisos_extra) + self._avisos_archivos()
         if self._aviso_informe_parcial:
             textos_aviso.append(self._aviso_informe_parcial)
@@ -1343,7 +1344,7 @@ class VentanaPrincipal(QMainWindow):
             Desenlace.TIEMPO_AGOTADO,
         ):
             # Aún no se sabe si la máquina se creó: volver y repetir podría duplicarla.
-            respuesta = QMessageBox.question(
+            boton = QMessageBox.question(
                 self,
                 self.tr("Todavía no sabemos si se creó"),
                 self.tr(
@@ -1353,7 +1354,7 @@ class VentanaPrincipal(QMainWindow):
                 QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
                 QMessageBox.StandardButton.No,
             )
-            if respuesta != QMessageBox.StandardButton.Yes:
+            if boton != QMessageBox.StandardButton.Yes:
                 return
         self._restaurar_etiquetado()
         self.progreso.reiniciar()
@@ -3483,7 +3484,7 @@ class VentanaPrincipal(QMainWindow):
         elif lote is not None and lote.modo_uno and self._creando:
             lote.control.dejar_de_esperar()
         if self._creando:
-            respuesta = QMessageBox.question(
+            boton = QMessageBox.question(
                 self,
                 self.tr("Hay una máquina en creación"),
                 self.tr(
@@ -3494,7 +3495,7 @@ class VentanaPrincipal(QMainWindow):
                 QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
                 QMessageBox.StandardButton.No,
             )
-            if respuesta != QMessageBox.StandardButton.Yes:
+            if boton != QMessageBox.StandardButton.Yes:
                 ev.ignore()
                 return
         # Se avisa, se cancela y se espera un tope corto. Si algún hilo sigue (p. ej. una

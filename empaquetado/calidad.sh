@@ -25,10 +25,8 @@ fi
 
 paso "ruff check" "$VENV/bin/ruff" check src tests empaquetado
 paso "ruff format --check" "$VENV/bin/ruff" format --check src tests empaquetado
-# mypy con la configuración de pyproject.toml y PySide6 sin tipos (como en el entorno de desarrollo):
-# con los stubs de la rueda de PySide6 aparecen errores de tipos que ese entorno no ve (ver reporte).
-"$PY" -I empaquetado/comun/config_mypy.py build/mypy-calidad.ini
-paso "mypy src" "$VENV/bin/mypy" --config-file build/mypy-calidad.ini src
+# mypy con la configuración de pyproject.toml y los stubs reales de PySide6 de la rueda fijada.
+paso "mypy src" "$VENV/bin/mypy" src
 
 export QT_QPA_PLATFORM=offscreen
 export COVERAGE_FILE="$RAIZ/build/.coverage"

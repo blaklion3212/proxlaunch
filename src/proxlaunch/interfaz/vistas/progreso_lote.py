@@ -277,7 +277,7 @@ class ProgresoLote(QWidget):
 
         capa = QVBoxLayout(self)
         capa.setContentsMargins(0, 0, 0, 0)
-        for w in (
+        for elemento in (
             self._titulo,
             self._aviso,
             self._error,
@@ -285,7 +285,7 @@ class ProgresoLote(QWidget):
             self.chk_problemas,
             self.tabla,
         ):
-            capa.addWidget(w)
+            capa.addWidget(elemento)
         capa.addWidget(self._upid_titulo)
         capa.addLayout(fila_upid)
         capa.addWidget(self.detalles)

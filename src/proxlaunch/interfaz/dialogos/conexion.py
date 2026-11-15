@@ -263,8 +263,8 @@ class DialogoConexion(QDialog):
         self.enlace_guia.clicked.connect(self._abrir_guia)
         self.nombre.textChanged.connect(lambda _t: self._revisar_nombre_duplicado())
         self.token.textEdited.connect(lambda _t: self._validar_token_en_vivo())
-        for w in (self.usuario, self.puerto):
-            w.textChanged.connect(lambda _t: self._revisar_root())
+        for campo_texto in (self.usuario, self.puerto):
+            campo_texto.textChanged.connect(lambda _t: self._revisar_root())
         self.token.textChanged.connect(lambda _t: self._revisar_root())
         self.realm.currentTextChanged.connect(lambda _t: self._revisar_root())
         self.chk_ignorar.toggled.connect(lambda _v: self._actualizar_info_ssl())

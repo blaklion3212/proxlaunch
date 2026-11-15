@@ -4,8 +4,10 @@ según el bus y el controlador (CA-16.4)."""
 from __future__ import annotations
 
 from collections.abc import Sequence
+from typing import cast
 
 from PySide6.QtCore import QCoreApplication, Qt, Signal
+from PySide6.QtGui import QStandardItemModel
 from PySide6.QtWidgets import (
     QCheckBox,
     QComboBox,
@@ -378,10 +380,14 @@ class TablaDiscos(QWidget):
         for s in self._storages.values():
             f.storage.addItem(texto_storage(s), s.id)
             if not s.activo:
-                f.storage.model().item(f.storage.count() - 1).setEnabled(False)
+                cast(QStandardItemModel, f.storage.model()).item(f.storage.count() - 1).setEnabled(
+                    False
+                )
         if f.ausente and f.ausente not in self._storages:
             f.storage.addItem(texto_ausente(f.ausente), f.ausente)
-            f.storage.model().item(f.storage.count() - 1).setEnabled(False)
+            cast(QStandardItemModel, f.storage.model()).item(f.storage.count() - 1).setEnabled(
+                False
+            )
         f.storage.blockSignals(False)
 
     def _nueva_fila(self, disco: Disco, *, conservar_ausente: bool = False) -> None:

@@ -628,8 +628,9 @@ class ResumenLote(QWidget):
     def _limpiar_asignar(self) -> None:
         while self._capa_asignar.count():
             item = self._capa_asignar.takeAt(0)
-            if item is not None and item.widget() is not None:
-                item.widget().deleteLater()
+            widget = item.widget() if item is not None else None
+            if widget is not None:
+                widget.deleteLater()
 
     def _pintar_por_filas(self, plan: Plan) -> None:
         """Filas que no caben (con «Quitar las filas que no caben») y VMID ocupados."""
