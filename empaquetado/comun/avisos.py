@@ -79,7 +79,11 @@ def licencia_declarada(dist: metadata.Distribution) -> str:
 
 
 def licencia_del_interprete() -> str | None:
-    for base in (sysconfig.get_path("stdlib"), sysconfig.get_config_var("prefix") or ""):
+    # En un venv «prefix» es el propio venv; la licencia está en la instalación base
+    # (Windows: <base>\LICENSE.txt; Linux: <stdlib>/LICENSE.txt).
+    prefijo = sysconfig.get_config_var("prefix") or ""
+    bases = (sysconfig.get_path("stdlib"), sys.base_prefix, prefijo)
+    for base in bases:
         for nombre in ("LICENSE.txt", "LICENSE"):
             ruta = Path(base) / nombre
             if ruta.is_file():
