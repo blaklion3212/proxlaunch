@@ -367,7 +367,7 @@ Nunca registres contraseñas, tokens ni datos personales.
   - Verificación de Windows: falla si el humo deja carpetas en `%TEMP%` (QA-M5-03, confirmado en la MV con
     restos anteriores a la corrección).
 - **Verificación final** con el código definitivo: `linux` ✅, `windows` ✅ (calidad 7638 en Windows, 7691 en
-  Ubuntu, 7693 local), `actualizacion-linux` ✅. Sumas: `.deb` `daa8b3dc…`, `-setup.exe` `5c39a384…`.
+  Ubuntu, 7693 local), `actualizacion-linux` ✅, `actualizacion-windows` ✅. Sumas: `.deb` `daa8b3dc…`, `-setup.exe` `5c39a384…`.
 - **Archivos:** `empaquetado/` (completo; ver `empaquetado/LEEME.md`), `src/proxlaunch/interfaz/{app,humo}.py`,
   `src/proxlaunch/nucleo/archivos/reemplazo.py`, `tests/conftest.py`, `docs/requisitos/mvp5.md`,
   `docs/arquitectura/mvp5.md`, `docs/empaquetado.md`, `docs/guia-usuario.md`, `docs/decisiones.md`
