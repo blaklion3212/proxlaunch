@@ -26,16 +26,12 @@ Nunca registres contraseñas, tokens ni datos personales.
 
 ## Estado actual (2026-11-14)
 
-- **Fase en curso:** MVP 3 (perfiles de máquina, lotes guardados, CSV, lote por filas):
-  cerrado y aprobado; implementado, probado (5823 pruebas normales y 154 de laboratorio) y revisado (QA y
-  seguridad corregidos) y documentado (F7). Falta la aprobación del usuario.
+- **MVP 1 a MVP 4 aprobados** por el usuario. MVP 4 (origen del SO: ISO con asistente para Windows,
+  importar qcow2, clonar plantilla) aprobado el 2026-11-14 tras 7226 pruebas normales y 232 de
+  laboratorio; D-24, D-25 y D-26 definitivas.
+- **Siguiente:** MVP 5 (instaladores y CI).
 - **Laboratorio:** apagado y conservado (PVE 9.2, solo 127.0.0.1); limpio de MVs y ajustes.
   Se destruirá sin rastro al terminar todas las pruebas (D-15).
-- **MVP 3 aprobado** por el usuario (2026-11-14); D-22 y D-23 definitivas.
-- **Fase en curso (nueva):** MVP 4, origen del SO (D-24 aprobada: ISO con asistente para Windows,
-  importar qcow2, clonar plantilla): implementado, probado (7226 pruebas normales y 232 de
-  laboratorio), revisado (QA y seguridad corregidos salvo los riesgos documentados) y documentado
-  (entrada 17, D-26). Falta la aprobación del usuario.
 
 ---
 
@@ -294,7 +290,7 @@ Nunca registres contraseñas, tokens ni datos personales.
   origen), `tests/`, `docs/guia-usuario.md`, `docs/arquitectura/mvp4.md`. Commits f8f7e3b (F4
   núcleo), 55c67c7 y 95a934b (F5 interfaz), a15ef3f, 8d8b3f9 y 4957753 (F6 pruebas y laboratorio),
   c850689 y 9b8dccc (F7).
-- **Siguientes pasos:** aprobación del usuario; después MVP 5 (instaladores y CI).
+- **Siguientes pasos:** MVP 4 aprobado por el usuario (2026-11-14); siguiente, MVP 5 (instaladores y CI).
 
 ---
 

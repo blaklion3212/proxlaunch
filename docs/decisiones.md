@@ -299,7 +299,7 @@ Requisitos en `docs/requisitos/mvp4.md`.
 6. **Aviso Red Hat 10:** RHEL/Rocky/Alma 10 exigen CPU x86-64-v3; la app avisa al elegir esas ISO
    (a confirmar en LAB-M4-05).
 
-## D-26 · Decisiones técnicas del MVP 4 — Propuesta (2026-11-14), se aprueba con el cierre del MVP 4
+## D-26 · Decisiones técnicas del MVP 4 — Aprobada (2026-11-14)
 Tomadas por el orquestador durante la implementación, el laboratorio (PVE 9.2) y la revisión del
 MVP 4; el punto 5 fue una decisión explícita del usuario. Detalle en `docs/arquitectura/mvp4.md`
 (Anexo B).
