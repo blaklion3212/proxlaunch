@@ -40,6 +40,7 @@ from proxlaunch.interfaz.archivos_ui import (
     elegir_para_guardar,
 )
 from proxlaunch.interfaz.controlador_origen import ControladorOrigen
+from proxlaunch.interfaz.desplazable import crear_area_desplazable, limitar_a_pantalla
 from proxlaunch.interfaz.dialogos.acerca_de import DialogoAcercaDe
 from proxlaunch.interfaz.dialogos.conexion import DialogoConexion
 from proxlaunch.interfaz.dialogos.confirmar import confirmar
@@ -440,6 +441,8 @@ class VentanaPrincipal(QMainWindow):
         self._actualizar_acciones()
         self._al_cambiar_tema(deps.gestor_tema.tema_actual)
         self.statusBar().showMessage(self.tr("Sin conexión"))
+        # Tamaño y mínimo pedidos, acotados al área útil de la pantalla donde se abre.
+        self.ajuste_pantalla = limitar_a_pantalla(self, tamano_deseado=QSize(1240, 820))
 
     # --- Construcción -----------------------------------------------------------------
 
@@ -451,7 +454,9 @@ class VentanaPrincipal(QMainWindow):
         self.barra = BarraSuperior()
         capa.addWidget(self.barra)
         self._paginas = QStackedWidget()
-        capa.addWidget(self._paginas, 1)
+        # Las páginas van en un área desplazable: si la pantalla es pequeña se desplazan con
+        # barras y la barra superior queda fija. El centralWidget sigue siendo ``central``.
+        capa.addWidget(crear_area_desplazable(self._paginas), 1)
         self.setCentralWidget(central)
 
         # Página 0: bienvenida.

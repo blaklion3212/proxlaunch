@@ -30,6 +30,7 @@ from PySide6.QtWidgets import (
 )
 
 from proxlaunch.interfaz.ayuda import ayuda
+from proxlaunch.interfaz.desplazable import hacer_desplazable
 from proxlaunch.interfaz.dialogos.dos_factores import DialogoDosFactores
 from proxlaunch.interfaz.dialogos.guia_token import DialogoGuiaToken
 from proxlaunch.interfaz.dialogos.huella import DialogoHuella
@@ -121,7 +122,8 @@ class DialogoConexion(QDialog):
     # --- Construcción -----------------------------------------------------------------
 
     def _construir(self, motivo: str | None) -> None:
-        capa = QVBoxLayout(self)
+        # Contenido desplazable y botones fijos abajo: nunca más alto que la pantalla.
+        capa, capa_pie, self.ajuste_alto = hacer_desplazable(self)
         self._motivo = mensaje(aviso=True)
         poner_mensaje(self._motivo, motivo, aviso=True)
         capa.addWidget(self._motivo)
@@ -236,8 +238,9 @@ class DialogoConexion(QDialog):
         self._info.setWordWrap(True)
         self._info.hide()
         capa.addWidget(self._aviso_root)
-        capa.addWidget(self._info)
-        capa.addWidget(self._estado)
+        # La información y el error quedan fuera del área desplazable: siempre visibles.
+        capa_pie.addWidget(self._info)
+        capa_pie.addWidget(self._estado)
 
         # Botones.
         self.btn_guardar = QPushButton(self.tr("Guardar perfil"))
@@ -250,7 +253,7 @@ class DialogoConexion(QDialog):
         fila_botones.addStretch(1)
         fila_botones.addWidget(self.btn_cancelar)
         fila_botones.addWidget(self.btn_conectar)
-        capa.addLayout(fila_botones)
+        capa_pie.addLayout(fila_botones)
 
         # Conexiones.
         self.combo_perfiles.currentIndexChanged.connect(self._al_elegir_perfil)

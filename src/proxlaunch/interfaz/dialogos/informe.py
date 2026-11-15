@@ -12,10 +12,10 @@ from PySide6.QtWidgets import (
     QLabel,
     QPlainTextEdit,
     QPushButton,
-    QVBoxLayout,
     QWidget,
 )
 
+from proxlaunch.interfaz.desplazable import hacer_desplazable
 from proxlaunch.interfaz.informe_lote import guardar_con_dialogo, texto_informe
 from proxlaunch.interfaz.textos import texto_fallo
 from proxlaunch.nucleo.errores import ErrorProxLaunch
@@ -61,10 +61,10 @@ class DialogoInforme(QDialog):
         fila.addWidget(self.boton_guardar)
         fila.addStretch(1)
         fila.addWidget(self.boton_cerrar)
-        capa = QVBoxLayout(self)
+        capa, capa_pie, _ = hacer_desplazable(self)
         capa.addWidget(self.editor, 1)
-        capa.addWidget(self._estado)
-        capa.addLayout(fila)
+        capa_pie.addWidget(self._estado)
+        capa_pie.addLayout(fila)
 
     def _copiar(self) -> None:
         QApplication.clipboard().setText(self.texto)

@@ -22,10 +22,10 @@ from PySide6.QtWidgets import (
     QLineEdit,
     QPushButton,
     QTableView,
-    QVBoxLayout,
     QWidget,
 )
 
+from proxlaunch.interfaz.desplazable import hacer_desplazable
 from proxlaunch.interfaz.modelos_tabla_origen import (
     ROL_FILA,
     FilaPlantilla,
@@ -175,7 +175,7 @@ class DialogoCatalogo(QDialog):
         self.motivo_subir.setProperty("secundario", True)
         self.motivo_subir.hide()
 
-        capa = QVBoxLayout(self)
+        capa, capa_pie, _ = hacer_desplazable(self)
         capa.addWidget(explicacion)
         capa.addWidget(self.campo_filtro)
         capa.addWidget(self.etiqueta_errores)
@@ -193,7 +193,7 @@ class DialogoCatalogo(QDialog):
         fila.addStretch(1)
         fila.addWidget(self.boton_cancelar)
         fila.addWidget(self.boton_elegir)
-        capa.addLayout(fila)
+        capa_pie.addLayout(fila)
 
         self._aplicar_estado_vias()
         self._refrescar_vacio()

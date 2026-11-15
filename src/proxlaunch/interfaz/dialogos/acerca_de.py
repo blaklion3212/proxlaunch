@@ -12,11 +12,11 @@ from PySide6.QtWidgets import (
     QLabel,
     QPlainTextEdit,
     QPushButton,
-    QVBoxLayout,
     QWidget,
 )
 
 from proxlaunch import __version__
+from proxlaunch.interfaz.desplazable import hacer_desplazable
 from proxlaunch.interfaz.vistas.barra_superior import cargar_svg, nombre_logotipo
 
 LICENCIAS = (
@@ -87,10 +87,10 @@ class DialogoAcercaDe(QDialog):
         fila = QHBoxLayout()
         fila.addStretch(1)
         fila.addWidget(cerrar)
-        capa = QVBoxLayout(self)
+        capa, capa_pie, _ = hacer_desplazable(self)
         for w in (logo, version, compat, nota, etiquetas, self._selector, self._licencia):
             capa.addWidget(w)
-        capa.addLayout(fila)
+        capa_pie.addLayout(fila)
         self._mostrar_licencia()
 
     def _mostrar_licencia(self) -> None:

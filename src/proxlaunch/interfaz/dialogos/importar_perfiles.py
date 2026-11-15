@@ -33,6 +33,7 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
+from proxlaunch.interfaz.desplazable import hacer_desplazable
 from proxlaunch.interfaz.dialogos.confirmar import confirmar
 from proxlaunch.interfaz.modelos_tabla import TablaCopiable
 from proxlaunch.interfaz.tema.paleta import TOKENS_CLARO, TOKENS_OSCURO
@@ -222,7 +223,7 @@ class DialogoImportarPerfiles(QDialog):
         self._archivo = archivo
         self._cargando = False
 
-        capa = QVBoxLayout(self)
+        capa, capa_pie, _ = hacer_desplazable(self)
         n_total = len(archivo.validos) + len(archivo.invalidos)
         if n_total == 1:
             texto_resumen = self.tr("El archivo tiene 1 perfil.")
@@ -270,7 +271,7 @@ class DialogoImportarPerfiles(QDialog):
         self.grupo_conflicto.setVisible(False)
 
         self.error = mensaje(error=True)
-        capa.addWidget(self.error)
+        capa_pie.addWidget(self.error)  # fuera del área desplazable: siempre visible
 
         self.botones = QDialogButtonBox()
         self.boton_importar = QPushButton()
@@ -279,7 +280,7 @@ class DialogoImportarPerfiles(QDialog):
         self.botones.addButton(self.boton_cancelar, QDialogButtonBox.ButtonRole.RejectRole)
         self.boton_importar.setDefault(True)
         self.boton_importar.setProperty("primario", True)
-        capa.addWidget(self.botones)
+        capa_pie.addWidget(self.botones)
 
         self.botones.accepted.connect(self._aceptar)
         self.botones.rejected.connect(self.reject)

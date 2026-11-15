@@ -13,10 +13,10 @@ from PySide6.QtWidgets import (
     QListWidgetItem,
     QPushButton,
     QRadioButton,
-    QVBoxLayout,
     QWidget,
 )
 
+from proxlaunch.interfaz.desplazable import hacer_desplazable
 from proxlaunch.interfaz.textos import texto_estado_mv, texto_motivo_no_elegible
 from proxlaunch.nucleo.lote.modelos import CandidatoRollback
 
@@ -90,7 +90,7 @@ class DialogoDeshacer(QDialog):
         fila.addStretch(1)
         fila.addWidget(self.boton_eliminar)
         fila.addWidget(self.boton_cancelar)
-        capa = QVBoxLayout(self)
+        capa, capa_pie, _ = hacer_desplazable(self)
         capa.addWidget(
             QLabel(QCoreApplication.translate("DialogoDeshacer", "¿Qué quieres deshacer?"))
         )
@@ -99,7 +99,7 @@ class DialogoDeshacer(QDialog):
         capa.addWidget(self.lista)
         capa.addWidget(self._nota_archivos)
         capa.addWidget(self._advertencia)
-        capa.addLayout(fila)
+        capa_pie.addLayout(fila)
         self._actualizar()
         # Acción destructiva: el foco y la tecla Intro son de «Cancelar».
         self.boton_cancelar.setDefault(True)

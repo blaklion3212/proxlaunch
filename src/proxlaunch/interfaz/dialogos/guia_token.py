@@ -28,6 +28,7 @@ from proxlaunch.interfaz.ayuda import (
     texto_pedir_al_administrador,
     titulo_guia_token,
 )
+from proxlaunch.interfaz.desplazable import limitar_a_pantalla
 
 
 class DialogoGuiaToken(QDialog):
@@ -109,6 +110,8 @@ class DialogoGuiaToken(QDialog):
         principal = QVBoxLayout(self)
         principal.addWidget(zona)
         principal.addLayout(fila)
+        # Con pantallas pequeñas el alto se acota; el contenido ya se desplaza.
+        limitar_a_pantalla(self)
 
     def _copiar_para_administrador(self) -> None:
         """Deja en el portapapeles el texto «Qué pedirle a tu administrador» (CA-O32.2)."""

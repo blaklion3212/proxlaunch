@@ -38,6 +38,7 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
+from proxlaunch.interfaz.desplazable import hacer_desplazable
 from proxlaunch.interfaz.dialogos.confirmar import confirmar
 from proxlaunch.interfaz.modelos_tabla_origen import (
     formatear_bytes,
@@ -372,7 +373,7 @@ class _DialogoTransferencia(QDialog):
         self.boton_cancelar.setDefault(True)
         self.boton_cancelar.clicked.connect(self._al_pulsar_cancelar)
 
-        self._capa = QVBoxLayout(self)
+        self._capa, self._pie, _ = hacer_desplazable(self)
         self._fila_botones = QHBoxLayout()
         self._fila_botones.addStretch(1)
         self._fila_botones.addWidget(self.boton_reintentar)
@@ -389,7 +390,7 @@ class _DialogoTransferencia(QDialog):
         self._capa.addWidget(self.panel_progreso)
         self._capa.addWidget(self.etiqueta_final)
         self._capa.addWidget(self.detalles)
-        self._capa.addLayout(self._fila_botones)
+        self._pie.addLayout(self._fila_botones)
         self.boton_cancelar.setFocus()  # el foco inicial nunca confirma nada
 
     # --- API pública --------------------------------------------------------------------

@@ -262,6 +262,9 @@ function Test-HumoInstalado {
             throw 'no se pudo crear la regla de cortafuegos de salida'
         }
         $antes = Get-Listado -Carpetas (Get-CarpetasDeDatos)
+        # Carpetas temporales del humo ya presentes (de ejecuciones anteriores): no cuentan.
+        $temporalesAntes = @(Get-ChildItem -Path $env:TEMP -Filter 'proxlaunch-humo-*' -ErrorAction SilentlyContinue |
+            ForEach-Object Name)
         $humo = Invoke-HumoInteractivo -Exe $Exe -Temporal $Temporal
     } finally {
         Get-NetFirewallRule -DisplayName $script:NombreRegla -ErrorAction SilentlyContinue | Remove-NetFirewallRule
@@ -279,6 +282,12 @@ function Test-HumoInstalado {
     Write-Msg "backend del llavero: $($informe.backend_llavero)"
     $despues = Get-Listado -Carpetas (Get-CarpetasDeDatos)
     if ($antes -ne $despues) { throw 'el humo modificó las carpetas de datos (CA-E17.2)' }
+    # El humo borra su carpeta temporal; en Windows un archivo abierto lo impedía (QA-M5-03).
+    $temporalesNuevos = @(Get-ChildItem -Path $env:TEMP -Filter 'proxlaunch-humo-*' -ErrorAction SilentlyContinue |
+        Where-Object { $temporalesAntes -notcontains $_.Name } | ForEach-Object Name)
+    if ($temporalesNuevos.Count -ne 0) {
+        throw "el humo dejó carpetas temporales en %TEMP% (CA-E17.2): $($temporalesNuevos -join ', ')"
+    }
 }
 
 # Verificación de la actualización (QA-M5-07): versión anterior -> nueva con datos del usuario.

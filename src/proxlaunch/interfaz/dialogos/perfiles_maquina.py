@@ -41,6 +41,7 @@ from proxlaunch.interfaz.archivos_ui import (
     elegir_para_guardar,
     nombre_sugerido,
 )
+from proxlaunch.interfaz.desplazable import hacer_desplazable
 from proxlaunch.interfaz.dialogos.confirmar import confirmar
 from proxlaunch.interfaz.dialogos.guardar_perfil import DialogoNombrePerfil
 from proxlaunch.interfaz.dialogos.importar_perfiles import DialogoImportarPerfiles
@@ -230,7 +231,7 @@ class DialogoPerfilesMaquina(QDialog):
     # --- Construcción --------------------------------------------------------------------
 
     def _construir(self) -> None:
-        capa = QVBoxLayout(self)
+        capa, capa_pie, _ = hacer_desplazable(self)
         capa.addWidget(
             etiqueta(
                 self.tr(
@@ -260,8 +261,11 @@ class DialogoPerfilesMaquina(QDialog):
         )
         self.estado = etiqueta("", secundario=True)
         self.error = mensaje(error=True)
-        for w in (self.detalle, self.nota_fabrica, self.estado, self.error):
+        for w in (self.detalle, self.nota_fabrica):
             capa.addWidget(w)
+        # Estado y error quedan fuera del área desplazable: siempre visibles junto a los botones.
+        capa_pie.addWidget(self.estado)
+        capa_pie.addWidget(self.error)
 
         fila1 = QHBoxLayout()
         self.boton_usar = QPushButton(self.tr("Usar en el formulario"))
@@ -278,7 +282,7 @@ class DialogoPerfilesMaquina(QDialog):
         ):
             fila1.addWidget(b)
         fila1.addStretch(1)
-        capa.addLayout(fila1)
+        capa_pie.addLayout(fila1)
 
         fila2 = QHBoxLayout()
         self.boton_importar = QPushButton(self.tr("Importar…"))
@@ -288,7 +292,7 @@ class DialogoPerfilesMaquina(QDialog):
         fila2.addWidget(self.boton_exportar)
         fila2.addStretch(1)
         fila2.addWidget(self.boton_cerrar)
-        capa.addLayout(fila2)
+        capa_pie.addLayout(fila2)
         self.boton_cerrar.setDefault(True)
         for b in (self.boton_importar, self.boton_exportar):
             b.setAutoDefault(False)

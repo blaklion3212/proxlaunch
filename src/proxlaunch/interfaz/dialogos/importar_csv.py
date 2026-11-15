@@ -26,7 +26,6 @@ from PySide6.QtWidgets import (
     QMessageBox,
     QPlainTextEdit,
     QPushButton,
-    QVBoxLayout,
     QWidget,
 )
 
@@ -38,6 +37,7 @@ from proxlaunch.interfaz.archivos_ui import (
     elegir_para_guardar,
     nombre_sugerido,
 )
+from proxlaunch.interfaz.desplazable import hacer_desplazable
 from proxlaunch.interfaz.modelos_tabla import TablaCopiable
 from proxlaunch.interfaz.modelos_tabla_csv import (
     FiltroProblemasCsv,
@@ -185,7 +185,7 @@ class DialogoImportarCsv(QDialog):
         return self._perfiles[0]
 
     def _construir(self, tema: str) -> None:
-        capa = QVBoxLayout(self)
+        capa, capa_pie, _ = hacer_desplazable(self)
 
         capa.addWidget(
             etiqueta(
@@ -347,7 +347,7 @@ class DialogoImportarCsv(QDialog):
         )
         self.detalle.setMaximumHeight(130)
         capa.addWidget(self.detalle, 1)
-        capa.addWidget(self.estado_operacion)
+        capa_pie.addWidget(self.estado_operacion)  # siempre visible, junto a los botones
 
         # Botones.
         pie = QHBoxLayout()
@@ -363,7 +363,7 @@ class DialogoImportarCsv(QDialog):
         pie.addWidget(self.boton_cancelar)
         pie.addWidget(self.boton_corregir)
         pie.addWidget(self.boton_continuar)
-        capa.addLayout(pie)
+        capa_pie.addLayout(pie)
         for b in (self.boton_corregir, self.boton_cancelar, self.boton_continuar):
             b.setAutoDefault(False)
 

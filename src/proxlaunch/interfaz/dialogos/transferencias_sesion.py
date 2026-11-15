@@ -22,10 +22,10 @@ from PySide6.QtWidgets import (
     QPushButton,
     QTableWidget,
     QTableWidgetItem,
-    QVBoxLayout,
     QWidget,
 )
 
+from proxlaunch.interfaz.desplazable import hacer_desplazable
 from proxlaunch.interfaz.modelos_tabla_origen import formatear_bytes
 from proxlaunch.interfaz.textos import (
     texto_error,
@@ -138,7 +138,7 @@ class DialogoTransferenciasSesion(QDialog):
         self.boton_cerrar.setDefault(True)
         self.boton_cerrar.clicked.connect(self.accept)
 
-        capa = QVBoxLayout(self)
+        capa, capa_pie, _ = hacer_desplazable(self)
         capa.addWidget(aviso)
         capa.addWidget(self.tabla, 1)
         capa.addWidget(self.etiqueta_vacia)
@@ -147,7 +147,7 @@ class DialogoTransferenciasSesion(QDialog):
         fila.addWidget(self.boton_guardar)
         fila.addStretch(1)
         fila.addWidget(self.boton_cerrar)
-        capa.addLayout(fila)
+        capa_pie.addLayout(fila)
         self.actualizar()
 
     # --- API pública --------------------------------------------------------------------

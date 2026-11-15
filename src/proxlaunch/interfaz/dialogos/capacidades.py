@@ -20,11 +20,11 @@ from PySide6.QtWidgets import (
     QPushButton,
     QTableWidget,
     QTableWidgetItem,
-    QVBoxLayout,
     QWidget,
 )
 
 from proxlaunch.interfaz.ayuda import texto_pedir_al_administrador
+from proxlaunch.interfaz.desplazable import hacer_desplazable
 from proxlaunch.interfaz.modelos_tabla_origen import (
     simbolo_disponibilidad,
     texto_explicacion_via,
@@ -138,7 +138,7 @@ class DialogoCapacidades(QDialog):
         self.boton_cerrar.setDefault(True)
         self.boton_cerrar.clicked.connect(self.accept)
 
-        capa = QVBoxLayout(self)
+        capa, capa_pie, _ = hacer_desplazable(self)
         capa.addWidget(self.etiqueta_version)
         capa.addWidget(self.tabla, 1)
         capa.addWidget(titulo_admin)
@@ -147,7 +147,7 @@ class DialogoCapacidades(QDialog):
         fila.addWidget(self.boton_copiar)
         fila.addStretch(1)
         fila.addWidget(self.boton_cerrar)
-        capa.addLayout(fila)
+        capa_pie.addLayout(fila)
 
         self.establecer_capacidades(capacidades)
 
