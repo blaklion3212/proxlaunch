@@ -78,6 +78,8 @@ prog="proxlaunch")` y `parse_known_args` (los argumentos de Qt pasan a `QApplica
 `__main__.py` sigue llamando a `main()`.
 
 ### 3.3 Módulo nuevo `interfaz/humo.py`
+> **Cambió en la implementación:** el vigilante es de 15 s (no 5 s) y tiene respaldo de `faulthandler`; ver Anexo B, B-2.
+
 ```
 @dataclass(frozen=True)
 class InformeHumo:
@@ -142,6 +144,8 @@ de siempre; las MVs añaden 3.13 (Linux y Windows) y 3.11 en 22.04 (mínimo decl
 ## 6. Entornos de prueba
 
 ### 6.1 Ubuntu 22.04 y 24.04 (`mv.sh crear ubuntu2204|ubuntu2404`)
+> **Cambió en la implementación:** la semilla de cloud-init es un disco vvfat NoCloud, no un servidor HTTP; ver Anexo B, B-1.
+
 Imagen cloud oficial (`cloud-images.ubuntu.com/releases/<código>/release/…-server-cloudimg-amd64.img`) verificada
 con su `SHA256SUMS` y la firma `SHA256SUMS.gpg` contra `/usr/share/keyrings/ubuntu-cloudimage-keyring.gpg` si existe
 (si no, se registra que solo se verificó la suma). Disco qcow2 en capa sobre la imagen (20 GB), cloud-init NoCloud
@@ -150,6 +154,8 @@ usuario `prueba` con la clave pública de la MV, paquetes `xvfb dbus-x11 gnome-k
 verificación. Root solo dentro de la MV.
 
 ### 6.2 Windows 11 de evaluación (`mv.sh crear windows11`)
+> **Cambió en la implementación:** se usó la ISO de consumo (Pro sin activar), no la de evaluación; ver Anexo B, B-3.
+
 - **ISO**: la descarga **el usuario** desde el sitio oficial de evaluación de Microsoft (el formulario pide datos de
   contacto, que no enviamos en su nombre) y la deja en `~/aprovprox-empaquetado/iso/`. El script calcula y registra
   su SHA-256 junto con la URL oficial y la fecha (RF-E42, HV-E16) y se niega a seguir si el archivo no es una ISO UDF
@@ -202,4 +208,49 @@ instalación de Windows hechas por el usuario. `.gitignore`: añadir `*.qm` (DT-
   `ubuntu-desktop-minimal` solo para esa comprobación manual.
 
 ## Anexo B · Desviaciones e hechos de implementación
-(Se completa al cerrar cada fase.)
+
+Completado al cierre del MVP 5 (2026-11-15), contrastado con el código. La descripción operativa vigente de los
+scripts está en `empaquetado/LEEME.md` y en `docs/empaquetado.md`; aquí solo se anota en qué se apartó la
+implementación de las secciones anteriores y qué incidencias aparecieron.
+
+### B.1 Desviaciones respecto del diseño
+
+| # | Diseño (sección) | Implementación real | Dónde verlo |
+|---|---|---|---|
+| B-1 | Semilla de cloud-init servida por `http.server` en `127.0.0.1` con `-smbios` (§1 A4, §6.1, AR-9). | Disco NoCloud **vvfat** de solo lectura con etiqueta `CIDATA`, sin servidor ni puertos. El plan B HTTP se conserva con `PROXLAUNCH_SEMILLA=http`. | `entornos/mv.sh` (`driver=vvfat,…,label=CIDATA`), `LEEME.md` |
+| B-2 | Vigilante del humo a 5 s (§3.3). | Vigilante a **15 s** (`LIMITE_VIGILANTE_S`, CA-E17.1), código de salida 3, con respaldo de `faulthandler` (límite + 2 s, vuelca la traza y sale con 1), arbitraje entre hilo principal y vigilante (solo uno da el resultado) y cierre del registro antes de salir. | `interfaz/humo.py` |
+| B-3 | ISO de **evaluación** de Windows 11 (§6.2). | ISO de **consumo** (edición Pro sin activar) descargada por el usuario, comparada con la lista «Verificar la descarga» de Microsoft; `mv.sh crear windows11` la comprueba (UDF) y registra su SHA-256, URL y fecha en `iso/ISO-ORIGEN.txt`. | `LEEME.md`, `entornos/windows/comprobar-iso.py` |
+| B-4 | Casilla «Borrar también mis datos» en el desinstalador (§4, RF-E13). | Por decisión de implementación se usa una **pregunta Sí/No** (`MsgBox`) en lugar de una casilla (respuesta predeterminada «No»), o `/BORRARDATOS=1` en silencio. Con instalación «para todos los usuarios» no se pregunta ni se borra nada y `/BORRARDATOS=1` se ignora y se anota en el registro de Inno (`/LOG`). | `windows/proxlaunch.iss` (`InitializeUninstall`) |
+| B-4b | Texto de la pregunta del desinstalador. | El `.iss` pregunta «¿Desea borrar también sus datos de ProxLaunch…?»; los requisitos lo llaman «Borrar también mis datos» y `empaquetado/LEEME.md` dice «¿Borrar también sus datos?» (discrepancia menor, LEEME.md sin editar). | `windows/proxlaunch.iss`, `empaquetado/LEEME.md` |
+| B-5 | `AppMutex` para detectar la app abierta (§4). | `AppMutex=ProxLaunch.InstanciaUnica` sigue en el `.iss`, pero **la aplicación no crea ese mutex** (no hay `CreateMutex` en `src/`): no tiene efecto. La detección real la hace `CloseApplications=yes` (Restart Manager), solo si hay archivos de la instalación en uso. | `windows/proxlaunch.iss`; búsqueda en `src/` sin resultados |
+| B-6 | `Categories=Network;System;` (RF-E12). | `Categories=Network;`. Nota de cambio en `docs/requisitos/mvp5.md`. | `linux/proxlaunch.desktop` |
+| B-7 | Las sumas las escribe el flujo de verificación (§5, AR-8). | Confirmado y reforzado: `construir-linux.sh` y `construir-windows.ps1` **no** escriben `SHA256SUMS`; solo lo hace `comun/sumas.py` en el anfitrión tras la verificación instalada (CA-E04.1, INV-E6). Antes de construir se borran el artefacto de la versión y sus sellos, y `SHA256SUMS` se reescribe sin ellos. Un artefacto de otra versión se omite con aviso. | `verificar-todo.sh`, `comun/sumas.py` |
+| B-8 | Exclusión mutua con el laboratorio (no prevista en §6). | `mv.sh crear\|arrancar` y `verificar-todo.sh` se niegan si algo escucha en `127.0.0.1:8006` o `:2222` o hay un proceso cuya orden contenga `aprovprox-lab`. Solo lee el estado. **El lado inverso (que el laboratorio rechace arrancar con MVs de empaquetado) no está implementado.** | `comun/exclusion-laboratorio.sh` |
+| B-9 | Prueba de actualización (no detallada en §5). | `verificar-todo.sh actualizacion-linux\|actualizacion-windows`: build de prueba 0.5.1 (`__version__` cambiado solo en la copia del árbol enviada a la MV), sin calidad, instalada sobre el artefacto 0.5.0 ya sellado; datos idénticos byte a byte (SHA-256). El artefacto de prueba nunca va a `dist/` ni a `SHA256SUMS`. | `verificar-todo.sh`, `verificar-deb.sh --actualizar-desde`, `verificar-windows.ps1 -SoloActualizacion` |
+| B-10 | Instalación de las herramientas de Windows (§6.2). | Herramientas fijadas en `entornos/windows/herramientas.json`; `preparar-build.ps1` las vuelve a verificar (suma y firma Authenticode) y deja `verificadas.json`; `lib.ps1` solo acepta esas herramientas. En Linux, `herramientas.sh` solo usa el `uv` fijado. | `windows/preparar-build.ps1`, `linux/herramientas.sh` |
+
+### B.2 Incidencias resueltas
+
+| # | Incidencia | Causa y solución | Dónde verlo |
+|---|---|---|---|
+| I-1 | `os.replace` fallaba de forma intermitente en Windows al reemplazar un archivo en uso. | Nuevo `reemplazar_con_reintentos`: solo en Windows y solo ante `winerror` 5, 32 o 33; hasta 8 intentos con espera exponencial desde 5 ms y tope total de 1 s; si se agotan, relanza la excepción original. En POSIX es un único `os.replace`. | `nucleo/archivos/reemplazo.py`, `escritura.py` |
+| I-2 | Rutas largas en Windows. | `escribir_atomico` mide el destino **y** el temporal más largo posible (prefijo `.proxlaunch-`, 8 caracteres de nombre, 8 aleatorios y `.tmp`) y rechaza con motivo `ruta_larga` si alguno llega a 260 caracteres (`MAX_PATH` incluye el NUL final). | `nucleo/archivos/escritura.py` |
+| I-3 | Pruebas dejaron **informes parciales** en `Rutas.informes` de la carpeta real del usuario. | La ventana principal exige `directorio_informes` (y `directorio_lotes`) en sus dependencias, sin valor por omisión; la aplicación pasa `rutas.informes`. La carpeta real afectada ya se limpió. | `interfaz/ventana_principal.py`, `interfaz/app.py` |
+| I-4 | Fuga de pruebas a las carpetas reales. | `tests/conftest.py` redirige `HOME`, `XDG_*`, `LOCALAPPDATA` y `APPDATA` (y la resolución de `platformdirs` en Windows) a una carpeta temporal de la sesión, y al terminar compara una instantánea de las carpetas reales: si cambiaron, la sesión falla con «AISLAMIENTO VIOLADO». | `tests/conftest.py` |
+| I-5 | La prueba de humo podía colgarse. | Ver B-2 (vigilante a 15 s con respaldo `faulthandler`, arbitraje y cierre del registro). | `interfaz/humo.py` |
+| I-6 | `.Count` fallaba en `StrictMode` de PowerShell 5.1 con resultados de 0 o 1 elemento. | Los resultados se envuelven en `@()` antes de contar, en `verificar-windows.ps1` y `construir-windows.ps1` (commit `5a5a2c8`). | `empaquetado/verificar-windows.ps1`, `empaquetado/construir-windows.ps1` |
+| I-7 | **QA-M5-01 (crítico):** `paso` ignoraba `set -e` dentro de las funciones (`if ! "$@"`) y un fallo intermedio se daba por correcto; llegó a sellar un `.deb` viejo. | `paso` ejecuta la orden en una subshell con `set -e` activo. Consecuencia: las variables globales que asigne una función pasada a `paso` no llegan al llamador. Autotest sin red ni MVs (`comun/autotest-lib.sh`), que también corre en `calidad.sh`. Se añadió el borrado previo de artefactos y sellos (B-7) y la traída con suma comprobada (`traer_verificado`). | `comun/lib.sh`, `comun/autotest-lib.sh`, `verificar-todo.sh` |
+| I-8 | Un `lib.ps1` con error de sintaxis terminaba con código 0 sin hacer nada. | Los `.ps1` fijan `$ErrorActionPreference = 'Stop'` **antes** de cargar `lib.ps1`, y `verificar-todo.sh` valida con el analizador de PowerShell de la MV la sintaxis de todos los `.ps1` antes de ejecutar ninguno. `revisar_estatico.py` también lo valida si hay PowerShell. | `construir-windows.ps1`, `verificar-windows.ps1`, `verificar-todo.sh` |
+| I-9 | Los subprocesos de las pruebas de empaquetado no encontraban `proxlaunch` en el venv de calidad (sin el paquete instalado). | Se les pasa `PYTHONPATH` apuntando a `src`. | pruebas de subprocesos como `tests/interfaz/test_mvp5_humo.py` (commit `431064d`) |
+| I-10 | La MV de Windows tenía la red en perfil **Pública** y el cortafuegos bloqueaba SSH. | `preparar.ps1` pasa los perfiles Públicos a Privados (`Set-NetConnectionProfile -NetworkCategory Private`). | `entornos/windows/preparar.ps1` |
+
+### B.3 Hipótesis y pendientes al cierre
+
+- **Confirmado por la verificación local:** `.deb` en Ubuntu 22.04 y 24.04; instalador en Windows 11 con TPM 2.0 y Secure Boot;
+  prueba de actualización 0.5.0 → 0.5.1 en ambos sistemas (resultados en la bitácora, entrada 18).
+- **No implementado:** RF-E21b (auditoría de CVE, «Debería»); exclusión inversa del laboratorio (B-8).
+- **Sin probar:** la semilla cloud-init por disco vvfat (B-1) en una MV **nueva**, porque las MVs de Ubuntu ya existían al
+  introducirla.
+- **Preparado y desactivado:** la firma de código (`PROXLAUNCH_FIRMA_CONFIG`, ver `docs/empaquetado.md`).
+- **Comprobaciones manuales** (`[MANUAL]`: asistente en español, SmartScreen, escalado 125/150/175 %, icono del menú Inicio):
+  pendientes de resultado; el orquestador las anota en la bitácora.

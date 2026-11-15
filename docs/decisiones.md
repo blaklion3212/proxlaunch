@@ -353,6 +353,31 @@ Requisitos en `docs/requisitos/mvp5.md` (§14).
    artefactos en `dist/` con `SHA256SUMS`; solo amd64; SemVer, versión 0.5.0; presupuesto
    de tamaño inicial ≤ 90 MB comprimido y ≤ 250 MB instalado, a recalibrar; DT-E1 a DT-E14.
 
+Decisiones añadidas durante la ejecución (cierre del MVP 5, 2026-11-15; detalle en
+`docs/arquitectura/mvp5.md`, Anexo B):
+9. **Ajuste del punto 7 (usuario): ISO de Windows 11 de consumo**, no de evaluación. La descargó el
+   usuario, se verificó contra la lista «Verificar la descarga» de Microsoft y `mv.sh crear windows11`
+   registra su SHA-256, URL y fecha. La MV de empaquetado corre en este equipo.
+10. **Exclusión mutua con el laboratorio Proxmox (usuario).** Las MVs de empaquetado y el laboratorio no
+    conviven: `mv.sh crear|arrancar` y `verificar-todo.sh` se niegan si algo escucha en
+    `127.0.0.1:8006` o `:2222` o hay un proceso `aprovprox-lab` (solo lectura del estado). La exclusión
+    inversa (que el laboratorio rechace arrancar con MVs de empaquetado) **no** está implementada.
+11. **Instalación «para todos los usuarios» sin borrado de datos (usuario).** El desinstalador no
+    pregunta «¿Borrar también mis datos?», no borra datos de ningún usuario e ignora `/BORRARDATOS=1`
+    (lo anota en el registro de Inno). En la instalación por usuario se pregunta (Sí/No, predeterminado
+    «No») o se usa `/BORRARDATOS=1`, y solo se borra la carpeta de ese usuario. El llavero nunca se toca.
+12. **Prueba de actualización con una build que no se publica (usuario).** La actualización 0.5.0 → 0.5.1
+    se prueba con una build de prueba cuya versión se cambia solo en la copia del árbol enviada a la MV;
+    no va a `dist/` ni a `SHA256SUMS` y se borra al terminar.
+13. **Icono, editor y firma (usuario).** Icono regenerado con revisión y aprobado (queda en
+    `empaquetado/iconos/` con sumas); editor «ProxLaunch» sin correo; sin firma de código (paso
+    preparado y desactivado con `PROXLAUNCH_FIRMA_CONFIG`). Se conserva el registro
+    `build/registros/crear-windows11.txt`.
+14. **Orquestador: las sumas solo tras verificar (INV-E6).** `SHA256SUMS` lo escribe únicamente
+    `empaquetado/comun/sumas.py` en el anfitrión, con el sello `dist/.verificado-<artefacto>`; los
+    scripts de construcción no lo escriben. `Categories=Network;` en el `.desktop` (nota de cambio en
+    RF-E12).
+
 ## Correcciones técnicas a `prompt.md`
 Errores o imprecisiones de la especificación original que los requisitos deben
 respetar:

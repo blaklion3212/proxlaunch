@@ -24,14 +24,17 @@ Nunca registres contraseñas, tokens ni datos personales.
 
 ---
 
-## Estado actual (2026-11-14)
+## Estado actual (2026-11-15)
 
 - **MVP 1 a MVP 4 aprobados** por el usuario. MVP 4 (origen del SO: ISO con asistente para Windows,
   importar qcow2, clonar plantilla) aprobado el 2026-11-14 tras 7226 pruebas normales y 232 de
   laboratorio; D-24, D-25 y D-26 definitivas.
-- **Siguiente:** MVP 5 (instaladores y CI).
+- **MVP 5 (instaladores y scripts de empaquetado, versión 0.5.0): en cierre.** Construcción y
+  verificación completas y documentadas (entrada 18; D-27). Pendiente de las comprobaciones
+  manuales con el usuario y de su aprobación. **Es el último MVP del plan** (D-12).
 - **Laboratorio:** apagado y conservado (PVE 9.2, solo 127.0.0.1); limpio de MVs y ajustes.
-  Se destruirá sin rastro al terminar todas las pruebas (D-15).
+  Se destruirá sin rastro al terminar todas las pruebas (D-15). Las MVs de empaquetado
+  (`~/aprovprox-empaquetado/`) se destruyen con `mv.sh destruir-todo` al cerrar el MVP.
 
 ---
 
@@ -292,6 +295,67 @@ Nunca registres contraseñas, tokens ni datos personales.
   c850689 y 9b8dccc (F7).
 - **Siguientes pasos:** MVP 4 aprobado por el usuario (2026-11-14); siguiente, MVP 5 (instaladores y CI).
 
+### 2026-11-15 · 18. MVP 5: instaladores, scripts de empaquetado y verificación (F2 a F7)
+- **Responsable:** orquestador; `analista-requisitos`, `implementador` (versión, argumentos y prueba de
+  humo), `devops-ci` (scripts, MVs, instaladores), `probador`, `revisor-qa`, `auditor-seguridad`,
+  `documentador`
+- **Qué se hizo:**
+  - App (único cambio de `src/` además de las correcciones de I-1 a I-4): versión única `0.5.0`,
+    `--version`, `--prueba-de-humo` y `--permitir-sin-llavero`.
+  - Instalador de Ubuntu: `.deb` (22.04 y 24.04, `amd64`) construido en una MV Ubuntu 22.04 por la
+    glibc; dependencias del sistema declaradas y `gnome-keyring` sugerido; `.desktop` e iconos
+    `hicolor`. Instalador de Windows: Inno Setup (`-setup.exe`, 64 bits, Windows 10 o posterior),
+    «solo para mí» por defecto o «para todos los usuarios», asistente en español, sin firma.
+  - Scripts en `empaquetado/`: calidad, construcción, verificación del artefacto instalado,
+    orquestador `verificar-todo.sh`, MVs QEMU (`mv.sh`), lockfiles con hashes, sumas con sello
+    (INV-E6), avisos de terceros, presupuesto de tamaño y plantilla de CI inactiva.
+  - Decisiones del usuario en D-27: CI solo como plantilla; `.deb` para Ubuntu; sin firma; datos
+    conservados al desinstalar con opción de borrarlos; icono regenerado y aprobado; editor
+    «ProxLaunch» sin correo; MV de Windows en este equipo con ISO de consumo descargada por el
+    usuario; exclusión mutua con el laboratorio; «para todos» sin borrado; actualización probada con
+    una build que no se publica; se conserva `build/registros/crear-windows11.txt`.
+- **Verificaciones (resultados):**
+  - Suite local: 7517 pruebas correctas.
+  - `verificar-todo.sh linux`: correcto (`.deb` instalado en Ubuntu 22.04 y 24.04, humo,
+    `remove`/`purge` sin residuos).
+  - `verificar-todo.sh windows`: correcto en Windows 11 con TPM 2.0 y Secure Boot: instalación por
+    usuario, humo con el llavero real (`WinVaultKeyring`), desinstalación sin residuos, reinstalación
+    con una sola entrada, `/BORRARDATOS=1` solo en ese usuario con el llavero intacto, y modo «para
+    todos» que ignora `/BORRARDATOS=1`.
+  - `actualizacion-linux` y `actualizacion-windows`: correctos (0.5.0 → 0.5.1 de prueba; datos
+    intactos byte a byte).
+  - `dist/SHA256SUMS` con los dos artefactos: el `.deb` (`a758b0c4…`) y el `-setup.exe`
+    (`f8737c07…`).
+- **Incidencias resueltas** (detalle en `docs/arquitectura/mvp5.md`, Anexo B.2):
+  - reintento de `os.replace` ante bloqueos de Windows (I-1);
+  - límite `MAX_PATH` (≥ 260) en la escritura atómica (I-2);
+  - informes parciales en `Rutas.informes` tras una fuga de pruebas a la carpeta real, ya limpiada (I-3);
+  - aislamiento de carpetas en `tests/conftest.py` (I-4);
+  - vigilante del humo a 15 s con respaldo `faulthandler`, arbitraje y cierre del registro (I-5);
+  - `.Count` en `StrictMode` de PowerShell 5.1 (I-6);
+  - QA-M5-01 (crítico): `paso` ignoraba `set -e` y llegó a sellar un `.deb` viejo; corregido con
+    autotest (I-7);
+  - un `lib.ps1` con error de sintaxis salía con 0; ahora `$ErrorActionPreference` va antes de cargarla
+    y el analizador de PowerShell de la MV valida los `.ps1` (I-8);
+  - subprocesos de prueba con `PYTHONPATH` (I-9);
+  - red de la MV de Windows pública → privada en `preparar.ps1` (I-10);
+  - desinstalador con Sí/No en lugar de casilla, `AppMutex` sin efecto, ISO de consumo en lugar de la
+    de evaluación, `Categories=Network;` y sumas tras verificar (B-3 a B-7).
+- **Pendientes que quedan abiertos:**
+  - RF-E21b, auditoría de CVE («Debería»): no implementada.
+  - Exclusión inversa (que `lab.sh` rechace arrancar con MVs de empaquetado): no implementada.
+  - Semilla cloud-init por disco vvfat: sin probar en una MV nueva (las MVs ya existían).
+  - Firma de código: preparada y desactivada.
+  - `directorio_lotes` ya es obligatorio en las dependencias de la ventana: cerrado.
+  - **Comprobaciones manuales: pendiente de resultado** (asistente en español, SmartScreen,
+    escalado 125/150/175 %, icono del menú Inicio; se hacen con el usuario).
+- **Archivos:** `empaquetado/` (completo; ver `empaquetado/LEEME.md`), `src/proxlaunch/interfaz/{app,humo}.py`,
+  `src/proxlaunch/nucleo/archivos/reemplazo.py`, `tests/conftest.py`, `docs/requisitos/mvp5.md`,
+  `docs/arquitectura/mvp5.md`, `docs/empaquetado.md`, `docs/guia-usuario.md`, `docs/decisiones.md`
+  (D-27), `README.md`. Últimos commits del MVP: `5a5a2c8`, `527a5dc`, `683703a`, `431064d`, `9c9bbfb`.
+- **Siguientes pasos:** completar las comprobaciones manuales, aprobación del usuario y limpieza total
+  (`mv.sh destruir-todo`, laboratorio incluido según D-15).
+
 ---
 
 ## Pendientes y riesgos abiertos
@@ -305,9 +369,14 @@ Nunca registres contraseñas, tokens ni datos personales.
 | ISO de Windows real | No probado: el laboratorio solo usa Alpine/Linux. El hardware de Windows (OVMF, TPM, virtio-win) se comprobó sin instalar Windows. |
 | Importación en PVE 8.x | La importación de discos (8.4 o superior) se probó solo con dobles; el laboratorio es PVE 9.2. |
 | Plantillas ajenas visibles | Con la guía de permisos acotada, `VM.Audit` no queda limitado al pool: las demás plantillas se ven en la lista, pero la app no las clona (V-O17). |
-| Python en Ubuntu 22.04 | Trae 3.10; la app exige ≥ 3.11. Resolver al empaquetar (MVP 5). |
+| Python en Ubuntu 22.04 | Resuelto en el MVP 5: el `.deb` incluye su propio intérprete. Para desarrollo desde el código fuente sigue haciendo falta Python ≥ 3.11. |
 | Realms LDAP/AD | No probados. |
-| Firma de código en Windows | Pospuesta al MVP 5 (D-06). |
+| Firma de código en Windows | MVP 5: sin firma (D-27). El paso de firma está preparado y desactivado (`PROXLAUNCH_FIRMA_CONFIG`); el usuario ve SmartScreen. |
+| Comprobaciones manuales del MVP 5 | Pendiente de resultado: asistente en español, SmartScreen, escalado 125/150/175 %, icono del menú Inicio. |
+| Auditoría de CVE (RF-E21b) | «Debería»; no implementada. |
+| Exclusión inversa del laboratorio | Solo las MVs de empaquetado rechazan arrancar con el laboratorio activo; el laboratorio no comprueba lo contrario. |
+| Semilla cloud-init vvfat | Sin probar en una MV nueva de Ubuntu (las existentes ya estaban creadas). |
+| Limpieza de las MVs de empaquetado | `empaquetado/entornos/mv.sh destruir-todo` al cerrar el MVP (RF-E41). |
 | Respuestas sintéticas | Clúster multinodo, nodo caído y PVE 8.x solo con respuestas sintéticas (el laboratorio es un nodo 9.2). |
 | Clúster multinodo de lotes | Reparto, nodo caído y concurrencia entre nodos probados solo con dobles (laboratorio de un nodo). |
 | Aviso de nombre duplicado | Una MV creada hace ~4 s puede no aparecer con nombre en `/cluster/resources` (limitación de Proxmox). |

@@ -267,6 +267,12 @@ Windows, que exigen números [A]).
 **RF-E12 — Integración de escritorio en Ubuntu (Debe).**
 - `proxlaunch.desktop` con `Name=ProxLaunch`, `Comment` en español, `Exec=proxlaunch`, `Icon=proxlaunch`,
   `Terminal=false`, `Categories=Network;System;` [A], `StartupWMClass`/`desktop-file-name` coherentes (HV-E11).
+  > **Nota de cambio (cierre del MVP 5, 2026-11-15):** el `.desktop` entregado
+  > (`empaquetado/linux/proxlaunch.desktop`) declara `Categories=Network;` en lugar de `Network;System;`.
+  > Motivo: Network y System son las dos «categorías principales» de la especificación freedesktop y
+  > `desktop-file-validate` avisa cuando un `.desktop` declara más de una; se dejó solo Network para que la
+  > validación del `.deb` pase sin avisos. El resto de este requisito no cambia (`StartupWMClass=ProxLaunch` y `app.setDesktopFileName("proxlaunch")`
+  > siguen en pie). `desktop-file-validate` lo da por válido en la verificación (CA-E12.1).
 - Iconos `hicolor` (PNG 16 a 256 px y/o SVG) en `/usr/share/icons/hicolor/<tamaño>/apps/proxlaunch.png`, derivados del
   símbolo aprobado (sujetos a CA-E11.4).
 - CA-E12.1 Dado el `.desktop`, cuando se valida con `desktop-file-validate`, entonces no da errores. `[LOCAL]`

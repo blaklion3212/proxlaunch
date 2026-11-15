@@ -9,9 +9,13 @@ Solutions GmbH. La aplicación solo se presenta como «Compatible con Proxmox VE
 
 ## Estado del proyecto
 
-**MVP 3** (perfiles de máquina, lotes guardados e importación CSV) sobre el MVP 2 (creación por
-lotes) y el MVP 1 (versión `0.1.0`). Por ahora se ejecuta desde el código fuente. Los
-instaladores llegan en el MVP 5.
+**Versión `0.5.0` (MVP 5, en cierre).** Hay instaladores para Ubuntu (`.deb`) y Windows
+(`-setup.exe`), además de poder ejecutarse desde el código fuente. Sobre el MVP 4 (origen del
+sistema operativo), el MVP 3 (perfiles de máquina, lotes guardados e importación CSV), el MVP 2
+(creación por lotes) y el MVP 1. Las secciones «Qué hace/añade» de más abajo describen cada
+etapa; la del MVP 4 está en la [guía de usuario](docs/guia-usuario.md#elegir-el-origen-del-sistema-operativo)
+y el estado vivo en la [bitácora](docs/bitacora.md). El MVP 5 es el último del plan; falta la
+aprobación final y las comprobaciones visuales manuales de los instaladores.
 
 Qué hace el MVP 1:
 
@@ -106,8 +110,9 @@ deshacer no piden ninguno más:
 
 Notas:
 
-- Ubuntu 22.04 trae Python 3.10 por defecto. Necesitas instalar Python 3.11 o superior
-  por tu cuenta antes de crear el entorno virtual.
+- Solo para ejecutar desde el código fuente (los instaladores incluyen su Python): Ubuntu 22.04
+  trae Python 3.10 por defecto. Necesitas instalar Python 3.11 o superior por tu cuenta antes de
+  crear el entorno virtual.
 - En Ubuntu necesitas el paquete `python3-venv` (o el equivalente de tu versión de Python).
 - En Ubuntu, el llavero lo da el servicio de secretos del escritorio (por ejemplo GNOME
   Keyring). Si no hay ninguno, ProxLaunch funciona igual, pero no podrá recordar
@@ -118,6 +123,35 @@ Dependencias de ejecución (se instalan solas): `PySide6-Essentials`, `requests`
 `urllib3`, `keyring` y `platformdirs`. Las de desarrollo están en el extra `dev` de
 [`pyproject.toml`](pyproject.toml): `pytest`, `pytest-qt`, `pytest-cov`, `responses`,
 `pytest-socket`, `ruff` y `mypy`.
+
+## Instalación desde los instaladores
+
+Los artefactos están en `dist/` (se generan con los scripts de [`empaquetado/`](empaquetado/LEEME.md)):
+
+| Sistema | Archivo |
+|---|---|
+| Ubuntu 22.04 / 24.04 (64 bits) | `proxlaunch_0.5.0_amd64.deb` |
+| Windows 10 / 11 (64 bits) | `proxlaunch-0.5.0-windows-x64-setup.exe` |
+| Comprobación | `SHA256SUMS` (suma SHA-256 de cada instalador) |
+
+Comprueba la descarga y luego instala:
+
+```bash
+# Ubuntu
+sha256sum -c SHA256SUMS --ignore-missing
+sudo apt install ./proxlaunch_0.5.0_amd64.deb
+```
+
+```powershell
+# Windows (PowerShell): compara el Hash con la línea de SHA256SUMS y ejecuta el instalador
+Get-FileHash -Algorithm SHA256 .\proxlaunch-0.5.0-windows-x64-setup.exe
+```
+
+Los instaladores incluyen su propio Python: no hace falta instalar nada más (en Ubuntu, `apt` instala las
+bibliotecas del sistema). El instalador de Windows **no está firmado**: SmartScreen puede avisar y hay que elegir
+«Más información → Ejecutar de todas formas». Desinstalar conserva tus datos; los pasos, la opción de borrarlos y
+dónde quedan están en la [guía de usuario](docs/guia-usuario.md#instalar-y-desinstalar-proxlaunch). Para
+construir y verificar los instaladores, ver [Empaquetado](docs/empaquetado.md).
 
 ## Instalación para desarrollo
 
@@ -229,11 +263,17 @@ recursos/marca/  Logos originales y el generador (generador/generar_logo.py)
   [lotes guardados](docs/guia-usuario.md#guardar-y-abrir-lotes), la
   [importación CSV](docs/guia-usuario.md#importar-máquinas-desde-un-csv) y el
   [lote por filas](docs/guia-usuario.md#lote-por-filas)).
-- [Decisiones](docs/decisiones.md): decisiones del proyecto (D-01 a D-22).
-- [Requisitos del MVP 1](docs/requisitos/mvp1.md), [del MVP 2](docs/requisitos/mvp2.md) y
-  [del MVP 3](docs/requisitos/mvp3.md): requisitos, reglas de validación y errores.
-- [Arquitectura del MVP 1](docs/arquitectura/mvp1.md), [del MVP 2](docs/arquitectura/mvp2.md) y
-  [del MVP 3](docs/arquitectura/mvp3.md): módulos, trazabilidad y firmas públicas.
+- [Instalar y desinstalar](docs/guia-usuario.md#instalar-y-desinstalar-proxlaunch): `.deb` y
+  `-setup.exe`, SmartScreen, datos y verificación de `SHA256SUMS`.
+- [Empaquetado](docs/empaquetado.md): construcción y verificación de los instaladores
+  (para desarrolladores); detalle de los scripts en [`empaquetado/LEEME.md`](empaquetado/LEEME.md).
+- [Decisiones](docs/decisiones.md): decisiones del proyecto (D-01 a D-27).
+- [Requisitos del MVP 1](docs/requisitos/mvp1.md), [del MVP 2](docs/requisitos/mvp2.md),
+  [del MVP 3](docs/requisitos/mvp3.md) y [del MVP 5](docs/requisitos/mvp5.md): requisitos, reglas de
+  validación y errores.
+- [Arquitectura del MVP 1](docs/arquitectura/mvp1.md), [del MVP 2](docs/arquitectura/mvp2.md),
+  [del MVP 3](docs/arquitectura/mvp3.md) y [del MVP 5](docs/arquitectura/mvp5.md): módulos,
+  trazabilidad y firmas públicas.
 - [Investigación de la API de Proxmox](docs/investigacion/f1-api-proxmox.md): permisos,
   2FA, parámetros de creación y hechos verificados en laboratorio.
 - [Bitácora](docs/bitacora.md): historial y estado actual.

@@ -1,4 +1,4 @@
-# Guía de usuario de ProxLaunch (MVP 1, MVP 2, MVP 3 y MVP 4)
+# Guía de usuario de ProxLaunch (MVP 1, MVP 2, MVP 3, MVP 4 y MVP 5)
 
 ProxLaunch te ayuda a crear una o varias máquinas virtuales en un servidor Proxmox sin
 tener que conocer todos sus detalles. Esta guía te lleva paso a paso. No necesitas saber
@@ -23,6 +23,7 @@ Los nombres de botones, menús y mensajes de esta guía son los que ves en la ap
 
 ## Contenido
 
+0. [Instalar y desinstalar ProxLaunch](#instalar-y-desinstalar-proxlaunch)
 1. [Palabras que conviene conocer](#palabras-que-conviene-conocer)
 2. [Antes de empezar](#antes-de-empezar)
 3. [Primera conexión y la huella del servidor](#primera-conexión-y-la-huella-del-servidor)
@@ -41,6 +42,136 @@ Los nombres de botones, menús y mensajes de esta guía son los que ves en la ap
     - [Mensajes del origen del sistema operativo](#mensajes-del-origen-del-sistema-operativo)
 15. [Privacidad y seguridad](#privacidad-y-seguridad)
 16. [Preguntas frecuentes](#preguntas-frecuentes)
+
+---
+
+## Instalar y desinstalar ProxLaunch
+
+Desde la versión 0.5.0 ProxLaunch se entrega como instalador, sin necesidad de Python ni de preparar un entorno.
+Hay uno para **Ubuntu** (un paquete `.deb`) y otro para **Windows** (un `-setup.exe`). Ambos son de 64 bits e incluyen
+todo lo que necesitan. Quien desarrolla o prefiere ejecutar desde el código fuente tiene los pasos en el
+[README](../README.md#instalación-para-desarrollo).
+
+Los archivos se llaman:
+
+- `proxlaunch_0.5.0_amd64.deb` (Ubuntu 22.04 y 24.04)
+- `proxlaunch-0.5.0-windows-x64-setup.exe` (Windows 10 y 11)
+- `SHA256SUMS` (las sumas de control de los dos, para comprobar que no están dañados ni alterados)
+
+### Comprobar la descarga (recomendado)
+
+El archivo `SHA256SUMS` tiene una línea por instalador con su «huella» SHA-256. Compara la de tu archivo con la de
+esa línea. Si no coincide, **no lo instales**: descárgalo de nuevo.
+
+En **Ubuntu**, desde la carpeta donde dejaste los archivos (`--ignore-missing` evita errores si solo bajaste uno):
+
+```bash
+sha256sum -c SHA256SUMS --ignore-missing
+```
+
+Debe responder `proxlaunch_0.5.0_amd64.deb: OK`.
+
+En **Windows**, en PowerShell, desde esa carpeta:
+
+```powershell
+Get-FileHash -Algorithm SHA256 .\proxlaunch-0.5.0-windows-x64-setup.exe
+```
+
+Compara el valor de `Hash` con el de la línea del instalador en `SHA256SUMS` (puedes abrirlo con el Bloc de notas;
+mayúsculas y minúsculas no importan).
+
+> Los instaladores **no están firmados** con un certificado de código. La huella de `SHA256SUMS` es la forma de
+> comprobar que el archivo es el que se publicó.
+
+### Ubuntu
+
+**Instalar.** Desde la carpeta del `.deb`:
+
+```bash
+sudo apt install ./proxlaunch_0.5.0_amd64.deb
+```
+
+Escribe la `./` al principio: sin ella, `apt` buscaría un paquete en los repositorios. `apt` instala también las
+bibliotecas del sistema que ProxLaunch necesita (las de Qt para la ventana en X11, `libxcb-cursor0`, `libegl1`,
+`libgl1`, `libfontconfig1`, `libfreetype6` y otras básicas); no tienes que instalar nada a mano. El paquete trae su propio
+intérprete de Python, así que **no usa el Python del sistema**.
+
+**Llavero (opcional).** Para que «Recordar credenciales» funcione hace falta un servicio de secretos del escritorio,
+por ejemplo GNOME Keyring, que el paquete solo **sugiere**. Si no hay ninguno, ProxLaunch funciona igual, pero no podrá
+recordar credenciales.
+
+**Abrir.** Busca «ProxLaunch» en las actividades o el menú de aplicaciones (categoría Red), o escribe `proxlaunch` en
+una terminal. `proxlaunch --version` muestra la versión sin abrir la ventana.
+
+**Actualizar.** Instala el `.deb` nuevo con la misma orden `apt install ./…`. Se reemplaza el programa y tus datos y
+credenciales se conservan.
+
+**Desinstalar.**
+
+```bash
+sudo apt remove proxlaunch    # quita el programa
+sudo apt purge proxlaunch     # igual; no hay archivos de configuración del sistema que borrar
+```
+
+Ninguna de las dos órdenes toca tu carpeta personal. **Tus datos se conservan.**
+
+**Dónde quedan tus datos.** Son los de tu usuario (las carpetas que elige el sistema para ProxLaunch):
+
+| Carpeta | Qué hay |
+|---|---|
+| `~/.config/ProxLaunch` | Perfiles de conexión, huellas, preferencias y perfiles de máquina |
+| `~/.local/share/ProxLaunch` | Lotes guardados e informes |
+| `~/.local/state/ProxLaunch` | Registro de la aplicación |
+
+Para borrarlos tras desinstalar, hazlo tú: `rm -r ~/.config/ProxLaunch ~/.local/share/ProxLaunch ~/.local/state/ProxLaunch`.
+Revisa antes lo que hay: no se puede deshacer. **El llavero no se toca**: las credenciales que guardaste siguen en
+«Contraseñas y claves» y reaparecen si reinstalas. Para quitarlas, antes de desinstalar borra el perfil de conexión o
+desmarca «Recordar credenciales» en ProxLaunch (así se borra su secreto); si ya desinstalaste, abre «Contraseñas y claves»
+y elimina a mano las entradas del servicio `ProxLaunch`.
+
+### Windows
+
+**Instalar.** Haz doble clic en `proxlaunch-0.5.0-windows-x64-setup.exe`. El asistente está en español.
+
+- **¿Para quién?** Al inicio eliges entre instalar **solo para ti** (opción predeterminada, no pide permisos de
+  administrador) o **para todos los usuarios** del equipo (pide permisos de administrador). Si dudas, deja la
+  predeterminada.
+- Puedes cambiar la carpeta de instalación y marcar la creación de un acceso directo en el escritorio (viene
+  desmarcado). El acceso del menú Inicio siempre se crea.
+- Al terminar puedes abrir ProxLaunch desde la última página.
+
+**Aviso de SmartScreen (instalador sin firma).** Como el instalador no está firmado, Windows puede mostrar «Windows
+protegió su PC» (el texto puede variar según la versión de Windows). Para continuar:
+
+1. Pulsa **Más información**.
+2. Pulsa **Ejecutar de todas formas**.
+
+Hazlo solo si comprobaste la huella como se explica arriba.
+
+**Actualizar.** Ejecuta el instalador nuevo: se instala encima de la versión anterior (aparece una sola entrada en
+«Aplicaciones instaladas») y tus datos y credenciales se conservan. Si ProxLaunch está abierto, el instalador puede
+pedirte que lo cierres.
+
+**Desinstalar.** Abre **Configuración → Aplicaciones → Aplicaciones instaladas**, busca ProxLaunch y elige
+**Desinstalar**.
+
+- **Instalación «solo para mí».** El desinstalador pregunta: «¿Desea borrar también sus datos de ProxLaunch (perfiles,
+  huellas de certificados, preferencias, lotes y registro de este usuario)? Las contraseñas guardadas en el Administrador
+  de credenciales de Windows NO se borran. Si no está seguro, elija «No»: sus datos se conservarán.» (en los requisitos
+  del proyecto esta opción se llama «Borrar también mis datos»). La respuesta predeterminada es **No**. Con «Sí» se borra la carpeta `%LOCALAPPDATA%\ProxLaunch\ProxLaunch`
+  de tu usuario y nada más.
+- **Instalación «para todos los usuarios».** Con la instalación «para todos los usuarios», el desinstalador no
+  pregunta «¿Borrar también mis datos?» y no borra datos de ningún usuario: los datos pertenecen a cada usuario y
+  quien desinstala como administrador no puede borrar con seguridad los de los demás. Cada persona puede borrar a mano
+  su carpeta `%LOCALAPPDATA%\ProxLaunch\ProxLaunch` si lo desea.
+- **Desinstalación silenciosa** (para administradores): `unins000.exe /VERYSILENT` conserva los datos;
+  `unins000.exe /VERYSILENT /BORRARDATOS=1` borra solo los del usuario que desinstala, y solo en la instalación por
+  usuario. En la instalación «para todos los usuarios» `/BORRARDATOS=1` se **ignora**.
+
+**El llavero no se toca.** Las credenciales que guardaste en el Administrador de credenciales de Windows siguen ahí y
+reaparecen si reinstalas. Para quitarlas, antes de desinstalar borra el perfil de conexión o desmarca «Recordar
+credenciales» en ProxLaunch; si ya desinstalaste, abre el **Administrador de credenciales** y elimina a mano las
+entradas del servicio `ProxLaunch`.
 
 ---
 
