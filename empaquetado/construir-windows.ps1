@@ -25,6 +25,8 @@ param(
     [switch]$SinCalidad
 )
 
+# Si lib.ps1 no carga (p. ej. un error de sintaxis), el script termina con código distinto de 0.
+$ErrorActionPreference = 'Stop'
 . (Join-Path $PSScriptRoot 'comun\lib.ps1')
 $script:NombreScript = 'construir-windows'
 

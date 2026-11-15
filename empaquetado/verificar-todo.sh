@@ -254,6 +254,15 @@ ps_mv() {
     "$MV" ssh windows11 "Set-Location $CARPETA_MV; $1"
 }
 
+# Valida con el analizador de PowerShell de la MV la sintaxis de todos los .ps1 del árbol enviado.
+# El anfitrión no tiene PowerShell, y un .ps1 que no se analiza puede terminar con código 0 sin
+# haber hecho nada: este paso va antes de ejecutar ningún script.
+windows_sintaxis_ps1() {
+    local orden
+    orden="\$m=@(); Get-ChildItem -Recurse -Filter *.ps1 -LiteralPath empaquetado | ForEach-Object { \$t=\$null; \$e=\$null; [void][System.Management.Automation.Language.Parser]::ParseFile(\$_.FullName,[ref]\$t,[ref]\$e); foreach (\$x in @(\$e)) { \$m += ('{0}:{1}: {2}' -f \$_.Name,\$x.Extent.StartLineNumber,\$x.Message) } }; if (@(\$m).Count -gt 0) { \$m; exit 1 }; 'sintaxis de los .ps1 correcta'; exit 0"
+    ps_mv "$orden"
+}
+
 # Ejecuta un .ps1 de empaquetado\ en la MV y propaga su código de salida.
 script_mv() {
     local script="$1"; shift
@@ -403,6 +412,7 @@ if [ "$OBJETIVO" = "actualizacion-windows" ]; then
     paso "Actualización: instalador vigente verificado y sellado" actualizacion_preparar_windows
     paso "Windows 11: arranque de la MV" windows_arrancar_mv
     paso "Herramientas fijadas (SHA-256) y árbol de prueba $VERSION_PRUEBA a la MV" windows_herramientas
+    paso "Windows 11: sintaxis de los .ps1 (analizador de PowerShell)" windows_sintaxis_ps1
     paso "Windows 11: herramientas de construcción" script_mv "empaquetado\\windows\\preparar-build.ps1"
     paso "Windows 11: build de prueba $VERSION_PRUEBA (sin calidad; no se publica)" actualizacion_windows_construir
     paso "Windows 11: instalador vigente $VERSION a la MV (con suma)" actualizacion_windows_copiar_base
@@ -430,6 +440,7 @@ limpiar_artefactos_previos
 if [ "$OBJETIVO" = "windows" ]; then
     paso "Windows 11: arranque de la MV" windows_arrancar_mv
     paso "Herramientas fijadas (SHA-256), árbol y copia a la MV" windows_herramientas
+    paso "Windows 11: sintaxis de los .ps1 (analizador de PowerShell)" windows_sintaxis_ps1
     paso "Windows 11: herramientas de construcción" script_mv "empaquetado\\windows\\preparar-build.ps1"
     paso "Windows 11: calidad y construcción del instalador" windows_construir
     paso "Windows 11: verificación del instalador instalado" \

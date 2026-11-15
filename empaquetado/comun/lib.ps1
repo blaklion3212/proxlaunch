@@ -190,7 +190,7 @@ function Assert-HerramientaFijada {
     )
     $registro = Join-Path $HOME 'herramientas\verificadas.json'
     if (-not (Test-Path -LiteralPath $registro)) {
-        throw "falta $registro: ejecute empaquetado\windows\preparar-build.ps1"
+        throw "falta ${registro}: ejecute empaquetado\windows\preparar-build.ps1"
     }
     $datos = Get-Content -LiteralPath $registro -Raw -Encoding UTF8 | ConvertFrom-Json
     $inventario = Get-Content -LiteralPath (Join-Path $script:Raiz 'empaquetado\entornos\windows\herramientas.json') `
@@ -201,7 +201,7 @@ function Assert-HerramientaFijada {
     if ([string]$anotada.instalador_sha256 -ne [string]$fijada.sha256) {
         throw "'$Nombre' se instaló con otro instalador que el fijado en herramientas.json: vuelva a ejecutar preparar-build.ps1"
     }
-    if (-not (Test-Path -LiteralPath $Ruta)) { throw "no existe $Ruta: ejecute empaquetado\windows\preparar-build.ps1" }
+    if (-not (Test-Path -LiteralPath $Ruta)) { throw "no existe ${Ruta}: ejecute empaquetado\windows\preparar-build.ps1" }
     $real = Get-HashArchivo -Ruta $Ruta
     if ($real -ne [string]$anotada.ejecutable_sha256) {
         throw "el SHA-256 de $(Split-Path -Leaf $Ruta) no es el verificado por preparar-build.ps1 (¿cambió la herramienta?)"
