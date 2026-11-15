@@ -206,10 +206,11 @@ class Dependencias:
     preferencias: RepositorioPreferencias
     reloj: Reloj
     gestor_tema: GestorTema
+    # Carpeta de los informes parciales (``Rutas.informes``); obligatoria para que ningún
+    # camino de escritura salga de ``Rutas``.
+    directorio_informes: Path
     # Permite ajustar el intervalo de sondeo (por defecto el del núcleo).
     fabrica_creacion: Callable[[Sesion], ServicioCreacion] | None = None
-    # Carpeta de los informes parciales (por defecto, la de datos del usuario).
-    directorio_informes: Path | None = None
     # Perfiles de máquina (MVP 3). Si no se inyecta, la ventana crea el almacén junto al archivo
     # de perfiles de conexión y lo carga. Uno inyectado debe venir ya cargado (``cargar()``).
     perfiles_maquina: AlmacenPerfilesMaquina | None = None

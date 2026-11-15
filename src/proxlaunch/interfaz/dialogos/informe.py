@@ -25,9 +25,7 @@ from proxlaunch.nucleo.lote.modelos import InformeLote
 class DialogoInforme(QDialog):
     """Muestra el informe y permite copiarlo o guardarlo (el mismo texto en ambos casos)."""
 
-    def __init__(
-        self, informe: InformeLote, carpeta: Path | None = None, parent: QWidget | None = None
-    ) -> None:
+    def __init__(self, informe: InformeLote, carpeta: Path, parent: QWidget | None = None) -> None:
         super().__init__(parent)
         self._informe = informe
         self._carpeta = carpeta

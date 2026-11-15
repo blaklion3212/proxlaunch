@@ -456,7 +456,7 @@ def test_ca_rnf_l03_progreso_lote_todo_el_texto_pasa_por_tr(qtbot, traductor, in
         assert "[T]" in textos.texto_estado_mv(estado)
 
 
-def test_ca_rnf_l03_dialogos_del_lote_todo_el_texto_pasa_por_tr(qtbot, traductor):
+def test_ca_rnf_l03_dialogos_del_lote_todo_el_texto_pasa_por_tr(qtbot, traductor, tmp_path):
     pausa = DialogoPausaLote(
         MotivoPausa.ERROR_GLOBAL, ErrorProxLaunch(CodigoError.ETIQUETA_RECHAZADA)
     )
@@ -470,7 +470,7 @@ def test_ca_rnf_l03_dialogos_del_lote_todo_el_texto_pasa_por_tr(qtbot, traductor
     )
     qtbot.addWidget(deshacer)
     deshacer.show()
-    informe = DialogoInforme(informe_de(entradas_de([EM.OK, EM.ERROR])))
+    informe = DialogoInforme(informe_de(entradas_de([EM.OK, EM.ERROR])), tmp_path)
     qtbot.addWidget(informe)
     informe.show()
     for d in (pausa, deshacer, informe):

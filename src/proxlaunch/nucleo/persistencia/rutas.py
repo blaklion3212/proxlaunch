@@ -103,6 +103,11 @@ class Rutas:
         return self._datos / "lotes"
 
     @property
+    def informes(self) -> Path:
+        """Carpeta de los informes parciales de lote (se crea 0700 solo al usarla)."""
+        return self._datos / "informes"
+
+    @property
     def huellas(self) -> Path:
         return self._config / "huellas.json"
 

@@ -13,7 +13,6 @@ from collections.abc import Iterable
 from dataclasses import dataclass
 from pathlib import Path
 
-import platformdirs
 from PySide6.QtCore import QCoreApplication
 from PySide6.QtWidgets import QFileDialog, QWidget
 
@@ -48,7 +47,7 @@ from proxlaunch.nucleo.lote.modelos import (
 )
 from proxlaunch.nucleo.modelos.origen import DetalleClon
 from proxlaunch.nucleo.modelos.vm import ConfiguracionVM, OrigenSO
-from proxlaunch.nucleo.persistencia.rutas import NOMBRE_APP, crear_carpeta_privada
+from proxlaunch.nucleo.persistencia.rutas import crear_carpeta_privada
 from proxlaunch.nucleo.registro import enmascarar
 
 _log = logging.getLogger("proxlaunch.interfaz.informe")
@@ -579,11 +578,6 @@ def texto_informe(informe: InformeLote) -> str:
 # --- Guardado -----------------------------------------------------------------------
 
 
-def carpeta_informes() -> Path:
-    """Carpeta de datos del usuario donde se guardan los informes parciales (platformdirs)."""
-    return Path(platformdirs.user_data_dir(NOMBRE_APP)) / "informes"
-
-
 def nombre_archivo_sugerido(informe: InformeLote) -> str:
     prefijo = "simulacion" if informe.es_simulacion else "informe-lote"
     return f"{prefijo}-{informe.id_lote}.txt"
@@ -607,11 +601,8 @@ def escribir_informe(ruta: Path, texto: str) -> None:
     _escribir_privado(ruta, texto)
 
 
-def guardar_con_dialogo(
-    parent: QWidget | None, informe: InformeLote, carpeta: Path | None = None
-) -> Path | None:
+def guardar_con_dialogo(parent: QWidget | None, informe: InformeLote, carpeta: Path) -> Path | None:
     """Pregunta dónde guardar el informe y lo escribe; ``None`` si el usuario cancela."""
-    carpeta = carpeta or carpeta_informes()
     sugerido = str(carpeta / nombre_archivo_sugerido(informe))
     ruta, _filtro = QFileDialog.getSaveFileName(
         parent,
@@ -631,12 +622,11 @@ def nombre_archivo_csv_sugerido(informe: InformeLote) -> str:
     return f"{prefijo}-{informe.id_lote}.csv"
 
 
-def guardar_informe_parcial(informe: InformeLote, carpeta: Path | None = None) -> Path | None:
+def guardar_informe_parcial(informe: InformeLote, carpeta: Path) -> Path | None:
     """Guarda el informe parcial al cerrar con un lote en curso y deja un aviso (CA-L23.3).
 
     Nunca falla: si no se puede escribir devuelve ``None`` y lo anota en el registro.
     """
-    carpeta = carpeta or carpeta_informes()
     try:
         # Carpeta privada (0o700) y archivos 0o600: el informe puede revelar nombres y nodos.
         crear_carpeta_privada(carpeta)
@@ -649,9 +639,8 @@ def guardar_informe_parcial(informe: InformeLote, carpeta: Path | None = None) -
     return ruta
 
 
-def tomar_aviso_informe_parcial(carpeta: Path | None = None) -> Path | None:
+def tomar_aviso_informe_parcial(carpeta: Path) -> Path | None:
     """Devuelve la ruta del último informe parcial (una sola vez) y borra la marca."""
-    carpeta = carpeta or carpeta_informes()
     marca = carpeta / _ARCHIVO_AVISO
     try:
         if not marca.is_file():

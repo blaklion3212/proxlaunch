@@ -74,6 +74,8 @@ def deps(qapp, rutas, llavero, servicio_falso):
         preferencias=RepositorioPreferencias(rutas.preferencias),
         reloj=RelojSimulado(),
         gestor_tema=gestor,
+        # Informes parciales en la carpeta temporal, nunca en la de datos del usuario.
+        directorio_informes=rutas.directorio_datos / "informes",
     )
 
 

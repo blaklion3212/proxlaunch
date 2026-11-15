@@ -81,6 +81,7 @@ def crear_dependencias(rutas: Rutas, gestor_tema: GestorTema) -> Dependencias:
         reloj=reloj,
         gestor_tema=gestor_tema,
         perfiles_maquina=almacen_perfiles,
+        directorio_informes=rutas.informes,
         directorio_lotes=rutas.lotes,
         version_app=__version__,
     )
