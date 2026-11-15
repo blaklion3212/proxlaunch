@@ -1,17 +1,21 @@
-"""Iconos de la aplicación y vista previa para su aprobación (AR-5, DT-E9, RF-E11/E12, CA-E11.4).
+"""Iconos de la aplicación (AR-5, DT-E9, RF-E11/E12, CA-E11.4).
 
-Renderiza ``proxlaunch-icono-sin-texto.svg`` (el mismo SVG que usa la ventana) con ``QSvgRenderer``
-fuera de pantalla, sin retoques, a PNG de 16 a 256 px y a un ``.ico`` multirresolución con entradas
-PNG. También genera ``vista-previa.png``: todos los tamaños sobre fondo claro y oscuro, junto al
-original. Los iconos NO se integran en ningún artefacto hasta que el usuario apruebe la vista
-previa; la aprobación se registra con ``aprobar`` en ``iconos-aprobados.json`` y el build falla
-(``verificar``) si el SVG o los píxeles generados ya no coinciden con lo aprobado.
+Los iconos APROBADOS por el usuario viven versionados en ``empaquetado/iconos/`` (PNG de 16 a
+256 px, ``proxlaunch.ico`` y ``SHA256SUMS``). La construcción (Linux y Windows) NO los redibuja:
+los copia a ``build/iconos/`` después de verificar su ``SHA256SUMS`` (``copiar``), porque
+redibujar con otra versión de Qt cambia los píxeles. ``generar`` conserva el renderizado desde
+el SVG, pero solo para producir una propuesta y su vista previa (``build/iconos-propuesta/``)
+que el usuario debe aprobar; ``aprobar --desde`` instala esa propuesta como nueva versión
+aprobada y registra sus sumas.
 
 Uso::
 
-    python empaquetado/comun/iconos.py generar   [--salida build/iconos]
+    python empaquetado/comun/iconos.py copiar    [--salida build/iconos]
     python empaquetado/comun/iconos.py verificar [--salida build/iconos] [--provisional]
-    python empaquetado/comun/iconos.py aprobar   [--salida build/iconos]   # SOLO tras la aprobación
+    python empaquetado/comun/iconos.py generar   [--salida build/iconos-propuesta]
+    python empaquetado/comun/iconos.py aprobar   [--desde build/iconos-propuesta]  # tras aprobar
+
+``copiar`` y ``verificar`` no usan Qt (solo biblioteca estándar).
 """
 
 from __future__ import annotations
@@ -20,6 +24,7 @@ import argparse
 import hashlib
 import json
 import os
+import shutil
 import struct
 import sys
 from pathlib import Path
@@ -27,12 +32,15 @@ from pathlib import Path
 # El render no necesita pantalla: se fuerza el plugin sin ventanas antes de importar Qt.
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
+TAMANOS = TAMANOS_PNG = (16, 24, 32, 48, 64, 128, 256)
 RAIZ = Path(__file__).resolve().parents[2]
 SVG = RAIZ / "src" / "proxlaunch" / "recursos" / "marca" / "proxlaunch-icono-sin-texto.svg"
 FAVICON = RAIZ / "boton-icono-favicon.png"
 APROBADOS = Path(__file__).resolve().with_name("iconos-aprobados.json")
+VERSIONADOS = RAIZ / "empaquetado" / "iconos"
 SALIDA_POR_DEFECTO = RAIZ / "build" / "iconos"
-TAMANOS = (16, 24, 32, 48, 64, 128, 256)
+PROPUESTA_POR_DEFECTO = RAIZ / "build" / "iconos-propuesta"
+NOMBRES = tuple(f"proxlaunch-{lado}.png" for lado in TAMANOS_PNG) + ("proxlaunch.ico",)
 
 
 def sha256_bytes(datos: bytes) -> str:
@@ -146,7 +154,7 @@ def _hoja_de_vista_previa(salida: Path) -> Path:
 
 
 def generar(salida: Path) -> dict[str, object]:
-    """Genera PNG, ``.ico`` y vista previa en ``salida``; devuelve el inventario con sumas."""
+    """Genera una PROPUESTA (PNG, ``.ico`` y vista previa) desde el SVG; no es lo aprobado."""
     from PySide6.QtCore import QBuffer, QIODevice
     from PySide6.QtGui import QGuiApplication
 
@@ -171,68 +179,145 @@ def generar(salida: Path) -> dict[str, object]:
     return inventario
 
 
-def _inventario_actual(salida: Path) -> dict[str, object]:
-    """Recalcula las sumas de los PNG ya generados."""
-    from PySide6.QtGui import QImage
+def leer_sumas(carpeta: Path) -> dict[str, str]:
+    """Lee ``SHA256SUMS`` de la carpeta (formato ``suma␠␠nombre``, solo nombres relativos)."""
+    ruta = carpeta / "SHA256SUMS"
+    if not ruta.is_file():
+        raise RuntimeError(f"falta {ruta}")
+    sumas: dict[str, str] = {}
+    for linea in ruta.read_text("utf-8").splitlines():
+        suma, _, nombre = linea.partition("  ")
+        if len(suma) != 64 or not nombre or "/" in nombre or "\\" in nombre:
+            raise RuntimeError(f"línea no válida en {ruta}: {linea!r}")
+        sumas[nombre] = suma
+    return sumas
 
-    pix = {}
-    for lado in TAMANOS:
-        ruta = salida / f"proxlaunch-{lado}.png"
+
+def _lado_png(datos: bytes) -> int:
+    """Ancho de un PNG cuadrado leído de su cabecera IHDR (sin Qt)."""
+    if datos[:8] != b"\x89PNG\r\n\x1a\n" or datos[12:16] != b"IHDR":
+        raise RuntimeError("no es un PNG")
+    ancho, alto = struct.unpack(">II", datos[16:24])
+    if ancho != alto:
+        raise RuntimeError(f"PNG no cuadrado ({ancho}x{alto})")
+    return int(ancho)
+
+
+def comprobar_versionados() -> dict[str, str]:
+    """Verifica los iconos aprobados de ``empaquetado/iconos/``; devuelve sus sumas.
+
+    Falla si ``SHA256SUMS`` no cubre exactamente los archivos esperados, si alguna suma no coincide,
+    si el JSON de aprobación no refleja los mismos archivos o si el SVG fuente cambió desde la
+    aprobación (los iconos aprobados quedarían desfasados respecto del logotipo).
+    """
+    sumas = leer_sumas(VERSIONADOS)
+    if set(sumas) != set(NOMBRES):
+        raise RuntimeError(
+            f"SHA256SUMS de los iconos debe listar exactamente: {', '.join(NOMBRES)}"
+        )
+    for nombre, esperada in sumas.items():
+        ruta = VERSIONADOS / nombre
         if not ruta.is_file():
-            raise RuntimeError(f"falta {ruta}; ejecute 'iconos.py generar'")
-        imagen = QImage(str(ruta)).convertToFormat(QImage.Format.Format_ARGB32)
-        pix[ruta.name] = _pixeles_sha256(imagen)
-    return {"svg_sha256": sha256_archivo(SVG), "pixeles_sha256": pix}
-
-
-def verificar(salida: Path, provisional: bool) -> int:
-    """0 si lo generado coincide con lo aprobado (o si es una verificación provisional)."""
+            raise RuntimeError(f"falta el icono aprobado {ruta}")
+        if sha256_archivo(ruta) != esperada:
+            raise RuntimeError(f"la suma de {nombre} no coincide con empaquetado/iconos/SHA256SUMS")
+    for lado in TAMANOS_PNG:
+        real = _lado_png((VERSIONADOS / f"proxlaunch-{lado}.png").read_bytes())
+        if real != lado:
+            raise RuntimeError(f"proxlaunch-{lado}.png mide {real} px")
+    if leer_tamanos_ico(VERSIONADOS / "proxlaunch.ico") != list(TAMANOS_PNG):
+        raise RuntimeError("proxlaunch.ico no contiene exactamente los tamaños 16 a 256")
     try:
         aprobado = json.loads(APROBADOS.read_text("utf-8"))
     except (OSError, ValueError):
         aprobado = {}
     if aprobado.get("estado") != "aprobado":
-        if provisional:
+        raise RuntimeError("los iconos aún no están aprobados (iconos-aprobados.json)")
+    if aprobado.get("archivos_sha256") != sumas:
+        raise RuntimeError("iconos-aprobados.json no refleja empaquetado/iconos/SHA256SUMS")
+    if aprobado.get("svg_sha256") != sha256_archivo(SVG):
+        raise RuntimeError(
+            "el SVG fuente cambió respecto del aprobado: hay que aprobar iconos nuevos"
+        )
+    return sumas
+
+
+def copiar(salida: Path) -> int:
+    """Copia los iconos aprobados (ya verificados) a ``salida``. No redibuja nada."""
+    sumas = comprobar_versionados()
+    salida.mkdir(parents=True, exist_ok=True)
+    for nombre in NOMBRES:
+        shutil.copyfile(VERSIONADOS / nombre, salida / nombre)
+    # Comprobación posterior: lo copiado es byte a byte lo aprobado.
+    for nombre, suma in sumas.items():
+        if sha256_archivo(salida / nombre) != suma:
+            raise RuntimeError(f"la copia de {nombre} no coincide con lo aprobado")
+    print(f"iconos aprobados verificados y copiados a {salida}")
+    return 0
+
+
+def verificar(salida: Path, provisional: bool) -> int:
+    """0 si los iconos versionados están aprobados y ``salida`` tiene exactamente esos archivos."""
+    try:
+        sumas = comprobar_versionados()
+    except RuntimeError as exc:
+        if provisional and "aún no están aprobados" in str(exc):
             print("ICONOS: sin aprobación del usuario; uso PROVISIONAL (artefacto no publicable)")
             return 0
-        print("ICONOS: los iconos aún no están aprobados (iconos-aprobados.json)", file=sys.stderr)
-        return 1
-    actual = _inventario_actual(salida)
-    if actual["svg_sha256"] != aprobado.get("svg_sha256"):
-        print("ICONOS: el SVG fuente cambió respecto del aprobado", file=sys.stderr)
-        return 1
-    if actual["pixeles_sha256"] != aprobado.get("pixeles_sha256"):
-        print("ICONOS: los píxeles generados no coinciden con lo aprobado", file=sys.stderr)
-        return 1
+        raise
+    for nombre, suma in sumas.items():
+        ruta = salida / nombre
+        if not ruta.is_file() or sha256_archivo(ruta) != suma:
+            print(f"ICONOS: {ruta} no coincide con el icono aprobado", file=sys.stderr)
+            return 1
     print("iconos coinciden con la aprobación registrada")
     return 0
 
 
-def aprobar(salida: Path) -> int:
-    inv = _inventario_actual(salida)
-    registro = {"estado": "aprobado", **inv}
+def aprobar(desde: Path | None) -> int:
+    """Registra como aprobados los iconos versionados (si se da ``desde``, los copia antes)."""
+    if desde is not None:
+        for nombre in NOMBRES:
+            origen = desde / nombre
+            if not origen.is_file():
+                raise RuntimeError(f"falta {origen}; ejecute 'iconos.py generar'")
+            VERSIONADOS.mkdir(parents=True, exist_ok=True)
+            shutil.copyfile(origen, VERSIONADOS / nombre)
+    sumas = {n: sha256_archivo(VERSIONADOS / n) for n in NOMBRES if (VERSIONADOS / n).is_file()}
+    if set(sumas) != set(NOMBRES):
+        raise RuntimeError("faltan iconos en empaquetado/iconos/")
+    (VERSIONADOS / "SHA256SUMS").write_text(
+        "".join(f"{sumas[n]}  {n}\n" for n in sorted(sumas)), encoding="utf-8"
+    )
+    registro = {"estado": "aprobado", "archivos_sha256": sumas, "svg_sha256": sha256_archivo(SVG)}
     APROBADOS.write_text(json.dumps(registro, indent=2, sort_keys=True) + "\n", encoding="utf-8")
-    print(f"aprobación registrada en {APROBADOS}")
+    comprobar_versionados()
+    print(f"aprobación registrada en {APROBADOS} y {VERSIONADOS / 'SHA256SUMS'}")
     return 0
 
 
 def main(argv: list[str] | None = None) -> int:
     ap = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     sub = ap.add_subparsers(dest="orden", required=True)
-    for nombre in ("generar", "verificar", "aprobar"):
+    for nombre in ("copiar", "verificar", "generar"):
         p = sub.add_parser(nombre)
-        p.add_argument("--salida", type=Path, default=SALIDA_POR_DEFECTO)
+        defecto = PROPUESTA_POR_DEFECTO if nombre == "generar" else SALIDA_POR_DEFECTO
+        p.add_argument("--salida", type=Path, default=defecto)
         if nombre == "verificar":
             p.add_argument("--provisional", action="store_true")
+    p = sub.add_parser("aprobar")
+    p.add_argument("--desde", type=Path, default=None)
     args = ap.parse_args(argv)
     try:
         if args.orden == "generar":
             generar(args.salida)
-            print(f"iconos y vista previa en {args.salida}")
+            print(f"propuesta de iconos y vista previa en {args.salida} (NO aprobada)")
             return 0
+        if args.orden == "copiar":
+            return copiar(args.salida)
         if args.orden == "verificar":
             return verificar(args.salida, args.provisional)
-        return aprobar(args.salida)
+        return aprobar(args.desde)
     except RuntimeError as exc:
         print(f"ICONOS: {exc}", file=sys.stderr)
         return 1

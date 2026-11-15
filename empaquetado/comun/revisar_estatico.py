@@ -5,6 +5,10 @@ disparadores y matriz), CA-E21.3 (sin etiquetas móviles), CA-E33.1 (el nombre d
 laboratorio y la opción que habilita sockets reales solo aparecen en guardas que las prohíben),
 CA-E35.1 (sin trazas del shell, sin volcado del entorno, sin secretos literales, permisos de solo
 lectura), CA-E23.4 (sin publicación) y CA-E24.2 (sin certificados, claves ni contraseñas).
+También revisa los scripts de PowerShell (.ps1): sin trazas ni transcripciones, sin volcado de
+variables de entorno, sin descargas dentro de los scripts, sin contraseñas literales, con BOM UTF-8
+si tienen acentos (Windows PowerShell 5.1 lo exige) y, si hay PowerShell disponible, con sintaxis
+válida; y las condiciones del instalador (proxlaunch.iss, CA-E01.4) y de herramientas.json.
 
 Uso::
 
@@ -17,7 +21,9 @@ está disponible valida la plantilla con él (si no, hace una comprobación estr
 from __future__ import annotations
 
 import argparse
+import json
 import re
+import shutil
 import subprocess
 import sys
 from pathlib import Path
@@ -65,6 +71,18 @@ TRAZAS = (
     (re.compile(r"(Get-ChildItem|gci|dir|ls|Get-Item)\s+(-Path\s+)?env:", re.I), "volcado Env:"),
     (re.compile(r"GetEnvironmentVariables\(\)"), "volcado del entorno (.NET)"),
     (re.compile(r"toJSON\((env|secrets|github)\b"), "volcado de contexto en la plantilla"),
+    (re.compile(r"\bStart-Transcript\b", re.I), "transcripción de PowerShell (registra todo)"),
+    (re.compile(r"\bTrace-Command\b", re.I), "traza de PowerShell (Trace-Command)"),
+    (re.compile(r"\b(Get-Variable|gv)\s*(\||$|>)", re.I), "volcado de variables de PowerShell"),
+    (re.compile(r"Environment\]::GetEnvironmentVariables\(", re.I), "volcado del entorno (.NET)"),
+    (
+        re.compile(
+            r"\b(Invoke-WebRequest|iwr|Invoke-RestMethod|irm|Start-BitsTransfer)\b"
+            r"|DownloadString|DownloadFile|\bInvoke-Expression\b|\biex\b",
+            re.I,
+        ),
+        "descarga o ejecución dinámica en un script (las descargas las hace el anfitrión)",
+    ),
 )
 SECRETOS = (
     (re.compile(r"-----BEGIN [A-Z ]*PRIVATE KEY-----"), "clave privada"),
@@ -78,6 +96,10 @@ SECRETOS = (
         "secreto literal",
     ),
     (re.compile(r"(?i)signtool[^\n]*\s/p\s+\S+"), "contraseña de firma en la línea de órdenes"),
+    (
+        re.compile(r"(?i)ConvertTo-SecureString\s+(-String\s+)?[\"'][^\"'$]{3,}[\"']"),
+        "contraseña literal",
+    ),
     (re.compile(r"[\"'][^\"'\n]*\.(pfx|p12)[\"']"), "ruta de certificado"),
 )
 PUBLICACION = re.compile(
@@ -116,7 +138,7 @@ def archivos_del_repo(raiz: Path) -> list[Path]:
 
 def lineas_de(ruta: Path) -> list[tuple[int, str]]:
     try:
-        texto = ruta.read_text("utf-8")
+        texto = ruta.read_text("utf-8-sig")
     except (OSError, UnicodeDecodeError):
         return []
     return list(enumerate(texto.splitlines(), start=1))
@@ -197,6 +219,127 @@ def revisar_guardas(rev: Revision) -> None:
                 )
         elif NOMBRE_LAB not in texto:
             rev.error("CA-E33.1", f"empaquetado/{nombre}", None, "falta la guarda de laboratorio")
+
+
+def revisar_codificacion_ps1(rev: Revision, archivos: list[Path]) -> None:
+    """Windows PowerShell 5.1 lee como ANSI un .ps1 sin BOM: con acentos exige BOM UTF-8."""
+    emp = rev.raiz / "empaquetado"
+    for ruta in archivos:
+        if ruta.suffix != ".ps1" or emp not in ruta.parents:
+            continue
+        datos = ruta.read_bytes()
+        rel = ruta.relative_to(rev.raiz).as_posix()
+        try:
+            texto = datos.decode("utf-8-sig")
+        except UnicodeDecodeError:
+            rev.error("CA-E35.1", rel, None, "el .ps1 no es UTF-8")
+            continue
+        if not texto.isascii() and not datos.startswith(b"\xef\xbb\xbf"):
+            rev.error(
+                "CA-E35.1", rel, None, "tiene acentos y le falta el BOM UTF-8 (PowerShell 5.1)"
+            )
+
+
+def revisar_sintaxis_powershell(rev: Revision, archivos: list[Path]) -> None:
+    """Valida la sintaxis de los .ps1 con el analizador de PowerShell si hay uno disponible."""
+    emp = rev.raiz / "empaquetado"
+    scripts = [r for r in archivos if r.suffix == ".ps1" and emp in r.parents]
+    interprete = next((e for e in ("pwsh", "powershell") if shutil.which(e)), None)
+    if not scripts or interprete is None:
+        if scripts:
+            print(
+                "AVISO: no hay PowerShell (pwsh/powershell): no se valida la sintaxis de los .ps1"
+            )
+        return
+    lista = ",".join("'" + str(s).replace("'", "''") + "'" for s in scripts)
+    orden = (
+        "$fallo = 0; foreach ($f in @(" + lista + ")) { $e = $null; "
+        "[void][System.Management.Automation.Language.Parser]::ParseFile($f, [ref]$null, [ref]$e); "
+        "foreach ($x in $e) { Write-Output ('{0}:{1}: {2}' -f $f, $x.Extent.StartLineNumber, "
+        "$x.Message); "
+        "$fallo = 1 } }; exit $fallo"
+    )
+    res = subprocess.run(
+        [interprete, "-NoProfile", "-NonInteractive", "-Command", orden],
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    if res.returncode != 0:
+        for linea in res.stdout.splitlines():
+            if linea.strip():
+                rev.error("SINTAXIS-PS1", Path(linea.split(":", 1)[0]).name, None, linea)
+        if not res.stdout.strip():
+            rev.error(
+                "SINTAXIS-PS1",
+                "empaquetado",
+                None,
+                res.stderr.strip()[:300] or "falló el analizador",
+            )
+
+
+def revisar_instalador(rev: Revision) -> None:
+    """CA-E01.4, RF-E01, RF-E11, RF-E13, RF-E24: condiciones del script de Inno Setup."""
+    ruta = rev.raiz / "empaquetado" / "windows" / "proxlaunch.iss"
+    if not ruta.is_file():
+        return  # el instalador de Windows es opcional en árboles sin esa parte
+    rel = ruta.relative_to(rev.raiz).as_posix()
+    texto = ruta.read_text("utf-8-sig")
+    sin_comentarios = "\n".join(ln for ln in texto.splitlines() if not ln.lstrip().startswith(";"))
+    exigidos = {
+        r"^AppId=\{\{[0-9A-Fa-f-]{36}\}\s*$": "AppId fijo (GUID)",
+        r"^MinVersion=10\.0\s*$": "MinVersion=10.0 (Windows 10 o posterior)",
+        r"^ArchitecturesAllowed=x64compatible\s*$": "ArchitecturesAllowed=x64compatible",
+        r"^PrivilegesRequired=lowest\s*$": "PrivilegesRequired=lowest (sin administrador)",
+        r"^PrivilegesRequiredOverridesAllowed=dialog\s*$": "OverridesAllowed=dialog",
+        r"^AppMutex=\S+": "AppMutex",
+        r"^AppPublisher=ProxLaunch\s*$": "editor «ProxLaunch»",
+        r"Languages\\Spanish\.isl": "asistente en español (Spanish.isl)",
+        r"^Name: \"desktopicon\".*Flags: unchecked": "acceso directo del escritorio desmarcado",
+        r"^OutputBaseFilename=proxlaunch-\{#Version\}-windows-x64-setup\s*$": "nombre",
+        r"LicenseFile=\{#Raiz\}\\LICENSE\s*$": "licencia = LICENSE",
+        r"BORRARDATOS": "parámetro del desinstalador para borrar datos",
+    }
+    for patron, que in exigidos.items():
+        if not re.search(patron, sin_comentarios, re.M):
+            rev.error("CA-E01.4", rel, None, f"falta o cambió: {que}")
+    for prohibido in (
+        r"\bSignTool\b",
+        r"\bSignedUninstaller\b",
+        r"\bDeleteKey\b",
+        r"\bCredWrite\b",
+    ):
+        if re.search(prohibido, sin_comentarios, re.I):
+            rev.error("CA-E24.2", rel, None, f"no debe aparecer {prohibido}")
+    if "HKCU" in sin_comentarios or "[Registry]" in sin_comentarios:
+        rev.error(
+            "CA-E13.1",
+            rel,
+            None,
+            "el instalador no debe tocar el registro fuera de lo que gestiona Inno",
+        )
+
+
+def revisar_herramientas(rev: Revision) -> None:
+    """RF-E21: las herramientas de Windows tienen URL HTTPS, versión y SHA-256 completos."""
+    ruta = rev.raiz / "empaquetado" / "entornos" / "windows" / "herramientas.json"
+    if not ruta.is_file():
+        return
+    rel = ruta.relative_to(rev.raiz).as_posix()
+    try:
+        datos = json.loads(ruta.read_text("utf-8"))["herramientas"]
+    except (ValueError, KeyError) as exc:
+        rev.error("CA-E21.3", rel, None, f"JSON no válido: {exc}")
+        return
+    for nombre, h in datos.items():
+        if not str(h.get("url", "")).startswith("https://"):
+            rev.error("CA-E21.3", rel, None, f"{nombre}: la URL debe ser HTTPS")
+        if not re.fullmatch(r"[0-9a-f]{64}", str(h.get("sha256", ""))):
+            rev.error("CA-E21.3", rel, None, f"{nombre}: falta un SHA-256 válido")
+        if not re.fullmatch(r"\d+\.\d+\.\d+", str(h.get("version", ""))):
+            rev.error("CA-E21.3", rel, None, f"{nombre}: versión exacta requerida")
+        if not h.get("origen_de_la_suma"):
+            rev.error("CA-E21.3", rel, None, f"{nombre}: falta anotar el origen de la suma")
 
 
 def _cargar_yaml(texto: str, rev: Revision, rel: str):  # noqa: ANN202
@@ -301,6 +444,10 @@ def revisar(raiz: Path) -> list[str]:
     revisar_texto(rev, archivos)
     revisar_guardas(rev)
     revisar_plantilla(rev)
+    revisar_codificacion_ps1(rev, archivos)
+    revisar_sintaxis_powershell(rev, archivos)
+    revisar_instalador(rev)
+    revisar_herramientas(rev)
     return rev.problemas
 
 

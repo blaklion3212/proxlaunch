@@ -8,8 +8,9 @@
 # las escribe sumas.py tras la verificación instalada (verificar-deb.sh, INV-E6).
 #
 # Uso: empaquetado/construir-linux.sh [--iconos-provisionales] [--sin-calidad]
-#   --iconos-provisionales  usa los iconos aunque el usuario no los haya aprobado (solo verificación
-#                           interna). El artefacto queda en dist/provisional/ y NO es publicable.
+#   --iconos-provisionales  ya no hace falta con los iconos aprobados; se conserva para usar iconos
+#                           sin aprobar (solo verificación interna). El artefacto queda en
+#                           dist/provisional/ y NO es publicable.
 #   --sin-calidad           omite calidad.sh (atajo de desarrollo; también deja el artefacto como
 #                           provisional).
 set -euo pipefail
@@ -24,7 +25,7 @@ for arg in "$@"; do
     case "$arg" in
         --iconos-provisionales) PROVISIONAL=1 ;;
         --sin-calidad) SIN_CALIDAD=1; PROVISIONAL=1 ;;
-        -h | --help) sed -n '2,17p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//'; exit 0 ;;
+        -h | --help) sed -n '2,16p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//'; exit 0 ;;
         *) die "argumento desconocido: $arg" ;;
     esac
 done
@@ -62,13 +63,13 @@ paso "Entorno de construcción desde el lockfile" \
 paso "Revisión estática (CA-E30/E33/E35/E21/E24)" "$PY" -I empaquetado/comun/revisar_estatico.py
 paso "Traducciones (.qm)" "$PY" -I empaquetado/comun/compilar_qm.py
 
-paso "Iconos" "$PY" -I empaquetado/comun/iconos.py generar --salida build/iconos
+# Iconos: se COPIAN los aprobados por el usuario (empaquetado/iconos/) tras verificar su SHA256SUMS;
+# no se redibujan (otra versión de Qt cambiaría los píxeles).
+paso "Iconos aprobados (copia verificada)" "$PY" -I empaquetado/comun/iconos.py copiar --salida build/iconos
 if [ "$PROVISIONAL" -eq 1 ]; then
-    paso "Iconos (verificación provisional)" "$PY" -I empaquetado/comun/iconos.py verificar \
-        --salida build/iconos --provisional
+    paso "Iconos (comprobación)" "$PY" -I empaquetado/comun/iconos.py verificar --salida build/iconos --provisional
 else
-    paso "Iconos aprobados por el usuario" "$PY" -I empaquetado/comun/iconos.py verificar \
-        --salida build/iconos
+    paso "Iconos (comprobación)" "$PY" -I empaquetado/comun/iconos.py verificar --salida build/iconos
 fi
 paso "Avisos de terceros" "$PY" -I empaquetado/comun/avisos.py \
     --lock empaquetado/requisitos/linux-ejecucion.txt --salida build/THIRD-PARTY-NOTICES.txt

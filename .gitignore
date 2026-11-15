@@ -16,6 +16,17 @@ dist/
 *.spec.bak
 *.qm
 
+# MV de pruebas de Windows y firma (nada de esto debe versionarse; viven fuera del repositorio)
+*.iso
+*.qcow2
+OVMF_VARS*.fd
+id_ed25519
+id_ed25519.pub
+contrasena-prueba
+contrasena.txt
+*.pfx
+*.p12
+
 # Configuración local y secretos
 .claude/settings.local.json
 .env

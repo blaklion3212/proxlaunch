@@ -18,6 +18,16 @@ git ls-files -z --cached --others --exclude-standard | while IFS= read -r -d '' 
     [ -e "$f" ] && printf '%s\0' "$f"
 done > "$lista"
 case "$REMOTA" in ""|/*|*..*) echo "ERROR: carpeta remota no válida: $REMOTA" >&2; exit 1 ;; esac
-tar --null -T "$lista" -czf - \
-    | "$AQUI/mv.sh" ssh "$MV" "rm -rf -- \"\$HOME/$REMOTA\" && mkdir -p \"\$HOME/$REMOTA\" && tar -xzmf - -C \"\$HOME/$REMOTA\""
+if [ "$MV" = "windows11" ]; then
+    # Windows: el intérprete de sshd es PowerShell, que no transporta binarios por tuberías; se copia
+    # el archivo por scp y se extrae con tar.exe (incluido en Windows 10/11).
+    tgz="$(mktemp /tmp/plk-arbol-XXXX)"
+    trap 'rm -f -- "${lista:?}" "${tgz:?}"' EXIT
+    tar --null -T "$lista" -czf "$tgz"
+    "$AQUI/mv.sh" copiar "$MV" "$tgz" arbol-proxlaunch.tgz
+    "$AQUI/mv.sh" ssh "$MV" "Remove-Item -Recurse -Force -ErrorAction SilentlyContinue '$REMOTA'; New-Item -ItemType Directory -Force -Path '$REMOTA' | Out-Null; tar.exe -xzmf arbol-proxlaunch.tgz -C '$REMOTA'; \$codigo = \$LASTEXITCODE; Remove-Item -Force arbol-proxlaunch.tgz; exit \$codigo"
+else
+    tar --null -T "$lista" -czf - \
+        | "$AQUI/mv.sh" ssh "$MV" "rm -rf -- \"\$HOME/$REMOTA\" && mkdir -p \"\$HOME/$REMOTA\" && tar -xzmf - -C \"\$HOME/$REMOTA\""
+fi
 echo "[enviar-arbol] árbol enviado a $MV:~/$REMOTA ($(git rev-parse --short HEAD))"

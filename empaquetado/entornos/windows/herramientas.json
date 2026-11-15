@@ -1,0 +1,32 @@
+{
+  "descripcion": "Herramientas de construccion de Windows con version y SHA-256 fijados (RF-E21). Las descarga el anfitrion (descargar-herramientas.py), verifica la suma y las copia por scp a la MV; en la MV preparar-build.ps1 vuelve a verificarlas antes de instalarlas.",
+  "fecha_de_verificacion": "2026-11-14",
+  "herramientas": {
+    "python": {
+      "nombre": "Python 3.13.17 (instalador amd64)",
+      "version": "3.13.17",
+      "archivo": "python-3.13.17-amd64.exe",
+      "url": "https://www.python.org/ftp/python/3.13.17/python-3.13.17-amd64.exe",
+      "sha256": "5da012101ba2e17113a9a1cd901e9ce1441086f2b7ecb5de06ec94163899a190",
+      "origen_de_la_suma": [
+        "SBOM SPDX publicado por python.org junto al instalador: https://www.python.org/ftp/python/3.13.17/python-3.13.17-amd64.exe.spdx.json (paquete CPython, checksum SHA256)",
+        "Coincide con la suma calculada localmente tras la descarga (2026-11-14)",
+        "Firma GPG python-3.13.17-amd64.exe.asc verificada con la clave 7ED1 0B65 31D7 C8E1 BC29 6021 FC62 4643 4870 34E5 (Steve Dower, Python Release Signing; clave obtenida de keyserver.ubuntu.com)"
+      ],
+      "editor_authenticode": "Python Software Foundation"
+    },
+    "innosetup": {
+      "nombre": "Inno Setup 6.7.4",
+      "version": "6.7.4",
+      "archivo": "innosetup-6.7.4.exe",
+      "url": "https://github.com/jrsoftware/issrc/releases/download/is-6_7_4/innosetup-6.7.4.exe",
+      "sha256": "a549929319f9120716677c685535ca4671e4b937b5fdc87e2585f32d8eb30e8c",
+      "origen_de_la_suma": [
+        "Resumen (digest) del recurso en la publicacion oficial de GitHub is-6_7_4 (API de releases de jrsoftware/issrc); jrsoftware.org/inno-setup/downloads/verify indica comparar con esa suma",
+        "Coincide con la suma calculada localmente tras la descarga (2026-11-14)",
+        "Pendiente de comprobar en la MV: firma Authenticode valida con editor Pyrsys B.V. (preparar-build.ps1 lo exige)"
+      ],
+      "editor_authenticode": "Pyrsys B.V."
+    }
+  }
+}

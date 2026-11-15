@@ -3,7 +3,8 @@
 #
 # Uso:
 #   mv.sh crear|arrancar|ssh|copiar|traer|detener|restaurar|destruir|estado <mv> [argumentos]
-#   mv.sh destruir-todo
+#   mv.sh instrucciones windows11      (vuelve a mostrar los pasos de instalación de Windows)
+#   mv.sh destruir-todo                (QEMU, swtpm, estado del TPM, /tmp/plw-*, ISO y carpetas de todas las MVs)
 # <mv> = ubuntu2204 | ubuntu2404 | windows11
 #
 # Reglas: red de usuario de QEMU con reenvíos solo en 127.0.0.1 (SSH: 2241, 2242, 2243),
@@ -40,13 +41,13 @@ configurar() {
     SERIE="$DIR/serie.log"
     SSH_OPCIONES=(-i "$CLAVE" -p "$PUERTO" -o IdentitiesOnly=yes -o BatchMode=yes
         -o StrictHostKeyChecking=accept-new -o "UserKnownHostsFile=$DIR/known_hosts"
-        -o LogLevel=ERROR -o ConnectTimeout=5)
+        -o LogLevel=ERROR -o ConnectTimeout=5 -o ServerAliveInterval=30 -o ServerAliveCountMax=40)
 }
 
 es_windows() { [ "$MV" = "windows11" ]; }
 
-# La MV de Windows la implementa otra fase: si existe entornos/windows/mv-windows.sh, se carga
-# y debe definir windows_crear, windows_arrancar, windows_detener, windows_destruir y windows_estado.
+# La MV de Windows vive en entornos/windows/mv-windows.sh, que se carga aquí y define windows_crear,
+# windows_arrancar, windows_detener, windows_destruir y windows_instrucciones.
 delegar_windows() {
     local accion="$1"; shift
     local gancho="$AQUI/windows/mv-windows.sh"
@@ -272,12 +273,17 @@ cmd_estado() {
 # --- Limpieza total (RF-E41, 6.3) --------------------------------------------------------------
 # Solo termina procesos cuya línea de órdenes apunta a ~/aprovprox-empaquetado (nunca el laboratorio).
 procesos_propios() {
-    local pid linea
-    for pid in $(pgrep -f -- "$RAIZ/" || true); do
+    local pid linea exe
+    # Por la carpeta de las MVs y también por el directorio corto de sockets de swtpm/QMP (CL-E22).
+    for pid in $( { pgrep -f -- "$RAIZ/" || true; pgrep -f -- "/tmp/plw-" || true; } | sort -u); do
         [ "$pid" = "$$" ] && continue
+        # Se identifica por el ejecutable (no por texto de la línea de órdenes): así un intérprete
+        # de órdenes que solo mencione estas rutas nunca se confunde con una MV.
+        exe="$(basename "$(readlink "/proc/$pid/exe" 2>/dev/null || true)")"
         linea="$(tr '\0' ' ' < "/proc/$pid/cmdline" 2>/dev/null || true)"
-        case "$linea" in
-            *qemu-system*|*swtpm*|*http.server*) echo "$pid" ;;
+        case "$exe" in
+            qemu-system-* | swtpm) echo "$pid" ;;
+            python3*) case "$linea" in *http.server*) echo "$pid" ;; esac ;;
         esac
     done
 }
@@ -311,18 +317,23 @@ destruir_todo() {
         echo "procesos propios restantes: $(procesos_propios | wc -l)"
         echo "puertos 2241-2243 en escucha:"
         ss -ltn 2>/dev/null | grep -E ':(2241|2242|2243)\b' || echo "  ninguno"
+        echo "sockets /tmp/plw-* restantes: $(find /tmp -maxdepth 2 -path '/tmp/plw-*' 2>/dev/null | wc -l)"
+        echo "ISO de Windows y estado del TPM: $([ -e "$RAIZ/iso" ] || [ -e "$RAIZ/windows11/tpm" ] && echo 'AÚN EXISTEN' || echo 'eliminados')"
         echo "carpeta de MVs: $([ -e "$RAIZ" ] && echo 'AÚN EXISTE' || echo 'no existe')"
     } | tee "$reg"
     msg "registro en $reg"
 }
 
 # --- Despacho -------------------------------------------------------------------------------
-[ "$#" -ge 1 ] || die "uso: mv.sh {crear|arrancar|ssh|copiar|traer|detener|restaurar|destruir|estado} <mv> | destruir-todo"
+[ "$#" -ge 1 ] || die "uso: mv.sh {crear|arrancar|ssh|copiar|traer|detener|restaurar|destruir|estado|instrucciones} <mv> | destruir-todo"
 accion="$1"; shift
 if [ "$accion" = "destruir-todo" ]; then destruir_todo; exit 0; fi
 [ "$#" -ge 1 ] || die "falta el nombre de la MV"
 configurar "$1"; shift
 case "$accion" in
+    instrucciones)
+        es_windows || die "solo windows11 tiene instrucciones de instalación"
+        delegar_windows instrucciones "$@" ;;
     crear)     cmd_crear "$@" ;;
     arrancar)  cmd_arrancar "$@" ;;
     ssh)       cmd_ssh "$@" ;;

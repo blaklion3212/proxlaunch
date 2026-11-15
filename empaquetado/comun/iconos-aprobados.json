@@ -1,13 +1,14 @@
 {
-  "estado": "aprobado",
-  "pixeles_sha256": {
-    "proxlaunch-128.png": "4e1fda8909d6b4361e0bfe2103585304bfce60c5b299b84c8023a2d9663e673d",
-    "proxlaunch-16.png": "022d6ef86987f171dbb60783981593e0aa4791cbd0eb3219bedb195da27b334c",
-    "proxlaunch-24.png": "0cf88036fb5d484ab324270cf30d7a2f4823c77ea698327e53b909f7f045d365",
-    "proxlaunch-256.png": "6a5205d9c8c4730c25fb0ae0ddaa50f869b56c0be6ca10d17f74ed5295607cf5",
-    "proxlaunch-32.png": "2978afef5f055e65b4030f0b85f355cc967b6345848f0583215cbd508f919a51",
-    "proxlaunch-48.png": "596158cbc0ac394bcad123426b78ab5aba25e59a5ca40fa3cf4cfa945aaa6d78",
-    "proxlaunch-64.png": "d03aa44269e069565fdd160f49cd2eaa2a7e44afe6fa732e3b7d08d3925f8c94"
+  "archivos_sha256": {
+    "proxlaunch-128.png": "46cb994ff531ec72d5b7ef903fca70c7e1755f0bc0746354d390ce0a6ae65dbf",
+    "proxlaunch-16.png": "7cac2cfca4563bc7dc354b1c5dd65b1d71a2acb2f2093549991c2df607f4fe4a",
+    "proxlaunch-24.png": "254ecd7072ac2b635072cb6a0fd7a8e3827245d22db1c2412a88738af350c734",
+    "proxlaunch-256.png": "9ae8165bd89b786b62a1f30f51809eb327dcf591da52e84563ba8df20ff843b4",
+    "proxlaunch-32.png": "4f986a61e48b1622ff74f2bc4acbd4e91d1ed06d0468f093b9dc6f5e8df93e19",
+    "proxlaunch-48.png": "81491cdf4cd82941c6c1a282499dbada3f3c686f3c26ebd6cde07f7e07f7b620",
+    "proxlaunch-64.png": "a5d63b7ca08d0a2195c3b3453f8aace4c6f8160e37d17bbcc15e11eb91553222",
+    "proxlaunch.ico": "69980fd7367688364a0541f2f709453b13d3889952b6b9d725b85e72bf226fd0"
   },
+  "estado": "aprobado",
   "svg_sha256": "8d3b4edf4030c70382431cc17f26da8bcc28a796ffc4136ff9643783b84b44a5"
 }
