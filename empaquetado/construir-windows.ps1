@@ -150,14 +150,14 @@ Invoke-Principal {
             $_.Name -like '*.ts' -or $_.FullName -like '*\tests\*' -or $_.Name -like 'Qt6Qml*' `
                 -or $_.Name -like 'Qt6Quick*' -or $_.Name -like 'Qt6WebEngine*'
         })
-        if ($sobrantes.Count -gt 0) { throw "el congelado contiene archivos que debían excluirse: $($sobrantes[0].FullName)" }
+        if (@($sobrantes).Count -gt 0) { throw "el congelado contiene archivos que debían excluirse: $($sobrantes[0].FullName)" }
         # CA-E23.2: Qt como bibliotecas separadas.
         if (-not (Get-ChildItem -LiteralPath $congelado -Recurse -Filter 'Qt6Core.dll')) { throw 'falta Qt6Core.dll' }
         # RF-E08: el plugin de plataforma de Windows.
         if (-not (Get-ChildItem -LiteralPath $congelado -Recurse -Filter 'qwindows.dll')) { throw 'falta el plugin qwindows.dll' }
         # CA-E03.3: una sola versión de Python.
         $pythons = @(Get-ChildItem -LiteralPath $congelado -Recurse -File | Where-Object { $_.Name -match '^python3\d+\.dll$' })
-        if ($pythons.Count -ne 1) { throw "no hay exactamente una DLL de Python ($($pythons.Count))" }
+        if (@($pythons).Count -ne 1) { throw "no hay exactamente una DLL de Python ($(@($pythons).Count))" }
         # CA-E06.1: recursos obligatorios.
         $recursos = @('LICENSE', 'THIRD-PARTY-NOTICES.txt',
             'proxlaunch\recursos\traducciones\proxlaunch_es.qm',
@@ -178,7 +178,7 @@ Invoke-Principal {
             QT_QPA_PLATFORM = 'offscreen'; PYTHONPATH = (Join-Path $script:Raiz 'src')
         } -Argumentos @('-m', 'proxlaunch', '--prueba-de-humo', '--permitir-sin-llavero')
         $json = @($lineas | Where-Object { $_ -like '{*' })
-        if ($json.Count -ne 1) { throw 'el humo de las fuentes no produjo el informe esperado' }
+        if (@($json).Count -ne 1) { throw 'el humo de las fuentes no produjo el informe esperado' }
         Write-Msg "humo del árbol de fuentes: $($json[0])"
 
         Remove-Item -LiteralPath $salidaHumo -Force -ErrorAction SilentlyContinue

@@ -92,7 +92,7 @@ function Uninstall-ProxLaunch {
     # El desinstalador de Inno puede devolver el control antes de terminar su segunda fase.
     $fin = Wait-Hasta -Segundos 90 -Condicion {
         ($null -eq (Get-EntradaDesinstalacion)) -and (-not (Test-Path -LiteralPath $carpeta)) `
-            -and ((Get-ProcesosProxLaunch).Count -eq 0)
+            -and (@(Get-ProcesosProxLaunch).Count -eq 0)
     }
     if (-not $fin) { throw 'el desinstalador no terminó de limpiar en 90 s' }
 }
@@ -107,7 +107,7 @@ function Test-SinResiduos {
     $escritorio = Join-Path ([Environment]::GetFolderPath('Desktop')) 'ProxLaunch.lnk'
     if (Test-Path -LiteralPath $escritorio) { $problemas.Add('queda el acceso directo del escritorio') }
     if (Get-EntradaDesinstalacion) { $problemas.Add('queda la entrada de «Aplicaciones instaladas»') }
-    if ((Get-ProcesosProxLaunch).Count -gt 0) { $problemas.Add('queda un proceso proxlaunch') }
+    if (@(Get-ProcesosProxLaunch).Count -gt 0) { $problemas.Add('queda un proceso proxlaunch') }
     if ($problemas.Count -gt 0) { throw ('residuos tras desinstalar: ' + ($problemas -join '; ')) }
 }
 
@@ -248,7 +248,7 @@ Invoke-Principal {
             if (-not (Test-Path -LiteralPath $carpeta)) { continue }
             $hallado = @(Get-ChildItem -LiteralPath $carpeta -Filter 'proxlaunch-*-windows-x64-setup.exe' -File |
                     Sort-Object LastWriteTime -Descending)
-            if ($hallado.Count -gt 0) { $Instalador = $hallado[0].FullName; $provisional = ($c -ne 'dist'); break }
+            if (@($hallado).Count -gt 0) { $Instalador = $hallado[0].FullName; $provisional = ($c -ne 'dist'); break }
         }
     }
     if (-not $Instalador -or -not (Test-Path -LiteralPath $Instalador)) { throw 'no se encontró el instalador (dist\proxlaunch-*-windows-x64-setup.exe)' }
@@ -363,7 +363,7 @@ Invoke-Principal {
             $clave = Get-AppIdClave
             $entradas = @(Get-ChildItem -Path 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Uninstall' |
                     Where-Object { $_.PSChildName -eq $clave })
-            if ($entradas.Count -ne 1) { throw "hay $($entradas.Count) entradas de desinstalación" }
+            if (@($entradas).Count -ne 1) { throw "hay $(@($entradas).Count) entradas de desinstalación" }
             if (-not (Test-Path -LiteralPath $exe)) { throw 'falta proxlaunch.exe tras reinstalar' }
         }
 
