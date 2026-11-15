@@ -9,6 +9,7 @@ import shutil
 import sys
 import tempfile
 import threading
+import time
 from dataclasses import asdict, dataclass
 from importlib import resources
 from pathlib import Path
@@ -39,8 +40,10 @@ from proxlaunch.nucleo.registro import configurar_registro
 
 # Variable con la ruta de un archivo donde copiar el informe (Windows sin consola).
 VARIABLE_SALIDA = "PROXLAUNCH_HUMO_SALIDA"
-# Tiempo máximo total antes de que el vigilante fuerce una salida con error.
-LIMITE_VIGILANTE_S = 5.0
+# Tiempo máximo total antes de que el vigilante fuerce una salida con error (CA-E17.1: ≤ 15 s).
+# El primer arranque de un ejecutable sin firmar en Windows puede tardar varios segundos (el
+# antivirus analiza sus bibliotecas), así que el límite cubre todo el arranque, no solo la espera.
+LIMITE_VIGILANTE_S = 15.0
 CODIGO_VIGILANTE = 3
 _TAMANOS_ICONO = (16, 24, 32, 48, 64, 128, 256)
 
@@ -138,11 +141,26 @@ def _emitir(informe: InformeHumo) -> None:
             print(f"PROBLEMA: {problema}", file=sys.stderr, flush=True)
 
 
-def _arrancar_vigilante(carpeta: Path) -> threading.Timer:
+class _Progreso:
+    """Paso en curso del humo, para que el vigilante diga dónde se quedó."""
+
+    def __init__(self) -> None:
+        self.paso = "inicio"
+        self.inicio = time.monotonic()
+
+
+def _arrancar_vigilante(carpeta: Path, progreso: _Progreso | None = None) -> threading.Timer:
     """Hilo que, pasado el límite, informa, borra la carpeta temporal y sale con error."""
 
     def _abortar() -> None:
         mensaje = f"La prueba de humo superó {LIMITE_VIGILANTE_S:g} s y se abortó"
+        if progreso is not None:
+            transcurrido = time.monotonic() - progreso.inicio
+            mensaje += f" (paso «{progreso.paso}», {transcurrido:.1f} s)"
+        # Sin consola (Windows) stderr no existe: el motivo también va al archivo de salida.
+        _escribir_salida(
+            json.dumps({"version": __version__, "problemas": [mensaje]}, ensure_ascii=False)
+        )
         if sys.stderr is not None:
             print(f"PROBLEMA: {mensaje}", file=sys.stderr, flush=True)
         shutil.rmtree(carpeta, ignore_errors=True)
@@ -159,7 +177,8 @@ def ejecutar_prueba_de_humo(
 ) -> int:
     """Arranca la app con carpetas temporales y sin red; devuelve 0 solo si no hay problemas."""
     carpeta = Path(tempfile.mkdtemp(prefix="proxlaunch-humo-"))
-    vigilante = _arrancar_vigilante(carpeta)
+    progreso = _Progreso()
+    vigilante = _arrancar_vigilante(carpeta, progreso)
     problemas: list[str] = []
     plataforma = ""
     fuentes = ("", "")
@@ -170,6 +189,7 @@ def ejecutar_prueba_de_humo(
         QGuiApplication.setHighDpiScaleFactorRoundingPolicy(
             Qt.HighDpiScaleFactorRoundingPolicy.PassThrough
         )
+        progreso.paso = "QApplication"
         app = QApplication.instance() or QApplication(argv_qt)
         assert isinstance(app, QApplication)
         app.setApplicationName(NOMBRE_APP)
@@ -178,14 +198,17 @@ def ejecutar_prueba_de_humo(
         app.setDesktopFileName("proxlaunch")
         plataforma = app.platformName()
 
+        progreso.paso = "carpetas y registro"
         rutas = Rutas(carpeta)
         configurar_registro(rutas.directorio_log)
 
+        progreso.paso = "icono"
         icono_ok = _icono_valido()
         if not icono_ok:
             problemas.append("El icono está vacío o es nulo (¿falta el plugin SVG de Qt?)")
         app.setWindowIcon(crear_icono())
 
+        progreso.paso = "fuentes"
         fuentes = cargar_fuentes()
         for familia, respaldo in zip(
             fuentes, (FAMILIA_INTERFAZ_RESPALDO, FAMILIA_MONO_RESPALDO), strict=True
@@ -194,21 +217,26 @@ def ejecutar_prueba_de_humo(
                 problemas.append(f"No cargó la fuente incluida (se usó «{respaldo}»)")
         app.setFont(QFont(fuentes[0]))
 
+        progreso.paso = "traductor"
         traductor_ok = cargar_traductor(app) is not None
         if not traductor_ok:
             problemas.append("No se pudo cargar el catálogo proxlaunch_es.qm")
 
+        progreso.paso = "recursos"
         faltantes = _faltantes()
         if faltantes:
             problemas.append("Recursos faltantes: " + ", ".join(faltantes))
 
+        progreso.paso = "tema"
         gestor = GestorTema(app, ModoTema.AUTOMATICO)
         gestor.aplicar()
 
+        progreso.paso = "llavero"
         backend = _nombre_backend()
         if _backend_inutil() and not permitir_sin_llavero:
             problemas.append(f"Backend de llavero sin función: {backend}")
 
+        progreso.paso = "ventana principal"
         ventana = VentanaPrincipal(crear_dependencias(rutas, gestor))
         ventana.show()
         visibilidad: list[bool] = []
@@ -218,6 +246,7 @@ def ejecutar_prueba_de_humo(
             visibilidad.append(ventana.isVisible())
             app.quit()
 
+        progreso.paso = "bucle de eventos"
         QTimer.singleShot(espera_ms, _cerrar)
         app.exec()
         ventana_ok = bool(visibilidad and visibilidad[0])
