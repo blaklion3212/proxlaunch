@@ -529,33 +529,33 @@ def permisos_acotados() -> list[str]:
     ``/vms/<id>`` de la plantilla (clonar), ``/storage/<almacenamiento>``, ``/nodes/<nodo>``,
     ``/sdn/zones/localnetwork`` y ``/`` (solo ver el estado, sin propagar).
     """
-    t = QCoreApplication.translate
     return [
-        t(
+        QCoreApplication.translate(
             "Ayuda",
             "Pool de plantillas: en Datacenter → Permisos → Pools crea un pool (por ejemplo "
             "«plantillas-proxlaunch») y añade solo las plantillas que ProxLaunch podrá clonar. "
             "Luego añade el permiso en la ruta «/pool/plantillas-proxlaunch» con el rol «{rol}» "
-            "y «Propagar». Así VM.Clone y VM.Audit valen solo para esas plantillas.",
+            "y «Propagar». Así VM.Clone vale solo para esas plantillas: las demás pueden verse "
+            "en la lista, pero ProxLaunch no las clonará.",
         ).format(rol=NOMBRE_ROL),
-        t(
+        QCoreApplication.translate(
             "Ayuda",
             "Crear máquinas: crea un segundo rol, «{rol}», con los privilegios de máquina del "
             "rol anterior SIN VM.Clone ({privilegios}) y asígnalo en la ruta «/vms» con "
             "«Propagar».",
         ).format(rol=NOMBRE_ROL_MAQUINAS, privilegios=", ".join(PRIVILEGIOS_ROL_MAQUINAS)),
-        t(
+        QCoreApplication.translate(
             "Ayuda",
             "Almacenamientos: en la ruta «/storage/<almacenamiento>» con el rol «{rol}», solo "
             "en los que usarás para ISOs, imágenes de disco importadas y discos de las máquinas "
             "(Datastore.AllocateTemplate y Datastore.AllocateSpace).",
         ).format(rol=NOMBRE_ROL),
-        t(
+        QCoreApplication.translate(
             "Ayuda",
             "Nodos: en la ruta «/nodes/<nodo>» con el rol «{rol}», solo en los nodos que "
             "descargarán archivos desde una dirección web (Sys.AccessNetwork).",
         ).format(rol=NOMBRE_ROL),
-        t(
+        QCoreApplication.translate(
             "Ayuda",
             "Red y estado: en la ruta «/sdn/zones/localnetwork» (SDN.Use) y en la ruta «/» "
             "con el rol «{rol}» pero SIN «Propagar» (Sys.Audit, solo para ver el estado de los "

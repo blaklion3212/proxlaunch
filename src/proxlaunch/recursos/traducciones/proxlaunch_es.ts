@@ -457,6 +457,31 @@
         <translation type="unfinished"></translation>
     </message>
     <message>
+        <location filename="../../interfaz/ayuda.py" line="533"/>
+        <source>Pool de plantillas: en Datacenter → Permisos → Pools crea un pool (por ejemplo «plantillas-proxlaunch») y añade solo las plantillas que ProxLaunch podrá clonar. Luego añade el permiso en la ruta «/pool/plantillas-proxlaunch» con el rol «{rol}» y «Propagar». Así VM.Clone vale solo para esas plantillas: las demás pueden verse en la lista, pero ProxLaunch no las clonará.</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <location filename="../../interfaz/ayuda.py" line="541"/>
+        <source>Crear máquinas: crea un segundo rol, «{rol}», con los privilegios de máquina del rol anterior SIN VM.Clone ({privilegios}) y asígnalo en la ruta «/vms» con «Propagar».</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <location filename="../../interfaz/ayuda.py" line="547"/>
+        <source>Almacenamientos: en la ruta «/storage/&lt;almacenamiento&gt;» con el rol «{rol}», solo en los que usarás para ISOs, imágenes de disco importadas y discos de las máquinas (Datastore.AllocateTemplate y Datastore.AllocateSpace).</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <location filename="../../interfaz/ayuda.py" line="553"/>
+        <source>Nodos: en la ruta «/nodes/&lt;nodo&gt;» con el rol «{rol}», solo en los nodos que descargarán archivos desde una dirección web (Sys.AccessNetwork).</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <location filename="../../interfaz/ayuda.py" line="558"/>
+        <source>Red y estado: en la ruta «/sdn/zones/localnetwork» (SDN.Use) y en la ruta «/» con el rol «{rol}» pero SIN «Propagar» (Sys.Audit, solo para ver el estado de los nodos).</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
         <location filename="../../interfaz/ayuda.py" line="707"/>
         <source>2. Asignar los permisos a mi usuario o a mi token solo donde hacen falta (Datacenter → Permisos → Añadir). Opción recomendada, de alcance acotado:</source>
         <translation type="unfinished"></translation>
