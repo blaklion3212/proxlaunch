@@ -1,4 +1,13 @@
 {
-  "estado": "pendiente",
-  "nota": "Se rellena con 'iconos.py aprobar' solo después de que el usuario apruebe build/iconos/vista-previa.png (CA-E11.4)."
+  "estado": "aprobado",
+  "pixeles_sha256": {
+    "proxlaunch-128.png": "4e1fda8909d6b4361e0bfe2103585304bfce60c5b299b84c8023a2d9663e673d",
+    "proxlaunch-16.png": "022d6ef86987f171dbb60783981593e0aa4791cbd0eb3219bedb195da27b334c",
+    "proxlaunch-24.png": "0cf88036fb5d484ab324270cf30d7a2f4823c77ea698327e53b909f7f045d365",
+    "proxlaunch-256.png": "6a5205d9c8c4730c25fb0ae0ddaa50f869b56c0be6ca10d17f74ed5295607cf5",
+    "proxlaunch-32.png": "2978afef5f055e65b4030f0b85f355cc967b6345848f0583215cbd508f919a51",
+    "proxlaunch-48.png": "596158cbc0ac394bcad123426b78ab5aba25e59a5ca40fa3cf4cfa945aaa6d78",
+    "proxlaunch-64.png": "d03aa44269e069565fdd160f49cd2eaa2a7e44afe6fa732e3b7d08d3925f8c94"
+  },
+  "svg_sha256": "8d3b4edf4030c70382431cc17f26da8bcc28a796ffc4136ff9643783b84b44a5"
 }
