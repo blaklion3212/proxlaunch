@@ -172,6 +172,11 @@ def _capturar_temporal(monkeypatch) -> dict[str, str]:
     return visto
 
 
+@pytest.mark.skipif(
+    os.name == "nt",
+    reason="En Windows la app rechaza a propósito este destino por MAX_PATH; "
+    "lo cubren las pruebas test_s7_en_windows_*",
+)
 def test_s7_un_destino_de_255_bytes_se_escribe_sin_enametoolong(tmp_path):
     nombre = "a" * (255 - len(".json")) + ".json"
     assert len(nombre.encode()) == 255
@@ -253,8 +258,9 @@ def test_s7_en_windows_el_limite_exacto_del_temporal_se_acepta_y_uno_mas_se_rech
         tempfile, "mkstemp", lambda *a, **k: (_ for _ in ()).throw(OSError(errno.EIO, "x"))
     )
     # nombre "a.json" → prefijo ".proxlaunch-ajson" (17) + 8 + ".tmp" (4) = 29, más "\" = 30
-    exacto = _carpeta_larga(tmp_path, 260 - 30) / "a.json"
-    pasado = _carpeta_larga(tmp_path, 260 - 30 + 1) / "a.json"
+    # MAX_PATH (260) incluye el NUL: el temporal más largo aceptado mide 259 caracteres.
+    exacto = _carpeta_larga(tmp_path, 259 - 30) / "a.json"
+    pasado = _carpeta_larga(tmp_path, 259 - 30 + 1) / "a.json"
     assert _error(escribir_atomico, exacto, b"x").params == {"motivo": "otro"}
     assert _error(escribir_atomico, pasado, b"x").params == {"motivo": "ruta_larga"}
 

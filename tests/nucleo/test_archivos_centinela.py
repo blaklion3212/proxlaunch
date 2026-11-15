@@ -68,7 +68,7 @@ def entorno_con_sesion(tmp_path):
 
 def _todo_lo_escrito(carpeta) -> list[tuple[str, bytes]]:
     return [
-        (str(p.relative_to(carpeta)), p.read_bytes())
+        (p.relative_to(carpeta).as_posix(), p.read_bytes())
         for p in sorted(carpeta.rglob("*"))
         if p.is_file()
     ]

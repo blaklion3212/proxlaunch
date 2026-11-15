@@ -233,7 +233,7 @@ def test_ca_l01_4_max_lote_es_una_constante_nombrada_unica():
     """El valor de MAX_LOTE se define una sola vez en el código fuente (núcleo e interfaz)."""
     raiz = Path(__file__).resolve().parents[2] / "src" / "proxlaunch"
     definiciones = [
-        str(ruta.relative_to(raiz))
+        ruta.relative_to(raiz).as_posix()
         for ruta in raiz.rglob("*.py")
         if re.search(r"^MAX_LOTE\s*(?::[^=]+)?=", ruta.read_text(encoding="utf-8"), re.MULTILINE)
     ]

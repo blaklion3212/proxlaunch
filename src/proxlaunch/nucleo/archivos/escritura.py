@@ -9,10 +9,12 @@ import os
 import tempfile
 from pathlib import Path
 
+from proxlaunch.nucleo.archivos.reemplazo import reemplazar_con_reintentos
 from proxlaunch.nucleo.errores import CodigoError, ErrorProxLaunch
 
 _log = logging.getLogger("proxlaunch.archivos.escritura")
 
+# MAX_PATH (260) incluye el NUL final: el máximo real son 259 caracteres.
 _LIMITE_RUTA_WINDOWS = 260
 _WINERROR_BLOQUEADO = (32, 33)  # violación de uso compartido / de bloqueo (archivo abierto)
 _WINERROR_ACCESO_DENEGADO = 5
@@ -68,7 +70,7 @@ def escribir_atomico(ruta: Path, datos: bytes) -> None:
             + _ALEATORIOS_MKSTEMP
             + len(_SUFIJO_TEMPORAL)
         )
-        if max(len(str(ruta)), largo_tmp) > _LIMITE_RUTA_WINDOWS:
+        if max(len(str(ruta)), largo_tmp) >= _LIMITE_RUTA_WINDOWS:
             raise _no_guardable("ruta_larga", ruta)
     tmp: str | None = None
     reemplazando = False
@@ -79,7 +81,7 @@ def escribir_atomico(ruta: Path, datos: bytes) -> None:
             f.flush()
             os.fsync(f.fileno())
         reemplazando = True
-        os.replace(tmp, ruta)
+        reemplazar_con_reintentos(tmp, ruta)
         tmp = None
     except OSError as exc:
         motivo = motivo_oserror(exc)

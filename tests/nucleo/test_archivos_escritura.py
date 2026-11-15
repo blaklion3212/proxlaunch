@@ -279,10 +279,14 @@ def test_en_windows_una_ruta_de_mas_de_260_caracteres_es_ruta_larga(tmp_path, mo
 # --- Concurrencia: dos instancias (CA-P04.8, §13 caso 17) -----------------------------------------
 
 
-def test_dos_escritores_a_la_vez_nunca_dejan_un_archivo_ilegible(tmp_path):
+_A = json.dumps({"quien": "a", "x": "A" * 5000}).encode()
+_B = json.dumps({"quien": "b", "x": "B" * 9000}).encode()
+
+
+def test_dos_escritores_sin_lector_nunca_fallan_y_el_resultado_es_uno_completo(tmp_path):
+    """Dos escritores a la vez: ninguna escritura falla (en Windows el reintento absorbe el
+    bloqueo transitorio) y el resultado final es uno de los dos contenidos completos."""
     ruta = tmp_path / "perfiles.json"
-    a = json.dumps({"quien": "a", "x": "A" * 5000}).encode()
-    b = json.dumps({"quien": "b", "x": "B" * 9000}).encode()
     fallos: list[BaseException] = []
 
     def _escribir(datos):
@@ -292,19 +296,61 @@ def test_dos_escritores_a_la_vez_nunca_dejan_un_archivo_ilegible(tmp_path):
         except BaseException as exc:  # noqa: BLE001
             fallos.append(exc)
 
-    hilos = [threading.Thread(target=_escribir, args=(d,)) for d in (a, b)]
+    hilos = [threading.Thread(target=_escribir, args=(d,)) for d in (_A, _B)]
+    for h in hilos:
+        h.start()
+    for h in hilos:
+        h.join()
+    assert not fallos
+    assert ruta.read_bytes() in (_A, _B)
+    assert [p.name for p in tmp_path.iterdir()] == ["perfiles.json"]
+
+
+def test_dos_escritores_con_lector_nunca_dejan_un_contenido_mezclado_ni_truncado(tmp_path):
+    """CA-P04.8: lo que se lee es siempre uno de los contenidos completos. En Windows no se
+    puede abrir un archivo mientras otro lo reemplaza: ahí se toleran (y se cuentan) los
+    ``PermissionError`` del lector y los fallos «bloqueado» del escritor; en POSIX no se tolera
+    ninguno."""
+    ruta = tmp_path / "perfiles.json"
+    en_windows = os.name == "nt"
+    fallos: list[BaseException] = []
+    bloqueos_escritor = 0
+    lecturas_bloqueadas = 0
+
+    def _escribir(datos):
+        nonlocal bloqueos_escritor
+        try:
+            for _ in range(60):
+                try:
+                    escribir_atomico(ruta, datos)
+                except ErrorProxLaunch as exc:
+                    if en_windows and exc.params.get("motivo") == "bloqueado":
+                        bloqueos_escritor += 1
+                    else:
+                        raise
+        except BaseException as exc:  # noqa: BLE001
+            fallos.append(exc)
+
+    hilos = [threading.Thread(target=_escribir, args=(d,)) for d in (_A, _B)]
     for h in hilos:
         h.start()
     lector_ok = True
     while any(h.is_alive() for h in hilos):
-        if ruta.exists():
-            lector_ok &= ruta.read_bytes() in (a, b)  # nunca una mezcla ni un truncado
+        try:
+            if ruta.exists():
+                lector_ok &= ruta.read_bytes() in (_A, _B)  # nunca una mezcla ni un truncado
+        except PermissionError:
+            if not en_windows:
+                raise
+            lecturas_bloqueadas += 1
     for h in hilos:
         h.join()
     assert not fallos
     assert lector_ok
-    assert ruta.read_bytes() in (a, b)
+    assert ruta.read_bytes() in (_A, _B)
     assert [p.name for p in tmp_path.iterdir()] == ["perfiles.json"]
+    if not en_windows:
+        assert bloqueos_escritor == 0 and lecturas_bloqueadas == 0
 
 
 # --- Rutas y carpetas privadas --------------------------------------------------------------------

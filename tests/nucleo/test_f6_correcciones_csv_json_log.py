@@ -9,6 +9,7 @@ inyectados por datos externos.
 import csv
 import io
 import logging
+import os
 import time
 
 import pytest
@@ -208,7 +209,8 @@ def test_s5_el_mensaje_con_saltos_sale_en_una_sola_linea_con_escapes(tmp_path, l
     log = configurar_registro(tmp_path / "log")
     log.warning("archivo=%s", "a\nFALSO\r")
     log.warning("siguiente")
-    texto = (tmp_path / "log" / ARCHIVO_LOG).read_bytes().decode("utf-8")
+    # En Windows el registro termina las líneas con CRLF; se normaliza solo ese terminador.
+    texto = (tmp_path / "log" / ARCHIVO_LOG).read_bytes().decode("utf-8").replace(os.linesep, "\n")
     lineas = texto.split("\n")
     assert lineas[-1] == "" and len(lineas) == 3
     assert "\r" not in texto

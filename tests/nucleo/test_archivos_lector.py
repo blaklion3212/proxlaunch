@@ -10,7 +10,6 @@ import hashlib
 import logging
 import os
 import stat
-import subprocess
 import threading
 import tracemalloc
 from pathlib import Path
@@ -92,10 +91,16 @@ def test_los_limites_de_los_requisitos(nombre, limite):
     assert {"perfiles": 256 * 1024, "lote": 1024 * 1024, "csv": 1024 * 1024}[nombre] == limite
 
 
+@pytest.mark.skipif(
+    os.name != "posix",
+    reason="En NTFS el archivo no sale disperso ni existe st_blocks; "
+    "la lógica la cubre test_si_st_size_miente_*",
+)
 def test_un_archivo_de_2_gb_se_rechaza_sin_leerlo_ni_cargarlo_en_memoria(tmp_path, monkeypatch):
     """CA-X02.2 / RNF-M02: archivo disperso de 2 GB (``truncate``), sin ocupar disco real."""
     ruta = tmp_path / "gigante.csv"
-    subprocess.run(["truncate", "-s", "2G", str(ruta)], check=True)
+    with open(ruta, "wb") as f:
+        f.truncate(2 * 1024**3)
     assert ruta.stat().st_size == 2 * 1024**3
     assert ruta.stat().st_blocks * 512 < 1024 * 1024  # disperso: casi sin bloques reales
 
@@ -144,6 +149,12 @@ def test_un_directorio_da_e_m01_no_regular(tmp_path):
     assert e.params["motivo"] == "no_regular"
 
 
+_SIN_MKFIFO = pytest.mark.skipif(
+    not hasattr(os, "mkfifo"), reason="Este sistema no tiene tuberías con nombre (os.mkfifo)"
+)
+
+
+@_SIN_MKFIFO
 def test_una_tuberia_con_nombre_da_e_m01_sin_bloquear(tmp_path):
     """CA-X02.1: abrir una tubería sin escritor no debe colgar el programa."""
     ruta = tmp_path / "tuberia"
@@ -349,6 +360,7 @@ def test_el_rechazo_se_registra_con_nombre_y_codigo_sin_ruta(tmp_path, caplog):
     assert "carpeta-privada" not in texto
 
 
+@_SIN_MKFIFO
 def test_un_archivo_regular_es_regular_para_stat(tmp_path):
     """Sanidad de la prueba de tubería: ``mkfifo`` crea realmente una tubería."""
     ruta = tmp_path / "t"

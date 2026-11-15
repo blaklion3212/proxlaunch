@@ -6,6 +6,7 @@ la sección 3 de los requisitos (RNF-O09), fila a fila.
 """
 
 import json
+import os
 import time
 
 import pytest
@@ -464,7 +465,8 @@ def test_ca_o05_8_ca_o05_9_el_storage_recordado_viaja_en_el_perfil_sin_secretos(
     )
     texto = (tmp_path / "perfiles.json").read_text()
     assert "nfs1" in texto and "secret" not in texto.lower()
-    assert (tmp_path / "perfiles.json").stat().st_mode & 0o777 == 0o600
+    if os.name == "posix":  # los bits de modo POSIX no existen en Windows
+        assert (tmp_path / "perfiles.json").stat().st_mode & 0o777 == 0o600
     repo.eliminar("a")
     assert "nfs1" not in (tmp_path / "perfiles.json").read_text()  # CA-O05.9
 

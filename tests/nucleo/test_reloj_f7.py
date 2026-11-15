@@ -1,10 +1,17 @@
 """RelojReal (ronda F7): usa CLOCK_BOOTTIME cuando existe, sin depender del SO de la prueba."""
 
+import sys
 import time
+
+import pytest
 
 from proxlaunch.nucleo.reloj import RelojReal
 
 
+@pytest.mark.skipif(
+    sys.platform == "win32",
+    reason="reloj.py no usa CLOCK_BOOTTIME en Windows (guarda sys.platform != 'win32')",
+)
 def test_ahora_usa_clock_boottime_si_esta_disponible(monkeypatch):
     llamadas = []
 

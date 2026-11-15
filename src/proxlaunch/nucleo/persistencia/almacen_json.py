@@ -12,6 +12,7 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any
 
+from proxlaunch.nucleo.archivos.reemplazo import reemplazar_con_reintentos
 from proxlaunch.nucleo.persistencia.rutas import crear_carpeta_privada
 
 
@@ -65,7 +66,7 @@ class AlmacenJson:
                 json.dump(datos, f, ensure_ascii=False, indent=2, sort_keys=True)
                 f.flush()
                 os.fsync(f.fileno())
-            os.replace(nombre_tmp, self.ruta)
+            reemplazar_con_reintentos(nombre_tmp, self.ruta)
         except BaseException:
             with contextlib.suppress(OSError):
                 os.unlink(nombre_tmp)
