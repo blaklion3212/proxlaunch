@@ -30,8 +30,8 @@ Nunca registres contraseñas, tokens ni datos personales.
   importar qcow2, clonar plantilla) aprobado el 2026-11-14 tras 7226 pruebas normales y 232 de
   laboratorio; D-24, D-25 y D-26 definitivas.
 - **MVP 5 (instaladores y scripts de empaquetado, versión 0.5.0): en cierre.** Construcción y
-  verificación completas y documentadas (entrada 18; D-27). Pendiente de las comprobaciones
-  manuales con el usuario y de su aprobación. **Es el último MVP del plan** (D-12).
+  verificación completas y documentadas (entrada 18; D-27). Comprobaciones manuales hechas con
+  el usuario; pendiente de su aprobación. **Es el último MVP del plan** (D-12).
 - **Laboratorio:** apagado y conservado (PVE 9.2, solo 127.0.0.1); limpio de MVs y ajustes.
   Se destruirá sin rastro al terminar todas las pruebas (D-15). Las MVs de empaquetado
   (`~/aprovprox-empaquetado/`) se destruyen con `mv.sh destruir-todo` al cerrar el MVP.
@@ -347,13 +347,32 @@ Nunca registres contraseñas, tokens ni datos personales.
   - Semilla cloud-init por disco vvfat: sin probar en una MV nueva (las MVs ya existían).
   - Firma de código: preparada y desactivada.
   - `directorio_lotes` ya es obligatorio en las dependencias de la ventana: cerrado.
-  - **Comprobaciones manuales: pendiente de resultado** (asistente en español, SmartScreen,
-    escalado 125/150/175 %, icono del menú Inicio; se hacen con el usuario).
+- **Comprobaciones manuales** (2026-11-15, con el usuario, en la MV Windows 11):
+  - SmartScreen: aparece el aviso y se continúa con «Más información → Ejecutar de todas formas» ✅.
+  - Asistente de instalación: íntegramente en español ✅.
+  - Icono aprobado en la barra de tareas, la ventana y el menú Inicio ✅.
+  - Escalado 125 % y 150 % ✅. Al 175 % (forzado por registro sobre una pantalla de 1024 × 768) todo se veía
+    nítido, pero el diálogo «Conectar con Proxmox» no cabía y sus botones quedaban fuera: **corregido** (I-11,
+    I-12) y comprobado de nuevo por el usuario ✅ (barra de desplazamiento y botones siempre visibles).
+  - Limitación conocida: en esa combinación forzada el asistente de Inno Setup (tamaño fijo) tampoco cabe; se
+    avanza con Enter. Documentado en la guía de usuario.
+  - M-E6 (escritorio Ubuntu con Wayland): no realizada (opcional).
+- **Correcciones posteriores a la documentación inicial:**
+  - Ventanas y diálogos acotados al área útil de la pantalla (`interfaz/desplazable.py`), con contenido
+    desplazable y botones fijos; con pantalla holgada crecen hasta lo que pide su contenido (sin barras con
+    fuentes anchas como las de Windows). Commits `adfdc6a`, `36a846c`, `445eb38`.
+  - Carrera en la prueba de guardar lote (leía la barra de estado antes de la señal en cola): corregida en la prueba.
+  - MV Windows de pruebas: sshd terminaba de forma inesperada y Windows Update instalaba en segundo plano;
+    sshd se reinicia solo y las actualizaciones automáticas quedan desactivadas en esa MV (commit `3178cd2`).
+  - Verificación de Windows: falla si el humo deja carpetas en `%TEMP%` (QA-M5-03, confirmado en la MV con
+    restos anteriores a la corrección).
+- **Verificación final** con el código definitivo: `linux` ✅, `windows` ✅ (calidad 7638 en Windows, 7691 en
+  Ubuntu, 7693 local), `actualizacion-linux` ✅. Sumas: `.deb` `daa8b3dc…`, `-setup.exe` `5c39a384…`.
 - **Archivos:** `empaquetado/` (completo; ver `empaquetado/LEEME.md`), `src/proxlaunch/interfaz/{app,humo}.py`,
   `src/proxlaunch/nucleo/archivos/reemplazo.py`, `tests/conftest.py`, `docs/requisitos/mvp5.md`,
   `docs/arquitectura/mvp5.md`, `docs/empaquetado.md`, `docs/guia-usuario.md`, `docs/decisiones.md`
   (D-27), `README.md`. Últimos commits del MVP: `5a5a2c8`, `527a5dc`, `683703a`, `431064d`, `9c9bbfb`.
-- **Siguientes pasos:** completar las comprobaciones manuales, aprobación del usuario y limpieza total
+- **Siguientes pasos:** aprobación del usuario y limpieza total
   (`mv.sh destruir-todo`, laboratorio incluido según D-15).
 
 ---
@@ -372,7 +391,8 @@ Nunca registres contraseñas, tokens ni datos personales.
 | Python en Ubuntu 22.04 | Resuelto en el MVP 5: el `.deb` incluye su propio intérprete. Para desarrollo desde el código fuente sigue haciendo falta Python ≥ 3.11. |
 | Realms LDAP/AD | No probados. |
 | Firma de código en Windows | MVP 5: sin firma (D-27). El paso de firma está preparado y desactivado (`PROXLAUNCH_FIRMA_CONFIG`); el usuario ve SmartScreen. |
-| Comprobaciones manuales del MVP 5 | Pendiente de resultado: asistente en español, SmartScreen, escalado 125/150/175 %, icono del menú Inicio. |
+| Asistente de instalación con escala alta | En pantallas muy pequeñas con escala alta (1024 × 768 al 175 %) el asistente de Inno Setup no cabe; se avanza con Enter. ProxLaunch sí se adapta. |
+| Escritorio Ubuntu con Wayland (M-E6) | Comprobación manual opcional no realizada. |
 | Auditoría de CVE (RF-E21b) | «Debería»; no implementada. |
 | Exclusión inversa del laboratorio | Solo las MVs de empaquetado rechazan arrancar con el laboratorio activo; el laboratorio no comprueba lo contrario. |
 | Semilla cloud-init vvfat | Sin probar en una MV nueva de Ubuntu (las existentes ya estaban creadas). |

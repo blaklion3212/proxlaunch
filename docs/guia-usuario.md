@@ -148,6 +148,12 @@ protegió su PC» (el texto puede variar según la versión de Windows). Para co
 
 Hazlo solo si comprobaste la huella como se explica arriba.
 
+**Pantallas muy pequeñas con escala alta.** El asistente de instalación tiene un tamaño fijo. Si la pantalla es muy
+pequeña para la escala elegida (por ejemplo 1024 × 768 al 175 %), los botones del asistente pueden quedar fuera de
+la pantalla: pulsa **Enter** en cada página para avanzar (equivale a «Siguiente» y, al final, a «Finalizar»).
+ProxLaunch, en cambio, se adapta: si una ventana no cabe, su contenido se desplaza y los botones quedan siempre
+visibles.
+
 **Actualizar.** Ejecuta el instalador nuevo: se instala encima de la versión anterior (aparece una sola entrada en
 «Aplicaciones instaladas») y tus datos y credenciales se conservan. Si ProxLaunch está abierto, el instalador puede
 pedirte que lo cierres.

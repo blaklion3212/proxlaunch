@@ -14,8 +14,8 @@ Solutions GmbH. La aplicación solo se presenta como «Compatible con Proxmox VE
 sistema operativo), el MVP 3 (perfiles de máquina, lotes guardados e importación CSV), el MVP 2
 (creación por lotes) y el MVP 1. Las secciones «Qué hace/añade» de más abajo describen cada
 etapa; la del MVP 4 está en la [guía de usuario](docs/guia-usuario.md#elegir-el-origen-del-sistema-operativo)
-y el estado vivo en la [bitácora](docs/bitacora.md). El MVP 5 es el último del plan; falta la
-aprobación final y las comprobaciones visuales manuales de los instaladores.
+y el estado vivo en la [bitácora](docs/bitacora.md). El MVP 5 es el último del plan; falta su
+aprobación final.
 
 Qué hace el MVP 1:
 

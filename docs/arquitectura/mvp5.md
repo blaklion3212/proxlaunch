@@ -243,6 +243,10 @@ implementación de las secciones anteriores y qué incidencias aparecieron.
 | I-8 | Un `lib.ps1` con error de sintaxis terminaba con código 0 sin hacer nada. | Los `.ps1` fijan `$ErrorActionPreference = 'Stop'` **antes** de cargar `lib.ps1`, y `verificar-todo.sh` valida con el analizador de PowerShell de la MV la sintaxis de todos los `.ps1` antes de ejecutar ninguno. `revisar_estatico.py` también lo valida si hay PowerShell. | `construir-windows.ps1`, `verificar-windows.ps1`, `verificar-todo.sh` |
 | I-9 | Los subprocesos de las pruebas de empaquetado no encontraban `proxlaunch` en el venv de calidad (sin el paquete instalado). | Se les pasa `PYTHONPATH` apuntando a `src`. | pruebas de subprocesos como `tests/interfaz/test_mvp5_humo.py` (commit `431064d`) |
 | I-10 | La MV de Windows tenía la red en perfil **Pública** y el cortafuegos bloqueaba SSH. | `preparar.ps1` pasa los perfiles Públicos a Privados (`Set-NetConnectionProfile -NetworkCategory Private`). | `entornos/windows/preparar.ps1` |
+| I-11 | Al 175 % en una pantalla pequeña, el diálogo «Conectar con Proxmox» (y otros) superaba el alto de la pantalla y sus botones no se alcanzaban (comprobación manual M-E3). | Utilidad `desplazable.py`: el contenido va en un `QScrollArea` y los botones en un pie fijo; ancho, alto y mínimos explícitos de diálogos y ventana principal se acotan al área útil de su pantalla (al mostrarse y al cambiar de pantalla). Sin cambios con pantalla holgada. | `interfaz/desplazable.py`, `interfaz/dialogos/*.py`, `interfaz/ventana_principal.py` |
+| I-12 | Con fuentes más anchas (Windows) la ventana no se ensanchaba hasta su contenido y salía una barra horizontal aunque sobrara espacio; el ancho dependía del historial. | `reajustar` hace crecer el ancho hasta el necesario y lee el mínimo explícito antes de fijar el máximo. Pruebas con fuente ancha (JetBrains Mono 12-13 pt). | `interfaz/desplazable.py`, `tests/interfaz/test_desplazable.py` |
+| I-13 | En la MV Windows, sshd terminaba de forma inesperada y Windows Update instalaba en segundo plano: cortes de SSH a mitad de verificación y apagados no ordenados. | sshd con reinicio automático ante fallo (`sc.exe failure`) y actualizaciones automáticas desactivadas por directiva en esa MV temporal. | `entornos/windows/preparar.ps1` |
+| I-14 | La prueba de humo dejaba su carpeta temporal en `%TEMP%` en Windows (registro abierto; QA-M5-03). | Corregido en `humo.py` (cierre del registro) y `verificar-windows.ps1` falla si quedan carpetas `proxlaunch-humo-*`. | `interfaz/humo.py`, `verificar-windows.ps1` |
 
 ### B.3 Hipótesis y pendientes al cierre
 
@@ -252,5 +256,5 @@ implementación de las secciones anteriores y qué incidencias aparecieron.
 - **Sin probar:** la semilla cloud-init por disco vvfat (B-1) en una MV **nueva**, porque las MVs de Ubuntu ya existían al
   introducirla.
 - **Preparado y desactivado:** la firma de código (`PROXLAUNCH_FIRMA_CONFIG`, ver `docs/empaquetado.md`).
-- **Comprobaciones manuales** (`[MANUAL]`: asistente en español, SmartScreen, escalado 125/150/175 %, icono del menú Inicio):
-  pendientes de resultado; el orquestador las anota en la bitácora.
+- **Comprobaciones manuales** (`[MANUAL]`): hechas con el usuario el 2026-11-15; resultados en la bitácora (entrada 18).
+  El escalado al 175 % reveló I-11/I-12, ya corregidos.
