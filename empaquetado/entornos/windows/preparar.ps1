@@ -65,6 +65,10 @@ try {
         New-NetFirewallRule -Name 'OpenSSH-Server-In-TCP' -DisplayName 'OpenSSH Server (sshd)' -Enabled True `
             -Direction Inbound -Protocol TCP -Action Allow -LocalPort 22 | Out-Null
     }
+    # La regla de la capacidad solo vale en redes privadas y Windows marca la red de QEMU como pública
+    # (visto en la primera instalación): la red de esta MV de pruebas pasa a privada.
+    Get-NetConnectionProfile | Where-Object { $_.NetworkCategory -eq 'Public' } |
+        Set-NetConnectionProfile -NetworkCategory Private
 
     # 3. PowerShell como intérprete por defecto de sshd.
     New-Item -Path 'HKLM:\SOFTWARE\OpenSSH' -Force | Out-Null

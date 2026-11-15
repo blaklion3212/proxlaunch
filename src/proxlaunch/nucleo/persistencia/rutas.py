@@ -5,6 +5,7 @@ from __future__ import annotations
 import contextlib
 import os
 import stat
+import sys
 from pathlib import Path
 
 import platformdirs
@@ -25,6 +26,8 @@ def _niveles_propios(ruta: Path) -> list[Path]:
 
 def _asegurar_privada(nivel: Path) -> None:
     """POSIX: crea (0700) o endurece un nivel propio, sin seguir enlaces ni tocar ajenos."""
+    if sys.platform == "win32":  # nunca ocurre: crear_carpeta_privada solo la llama en POSIX
+        return
     try:
         nivel.mkdir(exist_ok=True, mode=0o700)
         info = os.lstat(nivel)

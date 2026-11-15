@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import sys
 import time
 from typing import Protocol
 
@@ -24,12 +25,14 @@ def _instante_real() -> float:
     En Linux ``CLOCK_BOOTTIME`` sí lo cuenta (``time.monotonic`` no), lo que importa para
     la edad del ticket de sesión. En el resto de plataformas se usa ``time.monotonic``.
     """
-    boottime = getattr(time, "CLOCK_BOOTTIME", None)
-    if boottime is not None:
-        try:
-            return time.clock_gettime(boottime)
-        except OSError:
-            pass
+    # La guarda de plataforma también le indica a mypy en Windows que esta rama es solo POSIX.
+    if sys.platform != "win32":
+        boottime = getattr(time, "CLOCK_BOOTTIME", None)
+        if boottime is not None:
+            try:
+                return time.clock_gettime(boottime)
+            except OSError:
+                pass
     return time.monotonic()
 
 
