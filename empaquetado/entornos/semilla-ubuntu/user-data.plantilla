@@ -1,0 +1,28 @@
+#cloud-config
+# Semilla cloud-init (NoCloud) de las MVs de prueba de ProxLaunch.
+# Las marcas @...@ las sustituye mv.sh al crear la MV.
+hostname: @NOMBRE_MV@
+manage_etc_hosts: true
+ssh_pwauth: false
+disable_root: true
+users:
+  - name: prueba
+    gecos: Usuario de prueba
+    shell: /bin/bash
+    lock_passwd: true
+    sudo: "ALL=(ALL) NOPASSWD:ALL"
+    ssh_authorized_keys:
+      - @CLAVE_PUBLICA@
+package_update: true
+# Solo lo necesario para verificar el .deb (pantalla virtual, D-Bus y servicio de secretos de prueba).
+# Las bibliotecas de Qt NO se instalan aquí: las debe traer el propio .deb (Depends).
+packages:
+  - xvfb
+  - xauth
+  - dbus-x11
+  - gnome-keyring
+  - desktop-file-utils
+  - binutils
+  - ca-certificates
+runcmd:
+  - [ sh, -c, "touch /var/lib/aprovprox-listo" ]

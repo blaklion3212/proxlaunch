@@ -1,0 +1,13 @@
+[Desktop Entry]
+Type=Application
+Version=1.0
+Name=ProxLaunch
+GenericName=Asistente de máquinas virtuales
+Comment=Crea máquinas virtuales en Proxmox VE
+Exec=proxlaunch
+Icon=proxlaunch
+Terminal=false
+Categories=Network;
+Keywords=Proxmox;máquinas virtuales;virtualización;
+StartupWMClass=ProxLaunch
+StartupNotify=true

@@ -1,0 +1,11 @@
+# Presupuesto de tamaño por plataforma (AR-7, RF-E19). Cambiarlo exige un commit explícito.
+# Linux recalibrado tras medir 0.5.0 (.deb 38,6 MiB; instalado 138 MiB). Windows: cifras de partida (HV-E13).
+tolerancia_porcentaje = 10
+
+[linux]
+artefacto_mb = 60    # .deb comprimido
+instalado_mb = 180   # árbol instalado
+
+[windows]
+artefacto_mb = 90    # -setup.exe
+instalado_mb = 250   # carpeta instalada

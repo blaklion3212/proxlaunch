@@ -1,0 +1,7 @@
+# Dependencias de ejecución. Debe coincidir con [project].dependencies de pyproject.toml
+# (lo comprueba comun/comprobar_lock.py). Regenerar: python empaquetado/comun/comprobar_lock.py --regenerar
+PySide6-Essentials>=6.11
+requests>=2.32.4
+urllib3>=2.6.3,<3
+keyring>=25
+platformdirs>=4

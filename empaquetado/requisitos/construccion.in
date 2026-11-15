@@ -1,0 +1,4 @@
+# Herramientas de construcción del congelado (AR-3). PyYAML lo usa revisar_estatico.py.
+pyinstaller
+pyinstaller-hooks-contrib
+pyyaml

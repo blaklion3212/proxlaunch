@@ -1,0 +1,68 @@
+# PLANTILLA DE CI INACTIVA (RF-E30, AR-10). No está en .github/workflows/ a propósito: ningún proveedor
+# la ejecuta. Para activarla algún día (cuando exista un remoto), cópiela a la ruta que lea el
+# proveedor, p. ej. .github/workflows/empaquetado.yml, y compruebe antes los SHA de las acciones.
+#
+# Solo invoca los scripts de empaquetado/ (no duplica lógica). Permisos del token: solo lectura.
+# No usa secretos, no publica nada y no sube artefactos a sitios externos.
+# Nota (HV-E6): los runners de Windows de los proveedores son Windows Server, no Windows 10/11 de
+# escritorio; la verificación con escritorio real sigue siendo la de la MV local.
+name: ProxLaunch - calidad, construccion y verificacion
+
+on:
+  push:
+    branches: [main]
+    tags: ['v*']
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: empaquetado-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  linux:
+    name: Linux (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 45
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-22.04, ubuntu-24.04]
+    steps:
+      # actions/checkout v7.0.1 (fijada por SHA de commit; verificar al activar la plantilla).
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+      - name: Preparar bibliotecas de construccion
+        run: empaquetado/linux/preparar-build.sh
+      - name: Calidad
+        run: empaquetado/calidad.sh
+      - name: Construir el .deb
+        run: empaquetado/construir-linux.sh
+      - name: Verificar el .deb instalado
+        run: empaquetado/verificar-deb.sh dist/proxlaunch_*_amd64.deb
+
+  windows:
+    name: Windows (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 60
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [windows-2022]
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+      - name: Calidad
+        shell: pwsh
+        run: empaquetado/calidad.ps1
+      - name: Construir el instalador
+        shell: pwsh
+        run: empaquetado/construir-windows.ps1
+      - name: Verificar el instalador
+        shell: pwsh
+        run: empaquetado/verificar-windows.ps1

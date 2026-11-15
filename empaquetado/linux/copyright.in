@@ -1,0 +1,21 @@
+Format: https://www.debian.org/doc/packaging-manuals/copyright-format/1.0/
+Upstream-Name: ProxLaunch
+Source: uso interno (sin repositorio público)
+
+Files: *
+Copyright: 2026 Los autores de ProxLaunch
+License: LicenseRef-Proprietary
+@LICENCIA@
+
+Files: opt/proxlaunch/_internal/PySide6/* opt/proxlaunch/_internal/shiboken6/*
+Copyright: The Qt Company Ltd. y colaboradores
+License: LGPL-3
+ Qt y PySide6 se distribuyen como bibliotecas dinámicas separadas y reemplazables.
+ El texto de la licencia está en /usr/share/common-licenses/LGPL-3 y en
+ /usr/share/doc/proxlaunch/THIRD-PARTY-NOTICES.txt.
+
+Files: opt/proxlaunch/_internal/*
+Copyright: sus respectivos autores
+License: varias
+ Los componentes de terceros (dependencias de Python, fuentes OFL e intérprete) y sus
+ licencias se listan en /usr/share/doc/proxlaunch/THIRD-PARTY-NOTICES.txt.

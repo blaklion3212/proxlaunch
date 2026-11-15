@@ -2,8 +2,10 @@
 
 from __future__ import annotations
 
+import argparse
 import logging
 import sys
+from collections.abc import Sequence
 from importlib import resources
 
 from PySide6.QtCore import QSize, Qt, QTranslator
@@ -84,17 +86,51 @@ def crear_dependencias(rutas: Rutas, gestor_tema: GestorTema) -> Dependencias:
     )
 
 
-def main() -> int:
+def _analizar_argumentos(argv: Sequence[str]) -> tuple[argparse.Namespace, list[str]]:
+    """Separa las opciones propias de las de Qt (que pasan intactas a ``QApplication``)."""
+    analizador = argparse.ArgumentParser(add_help=True, prog="proxlaunch", allow_abbrev=False)
+    analizador.add_argument("--version", action="store_true", help="muestra la versión y sale")
+    analizador.add_argument(
+        "--prueba-de-humo",
+        action="store_true",
+        help="arranca con carpetas temporales, comprueba recursos y sale",
+    )
+    analizador.add_argument(
+        "--permitir-sin-llavero",
+        action="store_true",
+        help="con --prueba-de-humo: acepta un llavero no disponible",
+    )
+    propios, resto = analizador.parse_known_args(list(argv[1:]))
+    return propios, [argv[0], *resto]
+
+
+def main(argv: Sequence[str] | None = None) -> int:
     """Crea la aplicación, aplica el tema guardado y abre la ventana principal."""
+    argumentos = list(sys.argv if argv is None else argv)
+    if not argumentos:
+        argumentos = ["proxlaunch"]
+    propios, argv_qt = _analizar_argumentos(argumentos)
+    if propios.version:
+        from proxlaunch.interfaz.humo import escribir_texto_plano
+
+        escribir_texto_plano(f"{NOMBRE_APP} {__version__}")
+        return 0
+    if propios.prueba_de_humo:
+        from proxlaunch.interfaz.humo import ejecutar_prueba_de_humo
+
+        return ejecutar_prueba_de_humo(argv_qt, permitir_sin_llavero=propios.permitir_sin_llavero)
+
     # Alta resolución: escalado fraccionario sin redondeos (150 %, 175 %...) (RNF-11).
     QGuiApplication.setHighDpiScaleFactorRoundingPolicy(
         Qt.HighDpiScaleFactorRoundingPolicy.PassThrough
     )
-    app = QApplication.instance() or QApplication(sys.argv)
+    app = QApplication.instance() or QApplication(argv_qt)
     assert isinstance(app, QApplication)
     app.setApplicationName(NOMBRE_APP)
     app.setApplicationDisplayName(NOMBRE_APP)
     app.setOrganizationName(NOMBRE_APP)
+    # Asocia la ventana con proxlaunch.desktop en Wayland (HV-E11).
+    app.setDesktopFileName("proxlaunch")
     app.setWindowIcon(crear_icono())
 
     rutas = Rutas()

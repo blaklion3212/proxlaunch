@@ -1,0 +1,9 @@
+# Ejecución + extra [dev] de pyproject.toml, para calidad.sh.
+-r ejecucion.in
+pytest
+pytest-qt
+pytest-cov
+responses
+pytest-socket
+ruff
+mypy

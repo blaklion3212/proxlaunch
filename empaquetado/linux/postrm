@@ -1,0 +1,17 @@
+#!/bin/sh
+# Refresca menú e iconos tras quitar el paquete. Nunca toca $HOME ni los datos del usuario (RF-E13).
+set -e
+case "$1" in
+    remove | purge)
+        if command -v dpkg-trigger >/dev/null 2>&1; then
+            dpkg-trigger --no-await /usr/share/applications
+            dpkg-trigger --no-await /usr/share/icons/hicolor
+        fi
+        ;;
+    upgrade | failed-upgrade | abort-install | abort-upgrade | disappear) ;;
+    *)
+        echo "postrm: argumento no reconocido: $1" >&2
+        exit 1
+        ;;
+esac
+exit 0

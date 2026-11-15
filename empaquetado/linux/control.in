@@ -1,0 +1,20 @@
+Package: proxlaunch
+Version: @VERSION@
+Architecture: amd64
+Maintainer: ProxLaunch <noreply@localhost>
+Installed-Size: @TAMANO_KB@
+Section: utils
+Priority: optional
+Depends: libc6 (>= 2.35), libstdc++6, libgcc-s1, zlib1g, libzstd1, libglib2.0-0,
+ libdbus-1-3, libfontconfig1, libfreetype6, libegl1, libgl1, libx11-6, libx11-xcb1,
+ libxcb1, libxcb-cursor0, libxcb-icccm4, libxcb-image0, libxcb-keysyms1, libxcb-randr0,
+ libxcb-render-util0, libxcb-render0, libxcb-shape0, libxcb-shm0, libxcb-sync1,
+ libxcb-util1, libxcb-xfixes0, libxcb-xkb1, libxkbcommon0, libxkbcommon-x11-0
+Suggests: gnome-keyring
+Description: Asistente de escritorio para crear máquinas virtuales en Proxmox VE
+ ProxLaunch guía la creación de una o varias máquinas virtuales en Proxmox VE.
+ Incluye su propio intérprete de Python y sus bibliotecas (Qt como bibliotecas
+ dinámicas separadas), de modo que no usa el Python del sistema.
+ .
+ Sin un servicio de secretos (por ejemplo GNOME Keyring) la aplicación funciona,
+ pero no puede recordar credenciales.
