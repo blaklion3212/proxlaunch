@@ -1,4 +1,4 @@
-# Guía de usuario de ProxLaunch (MVP 1, MVP 2 y MVP 3)
+# Guía de usuario de ProxLaunch (MVP 1, MVP 2, MVP 3 y MVP 4)
 
 ProxLaunch te ayuda a crear una o varias máquinas virtuales en un servidor Proxmox sin
 tener que conocer todos sus detalles. Esta guía te lleva paso a paso. No necesitas saber
@@ -8,11 +8,18 @@ Desde el MVP 3 también puedes **reutilizar configuraciones** (perfiles de máqu
 y abrir lotes** como archivos, **importar máquinas desde una hoja de cálculo (CSV)** y crear
 un **lote por filas** en el que cada máquina tiene su propia configuración.
 
+Desde el MVP 4 también puedes **elegir de dónde sale el sistema operativo** de la máquina:
+instalar desde un **ISO** (con un asistente para Windows y Linux), **usar un disco existente**
+(qcow2, vmdk o raw) o **copiar una plantilla** de Proxmox. Además puedes subir un ISO desde tu
+equipo o hacer que el servidor lo descargue. Mira [Elegir el origen del sistema operativo](#elegir-el-origen-del-sistema-operativo).
+
 Los nombres de botones, menús y mensajes de esta guía son los que ves en la aplicación.
 
 > ProxLaunch se probó contra un Proxmox VE 9.2 real (servidor individual). Los clústeres
 > de varios nodos y Proxmox 8.x se han probado solo con respuestas simuladas. Eso incluye
-> el reparto de un lote entre varios nodos.
+> el reparto de un lote entre varios nodos y la importación de discos en Proxmox 8.4 o
+> superior. Tampoco se ha probado con un ISO de Windows real: las pruebas del laboratorio
+> usaron Linux (Alpine).
 
 ## Contenido
 
@@ -21,16 +28,19 @@ Los nombres de botones, menús y mensajes de esta guía son los que ves en la ap
 3. [Primera conexión y la huella del servidor](#primera-conexión-y-la-huella-del-servidor)
 4. [Crear una máquina en modo básico](#crear-una-máquina-en-modo-básico)
 5. [Modo avanzado](#modo-avanzado)
-6. [Entender el progreso y los resultados](#entender-el-progreso-y-los-resultados)
-7. [Crear varias máquinas de una vez (lotes)](#crear-varias-máquinas-de-una-vez-lotes)
-8. [Perfiles de máquina](#perfiles-de-máquina)
-9. [Guardar y abrir lotes](#guardar-y-abrir-lotes)
-10. [Importar máquinas desde un CSV](#importar-máquinas-desde-un-csv)
-11. [Lote por filas](#lote-por-filas)
-12. [Cambios sin guardar](#cambios-sin-guardar)
-13. [Mensajes de error frecuentes](#mensajes-de-error-frecuentes)
-14. [Privacidad y seguridad](#privacidad-y-seguridad)
-15. [Preguntas frecuentes](#preguntas-frecuentes)
+6. [Elegir el origen del sistema operativo](#elegir-el-origen-del-sistema-operativo)
+   - [Permisos para el administrador: alcance acotado](#permisos-para-el-administrador-alcance-acotado)
+7. [Entender el progreso y los resultados](#entender-el-progreso-y-los-resultados)
+8. [Crear varias máquinas de una vez (lotes)](#crear-varias-máquinas-de-una-vez-lotes)
+9. [Perfiles de máquina](#perfiles-de-máquina)
+10. [Guardar y abrir lotes](#guardar-y-abrir-lotes)
+11. [Importar máquinas desde un CSV](#importar-máquinas-desde-un-csv)
+12. [Lote por filas](#lote-por-filas)
+13. [Cambios sin guardar](#cambios-sin-guardar)
+14. [Mensajes de error frecuentes](#mensajes-de-error-frecuentes)
+    - [Mensajes del origen del sistema operativo](#mensajes-del-origen-del-sistema-operativo)
+15. [Privacidad y seguridad](#privacidad-y-seguridad)
+16. [Preguntas frecuentes](#preguntas-frecuentes)
 
 ---
 
@@ -57,6 +67,13 @@ Los nombres de botones, menús y mensajes de esta guía son los que ves en la ap
 | **Lote guardado** | Un archivo `.json` con la definición de un lote, para repetirlo otro día. No guarda datos de conexión. |
 | **CSV** | Un archivo de texto con una tabla, que puedes crear y editar con Excel o LibreOffice Calc. Cada fila es una máquina. |
 | **Lote por filas** | Un lote en el que cada máquina trae su propia configuración (el caso de un CSV con máquinas distintas). |
+| **ISO** | Un archivo que es la imagen del disco de instalación de un sistema operativo, como el CD con el que se instalaría. |
+| **Origen del sistema operativo** | De dónde sale el sistema de la máquina: un disco vacío, un ISO, un disco ya hecho que se importa o la copia de una plantilla. |
+| **Plantilla (de Proxmox)** | Una máquina ya instalada que se marcó como modelo. Al clonarla obtienes máquinas nuevas con su mismo sistema. No es un perfil de máquina. |
+| **Clon enlazado y completo** | Un clon enlazado comparte el disco base con la plantilla (rápido y casi sin espacio, pero depende de ella). Un clon completo copia todo el disco y es independiente. |
+| **virtio-win** | Un CD de controladores (drivers) que Windows necesita para ver el disco y la red virtuales de Proxmox. |
+| **Huella de un archivo (SHA-256)** | Un código que identifica un archivo. Si dos copias tienen la misma huella, son idénticas. |
+| **Contenido de un almacenamiento** | Lo que un almacenamiento admite guardar: discos de máquinas (`images`), ISOs (`iso`) o discos para importar (`import`). |
 
 ---
 
@@ -86,9 +103,29 @@ VM.Config.Network
 Datastore.AllocateSpace
 SDN.Use
 Sys.Audit
+VM.Config.Disk
+VM.Clone
+Datastore.AllocateTemplate
+Sys.AccessNetwork
 ```
 
-Esta lista se comprobó en un Proxmox real: son los 10 privilegios mínimos. **Crear lotes,
+Los **10 primeros** se comprobaron en un Proxmox real: son los mínimos para crear máquinas con
+disco vacío. Los **4 últimos** (desde el MVP 4) sirven para instalar desde un ISO, subir o
+descargar archivos, importar discos y clonar plantillas:
+
+| Privilegio | Para qué sirve |
+|---|---|
+| `VM.Config.Disk` | Fijar el orden de arranque con un ISO y ampliar discos. |
+| `VM.Clone` | Clonar plantillas. |
+| `Datastore.AllocateTemplate` | Subir y descargar ISOs e imágenes de disco. |
+| `Sys.AccessNetwork` | Que el servidor descargue archivos desde una dirección web. |
+
+Si no los das, crear máquinas vacías sigue funcionando y ProxLaunch solo desactiva esas
+opciones, indicando qué permiso falta. Donde asignar estos permisos (en todo el servidor o solo
+donde hacen falta) se explica en
+[Permisos para el administrador: alcance acotado](#permisos-para-el-administrador-alcance-acotado).
+
+**Crear lotes,
 etiquetar las máquinas y deshacer un lote no piden ningún permiso más**: borrar una máquina
 solo exige `VM.Allocate`, que ya está en la lista. Hay una excepción, que depende de cómo
 configuró tu administrador Proxmox (ver [Etiquetas](#etiquetas-qué-son-y-para-qué-sirven)).
@@ -113,7 +150,9 @@ y también en el enlace «¿Cómo creo un API Token?» de la pantalla de conexi�
    muestra: solo aparece una vez.**
 4. Ve a **Datacenter → Permisos → Añadir → Permiso de usuario** (o **de token**). Pon la
    ruta `/`, elige el usuario o el token, el rol `ProxLaunchCreador` y deja marcado
-   **Propagar**.
+   **Propagar**. Esta es la **alternativa simple**: es cómoda, pero da el permiso sobre todo el
+   servidor. Si vas a usar ISOs, importar discos o clonar plantillas, lo recomendado es el
+   [alcance acotado](#permisos-para-el-administrador-alcance-acotado).
 5. En ProxLaunch, pega el token completo con el formato `usuario@realm!nombre=secreto`.
    Por ejemplo: `proxlaunch@pve!lab=11111111-2222-3333-4444-555555555555`.
 
@@ -290,8 +329,10 @@ necesitas escribir el **nombre**.
 - **Agregar disco** añade otro. **Quitar** elimina uno (siempre queda al menos uno).
 - **Sin disco** crea la máquina sin ningún disco. Es útil si lo añadirás o importarás
   después.
-- El disco se crea **vacío**: ProxLaunch **no instala ningún sistema operativo**. Eso lo
-  haces tú después, desde Proxmox.
+- Con el origen **Vacía, sin sistema operativo** (el predeterminado), el disco se crea
+  **vacío**: ProxLaunch **no instala ningún sistema operativo**. Eso lo haces tú después, desde
+  Proxmox. Si prefieres instalar desde un ISO, usar un disco que ya tienes o copiar una
+  plantilla, mira [Elegir el origen del sistema operativo](#elegir-el-origen-del-sistema-operativo).
 
 ### Red
 
@@ -363,6 +404,419 @@ oscuro. Elige a mano si lo necesitas.
 
 ---
 
+## Elegir el origen del sistema operativo
+
+Hasta ahora la máquina se creaba con un disco vacío. Desde el MVP 4, arriba del formulario
+aparece la pregunta **¿Cómo quieres crear la máquina?** con cuatro opciones. ProxLaunch **no
+enciende** la máquina en ninguna de ellas: la crea detenida y, si instalas desde un ISO, tú
+terminas la instalación desde la consola de Proxmox.
+
+### Las cuatro opciones
+
+| Opción | Cuándo usarla |
+|---|---|
+| **Vacía, sin sistema operativo** | Es la de siempre: «La máquina se crea con un disco vacío y sin sistema operativo. Instálalo después desde la consola de Proxmox.» |
+| **Instalar desde un archivo ISO** | Quieres instalar un sistema desde cero. La máquina arranca desde el ISO. |
+| **Usar un disco existente (qcow2, vmdk, raw)** | Ya tienes un disco con el sistema instalado y quieres que la máquina nueva lo use. |
+| **Copiar una plantilla de Proxmox** | Tu administrador dejó una máquina ya instalada como modelo y quieres copias de ella. |
+
+Si no sabes cuál elegir, la ayuda del campo lo resume: usa un ISO para instalar desde cero o una
+plantilla para empezar con algo ya instalado.
+
+- Una opción que no se puede usar en tu servidor **no se oculta**: aparece desactivada con el
+  motivo escrito debajo (por ejemplo, que falta un permiso o que el servidor no tiene un
+  almacenamiento con el contenido necesario). Sin conexión, las tres últimas dicen «Conéctate a un
+  servidor para ver si esta opción está disponible.»
+- El enlace **¿Por qué no puedo usar alguna opción?** (también en **Ayuda > Qué puedo hacer en este
+  servidor…**) abre **Qué puedo hacer en este servidor**: una tabla con **Qué quieres hacer**,
+  **Estado** y **Por qué**, y un texto **Qué pedirle a tu administrador** que puedes copiar con
+  **Copiar texto para el administrador** y enviarle.
+- Si ya elegiste un archivo o una plantilla y cambias de opción, ProxLaunch pregunta (**Cambiar la
+  forma de crear la máquina**): «Si cambias, se pierde lo que elegiste: …». Elige **Cambiar** o
+  **Cancelar**.
+- Mientras corre un lote, el selector queda bloqueado.
+
+### Instalar desde un archivo ISO
+
+Un **ISO** es la imagen del disco de instalación de un sistema operativo, como el CD con el que se
+instalaría. Al elegir esta opción:
+
+1. Pulsa **Elegir ISO…**. Se abre **Elegir un archivo ISO**: «Estos son los archivos ISO que hay en
+   el servidor. Si el tuyo no está, súbelo desde tu equipo o haz que el servidor lo descargue.»
+2. Escribe en **Filtrar por nombre** para encontrar el tuyo. Las filas que no se pueden elegir
+   quedan desactivadas con el motivo escrito. Con **Actualizar** vuelves a leer el servidor.
+3. Si el ISO no está, usa **Subir desde mi equipo…** o **Descargar en el servidor…** (ver más
+   abajo). Al terminar, el archivo nuevo queda elegido.
+4. Elige el ISO y pulsa **Elegir**. Debajo del botón verás su nombre.
+5. Elige el **Sistema operativo** (ver [El asistente de sistema operativo](#el-asistente-de-sistema-operativo)).
+6. Pulsa **Crear máquina** como siempre.
+
+La máquina se crea con el ISO puesto como CD y con el orden de arranque disco, CD y red. Fijar ese
+orden necesita el permiso `VM.Config.Disk`: si no hay certeza de que lo tienes, ProxLaunch crea la
+máquina sin fijar el orden. En ese caso pide a tu administrador que, en Proxmox, ponga el CD
+en el orden de arranque de la máquina (pestaña «Opciones» → «Orden de arranque»).
+
+### El asistente de sistema operativo
+
+En el grupo **Sistema operativo** eliges qué vas a instalar (**Elige el sistema operativo…**):
+**Linux**, **Windows 11**, **Windows Server 2022 / 2025**, **Windows 10**,
+**Windows Server 2016 / 2019** u **Otro sistema**. El asistente ajusta la máquina a ese sistema:
+tipo de arranque, TPM, controlador de discos y tarjeta de red. **No toca** los núcleos, la
+memoria ni el tamaño del disco.
+
+Antes de crear nada ves exactamente qué cambió, con el aviso «Para Windows 11 el asistente va a
+cambiar:» y una lista de líneas «antes → después» (o «Para … no hace falta cambiar nada más.»).
+
+| Sistema | Qué ajusta el asistente |
+|---|---|
+| **Linux** | Controlador `virtio-scsi-single` y tarjeta de red VirtIO. Respeta el tipo de arranque que tengas. |
+| **Windows 11** | Arranque UEFI (OVMF) con tipo de máquina q35, **TPM** (obligatorio), agente de QEMU, controlador `virtio-scsi-single`, red VirtIO y el segundo CD de drivers. |
+| **Windows Server 2022 / 2025** | Igual que Windows 11, pero el TPM no es obligatorio. |
+| **Windows 10** y **Windows Server 2016 / 2019** | Arranque UEFI, agente de QEMU, controlador, red VirtIO y CD de drivers; sin TPM. |
+| **Otro sistema** | No cambia nada más. |
+
+Avisos que no bloquean (aparecen en el formulario):
+
+- **Mínimos de Windows.** ProxLaunch avisa si el hardware queda por debajo de lo que pide
+  Microsoft: Windows 11, 2 núcleos, 4 GiB de memoria y 64 GiB de disco; los demás Windows, 1 núcleo,
+  2 GiB y 32 GiB.
+- **Red Hat 10.** «Si vas a instalar RHEL 10 (o Rocky, Alma, CentOS Stream 10), necesita un
+  procesador x86-64-v3. Elige ese tipo de CPU o «host».» Si el nombre del ISO parece de esa familia,
+  el aviso lo dice: «Este ISO parece de la familia RHEL 10 (Red Hat, Rocky, Alma), que necesita un
+  procesador x86-64-v3. Con el tipo de CPU actual puede no arrancar: elige x86-64-v3 o «host».»
+- **Windows 11** sin UEFI o sin TPM: «Windows 11 exige arranque UEFI (OVMF).» / «Windows 11 exige un
+  TPM 2.0.»
+
+En **modo avanzado**, con un Windows, aparece la casilla **Disco compatible (SATA): no hace falta
+cargar un controlador al instalar**: pone el primer disco en SATA para que Windows lo vea sin
+drivers (es más lento que SCSI).
+
+> Los perfiles de fábrica **Windows 11 (escritorio)**, **Windows Server** y **Linux (Red Hat y
+> otros)** dejan el hardware y el sistema operativo ya elegidos. Solo te queda elegir el ISO.
+
+### Windows y los drivers virtio-win
+
+Windows no trae los controladores de los discos y la red virtuales de Proxmox. Por eso, al elegir
+un Windows, ProxLaunch añade un **segundo CD** llamado **virtio-win** para cargarlos durante la
+instalación. En el grupo **Drivers de Windows (virtio-win)** hay tres caminos:
+
+1. **Ya está en el servidor.** Si hay un ISO que empieza por `virtio-win`, ProxLaunch lo usa: «Se
+   usará el CD de drivers «virtio-win-0.1.302.iso», que ya está en el servidor.» (el nombre será el
+   del archivo que tengas). Con **Elegir otro ISO de drivers…** puedes elegir otro.
+2. **Descargarlo en el servidor.** Si no hay ninguno, el texto dice «No hay ningún ISO de virtio-win
+   en el servidor. Elige cómo conseguirlo.» El botón **Descargarlo en el servidor** hace que Proxmox
+   lo descargue de una dirección fija, y comprueba su huella SHA-256. En el laboratorio tardó unos 76
+   segundos.
+3. **Ya lo tengo en mi equipo.** Si lo descargaste antes, **Ya lo tengo en mi equipo** lo sube.
+
+Si no quieres los drivers, marca **Crear sin los drivers**: «La máquina se creará sin el CD de
+drivers.» y se muestra el aviso «Sin los drivers, Windows no verá el disco VirtIO ni la red.»
+
+ProxLaunch conoce la versión **0.1.302** de virtio-win. Si eliges otro ISO de drivers, puedes
+crear la máquina igualmente, pero antes verás el aviso: «Se usará el CD de drivers «…», que no es
+la versión que conoce ProxLaunch. Comprueba que es de confianza antes de crear la máquina.»
+
+### Subir un ISO desde tu equipo
+
+En **Elegir un archivo ISO**, pulsa **Subir desde mi equipo…**. Se abre **Subir un ISO desde mi
+equipo**:
+
+1. Pulsa **Elegir archivo…** y elige un archivo `.iso` (o `.img`). ProxLaunch lo revisa (que de
+   verdad parezca un ISO) y muestra su nombre y tamaño.
+2. En **Nombre en el servidor** puedes cambiar cómo se llamará allí. ProxLaunch propone un nombre
+   válido y **nunca sobrescribe**: si ya existe uno igual, lo dice («Ya existe un archivo llamado
+   «x» en «y». ProxLaunch no lo sobrescribe: usa el que ya está o elige otro nombre.») y ofrece
+   **Usar el existente** o **Cambiar el nombre**.
+3. ProxLaunch comprueba el destino: que quepa en el almacenamiento y que tengas permiso. Si el nodo
+   tiene poco espacio temporal, avisa («El nodo «pve1» tiene poco espacio temporal (… libres) para
+   recibir un archivo de …. La subida podría fallar.») y tienes que marcar **Entiendo que la subida
+   puede fallar** para seguir. Lee el aviso: «Esta subida no se puede deshacer desde ProxLaunch
+   (requeriría un permiso de administrador). Si te equivocas, pídele al administrador que borre el
+   archivo.»
+4. Pulsa **Subir**. Verás las etapas **Calculando la huella del archivo**, **Enviando**,
+   **Esperando al servidor** y **Verificando**, con la velocidad y el tiempo restante cuando se
+   conocen (nunca inventa porcentajes).
+5. Al terminar: «Listo. El archivo «…» está en el servidor.» y queda elegido.
+
+**Verificación SHA-256.** Antes de enviar, ProxLaunch calcula la huella SHA-256 del archivo y la
+manda con él: el servidor comprueba que lo recibido coincide con ella. Al final, ProxLaunch
+verifica además que el archivo del servidor es el que enviaste. Si algo no coincide, verás «El
+archivo llegó dañado: la huella no coincide. No quedó guardado.» o «El servidor dice que terminó,
+pero el archivo no coincide con el que enviaste. No lo uses.»
+
+**Cancelar.** Mientras se envía, el botón dice **Cancelar subida**. Si cancelas, el resultado es «Se
+canceló. No se guardó ningún archivo.», o, si quedó algo a medias, «Se canceló, pero el archivo
+parcial quedó guardado: pídele al administrador que lo borre.» La cancelación **no siempre es
+inmediata**: puede tardar unos segundos mientras se conecta y mucho más si el servidor está
+terminando de copiar el archivo (hasta unos 2 minutos); cerrar ProxLaunch en ese momento también
+puede tardar unos 6 segundos.
+
+**Una transferencia a la vez.** Si ya hay una en curso: «Hay una transferencia en curso. Espera a
+que termine o cancélala.»
+
+### Dejar de esperar
+
+Cuando ProxLaunch ya envió todo el archivo y el servidor lo está copiando, el botón cambia de
+**Cancelar subida** a **Dejar de esperar**. Pulsarlo no detiene nada en el servidor; solo hace que
+ProxLaunch deje de esperar: «Dejaste de esperar. El archivo ya se envió y el servidor sigue
+copiándolo: no se puede cancelar desde ProxLaunch y puede aparecer en el catálogo cuando termine.
+Revísalo allí más tarde.»
+
+Lo mismo ocurre con una descarga: «La descarga sigue en el servidor y no se puede cancelar desde
+ProxLaunch. Cuando termine, abre el catálogo para ver el resultado.»
+
+### Descargar un ISO en el servidor
+
+En **Elegir un archivo ISO**, **Descargar en el servidor…** abre **Descargar un ISO en el
+servidor**. Aquí el propio servidor de Proxmox descarga el archivo, sin pasar por tu equipo.
+
+1. Escribe la **Dirección web** y pulsa **Comprobar**. El servidor dice qué ve («El servidor ve:
+   «host/archivo»») con su nombre, tamaño y tipo.
+2. (Recomendado) Escribe la **Huella** del archivo (el campo dice «Opcional: huella (sha256,
+   sha512…)»). Si la escribes, Proxmox comprueba al terminar que lo descargado coincide y, si no,
+   descarta el archivo. Se admiten md5, sha1, sha224, sha256, sha384 y sha512; si usas un algoritmo
+   antiguo, ProxLaunch avisa que ya no protege de un archivo manipulado a propósito y sugiere
+   SHA-256 o SHA-512.
+3. Revisa el **Nombre en el servidor** y pulsa **Descargar**.
+
+Cosas que conviene saber:
+
+- Lo normal es una dirección `https://`. Si usas `http://`, ProxLaunch avisa («no se puede garantizar
+  que el archivo no fue alterado por el camino») y te pide confirmar. También avisa si apunta a un
+  equipo de la red interna del servidor o usa un puerto que no es el 80 ni el 443.
+- En **modo avanzado** aparece la casilla **Comprobar el certificado del servidor web
+  (recomendado)**; desmarcarla también pide confirmación.
+- «La descarga la hace el servidor: una vez empezada, no se puede cancelar desde ProxLaunch. Solo
+  puedes dejar de esperar.» Y «La dirección quedará en el registro de tareas del servidor.»
+- Descargar desde una dirección web necesita Proxmox **8.2 o superior** y el permiso
+  `Sys.AccessNetwork` en el nodo. En 8.0 y 8.1 exige permisos de administrador y ProxLaunch te lo
+  explica: «Descargar desde una dirección web exige permisos de administrador en esta versión de
+  Proxmox. Descarga el archivo en tu equipo y súbelo.»
+
+### Archivos subidos en esta sesión
+
+**Archivo > Archivos subidos en esta sesión…** muestra la lista de lo que subiste o descargaste
+desde que abriste ProxLaunch (hora, tipo, archivo, almacenamiento, nodo, tamaño y estado). Puedes
+usar **Copiar lista** o **Guardar como .txt…**. Esa lista solo existe mientras la aplicación está
+abierta y no se guarda sola. Estos archivos **quedan en el servidor hasta que un administrador los
+borre**: ProxLaunch no puede borrarlos, ni siquiera con un usuario administrador. Si ya no los
+necesitas, pide que los borren desde Proxmox (en el almacenamiento, sección «ISO Images» o
+«Import»).
+
+### Usar un disco existente (importar)
+
+Esta opción crea la máquina con un disco que ya tiene un sistema instalado (qcow2, vmdk o raw), en
+lugar de empezar vacía.
+
+**Qué necesita tu servidor:**
+
+- Proxmox **8.4 o superior**. En 8.0 a 8.3 verás: «Tu Proxmox … no permite importar discos sin ser
+  administrador del servidor. Puedes instalar desde un ISO o clonar una plantilla. Desde la versión
+  8.4 sí se puede importar.»
+- Un almacenamiento de tipo **directorio, NFS o CIFS** con el contenido **«Import»** activado. Lo
+  activa un administrador (**Datacenter → Almacenamiento → Editar → Contenido**). Si no hay
+  ninguno: «Para importar discos, pide a tu administrador que active el contenido «Import» en un
+  almacenamiento de tipo directorio, NFS o CIFS.» (y, si puede, te dice en cuáles podría activarse).
+
+**Paso a paso:**
+
+1. Pulsa **Elegir disco…**. Se abre **Elegir un disco existente**: «Estos son los discos (qcow2,
+   vmdk, raw) que hay en el servidor para importar.»
+2. Si no está, **Subir desde mi equipo…** abre **Subir un disco desde mi equipo** (acepta `.qcow2`,
+   `.vmdk`, `.raw` y `.img`) y funciona como la subida de un ISO, con las mismas comprobaciones de
+   nombre, espacio y huella. **Descargar en el servidor…** abre **Descargar un disco en el
+   servidor**.
+3. Opcionalmente, **Ampliar el disco a** un tamaño mayor en GiB (por defecto, **Tamaño del disco
+   importado**).
+4. Elige el sistema operativo si quieres que el asistente ajuste la máquina, y crea.
+
+**Qué discos no se pueden importar.** ProxLaunch revisa el archivo antes de subirlo y te dice por
+qué no sirve: depende de otro archivo (un disco base), está cifrado, está formado por varios
+archivos, es una **OVA** («Un archivo OVA no se puede importar tal cual. Extrae el disco que lleva
+dentro y súbelo.»), tiene una versión no compatible o parece incompleto. Las OVA y la migración
+desde VMware no están soportadas.
+
+**En un lote**, cada máquina recibe su propia copia del disco, así que ocupa espacio propio. Con
+muchas máquinas el espacio necesario se multiplica. Las importaciones se hacen de una en una por
+nodo y, como mucho, dos a la vez hacia el mismo almacenamiento.
+
+### El diálogo «¿Cuál usar siempre?» (almacenamientos)
+
+En cada sitio los almacenamientos tienen nombres distintos. ProxLaunch **no se fija en el nombre**:
+mira qué contenido admite cada uno (discos de máquinas, ISOs o discos para importar) y, si hay uno
+solo, lo usa sin preguntar. Si hay **varios**, te pregunta **una vez por servidor** y lo recuerda.
+
+El diálogo se llama **Elegir almacenamiento** y dice: «Hay varios almacenamientos para discos de
+máquinas. ¿Cuál usar siempre en este servidor?» (en lugar de «discos de máquinas» puede decir
+«imágenes ISO» o «imágenes de disco para importar»). Muestra una tabla con **Almacenamiento**,
+**Tipo**, **Espacio libre**, **Compartido** y **Nota** (el de más espacio libre viene marcado «Más
+espacio libre» y elegido de antemano). Pulsa **Usar este** para aceptar, o **Cancelar**. La casilla
+**Recordar mi elección** viene marcada y guarda solo el nombre del almacenamiento, en el perfil de
+conexión de este servidor.
+
+**Cuándo sale:**
+
+- Cuando eliges el origen **Instalar desde un archivo ISO** o **Usar un disco existente**, si hay
+  varios almacenamientos para los discos de las máquinas y todavía no recordaste ninguno.
+- Cuando subes o descargas un archivo y hay varios almacenamientos para ese contenido (ISOs o
+  discos para importar).
+
+**Cuándo NO sale:** al conectar, ni con el origen **Vacía, sin sistema operativo**. Con un disco
+vacío todo funciona como antes: ProxLaunch propone el almacenamiento con más espacio libre.
+
+**Si el que recordabas desaparece.** Si el almacenamiento recordado ya no existe, está inactivo o ya
+no admite ese contenido, ProxLaunch no lo sustituye en silencio: «El almacenamiento «x» que usabas
+en este servidor ya no está disponible o ya no admite imágenes ISO. Elige otro.» Entonces el
+diálogo ofrece **Elegir otro** o **Dejar de recordar**. Puedes revisarlos cuando quieras en
+**Ajustes > Almacenamientos recordados…**, y también en la ventana de conexión, en el grupo
+**Almacenamientos recordados de este servidor** (**Discos de las máquinas**, **Archivos ISO** y
+**Discos para importar**, con **Dejar de recordar**).
+
+### Copiar una plantilla (clonar)
+
+Una **plantilla de Proxmox** es una máquina ya instalada que se marcó como modelo. Al clonarla
+obtienes máquinas nuevas con su mismo sistema, sin instalar nada. Los discos, la red y el tipo de
+arranque los da la plantilla: lo que tengas en esas secciones del formulario se ignora.
+
+1. Pulsa **Elegir plantilla…**. Se abre **Elegir una plantilla de Proxmox**: «Estas son las
+   plantillas de Proxmox que tu cuenta puede ver. La nueva máquina será una copia de la que elijas.»
+2. Las plantillas que no se pueden usar aparecen desactivadas con el motivo, por ejemplo «Falta el
+   permiso VM.Clone» o «Bloqueada (…): espera a que termine lo que Proxmox está haciendo con ella».
+   Si no ves ninguna: «No veo ninguna plantilla con tu cuenta. Pide el permiso VM.Audit o crea la
+   plantilla en Proxmox (clic derecho en la máquina → Convertir en plantilla).»
+3. Elige una y pulsa **Elegir**.
+
+**Tipo de copia: enlazada o completa.**
+
+- **Rápido y ligero** (clon *enlazado*): la copia comparte el disco con la plantilla, se crea en
+  segundos y casi no ocupa espacio, pero depende de ella. **No borres la plantilla mientras existan
+  sus copias.** (En el laboratorio, un almacenamiento de tipo `lvmthin` dejó borrar una plantilla con
+  clones enlazados: ProxLaunch no promete ninguna protección, así que ten cuidado.)
+- **Copia independiente** (clon *completo*): duplica todo el disco. Tarda más y ocupa más, pero la
+  máquina no depende de nada.
+
+En **modo básico** no eliges: se usa **Rápido y ligero (recomendado)** y, si el almacenamiento no lo
+permite, Proxmox hace una copia independiente. Antes de crear, ProxLaunch te dice cuál será: «Se hará
+una copia rápida y ligera. Las máquinas comparten el disco base con la plantilla: no borres la
+plantilla mientras existan.» o «Se hará una copia independiente: tarda más y ocupa el espacio completo
+del disco.» En **modo avanzado** aparece **Tipo de copia** (**Automático**, **Enlazado** o
+**Completo**) y, con la copia completa, **Guardar la copia en** otro almacenamiento («El de la
+plantilla» por defecto).
+
+**Cuántas a la vez.** En un lote, ProxLaunch crea como máximo **3 clones enlazados a la vez por
+nodo**, y ese tope se cuenta en el **nodo de la plantilla**, aunque las máquinas nuevas vayan a
+otros nodos. Las copias completas se hacen de una en una por nodo y, como mucho, dos a la vez hacia el
+mismo almacenamiento. (En el laboratorio, 3 clones enlazados en paralelo tardaron 1,1 s frente a
+1,6–3,7 s uno tras otro.)
+
+**Ajustes de la copia (opcional).** El grupo **Ajustes de la copia (opcional)** deja cambiar
+**Núcleos**, **Memoria (MiB)** y **Disco principal (GiB)** (y, en modo avanzado, **Procesadores
+(sockets)** y **Tipo de CPU**). Cada campo dice «Igual que la plantilla» con su valor si no lo
+tocas. Si la memoria nueva queda por debajo de la memoria mínima (ballooning) de la plantilla,
+ProxLaunch baja también ese mínimo para que Proxmox lo acepte. Si un ajuste falla después de
+clonar: «La máquina «x» se clonó, pero no se pudo …. Puedes reintentar los ajustes o deshacer.»
+
+**Deshacer** una copia borra la máquina nueva, **nunca la plantilla**.
+
+### Orígenes en lotes, perfiles y CSV
+
+- **Lotes.** En un lote normal, todas las máquinas usan el mismo origen (la misma ISO, el mismo
+  disco o la misma plantilla). Ver [Crear varias máquinas de una vez (lotes)](#crear-varias-máquinas-de-una-vez-lotes).
+- **Perfiles.** Los perfiles de fábrica **Windows 11 (escritorio)**, **Windows Server** y **Linux
+  (Red Hat y otros)** traen el hardware y el sistema operativo para instalar desde un ISO
+  (ver [Perfiles de fábrica](#perfiles-de-fábrica)).
+- **Lotes guardados.** Un lote guardado recuerda el origen y el **nombre** del ISO, del disco o de
+  la plantilla (nunca direcciones web, rutas de tu equipo ni huellas). Al abrirlo, ProxLaunch
+  comprueba que ese archivo o plantilla exista en este servidor; si no, aparece **Este lote no
+  encaja en este servidor** y eliges otro (ver [Si el lote «no encaja»](#si-el-lote-no-encaja-en-este-servidor)).
+- **CSV.** Cada fila puede tener su propio origen con las columnas `origen`, `fuente`, `so`,
+  `virtio` y `modo_clon`:
+
+| Columna | Valores |
+|---|---|
+| `origen` | `vacio` (o `disco vacio`), `iso`, `importar` (o `imagen`, `importar disco`), `clonar` (o `plantilla`, `clonar plantilla`). |
+| `fuente` | El **nombre** del ISO, del disco o de la plantilla (no una dirección web ni una ruta). |
+| `so` | `linux`, `windows 11`, `windows server 2022/2025`, `windows 10`, `windows server 2016/2019` u `otro`. |
+| `virtio` | `si` o `no`: con o sin el CD de drivers (solo Windows con `iso`). |
+| `modo_clon` | `auto`, `enlazado` o `completo` (solo con `clonar`). |
+
+En una fila con origen `importar`, la columna `disco` significa «ampliar el disco a» (GiB). En una
+fila con origen `clonar`, `cpu`, `memoria` y `disco` son **ajustes** sobre la plantilla. Si una fila
+nombra un archivo o plantilla que no existe en el servidor, la vista previa la marca con error. Pon `vacio` en `origen` si la fila no debe heredar el origen de su perfil.
+Si escribes una dirección web en `fuente`, ProxLaunch te dice: «Aquí va el nombre de un archivo del
+servidor, no una dirección web. Para descargar usa «Descargar en el servidor».»
+
+### Permisos para el administrador: alcance acotado
+
+Esta parte es para quien administra Proxmox. Para usar ISOs, importar discos y clonar plantillas,
+el rol `ProxLaunchCreador` lleva los 14 privilegios de [Permisos que hacen falta](#permisos-que-hacen-falta).
+Dónde se asignan importa mucho, porque `VM.Clone` permite copiar el contenido de una máquina.
+
+**Recomendado: asignación acotada.** La guía de ProxLaunch (**Ayuda > ¿Cómo creo un API Token?**)
+propone estas asignaciones, en **Datacenter → Permisos**:
+
+| Ruta | Rol | Propagar | Para qué |
+|---|---|---|---|
+| `/pool/plantillas-proxlaunch` | `ProxLaunchCreador` | Sí | Que `VM.Clone` valga **solo** para las plantillas de ese pool. |
+| `/vms` | `ProxLaunchMaquinas` | Sí | Crear máquinas (el segundo rol, sin `VM.Clone`). |
+| `/storage/<almacenamiento>` | `ProxLaunchCreador` | — | Solo en los que se usarán para ISOs, imágenes importadas y discos (`Datastore.AllocateTemplate` y `Datastore.AllocateSpace`). |
+| `/nodes/<nodo>` | `ProxLaunchCreador` | — | Solo en los nodos que descargarán archivos desde una dirección web (`Sys.AccessNetwork`). |
+| `/sdn/zones/localnetwork` | `ProxLaunchCreador` | — | Usar la red (`SDN.Use`). |
+| `/` | `ProxLaunchCreador` | **No** | Solo para ver el estado de los nodos (`Sys.Audit`). |
+
+En las filas con «—», la guía de ProxLaunch no indica nada especial sobre **Propagar**.
+
+Pasos:
+
+1. En **Datacenter → Permisos → Pools** crea el pool `plantillas-proxlaunch` y añade **solo las
+   plantillas que ProxLaunch podrá clonar**.
+2. Crea el rol `ProxLaunchCreador` con los 14 privilegios y asígnalo en la ruta
+   `/pool/plantillas-proxlaunch` con **Propagar**.
+3. Crea un segundo rol, `ProxLaunchMaquinas`, con los privilegios de máquina del rol anterior **sin
+   `VM.Clone`**, y asígnalo en `/vms` con **Propagar**:
+
+   ```text
+   VM.Allocate
+   VM.Audit
+   VM.Config.Options
+   VM.Config.HWType
+   VM.Config.CPU
+   VM.Config.Memory
+   VM.Config.Network
+   VM.Config.Disk
+   ```
+
+4. Asigna `ProxLaunchCreador` en `/storage/<almacenamiento>`, `/nodes/<nodo>` y
+   `/sdn/zones/localnetwork`, y en `/` **sin** marcar **Propagar**.
+
+Con esto, `VM.Clone` solo vale dentro del pool. Se verificó en el laboratorio: con el pool se
+clona y, fuera del pool, Proxmox responde 403.
+
+**Alternativa simple.** Asignar el rol `ProxLaunchCreador` una sola vez en la ruta `/` con
+**Propagar**. Es más cómodo, pero el permiso alcanza a todo el servidor: quien consiga el token
+podría **clonar cualquier máquina y leer sus discos**, subir archivos a cualquier almacenamiento y
+hacer que los nodos descarguen direcciones web. Úsala solo en un laboratorio o si confías
+plenamente en quien guarde el token.
+
+**Lo que la asignación acotada no limita.** `VM.Audit` **no queda limitado al pool**: el token ve
+todas las máquinas y plantillas del servidor. Por eso las demás plantillas **pueden verse en la
+lista** (aparecen desactivadas con «Falta el permiso VM.Clone»), pero ProxLaunch **no las clonará**:
+la planificación lo bloquea con «Falta el permiso VM.Clone en «/vms/…» para clonar la plantilla.»
+(regla V-O17).
+
+**Limpieza periódica (importante).** Algunos rechazos de una subida dejan archivos
+`/var/tmp/pveupload-*` en el nodo. El rol **no puede borrarlos**, a propósito: no tiene
+`Datastore.Allocate`. Si se repiten subidas fallidas, esos archivos pueden **llenar el sistema de
+archivos raíz** del nodo. ProxLaunch avisa cuando queda poco espacio en la raíz antes de subir
+(«…tiene poco espacio temporal…»), pero **el administrador debe borrar esos archivos de vez en
+cuando**, por ejemplo revisando `/var/tmp` en cada nodo.
+
+Para el resto, **Copiar texto para el administrador** (en **Qué puedo hacer en este servidor**)
+genera un mensaje listo para enviar con los privilegios, las asignaciones y los pasos de «Import» y
+plantillas.
+
+---
+
 ## Entender el progreso y los resultados
 
 Al pulsar **Crear máquina**, los campos se bloquean y el panel **Progreso** muestra las
@@ -425,7 +879,9 @@ modos?» La tarea **no se detiene**. Al volver, revisa en Proxmox si la máquina
 Un **lote** crea de 1 a 100 máquinas iguales con un solo clic. Todas comparten la
 configuración del formulario (procesadores, memoria, discos, red...) y solo cambian el
 **nombre**, el **número** y, si tienes un clúster, el **nodo**. Como en el resto de
-ProxLaunch, las máquinas se crean **detenidas** y con el disco **vacío**.
+ProxLaunch, las máquinas se crean **detenidas**, y con el disco **vacío** salvo que elijas otro
+[origen del sistema operativo](#elegir-el-origen-del-sistema-operativo) (en un lote normal, todas las
+máquinas usan el mismo origen; en un lote por filas, cada fila puede tener el suyo).
 
 Si lo que necesitas son máquinas **distintas entre sí**, mira [Importar máquinas desde un CSV](#importar-máquinas-desde-un-csv)
 y [Lote por filas](#lote-por-filas). Para repetir un lote otro día, mira
@@ -877,14 +1333,16 @@ Lo que un perfil **sí** aplica: el tipo de arranque, los sockets y núcleos, el
 memoria, el ballooning, los discos (tamaño, conexión, formato y opciones) y las redes.
 
 Lo que un perfil **nunca** toca: el **nombre** de la máquina, su **número (VMID)**, el **nodo** y
-el bloque **Lote**. Tampoco instala ningún sistema operativo: el disco sigue siendo vacío.
+el bloque **Lote**. Un perfil tampoco elige el archivo ISO ni instala nada por sí solo: los tres
+perfiles de fábrica para instalar un sistema (ver abajo) solo **sugieren** instalar desde un ISO y
+tú eliges el archivo después.
 
 El grupo **Perfil de máquina** está arriba del formulario, en modo básico y en avanzado. Con un
 lote en marcha queda desactivado.
 
 ### Perfiles de fábrica
 
-ProxLaunch trae seis perfiles. **No se pueden modificar ni borrar**; si quieres una variante,
+ProxLaunch trae nueve perfiles. **No se pueden modificar ni borrar**; si quieres una variante,
 duplícala (ver [Administrar perfiles](#administrar-perfiles-modo-avanzado)). En la lista aparecen
 como «Servidor pequeño — De fábrica».
 
@@ -896,8 +1354,14 @@ como «Servidor pequeño — De fábrica».
 | **Servidor grande** | Para cargas pesadas. | 8 | 16 GiB | 128 GiB |
 | **Escritorio (hardware compatible)** | Para sistemas que aún no traen controladores virtio: disco SATA, tarjeta de red Intel E1000 y arranque UEFI. | 4 | 4 GiB | 80 GiB |
 | **Mínimo** | Disco y red básicos, para probar. | 1 | 512 MiB | 8 GiB |
+| **Windows 11 (escritorio)** | Para instalar Windows 11: arranque UEFI, TPM y agente de QEMU. El ISO se elige después. | 4 | 8 GiB | 64 GiB |
+| **Windows Server** | Para instalar Windows Server 2022 o 2025: arranque UEFI, TPM y agente de QEMU. El ISO se elige después. | 4 | 8 GiB | 80 GiB |
+| **Linux (Red Hat y otros)** | Para instalar Linux, en especial Red Hat, Rocky o Alma. El ISO se elige después. | 2 | 4 GiB | 40 GiB |
 
-Todos usan un solo socket, una interfaz de red y un disco vacío.
+Todos usan un solo socket y una interfaz de red. Los seis primeros crean un disco vacío; los tres
+últimos (**Windows 11 (escritorio)**, **Windows Server** y **Linux (Red Hat y otros)**) traen solo
+el hardware y dejan marcado el origen «Instalar desde un archivo ISO» **sin archivo**: tú lo eliges
+(ver [Elegir el origen del sistema operativo](#elegir-el-origen-del-sistema-operativo)).
 
 ### Usar un perfil
 
@@ -922,7 +1386,10 @@ en qué red (bridge) estaba cada disco y cada interfaz. Esos nombres son **pista
 el nodo, se usan. Si no existen, ProxLaunch usa los predeterminados del nodo y te avisa en un
 panel que puedes cerrar, por ejemplo: «El perfil pedía el almacenamiento «datos», que no existe
 en «pve1». Se usó «local-lvm».» Si el nodo no tiene ninguno apto, el aviso termina en «Elige uno
-antes de crear.» ProxLaunch nunca inventa un almacenamiento.
+antes de crear.» ProxLaunch nunca inventa un almacenamiento. Con la misma casilla de pistas, un
+perfil que guardaste con origen ISO, disco existente o plantilla recuerda también ese origen y el
+nombre del archivo o de la plantilla (como pista, igual que el almacenamiento). Si desmarcas la
+casilla, el perfil se guarda con el origen «disco vacío».
 
 **Compatibilidad del perfil.** Debajo del selector puede aparecer este panel: con ✕ lo que
 impide crear la máquina con este servidor y esta versión de Proxmox, y con ⚠ lo que solo
@@ -1107,27 +1574,38 @@ confirmar, como en cualquier lote.
 
 ### La plantilla
 
-La plantilla trae las columnas más usadas y dos filas de ejemplo (los nombres de las filas
+La plantilla trae las columnas más usadas y cinco filas de ejemplo: dos con disco vacío y una por
+cada origen del sistema operativo (ISO, disco existente y plantilla). Los nombres de las filas
 empiezan por `ejemplo-`; si las importas tal cual, ProxLaunch avisa «Parece una fila de ejemplo
-de la plantilla.»). Abierta en una hoja de cálculo se ve así:
+de la plantilla.» Abierta en una hoja de cálculo se ve así:
 
-| nombre | perfil | cpu | memoria | disco | almacenamiento | red | vlan | nodo | vmid |
-|---|---|---|---|---|---|---|---|---|---|
-| ejemplo-01 | fabrica.servidor-mediano | | 8 | 100 | local-lvm | vmbr0 | | | |
-| ejemplo-02 | | 2 | 4 GiB | 40 | | vmbr1 | 20 | pve2 | 250 |
+| nombre | perfil | cpu | memoria | disco | almacenamiento | red | vlan | nodo | vmid | origen | fuente | so | virtio | modo_clon |
+|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|
+| ejemplo-01 | fabrica.servidor-mediano | | 8 | 100 | local-lvm | vmbr0 | | | | vacio | | | | |
+| ejemplo-02 | | 2 | 4 GiB | 40 | | vmbr1 | 20 | pve2 | 250 | vacio | | | | |
+| ejemplo-03 | | 2 | 4 | 32 | | | | | | iso | ejemplo-instalador.iso | linux | | |
+| ejemplo-04 | | 2 | 4 | 40 | | | | | | importar | ejemplo-disco.qcow2 | | | |
+| ejemplo-05 | | 4 | 8 | 80 | | | | | | clonar | ejemplo-plantilla | | | auto |
 
 Y así es el texto del archivo (separador `;`; ProxLaunch escribe **todas las celdas entre
 comillas**):
 
 ```text
-"nombre";"perfil";"cpu";"memoria";"disco";"almacenamiento";"red";"vlan";"nodo";"vmid"
-"ejemplo-01";"fabrica.servidor-mediano";"";"8";"100";"local-lvm";"vmbr0";"";"";""
-"ejemplo-02";"";"2";"4 GiB";"40";"";"vmbr1";"20";"pve2";"250"
+"nombre";"perfil";"cpu";"memoria";"disco";"almacenamiento";"red";"vlan";"nodo";"vmid";"origen";"fuente";"so";"virtio";"modo_clon"
+"ejemplo-01";"fabrica.servidor-mediano";"";"8";"100";"local-lvm";"vmbr0";"";"";"";"vacio";"";"";"";""
+"ejemplo-02";"";"2";"4 GiB";"40";"";"vmbr1";"20";"pve2";"250";"vacio";"";"";"";""
+"ejemplo-03";"";"2";"4";"32";"";"";"";"";"";"iso";"ejemplo-instalador.iso";"linux";"";""
+"ejemplo-04";"";"2";"4";"40";"";"";"";"";"";"importar";"ejemplo-disco.qcow2";"";"";""
+"ejemplo-05";"";"4";"8";"80";"";"";"";"";"";"clonar";"ejemplo-plantilla";"";"";"auto"
 ```
 
-Cámbialo por **tus** datos: `local-lvm`, `vmbr0`, `vmbr1` y `pve2` son ejemplos y quizá tu
-servidor no los tenga. Una celda vacía significa «usa lo del perfil» (o, en `nodo` y `vmid`,
-«elige ProxLaunch»).
+Cámbialo por **tus** datos: `local-lvm`, `vmbr0`, `vmbr1`, `pve2`, `ejemplo-instalador.iso`,
+`ejemplo-disco.qcow2` y `ejemplo-plantilla` son ejemplos y quizá tu servidor no los tenga. Una celda
+vacía significa «usa lo del perfil» (o, en `nodo` y `vmid`, «elige ProxLaunch»). Las columnas de
+origen (`origen`, `fuente`, `so`, `virtio` y `modo_clon`) se explican en
+[Orígenes en lotes, perfiles y CSV](#orígenes-en-lotes-perfiles-y-csv). En las filas que
+importan o clonan (`ejemplo-04`, `ejemplo-05`), `disco`, `cpu` y `memoria` tienen otro significado:
+ver esa sección.
 
 ### Columnas
 
@@ -1153,6 +1631,11 @@ aceptan estos alias:
 | `modelo_red` | `tarjeta_red` | Tarjeta de red: `virtio` o `e1000`. | Lo del perfil. |
 | `firmware` | `bios` | Arranque: `seabios` o `bios`; `ovmf` o `uefi`. | Lo del perfil. |
 | `tipo_cpu` | `cpu_tipo` | Tipo de CPU (por ejemplo `x86-64-v2-AES`). | Lo del perfil. |
+| `origen` | `source` | De dónde sale el sistema operativo: `vacio`, `iso`, `importar` o `clonar` (ver [Orígenes en lotes, perfiles y CSV](#orígenes-en-lotes-perfiles-y-csv)). | Lo del perfil. |
+| `fuente` | `origen_archivo`, `iso`, `plantilla`, `imagen` | Nombre del ISO, del disco o de la plantilla. | Sin fuente. |
+| `so` | `sistema` | Sistema operativo del asistente (con `iso` o `importar`). | Sin asistente. |
+| `virtio` | `drivers` | `si` o `no`: con o sin el CD de drivers virtio-win (solo Windows con `iso`). | Detectar el CD de drivers. |
+| `modo_clon` | `clon` | `auto`, `enlazado` o `completo` (solo con `clonar`). | `auto`. |
 
 Reglas de lectura:
 
@@ -1400,6 +1883,44 @@ archivo tenía datos que esta versión no usa), «El archivo traía datos que pa
 No se usaron. Si eran reales, cámbialas.», «En la columna «memoria» había números sin unidad: se
 entendieron como GiB.» y «En la columna «disco», «GB» se tomó como GiB (1 GB = 1024 MiB).»
 
+### Mensajes del origen del sistema operativo
+
+Aparecen al elegir un ISO, un disco o una plantilla, al subir o descargar archivos y al crear con
+esos orígenes (ver [Elegir el origen del sistema operativo](#elegir-el-origen-del-sistema-operativo)).
+Los puntos suspensivos (…) son datos que cambian en cada caso.
+
+| Mensaje | Qué significa | Qué hacer |
+|---|---|---|
+| Tu Proxmox … no permite importar discos sin ser administrador del servidor. Puedes instalar desde un ISO o clonar una plantilla. Desde la versión 8.4 sí se puede importar. | El servidor es Proxmox 8.0 a 8.3. | Instala desde un ISO, clona una plantilla o actualiza Proxmox a 8.4 o superior. |
+| Para importar discos, pide a tu administrador que active el contenido «Import» en un almacenamiento de tipo directorio, NFS o CIFS. | No hay un almacenamiento con el contenido «Import». | Pide al administrador que lo active (**Datacenter → Almacenamiento → Editar → Contenido**). Puedes copiar el texto desde **Qué puedo hacer en este servidor**. |
+| Falta el permiso Sys.AccessNetwork en el nodo «…» para descargar desde una dirección web. Pídeselo a tu administrador o descarga el archivo en tu equipo y súbelo. | Tu cuenta no puede hacer que el servidor descargue de Internet. | Pide el permiso o usa **Subir desde mi equipo…**. |
+| Descargar desde una dirección web exige permisos de administrador en esta versión de Proxmox. Descarga el archivo en tu equipo y súbelo. | Proxmox 8.0 o 8.1. | Sube el archivo desde tu equipo. |
+| Falta el permiso … en «…» para …. | Falta un privilegio del rol en esa ruta (por ejemplo `VM.Clone` o `Datastore.AllocateTemplate`). | Ver [Permisos que hacen falta](#permisos-que-hacen-falta) y [Permisos para el administrador](#permisos-para-el-administrador-alcance-acotado). |
+| Para guardar el disco importado necesitas el permiso Datastore.AllocateSpace en «…». | La cuenta no puede crear discos en ese almacenamiento. | Pide el permiso en esa ruta, o elige otro almacenamiento. |
+| No puedes ver los archivos de «…»: falta el permiso Datastore.Audit o Datastore.AllocateSpace. | El catálogo de ese almacenamiento no se puede leer. Los demás se muestran. | Pide el permiso o elige otro almacenamiento. |
+| El almacenamiento «…» que usabas en este servidor ya no está disponible o ya no admite …. Elige otro. | El que recordabas desapareció, está inactivo o ya no admite ese contenido. ProxLaunch no lo sustituye en silencio. | Usa **Elegir otro** o **Dejar de recordar** (ver [el diálogo «¿Cuál usar siempre?»](#el-diálogo-cuál-usar-siempre-almacenamientos)). |
+| Ningún almacenamiento activo de este servidor guarda …. Pide a tu administrador que lo active en uno. | No hay donde guardar ese contenido. | Pide al administrador que active el contenido en un almacenamiento. |
+| Ya existe un archivo llamado «…» en «…». ProxLaunch no lo sobrescribe: usa el que ya está o elige otro nombre. | Ya hay un archivo con ese nombre. | Pulsa **Usar el existente** o **Cambiar el nombre**. |
+| El archivo pesa … y «…» solo tiene … libres. | No cabe en el almacenamiento. | Libera espacio o elige otro almacenamiento. |
+| El nodo «…» tiene poco espacio temporal (… libres) para recibir un archivo de …. La subida podría fallar. | Poco espacio en la raíz del nodo (donde Proxmox deja el archivo mientras lo recibe). | Marca **Entiendo que la subida puede fallar** solo si aceptas el riesgo; mejor pide al administrador que libere espacio (ver [Limpieza periódica](#permisos-para-el-administrador-alcance-acotado)). |
+| Hay una transferencia en curso. Espera a que termine o cancélala. | Solo se hace una subida o descarga a la vez. | Espera, o cancela la actual. |
+| El archivo cambió mientras se subía. Vuelve a intentarlo. | El archivo de tu equipo se modificó durante el envío. | Vuelve a subirlo sin tocarlo. |
+| Se cortó la conexión mientras se subía el archivo. (puede seguir «Se habían enviado … de ….») | La subida se interrumpió. | Pulsa **Reintentar** y comprueba en el catálogo que no quedó un archivo a medias. |
+| El archivo llegó dañado: la huella no coincide. No quedó guardado. | La huella SHA-256 del servidor no es la del archivo. | Vuelve a subirlo. Si se repite, revisa el archivo original. |
+| El servidor dice que terminó, pero el archivo no coincide con el que enviaste. No lo uses. | La verificación final falló. | No uses ese archivo: pide al administrador que lo borre y súbelo otra vez. |
+| El servidor no pudo descargar … desde …: …. Prueba a descargarlo en tu equipo y subirlo. | La descarga en el servidor falló (red, dirección, huella…). | Revisa la dirección y la huella, o súbelo desde tu equipo. |
+| Transferencia cancelada. (con la frase de si quedó o no un archivo) | Cancelaste. | Si quedó un archivo parcial, pide al administrador que lo borre. |
+| Este disco depende de otro archivo (un disco base). Conviértelo a un qcow2 independiente antes de subirlo. (también: cifrado, varios archivos, OVA, versión no compatible, incompleto o dañado) | El disco no se puede importar tal cual. | Convierte el disco como dice el mensaje y vuelve a subirlo. |
+| Importar desde una ruta del servidor exige ser administrador (root). Sube el archivo desde tu equipo. | Escribiste una ruta del servidor como fuente. | Usa **Subir desde mi equipo…** o elige el disco del catálogo. |
+| Aquí va el nombre de un archivo del servidor, no una dirección web. Para descargar usa «Descargar en el servidor». | Escribiste una dirección web en `fuente`. | Usa el botón de descarga o escribe solo el nombre del archivo. |
+| … «…» ya no está en el servidor. Elige otra. | El ISO, disco o plantilla desapareció entre el resumen y la creación. | Elige otra fuente y vuelve a intentarlo. |
+| No encuentro «…» en «…». Disponibles: …. | La fuente nombrada no está en ese nodo. | Elige una de las disponibles. |
+| No veo ninguna plantilla con tu cuenta. Pide el permiso VM.Audit o crea la plantilla en Proxmox (clic derecho en la máquina → Convertir en plantilla). | No hay plantillas visibles. | Pide el permiso o crea una plantilla. |
+| No se puede clonar así: …. | Proxmox no permite esa copia (plantilla bloqueada u ocupada, ya no es plantilla, almacenamiento sin soporte, TPM con la plantilla encendida…). | Lee el motivo y corrígelo; por ejemplo, usa «Copia independiente». |
+| El número de máquina … se ocupó justo antes de clonar. Vuelve a intentarlo. | Otra persona usó ese número. | Vuelve a intentarlo. |
+| La máquina «…» se clonó, pero no se pudo …. Puedes reintentar los ajustes o deshacer. | La copia existe, pero un ajuste (etiquetas, procesadores, memoria o disco) falló. | Reintenta los ajustes, o usa **Deshacer…**. |
+| Se usará el CD de drivers «…», que no es la versión que conoce ProxLaunch. Comprueba que es de confianza antes de crear la máquina. | Aviso: el CD de drivers no es el virtio-win 0.1.302. No impide crear. | Comprueba el origen del ISO. |
+
 ---
 
 ## Privacidad y seguridad
@@ -1419,7 +1940,7 @@ carpeta de datos; la segunda, la del registro.
 
 | Archivo | Qué contiene |
 |---|---|
-| `perfiles.json` | Tus perfiles: nombre, servidores, puerto, método, usuario, realm y si recuerdas credenciales. **Nunca** contiene token, contraseña ni tickets. |
+| `perfiles.json` | Tus perfiles de conexión: nombre, servidores, puerto, método, usuario, realm, si recuerdas credenciales y, desde el MVP 4, el **nombre** de los almacenamientos que pediste recordar (discos de las máquinas, ISOs y discos para importar). **Nunca** contiene token, contraseña ni tickets. |
 | `huellas.json` | Las huellas de los servidores en los que confiaste, por servidor y puerto. |
 | `preferencias.json` | Tema, modo (básico o avanzado) y versión forzada. |
 | `perfiles_maquina.json` | Tus [perfiles de máquina](#perfiles-de-máquina): solo hardware, y los nombres de almacenamiento y red si lo dejaste marcado. Nunca nombres de máquina, números, nodos, servidores, usuarios ni secretos. |
@@ -1470,8 +1991,56 @@ máquina, el nodo y los errores de Proxmox, que puedes compartir con tu administ
 ## Preguntas frecuentes
 
 **¿ProxLaunch instala el sistema operativo en la máquina?**
-No. En esta versión el disco se crea vacío. Instalar un sistema (por ISO, OVA o migración
-desde VMware) se tratará en una versión futura. Mientras tanto, hazlo desde Proxmox.
+No lo instala por ti: prepara la máquina y la deja detenida. Con el origen **Instalar desde un
+archivo ISO**, la máquina queda con el ISO puesto (y, en Windows, con el CD de drivers virtio-win) y
+tú terminas la instalación desde la consola de Proxmox. Con **Usar un disco existente** o **Copiar
+una plantilla**, la máquina ya trae su sistema. Con **Vacía, sin sistema operativo**, el disco queda
+vacío. La instalación desatendida, las OVA y la migración desde VMware no están soportadas. Ver
+[Elegir el origen del sistema operativo](#elegir-el-origen-del-sistema-operativo).
+
+**No veo las opciones ISO, disco existente o plantilla (están desactivadas).**
+Cada una dice debajo por qué. Lo más habitual es que falte un permiso del rol (`VM.Config.Disk`,
+`VM.Clone`, `Datastore.AllocateTemplate`, `Sys.AccessNetwork`), que el servidor no tenga un
+almacenamiento con ese contenido (ISO o «Import»), que no haya plantillas, o que tu Proxmox sea
+anterior a 8.4 (para importar discos). Abre **Ayuda > Qué puedo hacer en este servidor…** y usa
+**Copiar texto para el administrador**.
+
+**¿Por qué me pregunta qué almacenamiento usar, y por qué a veces no?**
+Solo pregunta cuando hay **varios** almacenamientos candidatos para lo que necesitas, y lo hace al
+elegir **Instalar desde un archivo ISO** o **Usar un disco existente**, o al subir o descargar un
+archivo. No pregunta al conectar ni con un disco vacío. Lo que eliges se recuerda por servidor; lo
+puedes cambiar en **Ajustes > Almacenamientos recordados…**.
+
+**Subí un ISO por error, ¿cómo lo borro?**
+ProxLaunch no puede borrar lo que sube, ni siquiera con un administrador. Pide al administrador que lo
+borre desde Proxmox (en el almacenamiento, «ISO Images» o «Import»). **Archivo > Archivos subidos en
+esta sesión…** te da la lista para enviársela.
+
+**Pulsé «Cancelar subida» y tarda en parar.**
+Es normal que no sea inmediato: puede tardar unos segundos al conectar y más si el servidor ya estaba
+terminando de copiar el archivo. Si ya se envió todo, el botón pasa a **Dejar de esperar**: el
+servidor termina la copia por su cuenta y el archivo puede aparecer después en el catálogo.
+
+**¿Puedo clonar cualquier plantilla?**
+Solo las que tu cuenta tenga permiso de clonar (`VM.Clone`). Con la asignación acotada de permisos,
+ese permiso vale solo para las plantillas del pool del administrador. Las demás pueden verse en la
+lista, pero aparecen desactivadas y ProxLaunch no las clonará. Ver
+[Permisos para el administrador](#permisos-para-el-administrador-alcance-acotado).
+
+**Borré una plantilla y mis máquinas dejaron de funcionar.**
+Un clon «rápido y ligero» comparte el disco con la plantilla y depende de ella. En algunos
+almacenamientos (por ejemplo `lvmthin`) Proxmox deja borrar la plantilla aunque tenga copias
+enlazadas. Si necesitas máquinas independientes, elige **Copia independiente** (modo avanzado:
+**Completo**).
+
+**¿Cuántas copias se crean a la vez?**
+Hasta 3 clones enlazados a la vez por nodo (se cuenta en el nodo de la plantilla). Las copias
+completas y las importaciones se hacen de una en una por nodo.
+
+**Una subida falló varias veces y el nodo se quedó sin espacio.**
+Algunos rechazos de subida dejan archivos `/var/tmp/pveupload-*` en el nodo que ProxLaunch no puede
+borrar. Avisa al administrador para que los borre. Ver
+[Permisos para el administrador](#permisos-para-el-administrador-alcance-acotado), «Limpieza periódica».
 
 **¿ProxLaunch enciende la máquina?**
 No. Se crea detenida.
@@ -1499,7 +2068,9 @@ guardó un informe parcial (ver [Cerrar ProxLaunch con un lote en curso](#cerrar
 Sí: con **Simular**. Solo lee del servidor. Ver [Simulación](#simulación).
 
 **¿Qué versiones de Proxmox funcionan?**
-De la 8.0 a la 9.2. Una versión más nueva se admite con un aviso.
+De la 8.0 a la 9.2. Una versión más nueva se admite con un aviso. Algunas funciones del origen del
+sistema operativo piden una versión mínima: descargar un ISO desde una dirección web, 8.2; importar
+un disco existente, 8.4.
 
 **¿Qué diferencia hay entre un perfil de máquina y un lote guardado?**
 Un perfil guarda **solo el hardware** de una máquina y se aplica al formulario; no guarda el

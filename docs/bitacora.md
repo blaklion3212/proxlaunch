@@ -33,7 +33,9 @@ Nunca registres contraseñas, tokens ni datos personales.
   Se destruirá sin rastro al terminar todas las pruebas (D-15).
 - **MVP 3 aprobado** por el usuario (2026-11-14); D-22 y D-23 definitivas.
 - **Fase en curso (nueva):** MVP 4, origen del SO (D-24 aprobada: ISO con asistente para Windows,
-  importar qcow2, clonar plantilla). Investigación de la API en curso.
+  importar qcow2, clonar plantilla): implementado, probado (7226 pruebas normales y 232 de
+  laboratorio), revisado (QA y seguridad corregidos salvo los riesgos documentados) y documentado
+  (entrada 17, D-26). Falta la aprobación del usuario.
 
 ---
 
@@ -266,6 +268,34 @@ Nunca registres contraseñas, tokens ni datos personales.
 - **Siguientes pasos:** aprobación del usuario; después MVP 4 (requiere decidir D-13).
   Documentación cerrada en e90b183.
 
+### 2026-11-14 · 17. MVP 4: arquitectura, implementación, pruebas y revisión (F2 a F7)
+- **Responsable:** orquestador; `implementador` (núcleo, interfaz y correcciones), `probador` (núcleo,
+  interfaz y laboratorio), `revisor-qa`, `auditor-seguridad`, `documentador`
+- **Qué se hizo:** arquitectura (`docs/arquitectura/mvp4.md`) y el origen del sistema operativo por un
+  único camino en el núcleo: disco vacío, ISO (con asistente de SO y, para Windows, segundo CD
+  virtio-win, q35, OVMF y TPM), importar qcow2 (Proxmox ≥ 8.4, storage con contenido «import») y
+  clonar plantillas (enlazado si se puede, si no completo; hasta 3 clones enlazados simultáneos por
+  nodo). Subida de archivos desde el equipo y descarga por URL en el servidor, con SHA-256. Storages
+  detectados por contenido y recordados por servidor. Rol de 14 privilegios y 9 perfiles de fábrica
+  (nuevos: `windows-11`, `windows-server`, `linux-red-hat`). Interfaz: selector de origen y
+  diálogos de catálogo, transferencia, archivos subidos en la sesión, elegir almacenamiento y
+  capacidades. Perfiles, lotes guardados y CSV con origen. OVA y migración desde VMware quedan fuera
+  (D-24).
+- **Resultado:** ✅ 7226 pruebas normales y 232 de laboratorio en verde; ruff, mypy y catálogo de
+  traducción limpios. Laboratorio PVE 9.2: DEFECTO-LAB-01, DEFECTO-LAB-02, HALLAZGO-LAB-03 y
+  DEFECTO-F7-01 (corregido en `c850689`), y en las pruebas del núcleo F6-01..03; todos corregidos.
+  Revisión QA: 12 hallazgos (QA-M4-01..12), corregidos salvo QA-M4-09 (cancelar una subida no es
+  inmediato; queda documentado). Seguridad: SEG-M4-01..12 corregidos y SEG-M4-13 (residuos
+  `/var/tmp/pveupload-*`) informativo, documentado en la guía. Decisiones técnicas en D-26. Hechos
+  medidos en el laboratorio y desviaciones: `docs/arquitectura/mvp4.md`, Anexo B. Guía de usuario
+  ampliada (origen del SO y permisos acotados).
+- **Archivos:** `src/proxlaunch/nucleo/{origen,transferencias}/`, `nucleo/lote/{cupos,ajustes}.py`,
+  `nucleo/api/multipart.py`, `src/proxlaunch/interfaz/` (selector, controlador y diálogos del
+  origen), `tests/`, `docs/guia-usuario.md`, `docs/arquitectura/mvp4.md`. Commits f8f7e3b (F4
+  núcleo), 55c67c7 y 95a934b (F5 interfaz), a15ef3f, 8d8b3f9 y 4957753 (F6 pruebas y laboratorio),
+  c850689 y 9b8dccc (F7).
+- **Siguientes pasos:** aprobación del usuario; después MVP 5 (instaladores y CI).
+
 ---
 
 ## Pendientes y riesgos abiertos
@@ -273,7 +303,12 @@ Nunca registres contraseñas, tokens ni datos personales.
 | Tema | Detalle |
 |---|---|
 | Eliminación del laboratorio | Obligatoria al final de las pruebas, sin dejar rastro (D-15). |
-| D-13 pospuesta | Origen del SO (ISO, OVA, VMware): algunas importaciones exigen `root@pam` o SSH y dependen de la versión (MVP 4). |
+| D-13 resuelta | Resuelta por D-24 (MVP 4): ISO, importar qcow2 y clonar plantilla. OVA y migración desde VMware quedan fuera del alcance. |
+| QA-M4-09 | Cancelar una subida no es inmediato: tarda hasta 10 s al conectar y hasta 120 s mientras se espera la respuesta tras enviar el cuerpo; cerrar la app puede tardar unos 6 s. No corregido; ver el comentario en `nucleo/api/transporte.py`. |
+| Residuos `pveupload` (SEG-M4-13) | Algunos rechazos de subida dejan `/var/tmp/pveupload-*` en el nodo y el rol no puede borrarlos (no tiene `Datastore.Allocate`). Subidas fallidas repetidas pueden llenar la raíz; la app avisa si queda poco espacio. El administrador debe limpiar de vez en cuando. |
+| ISO de Windows real | No probado: el laboratorio solo usa Alpine/Linux. El hardware de Windows (OVMF, TPM, virtio-win) se comprobó sin instalar Windows. |
+| Importación en PVE 8.x | La importación de discos (8.4 o superior) se probó solo con dobles; el laboratorio es PVE 9.2. |
+| Plantillas ajenas visibles | Con la guía de permisos acotada, `VM.Audit` no queda limitado al pool: las demás plantillas se ven en la lista, pero la app no las clona (V-O17). |
 | Python en Ubuntu 22.04 | Trae 3.10; la app exige ≥ 3.11. Resolver al empaquetar (MVP 5). |
 | Realms LDAP/AD | No probados. |
 | Firma de código en Windows | Pospuesta al MVP 5 (D-06). |

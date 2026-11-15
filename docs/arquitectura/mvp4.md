@@ -1,7 +1,8 @@
 # Arquitectura del MVP 4 — Origen del sistema operativo (ISO, importación, clon) (ProxLaunch)
 
-Versión 0.1 (2026-11-14) · Autor: orquestador (borrador) · Estado: borrador para revisión; pendiente de
-aprobación antes de F4
+Versión 0.2 (2026-11-14) · Autor: orquestador · Estado: implementado, probado y revisado (F4 a F7);
+el **Anexo B** recoge las desviaciones del código final frente a este diseño y los hechos medidos en el
+laboratorio. Donde el Anexo B y el resto del documento difieren, manda el Anexo B.
 
 Fuentes: `docs/requisitos/mvp4.md` (RF-O01..O32, RNF-O01..O15, V-O01..O30, E-O01..E-O24, INV-O1..O12,
 LAB-M4-01..14, §14 enmiendas, §15 DT-O1..O17, §16 riesgos); `docs/decisiones.md` (D-17, D-18, D-19, D-20,
@@ -965,6 +966,11 @@ de los requisitos y secciones de este documento.
 | RF-O31 | `perfiles_maquina/fabrica.py` (+3 ids `fabrica.windows-11`, `fabrica.windows-server`, `fabrica.linux-red-hat`) | `textos.py` (`textos_perfiles_fabrica`) | §12 |
 | RF-O32 | — (identificadores en `ayuda.py`) | `ayuda.py`, `textos.py`, `dialogos/capacidades.py`; `docs/guia-usuario.md` (F8) | §8 |
 
+Estado tras F7: la tabla cubre RF-O01..O32 y sus rutas existen en el código de `HEAD`. Las diferencias de
+comportamiento respecto al texto de las secciones (momento del diálogo de storages en RF-O05, ubicación de
+la serialización en RF-O01, cupos por nodo de la plantilla en RF-O21) están en el Anexo B.1. La guía de
+usuario (RF-O32) está en `docs/guia-usuario.md`, sección «Elegir el origen del sistema operativo».
+
 ## 12. Plan de fases y dueños de archivos (sin solapes)
 
 `[Fase] -> [Responsable] -> [Subagentes] -> [Esfuerzo] -> [Entregable]`
@@ -1378,3 +1384,79 @@ DetalleImportacion | DetalleClon`. Sin funciones de serialización: viven en
 - `dialogos/transferencia.DialogoSubida(QDialog)` / `DialogoDescarga(QDialog)`: `__init__(self, controlador: ControladorOrigen, contenido: Contenido, nodo: str, parent: QWidget | None = None)`; `resultado -> ResultadoTransferencia | None`.
 - `trabajadores.TrabajadorTransferencia(Trabajador)`: señal adicional `progreso(object)` con `Progreso`.
 - `textos.texto_via(estado: EstadoVia) -> str`; `textos.texto_estado_transferencia(estado: EstadoTransferencia) -> str`; `textos.texto_tipo_so(tipo: TipoSO) -> str`; `textos.texto_modo_clon(modo: ModoClon, *, avanzado: bool) -> str`; `textos.texto_cambio_asistente(cambio: CambioAsistente) -> str`; `textos.texto_texto_administrador() -> str` (CA-O32.2); `textos.texto_error` cubre los códigos de §8.
+
+---
+
+## Anexo B · Desviaciones e hechos de implementación (código final, commit `9b8dccc`)
+
+Léase junto con el Anexo A y las secciones 1 a 15: **solo** se listan las diferencias entre el diseño y el
+código final (F4 a F7), y los hechos medidos en el laboratorio PVE 9.2. Todo lo que no aparece aquí
+coincide con el Anexo A. Cada desviación se comprobó leyendo el código.
+
+### B.1 Desviaciones respecto al Anexo A y a las secciones
+
+| # | Diseño | Código final | Dónde |
+|---|---|---|---|
+| 1 | Anexo A, `modelos/origen.py`: «sin funciones de serialización: viven en `archivos/esquema_config.py`». | Hay **dos** serializaciones. La de `ConfiguracionVM.a_dict`/`desde_dict` (ida y vuelta interna) vive en `modelos/vm.py` (`_detalle_a_dict`, `_detalle_desde_dict`). La de los **archivos de usuario** (lotes guardados y perfiles) pasa por `archivos/esquema_config.py` (`detalle_origen_a_dict`, `leer_detalle_origen`, `pista_origen_a_dict`, `leer_pista_origen`) con lista blanca: los volids pasan por `origen/nombres.py` y nunca se leen ni escriben URL, rutas ni checksums. | `nucleo/modelos/vm.py`, `nucleo/archivos/esquema_config.py` |
+| 2 | §9 y Anexo A: `origen/permisos.py` define `PERMISOS_ORIGEN` y `ROL_PROXLAUNCH`. | Se confirma, y es la **única fuente** de los privilegios: `interfaz/ayuda.py` importa `ROL_PROXLAUNCH` (los 14) y deriva de ahí `PRIVILEGIOS_ROL_MAQUINAS` (los `VM.*` sin `VM.Clone`, 8 privilegios) para el rol `ProxLaunchMaquinas`. `PERMISOS_ORIGEN` incluye además `Sys.Modify` en `/` (solo se reconoce al administrador, nunca se pide). | `nucleo/origen/permisos.py`, `interfaz/ayuda.py` |
+| 3 | §1 hecho 10 propone `MAX_LONG_NOMBRE_VOLUMEN`. | Se confirma el nombre y el valor (100). `MAX_LONG_NOMBRE_ARCHIVO = 80` de `archivos/texto.py` no cambia. | `nucleo/origen/constantes.py` |
+| 4 | §1.1 C4 y «Resoluciones del orquestador» punto 1: el storage de discos se pregunta la primera vez que hace falta, también con disco vacío. | **Desviación aceptada (D-26.1).** La pregunta «¿Cuál usar siempre en este servidor?» sale al **elegir el origen ISO o disco existente** (`ControladorOrigen._al_cambiar_origen` → `asegurar_storage_mv`) y cuando una subida o descarga necesita un storage de ISO o de imágenes (`storage_para`). No sale al conectar ni con disco vacío (se mantiene «mayor libre», equivalencia M1–M3). «Ajustes > Almacenamientos recordados…» (`revisar_recordados`) ofrece «Elegir otro» o «Dejar de recordar» para los que ya no sirven. | `interfaz/controlador_origen.py`, `interfaz/dialogos/elegir_storage.py` |
+| 5 | §10: cupo de `CONCURRENCIA_ENLAZADO_POR_NODO` unidades «por nodo». | El cupo de un clon enlazado se cuenta en el **nodo de la plantilla**, donde corre `qmclone`, no en el nodo destino: función `nodo_de_cupo(elemento)` (QA-M4-08). El resto de clases cuenta por el nodo destino. `nodo_de_cupo` no figura en el Anexo A. | `nucleo/lote/cupos.py` |
+| 6 | §14 R12 y Anexo A: `URL_VIRTIO_WIN = ""` y `SHA256_VIRTIO_WIN = ""` hasta LAB-M4-07. | Fijadas a virtio-win **0.1.302** (URL versionada de `archive-virtio`, no la «stable»), con su SHA-256. Si el ISO de drivers elegido no es esa versión, aviso V-O31 (no bloquea). La vía «Descargarlo en el servidor» existe porque la URL no está vacía. | `nucleo/origen/constantes.py`, `interfaz/textos.py` (V-O31) |
+| 7 | §3.2: `DetallePlantilla` sin `balloon` ni `vcpus`. | `DetallePlantilla` añade `balloon: int \| None = None` y `vcpus: int \| None = None`; `origen/clon.py` los usa para limitar los ajustes de memoria y CPU (QA-M4-07, ver B.2). | `nucleo/modelos/catalogo.py`, `nucleo/origen/clon.py` |
+| 8 | §6.1: `efidisk0` con `pre-enrolled-keys` fijo. | `pre-enrolled-keys=0` para `tipo_so` Linux u Otro y `1` para Windows y `tipo_so` sin fijar (constantes `EFIDISK_SIN_CLAVES` y `EFIDISK_CLAVES_PRECARGADAS`; D-26.3). | `nucleo/constructor_peticion.py` |
+| 9 | Anexo A, `TransporteHttp.subir`: una sola espera `timeout_lectura`. | Se añade `TIMEOUT_ESCRITURA_S = 2.0`: la escritura del cuerpo se reintenta por tramos de 2 s mientras haya avance (120 s sin avance, `PARO_SIN_PROGRESO_S`) y se comprueba la cancelación en cada vuelta. Los límites de cancelación fuera de la escritura son el riesgo QA-M4-09 (B.3). | `nucleo/api/transporte.py` |
+| 10 | §7.2 punto 2: el nombre del archivo lo valida V-O09 en la comprobación previa; el diseño no prevé validar el destino dentro de `subir` y `descargar`. | `subir` y `descargar` llaman a `_validar_destino` **antes de tomar el cerrojo**: storage y nodo deben ser `[A-Za-z0-9._-]+` y el nombre debe pasar `validar_nombre_archivo`; si no, `ErrorProxLaunch(PARAMETRO_INVALIDO)` sin red (SEG-M4-04). La interfaz lo recibe en `_al_fallar_trabajo` y lo muestra como transferencia `FALLIDA` (D-26.6). | `nucleo/transferencias/servicio.py`, `interfaz/dialogos/transferencia.py` |
+| 11 | §9 y RF-O24: el rol de 14 privilegios; la asignación por rutas no se detalla. | La guía del token ofrece el alcance acotado (recomendado) y la alternativa simple: `permisos_acotados()`, `alternativa_simple_permisos()`, `NOMBRE_ROL_MAQUINAS = "ProxLaunchMaquinas"` (SEG-M4-01, D-26.5). | `interfaz/ayuda.py` |
+| 12 | Anexo A, interfaz: menús no enumerados. | **Archivo > Archivos subidos en esta sesión…**, **Ajustes > Almacenamientos recordados…** y **Ayuda > Qué puedo hacer en este servidor…**; las tres listas de storages recordados también están en el diálogo de conexión. | `interfaz/ventana_principal.py`, `interfaz/dialogos/conexion.py` |
+
+### B.2 Hechos medidos en el laboratorio (PVE 9.2, un nodo)
+
+1. **Orden del multipart.** `pveproxy` exige los campos en este orden: `content`, `checksum-algorithm`,
+   `checksum` y, al final, el archivo. Con otro orden responde HTTP 400. `CuerpoMultipart` envía los
+   campos en el orden en que se le dan y quien llama debe construirlos así (R5 del §14, cerrado).
+2. **Claves de Secure Boot.** Alpine (Linux sin firmar) no arranca con `pre-enrolled-keys=1`; Linux y
+   Otro usan `0`. Windows y `tipo_so` sin fijar usan `1` (D-26.3).
+3. **Plantilla con clones enlazados en lvmthin.** Proxmox deja destruir una plantilla que tiene clones
+   enlazados en un storage `lvmthin`. La interfaz **no promete protección**: solo avisa de que no se
+   borre la plantilla mientras existan los clones.
+4. **Concurrencia de clones enlazados.** 3 clones enlazados en paralelo tardaron 1,1 s frente a
+   1,6–3,7 s en serie. Se mantiene el tope de 3 por nodo (P-O03, D-26.2).
+5. **Descarga de virtio-win.** Descargar virtio-win en el servidor tardó unos 76 s.
+6. **virtio-win fijado.** La app fija la versión 0.1.302 con su SHA-256 en `origen/constantes.py`
+   (`URL_VIRTIO_WIN`, `SHA256_VIRTIO_WIN`). Con un ISO de drivers de otra versión avisa con V-O31 y deja
+   crear la máquina (D-26.4).
+7. **Balloon.** `PUT config` con `memory` menor que el `balloon` de la plantilla da HTTP 500. La app baja
+   también el `balloon` al valor de la memoria nueva (`origen/clon.py`; si el balloon de la plantilla es 0,
+   «desactivado», no se toca) (QA-M4-07).
+8. **vcpus (DEFECTO-F7-01, corregido en `c850689`).** Proxmox omite `sockets` y `cores` cuando valen su
+   valor por defecto, así que la config de una plantilla puede no traerlos. La app los toma como 1 al
+   calcular si hay que bajar `vcpus` (`plantilla.sockets or 1`).
+9. **Guía de permisos acotada.** Se verificó con un token real: con la asignación acotada, clonar una
+   plantilla **del pool** funciona y clonar una plantilla **fuera del pool** da HTTP 403.
+
+### B.3 Riesgo conocido sin corregir: QA-M4-09
+
+Cancelar una subida solo se comprueba durante la **escritura** del cuerpo. Por tanto:
+
+- Al conectar, cancelar puede tardar hasta 10 s (`TIMEOUT_CONEXION`).
+- Después de enviar todo el cuerpo y mientras se espera la respuesta del servidor, puede tardar hasta
+  120 s (`timeout_lectura`, por defecto `PARO_SIN_PROGRESO_S`). Si ya se envió todo el cuerpo, el servicio
+  trata la cancelación como «dejar de esperar» y la copia sigue en el servidor.
+- Cerrar la aplicación con una subida activa puede tardar unos 6 s.
+
+Ver el comentario «Riesgo conocido (QA-M4-09)» en `nucleo/api/transporte.py`. El refuerzo opcional del
+R3 (cerrar el socket al cancelar) no se implementó.
+
+### B.4 Riesgos y pendientes que quedan abiertos
+
+- **QA-M4-09:** B.3.
+- **Residuos `pveupload` (SEG-M4-13, informativo):** algunos rechazos de subida dejan
+  `/var/tmp/pveupload-*` en el nodo. El rol no puede borrarlos (no tiene `Datastore.Allocate`, a
+  propósito). Subidas fallidas repetidas pueden llenar la raíz; la app avisa si queda poco espacio. La
+  guía pide al administrador una limpieza periódica.
+- **Plantillas ajenas visibles:** con la guía acotada, `VM.Audit` no queda limitado al pool. Las demás
+  plantillas se ven (deshabilitadas con «Falta el permiso VM.Clone») y la planificación las bloquea (V-O17).
+- **ISO de Windows real:** no probado; el laboratorio solo usa Alpine/Linux.
+- **Importación en PVE 8.4 o superior:** probada solo con dobles; el laboratorio es PVE 9.2 de un nodo.
+- **Clon con `target` en clúster (R7):** solo con dobles, por la misma razón.

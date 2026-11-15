@@ -299,6 +299,40 @@ Requisitos en `docs/requisitos/mvp4.md`.
 6. **Aviso Red Hat 10:** RHEL/Rocky/Alma 10 exigen CPU x86-64-v3; la app avisa al elegir esas ISO
    (a confirmar en LAB-M4-05).
 
+## D-26 · Decisiones técnicas del MVP 4 — Propuesta (2026-11-14), se aprueba con el cierre del MVP 4
+Tomadas por el orquestador durante la implementación, el laboratorio (PVE 9.2) y la revisión del
+MVP 4; el punto 5 fue una decisión explícita del usuario. Detalle en `docs/arquitectura/mvp4.md`
+(Anexo B).
+1. **Momento del diálogo de storages (desviación aceptada de C4):** la pregunta «¿Cuál usar siempre
+   en este servidor?» sale al **elegir el origen ISO o disco existente** (cuando hay varios
+   candidatos para los discos de las máquinas y ninguno recordado), y cuando una subida o descarga
+   necesita un storage de ISO o de imágenes. **No sale al conectar ni con disco vacío**: con disco
+   vacío se mantiene el comportamiento del MVP 3 (el storage con más espacio libre, sin preguntar),
+   así que el flujo de M1–M3 no cambia. Sustituye lo escrito en la resolución C4 de la arquitectura.
+2. **P-O03 confirmada (hasta 3 clones enlazados por nodo):** LAB-M4-10 midió 3 clones enlazados en
+   paralelo en 1,1 s frente a 1,6–3,7 s en serie; el tope de 3 por nodo se mantiene. El cupo se cuenta en el **nodo de la plantilla** (donde corre la tarea `qmclone`), no
+   en el nodo destino (`nodo_de_cupo`, QA-M4-08). Las copias completas y las importaciones siguen
+   siendo exclusivas por nodo, con un máximo de 2 simultáneas hacia el mismo storage.
+3. **`pre-enrolled-keys` del disco EFI según el SO:** `0` para Linux y «Otro» (Alpine no arranca
+   con `1`, LAB-M4-04); `1` para Windows y cuando `tipo_so` no está fijado (equivale al
+   comportamiento del MVP 3).
+4. **virtio-win fijado a una versión con hash:** `URL_VIRTIO_WIN` apunta a la 0.1.302 (URL
+   versionada, no la «stable») y `SHA256_VIRTIO_WIN` lleva su SHA-256, en `origen/constantes.py`.
+   Si el ISO de drivers elegido no es esa versión, la app avisa (V-O31) y deja crear la máquina.
+5. **Rol `ProxLaunchMaquinas` y guía acotada recomendada** (decisión del usuario: «Acotado + "/"
+   simple»). La guía de permisos recomienda el alcance acotado: pool `plantillas-proxlaunch` con el
+   rol completo y «Propagar», un segundo rol `ProxLaunchMaquinas` (los privilegios `VM.*` sin
+   `VM.Clone`) en `/vms` con «Propagar», más `/storage/<almacenamiento>`, `/nodes/<nodo>`,
+   `/sdn/zones/localnetwork` y `/` sin «Propagar». La alternativa simple (el rol en `/` con
+   «Propagar») sigue explicada, con su riesgo. Límite conocido: `VM.Audit` no queda limitado al
+   pool, así que las plantillas ajenas se ven (deshabilitadas) pero no se clonan (V-O17). SEG-M4-13
+   (residuos `/var/tmp/pveupload-*` que el rol no puede borrar) queda documentado en la guía como
+   limpieza periódica del administrador.
+6. **Destino inválido en transferencias:** `ServicioTransferencias.subir` y `descargar` validan el
+   destino (storage, nodo y nombre de archivo) **antes de tomar el cerrojo** de «una transferencia
+   a la vez» y, si no es válido, lanzan `ErrorProxLaunch(PARAMETRO_INVALIDO)` sin tocar la red
+   (SEG-M4-04). La interfaz recibe ese error y lo convierte en una transferencia `FALLIDA`.
+
 ## Correcciones técnicas a `prompt.md`
 Errores o imprecisiones de la especificación original que los requisitos deben
 respetar:
