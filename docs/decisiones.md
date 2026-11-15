@@ -333,6 +333,26 @@ MVP 4; el punto 5 fue una decisión explícita del usuario. Detalle en `docs/arq
    a la vez» y, si no es válido, lanzan `ErrorProxLaunch(PARAMETRO_INVALIDO)` sin tocar la red
    (SEG-M4-04). La interfaz recibe ese error y lo convierte en una transferencia `FALLIDA`.
 
+## D-27 · Alcance y decisiones del MVP 5: instaladores y CI — Aprobada (2026-11-14)
+Requisitos en `docs/requisitos/mvp5.md` (§14).
+1. **P-E01 (usuario): solo scripts locales.** La CI queda como plantilla inactiva
+   (GitHub Actions de referencia); los criterios se verifican con los scripts.
+2. **P-E02 (usuario): Ubuntu solo `.deb`.** AppImage fuera del alcance.
+3. **P-E03 (usuario): Windows sin firma** en este MVP; SHA-256 publicado, guía de SmartScreen
+   y paso de firma preparado y desactivado (cierra el pendiente de D-06).
+4. **P-E06 (usuario): al desinstalar se conservan los datos**; en Windows, casilla desmarcada
+   «Borrar también mis datos». El llavero nunca se toca (borrar un perfil o desmarcar
+   «Recordar credenciales» ya borra su secreto).
+5. **P-E08 (usuario): iconos `.ico`/PNG generados del símbolo del logotipo aprobado**, sin
+   texto ni cambios de diseño, con vista previa aprobada por el usuario antes de integrarlos.
+6. **P-E09 (usuario): editor «ProxLaunch»**, sin correo real (`noreply@localhost` en el `.deb`).
+7. **P-E14 (usuario): MV Windows 11 de evaluación en este equipo** (KVM/QEMU, `swtpm`, OVMF
+   con Secure Boot) para construir y probar el `.exe`; se elimina sin rastro al final, como
+   el laboratorio (D-15). Ubuntu 22.04/24.04 se prueban en MVs QEMU con imágenes cloud.
+8. **Orquestador:** Inno Setup (ámbito elegido en el asistente, por usuario por defecto);
+   artefactos en `dist/` con `SHA256SUMS`; solo amd64; SemVer, versión 0.5.0; presupuesto
+   de tamaño inicial ≤ 90 MB comprimido y ≤ 250 MB instalado, a recalibrar; DT-E1 a DT-E14.
+
 ## Correcciones técnicas a `prompt.md`
 Errores o imprecisiones de la especificación original que los requisitos deben
 respetar:
