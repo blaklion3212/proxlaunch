@@ -57,6 +57,9 @@ try {
         Add-WindowsCapability -Online -Name $capacidad.Name | Out-Null
     }
     Set-Service -Name sshd -StartupType Automatic
+    # sshd terminó de forma inesperada varias veces durante las verificaciones y Windows no lo
+    # reinicia por defecto: se reinicia solo ante un fallo.
+    & sc.exe failure sshd reset= 86400 actions= restart/2000/restart/2000/restart/5000 | Out-Null
     if ((Get-Service -Name sshd).Status -ne 'Running') { Start-Service -Name sshd }
     Write-Aviso 'OpenSSH Server instalado, automático y en marcha.'
 
@@ -114,6 +117,13 @@ try {
     New-ItemProperty -Path 'HKLM:\SOFTWARE\Policies\Microsoft\Windows\Personalization' -Name 'NoLockScreen' `
         -PropertyType DWord -Value 1 -Force | Out-Null
     Write-Aviso 'Inicio de sesión automático de «prueba» configurado (sin bloqueo de pantalla).'
+
+    # Sin actualizaciones automáticas en esta MV de pruebas (temporal; se destruye al terminar):
+    # instalarlas en segundo plano reiniciaba servicios a mitad de una verificación.
+    New-Item -Path 'HKLM:\SOFTWARE\Policies\Microsoft\Windows\WindowsUpdate\AU' -Force | Out-Null
+    New-ItemProperty -Path 'HKLM:\SOFTWARE\Policies\Microsoft\Windows\WindowsUpdate\AU' -Name 'NoAutoUpdate' `
+        -PropertyType DWord -Value 1 -Force | Out-Null
+    Write-Aviso 'Actualizaciones automáticas desactivadas en esta MV de pruebas.'
 
     # 5. Marcador de MV de pruebas.
     $carpetaMarca = Join-Path $env:ProgramData 'ProxLaunch-MV'
