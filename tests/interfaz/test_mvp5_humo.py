@@ -218,6 +218,10 @@ def entorno_hijo(tmp_path: Path, **extra: str) -> dict[str, str]:
         ruta.mkdir(parents=True, exist_ok=True)
         env[nombre] = str(ruta)
     env["QT_QPA_PLATFORM"] = "offscreen"
+    # El hijo no hereda el ``pythonpath`` de pytest: en un entorno sin el paquete instalado
+    # (venv de calidad desde el lockfile, --no-deps) debe encontrar ``src`` por PYTHONPATH.
+    previo = env.get("PYTHONPATH")
+    env["PYTHONPATH"] = os.pathsep.join(p for p in (str(RAIZ / "src"), previo) if p)
     env.pop(SALIDA, None)
     env.pop("PYTHON_KEYRING_BACKEND", None)
     env.update(extra)
