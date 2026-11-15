@@ -5,8 +5,16 @@ el área útil; el contenido se desplaza y los botones de acción quedan siempre
 pantalla holgada nada cambia. Las áreas útiles se inyectan (``ancho_disponible`` /
 ``alto_disponible``), así que las pruebas no dependen de la pantalla offscreen.
 
-Los tamaños que dependen de las fuentes de la plataforma se comparan con el ``sizeHint`` medido
-en la propia prueba y no con constantes: en Windows y en Linux las métricas de texto difieren.
+Los tamaños que dependen de las fuentes de la plataforma se comparan con el ``sizeHint`` o el
+``minimumSizeHint`` medidos en la propia prueba y no con constantes: en Windows y en Linux las
+métricas de texto difieren. Además, un bloque de pruebas repite los contratos clave con una
+fuente de aplicación ancha (JetBrains Mono, incluida en el repo) para reproducir en cualquier
+plataforma las condiciones de Windows.
+
+Contrato de tamaño: con espacio holgado no hay barras y la ventana crece lo necesario para el
+contenido (aunque supere el ``resize()`` previo o el mínimo explícito); si cabe, se respeta el
+``resize()``. Con espacio escaso se acota al área útil y la barra sale solo en el eje que no cabe.
+El tamaño no depende del historial.
 """
 
 from __future__ import annotations
@@ -16,6 +24,7 @@ from collections.abc import Callable
 
 import pytest
 from PySide6.QtCore import QCoreApplication, QEvent
+from PySide6.QtGui import QFont
 from PySide6.QtWidgets import (
     QAbstractButton,
     QApplication,
@@ -46,6 +55,7 @@ from proxlaunch.interfaz.dialogos.informe import DialogoInforme
 from proxlaunch.interfaz.dialogos.perfiles_maquina import DialogoPerfilesMaquina
 from proxlaunch.interfaz.dialogos.transferencia import DialogoDescarga, DialogoSubida
 from proxlaunch.interfaz.dialogos.transferencias_sesion import DialogoTransferenciasSesion
+from proxlaunch.interfaz.fuentes import cargar_fuentes
 from proxlaunch.interfaz.trabajadores import Lanzador
 from proxlaunch.interfaz.ventana_principal import VentanaPrincipal
 from proxlaunch.nucleo.lote.modelos import CandidatoRollback
@@ -294,11 +304,11 @@ def test_c2_conexion_basico_holgado_toma_su_tamano_natural_sin_barras(qtbot, con
     # fuentes de la plataforma, así que se compara con el sizeHint del diálogo y no con una
     # constante.
     _mostrar(qtbot, d, AREA_HOLGADA)
-    # El ancho es el mayor entre el sizeHint y el mínimo explícito del diálogo (600).
+    # El sizeHint varía con las etiquetas de ajuste de línea: solo se exige que la ventana sea al
+    # menos tan grande como el sizeHint y el mínimo explícito (600), y que no haya barras.
     hint = d.sizeHint()
-    assert d.width() == max(hint.width(), d.minimumWidth())
     assert d.minimumWidth() == 600
-    assert d.height() == hint.height()
+    assert d.width() >= max(hint.width(), d.minimumWidth())
     assert not _barra_v(d) and not _barra_h(d)
 
 
@@ -307,7 +317,11 @@ def test_c2_dialogos_con_resize_previo_conservan_su_tamano(qtbot, fabricas, nomb
     d = fabricas[nombre]()
     _mostrar(qtbot, d, AREA_HOLGADA)
     ancho, alto = RESIZE_PREVIO[nombre]
-    assert (d.width(), d.height()) == (ancho, alto)
+    # Si el contenido cabe se respeta el resize(); si no, la ventana crece hasta su mínimo.
+    minimo = d.minimumSizeHint()
+    assert d.width() == max(ancho, minimo.width())
+    assert d.height() == max(alto, minimo.height())
+    assert not _barra_v(d) and not _barra_h(d)
 
 
 @pytest.mark.parametrize("nombre", sorted(MINIMOS))
@@ -431,7 +445,9 @@ def test_c5_importar_csv_recupera_980x640_al_subir_el_area(qtbot, fabricas):
     aj.ancho_disponible, aj.alto_disponible = AREA_HOLGADA
     aj.reajustar()
     _asentar(qtbot)
-    assert (d.width(), d.height()) == (980, 640)
+    assert d.width() == max(980, d.minimumSizeHint().width())
+    assert d.height() == 640
+    assert not _barra_h(d)
 
 
 def test_c5_ventana_principal_recupera_1240x820_al_subir_el_area(qtbot, deps):
@@ -482,12 +498,15 @@ class _DialogoPrueba(QDialog):
         self.titulo = QLabel("Contenido fijo")
         self.etiqueta_contenido = QLabel("Parte opcional del contenido. " * 8)
         self.etiqueta_contenido.setWordWrap(True)
+        # Alto mínimo fijo: el crecimiento al mostrarla no depende de las métricas de la fuente.
+        self.etiqueta_contenido.setMinimumHeight(200)
         self.etiqueta_contenido.hide()
         capa.addWidget(self.titulo)
         capa.addWidget(self.etiqueta_contenido)
         capa.addStretch(1)
         self.etiqueta_pie = QLabel("Mensaje del pie. " * 12)
         self.etiqueta_pie.setWordWrap(True)
+        self.etiqueta_pie.setMinimumHeight(100)
         self.etiqueta_pie.hide()
         self.boton = QPushButton("Aceptar")
         capa_pie.addWidget(self.etiqueta_pie)
@@ -752,3 +771,77 @@ def test_c10_ventana_principal_sin_inyeccion_cabe_en_la_pantalla(qtbot, deps):
     lim = v.ajuste_pantalla.limite_tamano()
     assert lim.width() <= geom.width() and lim.height() <= geom.height()
     assert v.width() <= geom.width() and v.height() <= geom.height()
+
+
+# --- Contrato 11: fuente de aplicación ancha (reproduce las métricas de Windows) --------------
+
+
+@pytest.fixture(params=[12.0, 13.0], ids=lambda pt: f"mono{pt:g}pt")
+def fuente_ancha(qtbot, request):
+    """Fija una fuente de aplicación ancha (JetBrains Mono incluida en el repo) y la restaura."""
+    original = QFont(QApplication.font())
+    familia_interfaz, familia_mono = cargar_fuentes()
+    fuente = QFont(QApplication.font())
+    fuente.setFamily(familia_mono)
+    fuente.setPointSizeF(request.param)
+    QApplication.setFont(fuente)
+    yield fuente
+    QApplication.setFont(original)
+
+
+@pytest.mark.parametrize("avanzado", [False, True], ids=["basico", "avanzado"])
+def test_c11_conexion_holgado_con_fuente_ancha_sin_barras(qtbot, fuente_ancha, conexion, avanzado):
+    d = conexion(avanzado)
+    _mostrar(qtbot, d, AREA_HOLGADA)
+    assert d.width() >= max(d.minimumSizeHint().width(), d.minimumWidth())
+    assert not _barra_v(d) and not _barra_h(d)
+
+
+@pytest.mark.parametrize("nombre", ["ImportarCsv", "PerfilesMaquina"])
+def test_c11_dialogos_holgados_con_fuente_ancha_sin_barras(qtbot, fuente_ancha, fabricas, nombre):
+    d = fabricas[nombre]()
+    _mostrar(qtbot, d, AREA_HOLGADA)
+    ancho, alto = RESIZE_PREVIO[nombre]
+    assert d.width() == max(ancho, d.minimumSizeHint().width())
+    # El alto crece lo necesario para el contenido (con letra ancha el texto se parte más).
+    assert d.height() >= alto
+    assert not _barra_v(d) and not _barra_h(d)
+
+
+@pytest.mark.parametrize("avanzado", [False, True], ids=["basico", "avanzado"])
+def test_c11_conexion_acotada_y_con_botones_visibles_en_585x410(
+    qtbot, fuente_ancha, conexion, avanzado
+):
+    d = conexion(avanzado, MOTIVO_LARGO)
+    aj = _mostrar(qtbot, d, AREA_585)
+    assert _acotada(d, aj)
+    for boton in (d.btn_guardar, d.btn_cancelar, d.btn_conectar):
+        assert boton.isVisible()
+        assert _dentro(d, boton), f"{boton.text()} fuera de {d.rect()}"
+
+
+@pytest.mark.parametrize("nombre", ["ImportarCsv", "PerfilesMaquina"])
+def test_c11_dialogos_acotados_y_con_botones_visibles_en_585x410(
+    qtbot, fuente_ancha, fabricas, nombre
+):
+    d = fabricas[nombre]()
+    aj = _mostrar(qtbot, d, AREA_585)
+    assert _acotada(d, aj)
+    botones = [b for b in _botones_del_pie(d) if b.isVisible()]
+    assert botones
+    for boton in botones:
+        assert _dentro(d, boton), f"{nombre}: {boton.text()!r} fuera del diálogo"
+
+
+def test_c11_importar_csv_no_depende_del_historial_con_fuente_ancha(qtbot, fuente_ancha, fabricas):
+    # Abrir directamente en holgado...
+    directo = fabricas["ImportarCsv"]()
+    _mostrar(qtbot, directo, AREA_HOLGADA)
+    # ...o venir de un área pequeña debe dar el mismo tamaño y sin barras.
+    con_historia = fabricas["ImportarCsv"]()
+    aj = _mostrar(qtbot, con_historia, AREA_585)
+    aj.ancho_disponible, aj.alto_disponible = AREA_HOLGADA
+    aj.reajustar()
+    _asentar(qtbot)
+    assert con_historia.size() == directo.size()
+    assert not _barra_v(con_historia) and not _barra_h(con_historia)

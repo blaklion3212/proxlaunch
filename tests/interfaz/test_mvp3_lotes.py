@@ -141,6 +141,12 @@ def test_ca_g02_2_guardar_propone_el_prefijo_como_nombre_y_escribe_el_archivo(
     archivos.guardar.append(destino)
     v._accion_guardar_lote.trigger()
     qtbot.waitUntil(destino.exists, timeout=3000)
+    # El archivo se escribe en un hilo y el aviso llega después por una señal en cola: se espera
+    # al mensaje antes de leer la barra de estado (evita la carrera con la máquina cargada).
+    qtbot.waitUntil(
+        lambda: v.statusBar().currentMessage() == "Lote guardado en «web.proxlaunch-lote.json»",
+        timeout=3000,
+    )
     assert visto == {"nombre": "web", "boton": "Elegir dónde guardar…"}
     assert archivos.pedidos_guardar[0][1] == "web.proxlaunch-lote.json"
     datos = json.loads(destino.read_text(encoding="utf-8"))

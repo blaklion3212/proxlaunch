@@ -149,18 +149,19 @@ class AjusteDesplazable(QObject):
         El alto inicial es el menor entre el sugerido del contenido y el límite (Qt, por su
         cuenta, recorta las ventanas a 2/3 de la pantalla); después, si el alto sugerido aumenta
         (se muestra una parte del contenido) la ventana crece hasta lo necesario, sin pasar del
-        límite. No encoge por debajo de lo que ya tenía (salvo el límite). El ancho solo se
-        acota: si el contenido no cabe a lo ancho, el área desplazable muestra su barra
-        horizontal.
+        límite. No encoge por debajo de lo que ya tenía (salvo el límite). El ancho se acota al
+        límite, pero también crece hasta lo que pide el contenido (sin pasar del límite): solo si
+        ni así cabe, el área desplazable muestra su barra horizontal.
         """
         d = self._dialogo
         lim = self.limite_tamano()
         if lim is None:
             return
-        d.setMaximumSize(lim.width(), lim.height())
+        # El mínimo se lee antes de tocar el máximo: Qt rebaja el mínimo si supera al nuevo máximo
+        # y se confundiría con un setMinimumSize de la propia ventana (dependería del historial).
+        actual = QSize(d.minimumWidth(), d.minimumHeight())
         self._acotar_area(lim.width())
         # Un setMinimumSize posterior de la propia ventana se respeta, pero acotado al límite.
-        actual = QSize(d.minimumWidth(), d.minimumHeight())
         if actual != self._minimo_aplicado:
             self._minimo_deseado = actual
         minimo = QSize(
@@ -170,6 +171,7 @@ class AjusteDesplazable(QObject):
         if minimo != actual:
             d.setMinimumSize(minimo)
         self._minimo_aplicado = minimo
+        d.setMaximumSize(lim.width(), lim.height())
         # Recupera el tamaño pedido si estaba recortado por el límite y ahora cabe.
         deseado = self._tamano_deseado
         if deseado is not None:
@@ -198,16 +200,44 @@ class AjusteDesplazable(QObject):
         self._acotado = hint > lim.height()
         if crecio:
             alto = max(alto, min(hint, lim.height()))
-        ancho = min(ancho, lim.width())
         alto = min(alto, lim.height())
+        ancho = max(min(ancho, lim.width()), self._ancho_necesario(alto, hint, lim.width()))
         if (ancho, alto) != (d.width(), d.height()):
             d.resize(ancho, alto)
 
-    def _acotar_area(self, ancho_ventana: int) -> None:
-        """Indica al área desplazable cuánto ancho puede exigir como mínimo."""
+    def _area(self) -> _AreaDesplazable | None:
+        """Área desplazable que envuelve el contenido, si la hay."""
         viewport = self._contenido.parentWidget() if self._contenido is not None else None
         area = viewport.parentWidget() if viewport is not None else None
-        if isinstance(area, _AreaDesplazable):
+        return area if isinstance(area, _AreaDesplazable) else None
+
+    def _ancho_necesario(self, alto: int, hint_alto: int, limite: int) -> int:
+        """Ancho con el que el contenido cabe sin barra horizontal, acotado al ``limite``.
+
+        Qt recorta el ancho inicial a 2/3 de la pantalla y un ``setMinimumWidth`` explícito
+        anula el mínimo del layout; con una fuente ancha el contenido pediría más y saldría una
+        barra horizontal aun con espacio de sobra. Con ``tamano_deseado`` se parte del mínimo
+        del contenido (el sugerido es el de la ventana ya fijada); si no, del sugerido sin la
+        barra vertical, que solo se suma cuando el alto final no alcanza al sugerido.
+        """
+        d = self._dialogo
+        area = self._area()
+        barra = 0
+        if area is not None:
+            vertical = area.verticalScrollBar()
+            barra = area.style().pixelMetric(QStyle.PixelMetric.PM_ScrollBarExtent, None, vertical)
+        if self._tamano_deseado is not None:
+            base = d.minimumSizeHint().width()
+        else:
+            visible = area is not None and area.verticalScrollBar().isVisible()
+            base = d.sizeHint().width() - (barra if visible else 0)
+        necesario = base + (barra if alto < hint_alto else 0)
+        return min(necesario, limite)
+
+    def _acotar_area(self, ancho_ventana: int) -> None:
+        """Indica al área desplazable cuánto ancho puede exigir como mínimo."""
+        area = self._area()
+        if area is not None:
             tope = max(ancho_ventana - 2 * MARGEN_LATERAL_DIALOGO, 0)
             if area.tope_ancho != tope:
                 area.tope_ancho = tope
