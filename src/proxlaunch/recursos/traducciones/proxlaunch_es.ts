@@ -82,522 +82,527 @@
 <context>
     <name>Ayuda</name>
     <message>
-        <location filename="../../interfaz/ayuda.py" line="22"/>
+        <location filename="../../interfaz/ayuda.py" line="28"/>
         <source>Es el número que identifica a la máquina en todo el servidor y no se puede repetir. ProxLaunch propone el siguiente libre; solo cámbialo si necesitas uno concreto.</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../../interfaz/ayuda.py" line="27"/>
+        <location filename="../../interfaz/ayuda.py" line="33"/>
         <source>Un nodo es cada servidor físico de tu clúster. En Automático ProxLaunch elige el que tiene más memoria y espacio libres; en Manual eliges tú dónde se crea la máquina.</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../../interfaz/ayuda.py" line="32"/>
+        <location filename="../../interfaz/ayuda.py" line="38"/>
         <source>Es el programa con el que arranca la máquina. SeaBIOS es el clásico y sirve para casi todo; UEFI (OVMF) es el moderno y lo piden algunos sistemas, como Windows 11.</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../../interfaz/ayuda.py" line="37"/>
+        <location filename="../../interfaz/ayuda.py" line="43"/>
         <source>Define qué procesador ve la máquina. El valor predeterminado funciona en servidores distintos; «host» rinde más pero impide mover la máquina entre nodos con procesadores diferentes.</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../../interfaz/ayuda.py" line="43"/>
+        <location filename="../../interfaz/ayuda.py" line="49"/>
         <source>Un socket es un procesador físico virtual. Casi siempre basta con 1; sube los núcleos en lugar de los sockets.</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../../interfaz/ayuda.py" line="48"/>
+        <location filename="../../interfaz/ayuda.py" line="54"/>
         <source>Cantidad de núcleos de cálculo por cada socket. El total de procesadores virtuales es sockets por núcleos.</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../../interfaz/ayuda.py" line="53"/>
+        <location filename="../../interfaz/ayuda.py" line="59"/>
         <source>Memoria RAM que tendrá la máquina, en GiB (1 GiB son 1024 MiB). Puedes usar decimales, por ejemplo 0,5 para medio GiB.</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../../interfaz/ayuda.py" line="58"/>
+        <location filename="../../interfaz/ayuda.py" line="64"/>
         <source>Permite que el servidor recupere memoria que la máquina no está usando. Si lo activas indicas la memoria mínima que se le deja; «Predeterminado» deja que Proxmox decida.</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../../interfaz/ayuda.py" line="63"/>
+        <location filename="../../interfaz/ayuda.py" line="69"/>
         <source>Es el tipo de conexión del disco virtual. SCSI es la opción recomendada; VirtIO es muy rápido pero necesita controladores en algunos sistemas; SATA e IDE son los más compatibles y los más lentos.</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../../interfaz/ayuda.py" line="69"/>
+        <location filename="../../interfaz/ayuda.py" line="75"/>
         <source>Es el controlador que gestiona los discos SCSI de la máquina. El predeterminado (virtio-scsi-single) es el mejor y es el único que permite IO Thread.</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../../interfaz/ayuda.py" line="74"/>
+        <location filename="../../interfaz/ayuda.py" line="80"/>
         <source>Cómo se guarda el disco. Raw ocupa todo el espacio y es el más rápido; qcow2 crece según se usa y permite instantáneas. Algunos almacenamientos solo admiten raw.</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../../interfaz/ayuda.py" line="79"/>
+        <location filename="../../interfaz/ayuda.py" line="85"/>
         <source>Es el lugar del servidor donde se guardará el disco. Se muestra el espacio libre de cada uno; ProxLaunch propone el que más tiene.</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../../interfaz/ayuda.py" line="84"/>
+        <location filename="../../interfaz/ayuda.py" line="90"/>
         <source>Tamaño del disco en GiB, siempre un número entero de 1 en adelante. El disco se crea vacío: el sistema operativo se instala después.</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../../interfaz/ayuda.py" line="89"/>
+        <location filename="../../interfaz/ayuda.py" line="95"/>
         <source>Avisa al almacenamiento de qué espacio ya no se usa para que pueda recuperarlo. Conviene dejarlo activado.</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../../interfaz/ayuda.py" line="94"/>
+        <location filename="../../interfaz/ayuda.py" line="100"/>
         <source>Hace que el sistema vea el disco como una unidad de estado sólido (SSD), lo que mejora cómo lo trata. No está disponible en el bus VirtIO.</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../../interfaz/ayuda.py" line="99"/>
+        <location filename="../../interfaz/ayuda.py" line="105"/>
         <source>Dedica un hilo de trabajo propio a atender el disco, lo que mejora el rendimiento con mucha actividad. Necesita el bus VirtIO o SCSI con el controlador virtio-scsi-single.</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../../interfaz/ayuda.py" line="104"/>
+        <location filename="../../interfaz/ayuda.py" line="110"/>
         <source>Crea la máquina sin ningún disco. Es útil si vas a añadirlo o importarlo más tarde.</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../../interfaz/ayuda.py" line="108"/>
+        <location filename="../../interfaz/ayuda.py" line="114"/>
         <source>Un bridge es el «conmutador virtual» del servidor que conecta la máquina a tu red. Lo habitual es vmbr0.</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../../interfaz/ayuda.py" line="113"/>
+        <location filename="../../interfaz/ayuda.py" line="119"/>
         <source>Tipo de tarjeta de red que ve la máquina. VirtIO es la más rápida; E1000 es más compatible con sistemas antiguos.</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../../interfaz/ayuda.py" line="118"/>
+        <location filename="../../interfaz/ayuda.py" line="124"/>
         <source>Número de red virtual (VLAN) para separar el tráfico, entre 1 y 4094. Déjalo vacío si tu red no usa VLAN.</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../../interfaz/ayuda.py" line="123"/>
+        <location filename="../../interfaz/ayuda.py" line="129"/>
         <source>La huella es la «firma» del certificado del servidor. Comprueba que coincide con la que te dé tu administrador: así sabes que te conectas al servidor correcto y no a uno falso.</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../../interfaz/ayuda.py" line="129"/>
+        <location filename="../../interfaz/ayuda.py" line="135"/>
         <source>Acepta cualquier certificado sin comprobarlo. Es inseguro: úsalo solo en redes de prueba que controles.</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../../interfaz/ayuda.py" line="134"/>
+        <location filename="../../interfaz/ayuda.py" line="140"/>
         <source>Es el segundo paso de seguridad de tu cuenta. Escribe el código de 6 números que muestra tu aplicación de autenticación, o usa una clave de recuperación si no puedes acceder a ella.</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../../interfaz/ayuda.py" line="140"/>
+        <location filename="../../interfaz/ayuda.py" line="146"/>
         <source>Guarda el token o la contraseña en el llavero de tu sistema (nunca en un archivo). Déjalo desmarcado en equipos compartidos.</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../../interfaz/ayuda.py" line="145"/>
+        <location filename="../../interfaz/ayuda.py" line="151"/>
         <source>Hace que ProxLaunch se comporte como si el servidor tuviera otra versión de Proxmox. Solo para casos especiales; normalmente se detecta sola.</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../../interfaz/ayuda.py" line="151"/>
+        <location filename="../../interfaz/ayuda.py" line="157"/>
         <source>Cuántas máquinas iguales quieres crear de una vez, de 1 a {max}. Todas comparten la misma configuración del formulario y solo cambian el nombre y el número.</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../../interfaz/ayuda.py" line="156"/>
+        <location filename="../../interfaz/ayuda.py" line="162"/>
         <source>Es el principio del nombre de todas las máquinas. Con «srv-web» se crean srv-web-01, srv-web-02, etc. Usa letras sin acentos, números y guiones.</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../../interfaz/ayuda.py" line="161"/>
+        <location filename="../../interfaz/ayuda.py" line="167"/>
         <source>Lo que va entre el prefijo y el número. Puede ser un guion («srv-01») o nada («srv01»).</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../../interfaz/ayuda.py" line="165"/>
+        <location filename="../../interfaz/ayuda.py" line="171"/>
         <source>Es el número con el que empieza la numeración de los nombres. Con 5, las máquinas se llaman srv-05, srv-06, srv-07...</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../../interfaz/ayuda.py" line="170"/>
+        <location filename="../../interfaz/ayuda.py" line="176"/>
         <source>Cuántos dígitos tiene como mínimo el número del nombre, completando con ceros: con 2 es «01» y con 3 es «001». Si hacen falta más dígitos, se usan en todos los nombres.</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../../interfaz/ayuda.py" line="175"/>
+        <location filename="../../interfaz/ayuda.py" line="181"/>
         <source>Es el primer número de máquina (VMID) del lote; las demás usan los siguientes. Si alguno ya está ocupado se salta y se te avisa. Déjalo vacío para que ProxLaunch proponga uno.</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../../interfaz/ayuda.py" line="181"/>
+        <location filename="../../interfaz/ayuda.py" line="187"/>
         <source>Dónde se crean las máquinas. En Automático ProxLaunch las reparte entre los nodos del clúster que pueden alojarlas; en «Un nodo» van todas al que elijas.</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../../interfaz/ayuda.py" line="186"/>
+        <location filename="../../interfaz/ayuda.py" line="192"/>
         <source>Marca los nodos entre los que se repartirán las máquinas. Solo se pueden elegir los que están en línea.</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../../interfaz/ayuda.py" line="191"/>
+        <location filename="../../interfaz/ayuda.py" line="197"/>
         <source>Equilibrado manda cada máquina al nodo que tenga más memoria libre en ese momento (contando las que ya le tocaron), para que ninguno se llene antes que los demás.</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../../interfaz/ayuda.py" line="196"/>
+        <location filename="../../interfaz/ayuda.py" line="202"/>
         <source>Por turnos reparte las máquinas una a cada nodo, en orden alfabético, y vuelve a empezar. Es predecible, pero no tiene en cuenta cuánta memoria le queda a cada nodo.</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../../interfaz/ayuda.py" line="201"/>
+        <location filename="../../interfaz/ayuda.py" line="207"/>
         <source>Algunos almacenamientos prometen el espacio de los discos pero no lo reservan hasta que se usa. Puedes crear más discos de los que caben, y funciona mientras no se llenen; si se llenan, todas las máquinas de ese almacenamiento pueden fallar.</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../../interfaz/ayuda.py" line="207"/>
+        <location filename="../../interfaz/ayuda.py" line="213"/>
         <source>Simular hace todas las comprobaciones y muestra qué se enviaría a Proxmox, pero no crea nada ni cambia nada en el servidor.</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../../interfaz/ayuda.py" line="212"/>
+        <location filename="../../interfaz/ayuda.py" line="218"/>
         <source>Elimina de Proxmox las máquinas que creó este lote, con sus discos. Solo toca las que ProxLaunch puede demostrar que creó él, y nunca se hace sin que lo confirmes.</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../../interfaz/ayuda.py" line="217"/>
+        <location filename="../../interfaz/ayuda.py" line="223"/>
         <source>Marca cada máquina con las etiquetas «proxlaunch» y «lote-» más un código, visibles en Proxmox. Sirven para reconocer lo que creó este lote y poder deshacerlo con seguridad. Si tu servidor no admite etiquetas nuevas, desactívalo.</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../../interfaz/ayuda.py" line="223"/>
+        <location filename="../../interfaz/ayuda.py" line="229"/>
         <source>Un perfil de máquina guarda el hardware de una máquina virtual (procesadores, memoria, discos y red). Al elegirlo se rellena el formulario; el nombre, el número y el nodo siguen siendo tuyos.</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../../interfaz/ayuda.py" line="229"/>
+        <location filename="../../interfaz/ayuda.py" line="235"/>
         <source>Los perfiles de fábrica vienen con ProxLaunch y no se pueden cambiar ni borrar. Si quieres una variante, duplícalo y haz tu propia versión.</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../../interfaz/ayuda.py" line="234"/>
+        <location filename="../../interfaz/ayuda.py" line="240"/>
         <source>Un perfil puede recordar el almacenamiento y la red que usaba. Si en este servidor no existen, ProxLaunch usa los predeterminados y te avisa; nunca inventa nada.</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../../interfaz/ayuda.py" line="239"/>
+        <location filename="../../interfaz/ayuda.py" line="245"/>
         <source>Guarda el hardware actual del formulario como perfil de máquina para reutilizarlo. No guarda el nombre, el número ni el nodo de la máquina.</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../../interfaz/ayuda.py" line="244"/>
+        <location filename="../../interfaz/ayuda.py" line="250"/>
         <source>Exportar crea un archivo con tus perfiles para compartirlos. Por defecto no incluye los nombres de almacenamiento y de red de tu servidor.</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../../interfaz/ayuda.py" line="249"/>
+        <location filename="../../interfaz/ayuda.py" line="255"/>
         <source>Importar añade perfiles de un archivo. Antes de guardar nada verás una lista para elegir cuáles, y si un nombre ya existe puedes conservar ambos.</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../../interfaz/ayuda.py" line="254"/>
+        <location filename="../../interfaz/ayuda.py" line="260"/>
         <source>Indica si el perfil funciona con la versión de Proxmox y con el servidor al que estás conectado. Los avisos no impiden crear la máquina; los errores sí.</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../../interfaz/ayuda.py" line="259"/>
+        <location filename="../../interfaz/ayuda.py" line="265"/>
         <source>Un lote guardado es un archivo con la definición de un lote (hardware, cantidad, nombres y reparto) para repetirlo. No guarda datos de conexión ni contraseñas; al abrirlo se vuelve a comprobar todo.</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../../interfaz/ayuda.py" line="265"/>
+        <location filename="../../interfaz/ayuda.py" line="271"/>
         <source>Importar desde CSV crea un lote con una máquina por cada fila de una hoja de cálculo. Antes de crear nada verás una vista previa y un resumen que debes confirmar.</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../../interfaz/ayuda.py" line="270"/>
+        <location filename="../../interfaz/ayuda.py" line="276"/>
         <source>Descarga un archivo CSV de ejemplo con todas las columnas y dos filas de muestra. Ábrelo en tu hoja de cálculo, cambia los datos y guárdalo como CSV.</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../../interfaz/ayuda.py" line="275"/>
+        <location filename="../../interfaz/ayuda.py" line="281"/>
         <source>Es el carácter que separa las columnas: punto y coma, coma o tabulador. ProxLaunch lo detecta solo; cámbialo si la vista previa se ve mal.</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../../interfaz/ayuda.py" line="280"/>
+        <location filename="../../interfaz/ayuda.py" line="286"/>
         <source>Es la forma en que el archivo guarda los acentos. ProxLaunch la detecta sola; si ves letras raras, prueba otra o guarda el archivo como «CSV UTF-8» desde Excel.</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../../interfaz/ayuda.py" line="285"/>
+        <location filename="../../interfaz/ayuda.py" line="291"/>
         <source>Memoria y disco sin unidad se leen en GiB. También puedes escribir MiB, GiB o TiB (por ejemplo «4 GiB»). Evita los separadores de miles: «1.000» es ambiguo.</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../../interfaz/ayuda.py" line="290"/>
+        <location filename="../../interfaz/ayuda.py" line="296"/>
         <source>Muestra cada fila del archivo con su estado y sus problemas. Puedes excluir filas antes de continuar; nada se crea hasta que confirmes el resumen del lote.</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../../interfaz/ayuda.py" line="295"/>
+        <location filename="../../interfaz/ayuda.py" line="301"/>
         <source>En un lote por filas cada máquina tiene su propia configuración, como venía en el archivo. Para cambiar algo, corrige el archivo e impórtalo de nuevo.</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../../interfaz/ayuda.py" line="300"/>
+        <location filename="../../interfaz/ayuda.py" line="306"/>
         <source>Aquí eliges de dónde sale el sistema operativo de la máquina: un disco vacío, un ISO de instalación, un disco ya hecho que se importa o la copia de una plantilla de Proxmox. Si no sabes cuál, usa un ISO para instalar desde cero o una plantilla para empezar con algo ya instalado.</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../../interfaz/ayuda.py" line="307"/>
+        <location filename="../../interfaz/ayuda.py" line="313"/>
         <source>Un ISO es la imagen del disco de instalación de un sistema operativo, como el CD con el que se instalaría. La máquina arranca desde él y tú terminas la instalación desde la consola de Proxmox.</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../../interfaz/ayuda.py" line="313"/>
+        <location filename="../../interfaz/ayuda.py" line="319"/>
         <source>Sube un archivo de tu equipo al servidor de Proxmox para poder usarlo. ProxLaunch no puede borrar lo que subes: si ya no lo necesitas, pídele a un administrador que lo elimine desde Proxmox.</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../../interfaz/ayuda.py" line="319"/>
+        <location filename="../../interfaz/ayuda.py" line="325"/>
         <source>El propio servidor de Proxmox descarga el archivo desde la dirección web que indiques, sin pasar por tu equipo. Usa solo direcciones https de confianza y, si puedes, escribe también la huella del archivo para comprobarlo.</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../../interfaz/ayuda.py" line="325"/>
+        <location filename="../../interfaz/ayuda.py" line="331"/>
         <source>La huella (checksum) es un código que identifica un archivo. Si la escribes, Proxmox comprueba al terminar que lo descargado coincide y, si no, descarta el archivo.</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../../interfaz/ayuda.py" line="330"/>
+        <location filename="../../interfaz/ayuda.py" line="336"/>
         <source>El asistente ajusta la máquina al sistema que vas a instalar: tipo de arranque, TPM, controlador de discos y tarjeta de red. Te muestra cada cambio y no toca los núcleos, la memoria ni el tamaño del disco.</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../../interfaz/ayuda.py" line="336"/>
+        <location filename="../../interfaz/ayuda.py" line="342"/>
         <source>Windows no trae los controladores de los discos y la red virtuales de Proxmox. Por eso se añade un segundo CD, llamado virtio-win, para cargarlos durante la instalación.</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../../interfaz/ayuda.py" line="341"/>
+        <location filename="../../interfaz/ayuda.py" line="347"/>
         <source>Importar crea la máquina a partir de un disco que ya tiene un sistema instalado, en lugar de empezar vacía. Necesita una imagen en el servidor, guardada en un almacenamiento con el contenido «Import» activado.</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../../interfaz/ayuda.py" line="347"/>
+        <location filename="../../interfaz/ayuda.py" line="353"/>
         <source>qcow2, raw y vmdk son formas de guardar un disco virtual y ProxLaunch acepta las tres. Tiene que ser un solo archivo: un disco que depende de otro o está cifrado no se puede importar.</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../../interfaz/ayuda.py" line="353"/>
+        <location filename="../../interfaz/ayuda.py" line="359"/>
         <source>Cada máquina del lote recibe su propia copia del disco, así que ocupa espacio propio. Con muchas máquinas el espacio necesario se multiplica.</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../../interfaz/ayuda.py" line="358"/>
+        <location filename="../../interfaz/ayuda.py" line="364"/>
         <source>Una plantilla de Proxmox es una máquina ya instalada que se marcó como modelo. Al clonarla obtienes máquinas nuevas con su mismo sistema, sin instalar nada.</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../../interfaz/ayuda.py" line="363"/>
+        <location filename="../../interfaz/ayuda.py" line="369"/>
         <source>«Rápido y ligero» (enlazado) comparte los datos con la plantilla: se crea en segundos y casi no ocupa espacio, pero depende de ella. «Copia independiente» (completo) duplica todo el disco: tarda más y ocupa más, pero la máquina no depende de nada.</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../../interfaz/ayuda.py" line="369"/>
+        <location filename="../../interfaz/ayuda.py" line="375"/>
         <source>ProxLaunch recuerda, para cada servidor, el almacenamiento que usaste para ISOs, imágenes y discos. La próxima vez lo propone solo; si deja de estar disponible te lo diremos y podrás elegir otro.</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../../interfaz/ayuda.py" line="375"/>
+        <location filename="../../interfaz/ayuda.py" line="381"/>
         <source>Para usar ISOs, importar discos y clonar plantillas, el rol de ProxLaunch necesita cuatro permisos más que antes. Si faltan, crear máquinas vacías sigue funcionando y solo se desactivan esas opciones, indicando qué permiso falta.</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../../interfaz/ayuda.py" line="381"/>
+        <location filename="../../interfaz/ayuda.py" line="387"/>
         <source>Si se corta la conexión justo al enviar una máquina, no se sabe si Proxmox llegó a crearla. ProxLaunch nunca la vuelve a enviar sola, porque podría duplicarla: usa «Comprobar» para ver si existe.</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../../interfaz/ayuda.py" line="474"/>
+        <location filename="../../interfaz/ayuda.py" line="480"/>
         <source>Rinde más pero impide mover la máquina entre nodos con procesadores distintos</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../../interfaz/ayuda.py" line="483"/>
+        <location filename="../../interfaz/ayuda.py" line="489"/>
         <source>¿Cómo creo un API Token?</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../../interfaz/ayuda.py" line="489"/>
+        <location filename="../../interfaz/ayuda.py" line="495"/>
         <source>Entra en la página web de tu Proxmox y ve a Datacenter → Permisos → Roles → Crear. Llama al rol «{rol}» y marca los privilegios de la lista de abajo.</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../../interfaz/ayuda.py" line="494"/>
+        <location filename="../../interfaz/ayuda.py" line="500"/>
         <source>Ve a Datacenter → Permisos → Usuarios y crea un usuario para ProxLaunch (por ejemplo «proxlaunch@pve»), o elige uno que ya tengas.</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../../interfaz/ayuda.py" line="499"/>
+        <location filename="../../interfaz/ayuda.py" line="505"/>
         <source>Ve a Datacenter → Permisos → Tokens de API → Añadir. Elige el usuario, escribe un nombre para el token (por ejemplo «lab») y pulsa Añadir. Copia el secreto que se muestra: solo aparece una vez.</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../../interfaz/ayuda.py" line="505"/>
-        <source>Ve a Datacenter → Permisos → Añadir → Permiso de usuario (o de token). Ruta «/», elige el usuario o el token, rol «{rol}» y deja marcado «Propagar».</source>
+        <location filename="../../interfaz/ayuda.py" line="511"/>
+        <source>Ve a Datacenter → Permisos → Añadir → Permiso de usuario (o de token) y da al usuario o al token los permisos. Lo más seguro es el alcance acotado de abajo; la alternativa simple es una sola asignación en la ruta «/».</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../../interfaz/ayuda.py" line="510"/>
+        <location filename="../../interfaz/ayuda.py" line="707"/>
+        <source>2. Asignar los permisos a mi usuario o a mi token solo donde hacen falta (Datacenter → Permisos → Añadir). Opción recomendada, de alcance acotado:</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <location filename="../../interfaz/ayuda.py" line="517"/>
         <source>En ProxLaunch pega el token completo con el formato usuario@realm!nombre=secreto, por ejemplo proxlaunch@pve!lab=11111111-2222-3333-4444-555555555555.</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../../interfaz/ayuda.py" line="521"/>
+        <location filename="../../interfaz/ayuda.py" line="569"/>
+        <source>Alternativa simple: asigna el rol «{rol}» una sola vez en la ruta «/» con «Propagar». Es más cómodo, pero el permiso alcanza a todo el servidor: quien consiga el token podría clonar cualquier máquina y leer sus discos, subir archivos a cualquier almacenamiento y hacer que los nodos descarguen direcciones web. Úsalo solo en un laboratorio o si confías plenamente en quien guarde el token.</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <location filename="../../interfaz/ayuda.py" line="582"/>
         <source>Usa siempre un token con los permisos mínimos en lugar de root@pam: si el token se filtra, el daño es mucho menor y puedes revocarlo sin cambiar contraseñas.</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../../interfaz/ayuda.py" line="526"/>
+        <location filename="../../interfaz/ayuda.py" line="587"/>
         <source>Al crear el token puedes desmarcar «Separación de privilegios» solo si ya asignaste los permisos al usuario; si la dejas marcada, el token necesita sus propios permisos (paso 4 con el token).</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../../interfaz/ayuda.py" line="532"/>
+        <location filename="../../interfaz/ayuda.py" line="593"/>
         <source>Los últimos cuatro privilegios de la lista sirven para instalar desde un ISO, importar discos y clonar plantillas. Si los omites, crear máquinas vacías sigue funcionando y ProxLaunch solo desactiva esas opciones.</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../../interfaz/ayuda.py" line="550"/>
+        <location filename="../../interfaz/ayuda.py" line="611"/>
         <source>crear máquinas</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../../interfaz/ayuda.py" line="551"/>
+        <location filename="../../interfaz/ayuda.py" line="612"/>
         <source>ver las máquinas del servidor</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../../interfaz/ayuda.py" line="552"/>
+        <location filename="../../interfaz/ayuda.py" line="613"/>
         <source>ajustar nombre, etiquetas y opciones generales</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../../interfaz/ayuda.py" line="555"/>
+        <location filename="../../interfaz/ayuda.py" line="616"/>
         <source>elegir el tipo de equipo y de arranque</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../../interfaz/ayuda.py" line="558"/>
+        <location filename="../../interfaz/ayuda.py" line="619"/>
         <source>configurar procesadores</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../../interfaz/ayuda.py" line="559"/>
+        <location filename="../../interfaz/ayuda.py" line="620"/>
         <source>configurar la memoria</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../../interfaz/ayuda.py" line="560"/>
+        <location filename="../../interfaz/ayuda.py" line="621"/>
         <source>configurar las tarjetas de red</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../../interfaz/ayuda.py" line="563"/>
+        <location filename="../../interfaz/ayuda.py" line="624"/>
         <source>crear discos en los almacenamientos</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../../interfaz/ayuda.py" line="566"/>
+        <location filename="../../interfaz/ayuda.py" line="627"/>
         <source>usar las redes del servidor</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../../interfaz/ayuda.py" line="567"/>
+        <location filename="../../interfaz/ayuda.py" line="628"/>
         <source>ver el estado de los nodos</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../../interfaz/ayuda.py" line="568"/>
+        <location filename="../../interfaz/ayuda.py" line="629"/>
         <source>fijar el orden de arranque con ISO y ampliar discos</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../../interfaz/ayuda.py" line="571"/>
+        <location filename="../../interfaz/ayuda.py" line="632"/>
         <source>clonar plantillas</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../../interfaz/ayuda.py" line="572"/>
+        <location filename="../../interfaz/ayuda.py" line="633"/>
         <source>subir y descargar ISOs e imágenes de disco</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../../interfaz/ayuda.py" line="575"/>
+        <location filename="../../interfaz/ayuda.py" line="636"/>
         <source>que el servidor descargue archivos desde una dirección web</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../../interfaz/ayuda.py" line="595"/>
+        <location filename="../../interfaz/ayuda.py" line="656"/>
         <source>sin él no se fija el orden de arranque con un ISO ni se amplían discos</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../../interfaz/ayuda.py" line="600"/>
+        <location filename="../../interfaz/ayuda.py" line="661"/>
         <source>sin él no se pueden clonar plantillas</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../../interfaz/ayuda.py" line="602"/>
+        <location filename="../../interfaz/ayuda.py" line="663"/>
         <source>sin él no se pueden subir ni descargar ISOs o imágenes de disco</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../../interfaz/ayuda.py" line="606"/>
+        <location filename="../../interfaz/ayuda.py" line="667"/>
         <source>sin él el servidor no puede descargar archivos desde una dirección web</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../../interfaz/ayuda.py" line="619"/>
+        <location filename="../../interfaz/ayuda.py" line="680"/>
         <source>ProxLaunch no puede borrar los ISOs ni las imágenes que subas o descargues, ni siquiera con un usuario administrador. Si ya no los necesitas, bórralos desde Proxmox (en el almacenamiento, sección «ISO Images» o «Import»).</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../../interfaz/ayuda.py" line="630"/>
+        <location filename="../../interfaz/ayuda.py" line="691"/>
         <source>Hola. Para que ProxLaunch pueda instalar máquinas desde un ISO, importar discos y clonar plantillas necesito lo siguiente en Proxmox:</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../../interfaz/ayuda.py" line="636"/>
+        <location filename="../../interfaz/ayuda.py" line="697"/>
         <source>1. Un rol llamado «{rol}» (Datacenter → Permisos → Roles → Crear) con estos {n} privilegios:</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../../interfaz/ayuda.py" line="646"/>
-        <source>2. Asignar ese rol a mi usuario o a mi token en la ruta «/», con «Propagar» marcado (Datacenter → Permisos → Añadir).</source>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
-        <location filename="../../interfaz/ayuda.py" line="651"/>
+        <location filename="../../interfaz/ayuda.py" line="714"/>
         <source>3. Para importar discos: activar el contenido «Import» en un almacenamiento de tipo directorio, NFS o CIFS (Datacenter → Almacenamiento → Editar → Contenido). Hace falta Proxmox 8.4 o superior.</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../../interfaz/ayuda.py" line="657"/>
+        <location filename="../../interfaz/ayuda.py" line="720"/>
         <source>4. Para clonar: convertir en plantilla una máquina ya instalada (clic derecho en la máquina → Convertir en plantilla).</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../../interfaz/ayuda.py" line="662"/>
+        <location filename="../../interfaz/ayuda.py" line="725"/>
         <source>5. Los ISOs e imágenes que suba no los puede borrar ProxLaunch: habrá que eliminarlos desde Proxmox cuando ya no hagan falta.</source>
         <translation type="unfinished"></translation>
     </message>
@@ -1453,152 +1458,173 @@
 <context>
     <name>DialogoDescarga</name>
     <message>
-        <location filename="../../interfaz/dialogos/transferencia.py" line="1024"/>
+        <location filename="../../interfaz/dialogos/transferencia.py" line="1100"/>
         <source>Descargar un ISO en el servidor</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../../interfaz/dialogos/transferencia.py" line="1026"/>
+        <location filename="../../interfaz/dialogos/transferencia.py" line="1102"/>
         <source>Descargar un disco en el servidor</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../../interfaz/dialogos/transferencia.py" line="1028"/>
+        <location filename="../../interfaz/dialogos/transferencia.py" line="1104"/>
         <source>Descargar</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../../interfaz/dialogos/transferencia.py" line="1032"/>
+        <location filename="../../interfaz/dialogos/transferencia.py" line="1108"/>
         <source>https://…</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../../interfaz/dialogos/transferencia.py" line="1033"/>
+        <location filename="../../interfaz/dialogos/transferencia.py" line="1109"/>
         <source>Dirección web del archivo</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../../interfaz/dialogos/transferencia.py" line="1036"/>
+        <location filename="../../interfaz/dialogos/transferencia.py" line="1112"/>
         <source>Comprobar</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../../interfaz/dialogos/transferencia.py" line="1044"/>
+        <location filename="../../interfaz/dialogos/transferencia.py" line="1120"/>
         <source>Opcional: huella (sha256, sha512…)</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../../interfaz/dialogos/transferencia.py" line="1045"/>
+        <location filename="../../interfaz/dialogos/transferencia.py" line="1121"/>
         <source>Huella para verificar el archivo</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../../interfaz/dialogos/transferencia.py" line="1050"/>
+        <location filename="../../interfaz/dialogos/transferencia.py" line="1126"/>
         <source>Nombre del archivo en el servidor</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../../interfaz/dialogos/transferencia.py" line="1056"/>
+        <location filename="../../interfaz/dialogos/transferencia.py" line="1132"/>
         <source>Comprobar el certificado del servidor web (recomendado)</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../../interfaz/dialogos/transferencia.py" line="1060"/>
+        <location filename="../../interfaz/dialogos/transferencia.py" line="1136"/>
         <source>Comprobar el certificado</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../../interfaz/dialogos/transferencia.py" line="1071"/>
+        <location filename="../../interfaz/dialogos/transferencia.py" line="1148"/>
+        <source>Avisos de la descarga</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <location filename="../../interfaz/dialogos/transferencia.py" line="1154"/>
         <source>Lo que ve el servidor</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../../interfaz/dialogos/transferencia.py" line="1076"/>
+        <location filename="../../interfaz/dialogos/transferencia.py" line="1159"/>
         <source>La descarga la hace el servidor: una vez empezada, no se puede cancelar desde ProxLaunch. Solo puedes dejar de esperar.</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../../interfaz/dialogos/transferencia.py" line="1084"/>
+        <location filename="../../interfaz/dialogos/transferencia.py" line="1167"/>
+        <source>La dirección quedará en el registro de tareas del servidor.</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <location filename="../../interfaz/dialogos/transferencia.py" line="1173"/>
         <source>Dirección web</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../../interfaz/dialogos/transferencia.py" line="1085"/>
+        <location filename="../../interfaz/dialogos/transferencia.py" line="1174"/>
         <source>Huella</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../../interfaz/dialogos/transferencia.py" line="1086"/>
+        <location filename="../../interfaz/dialogos/transferencia.py" line="1175"/>
         <source>Nombre en el servidor</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../../interfaz/dialogos/transferencia.py" line="1136"/>
+        <location filename="../../interfaz/dialogos/transferencia.py" line="1236"/>
         <source>Preguntando al servidor por «{host}/{archivo}»…</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../../interfaz/dialogos/transferencia.py" line="1182"/>
+        <location filename="../../interfaz/dialogos/transferencia.py" line="1283"/>
         <source>El servidor ve: «{host}/{archivo}»</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../../interfaz/dialogos/transferencia.py" line="1185"/>
+        <location filename="../../interfaz/dialogos/transferencia.py" line="1286"/>
         <source>Nombre: {nombre}</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../../interfaz/dialogos/transferencia.py" line="1185"/>
+        <location filename="../../interfaz/dialogos/transferencia.py" line="1286"/>
         <source>no indicado</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../../interfaz/dialogos/transferencia.py" line="1187"/>
+        <location filename="../../interfaz/dialogos/transferencia.py" line="1288"/>
         <source>Tamaño: {tamano}</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../../interfaz/dialogos/transferencia.py" line="1189"/>
+        <location filename="../../interfaz/dialogos/transferencia.py" line="1290"/>
         <source>Tipo: {tipo}</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../../interfaz/dialogos/transferencia.py" line="1225"/>
+        <location filename="../../interfaz/dialogos/transferencia.py" line="1326"/>
         <source>El servidor descargará «{nombre}» ({tamano}) en el almacenamiento «{storage}» del nodo «{nodo}».</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../../interfaz/dialogos/transferencia.py" line="1248"/>
+        <location filename="../../interfaz/dialogos/transferencia.py" line="1349"/>
         <source>Dejando de esperar…</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../../interfaz/dialogos/transferencia.py" line="1251"/>
+        <location filename="../../interfaz/dialogos/transferencia.py" line="1352"/>
         <source>Dejar de esperar</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../../interfaz/dialogos/transferencia.py" line="1259"/>
+        <location filename="../../interfaz/dialogos/transferencia.py" line="1365"/>
         <source>La dirección usa http://: no se puede garantizar que el archivo no fue alterado por el camino. Conviene indicar la huella.</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../../interfaz/dialogos/transferencia.py" line="1266"/>
+        <location filename="../../interfaz/dialogos/transferencia.py" line="1372"/>
         <source>No se comprobará el certificado del servidor web: podrías descargar un archivo de un sitio falso.</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../../interfaz/dialogos/transferencia.py" line="1274"/>
+        <location filename="../../interfaz/dialogos/transferencia.py" line="1388"/>
+        <source>Consulta con riesgo</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <location filename="../../interfaz/dialogos/transferencia.py" line="1390"/>
+        <source>Consultar de todos modos</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <location filename="../../interfaz/dialogos/transferencia.py" line="1396"/>
         <source>Descarga con riesgo</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../../interfaz/dialogos/transferencia.py" line="1276"/>
+        <location filename="../../interfaz/dialogos/transferencia.py" line="1398"/>
         <source>Descargar de todos modos</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../../interfaz/dialogos/transferencia.py" line="1277"/>
+        <location filename="../../interfaz/dialogos/transferencia.py" line="1391"/>
+        <location filename="../../interfaz/dialogos/transferencia.py" line="1399"/>
         <source>Cancelar</source>
         <translation type="unfinished"></translation>
     </message>
@@ -1977,32 +2003,37 @@
 <context>
     <name>DialogoGuiaToken</name>
     <message>
-        <location filename="../../interfaz/dialogos/guia_token.py" line="45"/>
+        <location filename="../../interfaz/dialogos/guia_token.py" line="47"/>
         <source>Privilegios del rol «{rol}»:</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../../interfaz/dialogos/guia_token.py" line="56"/>
+        <location filename="../../interfaz/dialogos/guia_token.py" line="58"/>
         <source>Qué se pierde sin los cuatro privilegios nuevos:</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../../interfaz/dialogos/guia_token.py" line="76"/>
+        <location filename="../../interfaz/dialogos/guia_token.py" line="66"/>
+        <source>Dónde asignar los permisos (recomendado: alcance acotado):</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <location filename="../../interfaz/dialogos/guia_token.py" line="93"/>
         <source>Copiar texto para mi administrador</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../../interfaz/dialogos/guia_token.py" line="79"/>
+        <location filename="../../interfaz/dialogos/guia_token.py" line="96"/>
         <source>Copia un mensaje con los permisos, la activación de «Import» y la creación de plantillas que hay que pedir.</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../../interfaz/dialogos/guia_token.py" line="73"/>
+        <location filename="../../interfaz/dialogos/guia_token.py" line="90"/>
         <source>Cerrar</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../../interfaz/dialogos/guia_token.py" line="99"/>
+        <location filename="../../interfaz/dialogos/guia_token.py" line="116"/>
         <source>Texto copiado.</source>
         <translation type="unfinished"></translation>
     </message>
@@ -2933,92 +2964,102 @@
 <context>
     <name>DialogoSubida</name>
     <message>
-        <location filename="../../interfaz/dialogos/transferencia.py" line="798"/>
+        <location filename="../../interfaz/dialogos/transferencia.py" line="863"/>
         <source>Subir un ISO desde mi equipo</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../../interfaz/dialogos/transferencia.py" line="800"/>
+        <location filename="../../interfaz/dialogos/transferencia.py" line="865"/>
         <source>Subir un disco desde mi equipo</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../../interfaz/dialogos/transferencia.py" line="802"/>
+        <location filename="../../interfaz/dialogos/transferencia.py" line="867"/>
         <source>Subir</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../../interfaz/dialogos/transferencia.py" line="806"/>
+        <location filename="../../interfaz/dialogos/transferencia.py" line="871"/>
         <source>Ningún archivo elegido</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../../interfaz/dialogos/transferencia.py" line="807"/>
+        <location filename="../../interfaz/dialogos/transferencia.py" line="872"/>
         <source>Archivo elegido</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../../interfaz/dialogos/transferencia.py" line="808"/>
+        <location filename="../../interfaz/dialogos/transferencia.py" line="873"/>
         <source>Elegir archivo…</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../../interfaz/dialogos/transferencia.py" line="818"/>
+        <location filename="../../interfaz/dialogos/transferencia.py" line="883"/>
         <source>Datos del archivo</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../../interfaz/dialogos/transferencia.py" line="822"/>
+        <location filename="../../interfaz/dialogos/transferencia.py" line="887"/>
         <source>Nombre del archivo en el servidor</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../../interfaz/dialogos/transferencia.py" line="832"/>
+        <location filename="../../interfaz/dialogos/transferencia.py" line="897"/>
         <source>Archivo del equipo</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../../interfaz/dialogos/transferencia.py" line="833"/>
+        <location filename="../../interfaz/dialogos/transferencia.py" line="898"/>
         <source>Nombre en el servidor</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../../interfaz/dialogos/transferencia.py" line="859"/>
+        <location filename="../../interfaz/dialogos/transferencia.py" line="924"/>
         <source>Leyendo el archivo…</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../../interfaz/dialogos/transferencia.py" line="885"/>
+        <location filename="../../interfaz/dialogos/transferencia.py" line="950"/>
         <source>Imágenes ISO (*.iso *.img);;Todos los archivos (*)</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../../interfaz/dialogos/transferencia.py" line="887"/>
+        <location filename="../../interfaz/dialogos/transferencia.py" line="952"/>
         <source>Discos (*.qcow2 *.vmdk *.raw *.img);;Todos los archivos (*)</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../../interfaz/dialogos/transferencia.py" line="888"/>
+        <location filename="../../interfaz/dialogos/transferencia.py" line="953"/>
         <source>Elegir archivo</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../../interfaz/dialogos/transferencia.py" line="895"/>
+        <location filename="../../interfaz/dialogos/transferencia.py" line="960"/>
         <source>{nombre} · {tamano}</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../../interfaz/dialogos/transferencia.py" line="947"/>
+        <location filename="../../interfaz/dialogos/transferencia.py" line="1012"/>
         <source>Se subirá «{nombre}» ({tamano}) al almacenamiento «{storage}» del nodo «{nodo}».</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../../interfaz/dialogos/transferencia.py" line="966"/>
+        <location filename="../../interfaz/dialogos/transferencia.py" line="1036"/>
+        <source>Dejando de esperar…</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <location filename="../../interfaz/dialogos/transferencia.py" line="1037"/>
         <source>Cancelando…</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../../interfaz/dialogos/transferencia.py" line="969"/>
+        <location filename="../../interfaz/dialogos/transferencia.py" line="1041"/>
+        <source>Dejar de esperar</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <location filename="../../interfaz/dialogos/transferencia.py" line="1042"/>
         <source>Cancelar subida</source>
         <translation type="unfinished"></translation>
     </message>
@@ -3026,140 +3067,160 @@
 <context>
     <name>DialogoTransferencia</name>
     <message>
-        <location filename="../../interfaz/dialogos/transferencia.py" line="163"/>
+        <location filename="../../interfaz/dialogos/transferencia.py" line="182"/>
+        <source>La dirección apunta a un equipo de la red interna del servidor. Descárgala solo si sabes de qué equipo se trata.</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <location filename="../../interfaz/dialogos/transferencia.py" line="194"/>
+        <source>La dirección usa el puerto {puerto}, que no es el habitual (80 o 443).</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <location filename="../../interfaz/dialogos/transferencia.py" line="209"/>
+        <source>La huella usa un algoritmo antiguo ({algoritmo}): ya no protege de un archivo manipulado a propósito. Si puedes, usa una huella SHA-256 o SHA-512.</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <location filename="../../interfaz/dialogos/transferencia.py" line="219"/>
         <source>Esta subida no se puede deshacer desde ProxLaunch (requeriría un permiso de administrador). Si te equivocas, pídele al administrador que borre el archivo.</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../../interfaz/dialogos/transferencia.py" line="168"/>
+        <location filename="../../interfaz/dialogos/transferencia.py" line="224"/>
         <source>Esta descarga no se puede deshacer desde ProxLaunch (requeriría un permiso de administrador). Si te equivocas, pídele al administrador que borre el archivo.</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../../interfaz/dialogos/transferencia.py" line="218"/>
+        <location filename="../../interfaz/dialogos/transferencia.py" line="274"/>
         <source>Resultado de las comprobaciones</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../../interfaz/dialogos/transferencia.py" line="223"/>
+        <location filename="../../interfaz/dialogos/transferencia.py" line="279"/>
         <source>Usar el existente</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../../interfaz/dialogos/transferencia.py" line="228"/>
+        <location filename="../../interfaz/dialogos/transferencia.py" line="284"/>
         <source>Cambiar el nombre</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../../interfaz/dialogos/transferencia.py" line="241"/>
-        <location filename="../../interfaz/dialogos/transferencia.py" line="246"/>
+        <location filename="../../interfaz/dialogos/transferencia.py" line="297"/>
+        <location filename="../../interfaz/dialogos/transferencia.py" line="302"/>
         <source>Entiendo que la subida puede fallar</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../../interfaz/dialogos/transferencia.py" line="257"/>
+        <location filename="../../interfaz/dialogos/transferencia.py" line="313"/>
         <source>Resumen de lo que se va a hacer</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../../interfaz/dialogos/transferencia.py" line="265"/>
+        <location filename="../../interfaz/dialogos/transferencia.py" line="321"/>
         <source>Aviso: no se puede deshacer</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../../interfaz/dialogos/transferencia.py" line="275"/>
+        <location filename="../../interfaz/dialogos/transferencia.py" line="331"/>
         <source>Estado de la transferencia</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../../interfaz/dialogos/transferencia.py" line="281"/>
+        <location filename="../../interfaz/dialogos/transferencia.py" line="337"/>
         <source>Progreso de la transferencia</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../../interfaz/dialogos/transferencia.py" line="286"/>
+        <location filename="../../interfaz/dialogos/transferencia.py" line="342"/>
         <source>Velocidad y tiempo restante</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../../interfaz/dialogos/transferencia.py" line="297"/>
+        <location filename="../../interfaz/dialogos/transferencia.py" line="353"/>
         <source>Resultado</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../../interfaz/dialogos/transferencia.py" line="308"/>
+        <location filename="../../interfaz/dialogos/transferencia.py" line="364"/>
         <source>Reintentar</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../../interfaz/dialogos/transferencia.py" line="314"/>
-        <location filename="../../interfaz/dialogos/transferencia.py" line="701"/>
+        <location filename="../../interfaz/dialogos/transferencia.py" line="370"/>
+        <location filename="../../interfaz/dialogos/transferencia.py" line="764"/>
         <source>Cancelar</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../../interfaz/dialogos/transferencia.py" line="401"/>
+        <location filename="../../interfaz/dialogos/transferencia.py" line="457"/>
         <source>Todavía no se conoce el servidor. Conéctate primero.</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../../interfaz/dialogos/transferencia.py" line="410"/>
+        <location filename="../../interfaz/dialogos/transferencia.py" line="466"/>
         <source>No hay un almacenamiento donde guardar el archivo. Pídele al administrador que active este tipo de contenido en un almacenamiento.</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../../interfaz/dialogos/transferencia.py" line="439"/>
+        <location filename="../../interfaz/dialogos/transferencia.py" line="495"/>
         <source>Comprobando el destino…</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../../interfaz/dialogos/transferencia.py" line="623"/>
+        <location filename="../../interfaz/dialogos/transferencia.py" line="679"/>
         <source>Duración: {tiempo}</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../../interfaz/dialogos/transferencia.py" line="630"/>
+        <location filename="../../interfaz/dialogos/transferencia.py" line="686"/>
         <source>Cerrar</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../../interfaz/dialogos/transferencia.py" line="642"/>
+        <location filename="../../interfaz/dialogos/transferencia.py" line="698"/>
         <source>Listo. El archivo «{volid}» está en el servidor.</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../../interfaz/dialogos/transferencia.py" line="648"/>
+        <location filename="../../interfaz/dialogos/transferencia.py" line="704"/>
+        <source>Dejaste de esperar. El archivo ya se envió y el servidor sigue copiándolo: no se puede cancelar desde ProxLaunch y puede aparecer en el catálogo cuando termine. Revísalo allí más tarde.</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <location filename="../../interfaz/dialogos/transferencia.py" line="711"/>
         <source>La descarga sigue en el servidor y no se puede cancelar desde ProxLaunch. Cuando termine, abre el catálogo para ver el resultado.</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../../interfaz/dialogos/transferencia.py" line="658"/>
+        <location filename="../../interfaz/dialogos/transferencia.py" line="721"/>
         <source>La transferencia falló.</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../../interfaz/dialogos/transferencia.py" line="677"/>
+        <location filename="../../interfaz/dialogos/transferencia.py" line="740"/>
         <source>Se canceló. No se guardó ningún archivo.</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../../interfaz/dialogos/transferencia.py" line="681"/>
+        <location filename="../../interfaz/dialogos/transferencia.py" line="744"/>
         <source>Se canceló, pero el archivo parcial quedó guardado: pídele al administrador que lo borre.</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../../interfaz/dialogos/transferencia.py" line="686"/>
+        <location filename="../../interfaz/dialogos/transferencia.py" line="749"/>
         <source>Se canceló. No se pudo comprobar si quedó algún archivo a medias: míralo en el catálogo del servidor.</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../../interfaz/dialogos/transferencia.py" line="727"/>
-        <location filename="../../interfaz/dialogos/transferencia.py" line="751"/>
+        <location filename="../../interfaz/dialogos/transferencia.py" line="790"/>
+        <location filename="../../interfaz/dialogos/transferencia.py" line="816"/>
         <source>Tiempo transcurrido: {tiempo}</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../../interfaz/dialogos/transferencia.py" line="771"/>
+        <location filename="../../interfaz/dialogos/transferencia.py" line="836"/>
         <source>El archivo está vacío.</source>
         <translation type="unfinished"></translation>
     </message>
@@ -3261,210 +3322,210 @@
 <context>
     <name>FormularioVM</name>
     <message>
-        <location filename="../../interfaz/vistas/formulario_vm.py" line="161"/>
+        <location filename="../../interfaz/vistas/formulario_vm.py" line="163"/>
         <source>General</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../../interfaz/vistas/formulario_vm.py" line="165"/>
-        <location filename="../../interfaz/vistas/formulario_vm.py" line="578"/>
+        <location filename="../../interfaz/vistas/formulario_vm.py" line="167"/>
+        <location filename="../../interfaz/vistas/formulario_vm.py" line="582"/>
         <source>Número de máquina (VMID)</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../../interfaz/vistas/formulario_vm.py" line="167"/>
+        <location filename="../../interfaz/vistas/formulario_vm.py" line="169"/>
         <source>por ejemplo srv-web-01</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../../interfaz/vistas/formulario_vm.py" line="168"/>
+        <location filename="../../interfaz/vistas/formulario_vm.py" line="170"/>
         <source>Nombre</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../../interfaz/vistas/formulario_vm.py" line="170"/>
+        <location filename="../../interfaz/vistas/formulario_vm.py" line="172"/>
         <source>Automático</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../../interfaz/vistas/formulario_vm.py" line="171"/>
+        <location filename="../../interfaz/vistas/formulario_vm.py" line="173"/>
         <source>Manual</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../../interfaz/vistas/formulario_vm.py" line="188"/>
+        <location filename="../../interfaz/vistas/formulario_vm.py" line="190"/>
         <source>Nodo destino</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../../interfaz/vistas/formulario_vm.py" line="201"/>
+        <location filename="../../interfaz/vistas/formulario_vm.py" line="203"/>
         <source>Firmware</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../../interfaz/vistas/formulario_vm.py" line="203"/>
+        <location filename="../../interfaz/vistas/formulario_vm.py" line="205"/>
         <source>SeaBIOS (clásico)</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../../interfaz/vistas/formulario_vm.py" line="204"/>
+        <location filename="../../interfaz/vistas/formulario_vm.py" line="206"/>
         <source>UEFI (OVMF)</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../../interfaz/vistas/formulario_vm.py" line="205"/>
+        <location filename="../../interfaz/vistas/formulario_vm.py" line="207"/>
         <source>Tipo de arranque</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../../interfaz/vistas/formulario_vm.py" line="208"/>
+        <location filename="../../interfaz/vistas/formulario_vm.py" line="210"/>
         <source>Almacenamiento de UEFI</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../../interfaz/vistas/formulario_vm.py" line="216"/>
-        <location filename="../../interfaz/vistas/formulario_vm.py" line="217"/>
+        <location filename="../../interfaz/vistas/formulario_vm.py" line="218"/>
+        <location filename="../../interfaz/vistas/formulario_vm.py" line="219"/>
         <source>TPM 2.0</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../../interfaz/vistas/formulario_vm.py" line="219"/>
-        <location filename="../../interfaz/vistas/formulario_vm.py" line="220"/>
+        <location filename="../../interfaz/vistas/formulario_vm.py" line="221"/>
+        <location filename="../../interfaz/vistas/formulario_vm.py" line="222"/>
         <source>Agente de QEMU</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../../interfaz/vistas/formulario_vm.py" line="233"/>
+        <location filename="../../interfaz/vistas/formulario_vm.py" line="235"/>
         <source>Cómputo</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../../interfaz/vistas/formulario_vm.py" line="238"/>
+        <location filename="../../interfaz/vistas/formulario_vm.py" line="240"/>
         <source>Sockets</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../../interfaz/vistas/formulario_vm.py" line="241"/>
-        <location filename="../../interfaz/vistas/formulario_vm.py" line="579"/>
+        <location filename="../../interfaz/vistas/formulario_vm.py" line="243"/>
+        <location filename="../../interfaz/vistas/formulario_vm.py" line="583"/>
         <source>Núcleos por socket</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../../interfaz/vistas/formulario_vm.py" line="246"/>
+        <location filename="../../interfaz/vistas/formulario_vm.py" line="248"/>
         <source>Tipo de CPU</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../../interfaz/vistas/formulario_vm.py" line="251"/>
-        <location filename="../../interfaz/vistas/formulario_vm.py" line="580"/>
+        <location filename="../../interfaz/vistas/formulario_vm.py" line="253"/>
+        <location filename="../../interfaz/vistas/formulario_vm.py" line="584"/>
         <source>Memoria (GiB)</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../../interfaz/vistas/formulario_vm.py" line="253"/>
+        <location filename="../../interfaz/vistas/formulario_vm.py" line="255"/>
         <source>Predeterminado de Proxmox</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../../interfaz/vistas/formulario_vm.py" line="254"/>
+        <location filename="../../interfaz/vistas/formulario_vm.py" line="256"/>
         <source>Activado</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../../interfaz/vistas/formulario_vm.py" line="255"/>
+        <location filename="../../interfaz/vistas/formulario_vm.py" line="257"/>
         <source>Desactivado</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../../interfaz/vistas/formulario_vm.py" line="256"/>
+        <location filename="../../interfaz/vistas/formulario_vm.py" line="258"/>
         <source>Ballooning</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../../interfaz/vistas/formulario_vm.py" line="260"/>
-        <location filename="../../interfaz/vistas/formulario_vm.py" line="582"/>
+        <location filename="../../interfaz/vistas/formulario_vm.py" line="262"/>
+        <location filename="../../interfaz/vistas/formulario_vm.py" line="586"/>
         <source>Memoria mínima (GiB)</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../../interfaz/vistas/formulario_vm.py" line="290"/>
+        <location filename="../../interfaz/vistas/formulario_vm.py" line="292"/>
         <source>Discos</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../../interfaz/vistas/formulario_vm.py" line="291"/>
+        <location filename="../../interfaz/vistas/formulario_vm.py" line="293"/>
         <source>Sin disco</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../../interfaz/vistas/formulario_vm.py" line="297"/>
+        <location filename="../../interfaz/vistas/formulario_vm.py" line="299"/>
         <source>Controlador SCSI</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../../interfaz/vistas/formulario_vm.py" line="310"/>
+        <location filename="../../interfaz/vistas/formulario_vm.py" line="312"/>
         <source>Red</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../../interfaz/vistas/formulario_vm.py" line="477"/>
+        <location filename="../../interfaz/vistas/formulario_vm.py" line="481"/>
         <source>El almacenamiento de UEFI «{recurso}» no existe en el nodo «{nodo}». Elige otro.</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../../interfaz/vistas/formulario_vm.py" line="585"/>
+        <location filename="../../interfaz/vistas/formulario_vm.py" line="589"/>
         <source>Tamaño del disco {n}</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../../interfaz/vistas/formulario_vm.py" line="589"/>
+        <location filename="../../interfaz/vistas/formulario_vm.py" line="593"/>
         <source>VLAN de {n}</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../../interfaz/vistas/formulario_vm.py" line="664"/>
+        <location filename="../../interfaz/vistas/formulario_vm.py" line="668"/>
         <source>Nodo elegido: {nodo} ({motivo})</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../../interfaz/vistas/formulario_vm.py" line="462"/>
-        <location filename="../../interfaz/vistas/formulario_vm.py" line="702"/>
+        <location filename="../../interfaz/vistas/formulario_vm.py" line="466"/>
+        <location filename="../../interfaz/vistas/formulario_vm.py" line="706"/>
         <source>El almacenamiento «{recurso}» no existe en el nodo «{nodo}». Elige otro.</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../../interfaz/vistas/formulario_vm.py" line="137"/>
+        <location filename="../../interfaz/vistas/formulario_vm.py" line="138"/>
         <source>Origen del sistema</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../../interfaz/vistas/formulario_vm.py" line="141"/>
+        <location filename="../../interfaz/vistas/formulario_vm.py" line="142"/>
         <source>El hardware, los discos y la red se copian de la plantilla. Arriba eliges solo lo que quieres cambiar.</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../../interfaz/vistas/formulario_vm.py" line="148"/>
+        <location filename="../../interfaz/vistas/formulario_vm.py" line="149"/>
         <source>El primer disco de la máquina será la copia del disco que elegiste.</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../../interfaz/vistas/formulario_vm.py" line="469"/>
-        <location filename="../../interfaz/vistas/formulario_vm.py" line="709"/>
+        <location filename="../../interfaz/vistas/formulario_vm.py" line="473"/>
+        <location filename="../../interfaz/vistas/formulario_vm.py" line="713"/>
         <source>La red «{recurso}» no existe en el nodo «{nodo}». Elige otra.</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../../interfaz/vistas/formulario_vm.py" line="736"/>
+        <location filename="../../interfaz/vistas/formulario_vm.py" line="740"/>
         <source>Automático (el del primer disco)</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../../interfaz/vistas/formulario_vm.py" line="767"/>
+        <location filename="../../interfaz/vistas/formulario_vm.py" line="771"/>
         <source>Este servidor no tiene almacenamiento para discos de máquinas virtuales</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../../interfaz/vistas/formulario_vm.py" line="916"/>
+        <location filename="../../interfaz/vistas/formulario_vm.py" line="925"/>
         <source>{n} procesadores virtuales en total</source>
         <translation type="unfinished"></translation>
     </message>
@@ -5283,280 +5344,280 @@
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../../interfaz/vistas/selector_origen.py" line="185"/>
-        <location filename="../../interfaz/vistas/selector_origen.py" line="189"/>
+        <location filename="../../interfaz/vistas/selector_origen.py" line="188"/>
+        <location filename="../../interfaz/vistas/selector_origen.py" line="192"/>
         <source>¿Cómo quieres crear la máquina?</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../../interfaz/vistas/selector_origen.py" line="209"/>
+        <location filename="../../interfaz/vistas/selector_origen.py" line="212"/>
         <source>¿Por qué no puedo usar alguna opción?</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../../interfaz/vistas/selector_origen.py" line="240"/>
+        <location filename="../../interfaz/vistas/selector_origen.py" line="243"/>
         <source>La máquina se crea con un disco vacío y sin sistema operativo. Instálalo después desde la consola de Proxmox.</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../../interfaz/vistas/selector_origen.py" line="270"/>
+        <location filename="../../interfaz/vistas/selector_origen.py" line="273"/>
         <source>Elegir ISO…</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../../interfaz/vistas/selector_origen.py" line="270"/>
+        <location filename="../../interfaz/vistas/selector_origen.py" line="273"/>
         <source>Archivo ISO elegido</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../../interfaz/vistas/selector_origen.py" line="281"/>
+        <location filename="../../interfaz/vistas/selector_origen.py" line="284"/>
         <source>Elegir disco…</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../../interfaz/vistas/selector_origen.py" line="281"/>
+        <location filename="../../interfaz/vistas/selector_origen.py" line="284"/>
         <source>Disco elegido</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../../interfaz/vistas/selector_origen.py" line="290"/>
+        <location filename="../../interfaz/vistas/selector_origen.py" line="293"/>
         <source>Ampliar el disco a</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../../interfaz/vistas/selector_origen.py" line="294"/>
+        <location filename="../../interfaz/vistas/selector_origen.py" line="297"/>
         <source>Tamaño del disco importado</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../../interfaz/vistas/selector_origen.py" line="295"/>
+        <location filename="../../interfaz/vistas/selector_origen.py" line="298"/>
         <source>Ampliar el disco importado a (GiB)</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../../interfaz/vistas/selector_origen.py" line="307"/>
+        <location filename="../../interfaz/vistas/selector_origen.py" line="310"/>
         <source>Elegir plantilla…</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../../interfaz/vistas/selector_origen.py" line="307"/>
+        <location filename="../../interfaz/vistas/selector_origen.py" line="310"/>
         <source>Plantilla elegida</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../../interfaz/vistas/selector_origen.py" line="317"/>
+        <location filename="../../interfaz/vistas/selector_origen.py" line="320"/>
         <source>Rápido y ligero (recomendado): la copia comparte el disco con la plantilla y se crea en segundos. Si el almacenamiento no lo permite, Proxmox hace una copia independiente.</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../../interfaz/vistas/selector_origen.py" line="328"/>
-        <location filename="../../interfaz/vistas/selector_origen.py" line="330"/>
+        <location filename="../../interfaz/vistas/selector_origen.py" line="331"/>
+        <location filename="../../interfaz/vistas/selector_origen.py" line="333"/>
         <source>Tipo de copia</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../../interfaz/vistas/selector_origen.py" line="344"/>
+        <location filename="../../interfaz/vistas/selector_origen.py" line="347"/>
         <source>Guardar la copia en</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../../interfaz/vistas/selector_origen.py" line="346"/>
+        <location filename="../../interfaz/vistas/selector_origen.py" line="349"/>
         <source>Almacenamiento de la copia</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../../interfaz/vistas/selector_origen.py" line="347"/>
+        <location filename="../../interfaz/vistas/selector_origen.py" line="350"/>
         <location filename="../../interfaz/vistas/selector_origen.py" line="612"/>
         <source>El de la plantilla</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../../interfaz/vistas/selector_origen.py" line="355"/>
+        <location filename="../../interfaz/vistas/selector_origen.py" line="356"/>
         <source>Ajustes de la copia (opcional)</source>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
-        <location filename="../../interfaz/vistas/selector_origen.py" line="357"/>
-        <location filename="../../interfaz/vistas/selector_origen.py" line="367"/>
-        <source>Procesadores (sockets)</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
         <location filename="../../interfaz/vistas/selector_origen.py" line="358"/>
         <location filename="../../interfaz/vistas/selector_origen.py" line="368"/>
-        <source>Núcleos</source>
+        <source>Procesadores (sockets)</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
         <location filename="../../interfaz/vistas/selector_origen.py" line="359"/>
-        <location filename="../../interfaz/vistas/selector_origen.py" line="370"/>
-        <source>Memoria (MiB)</source>
+        <location filename="../../interfaz/vistas/selector_origen.py" line="369"/>
+        <source>Núcleos</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
         <location filename="../../interfaz/vistas/selector_origen.py" line="360"/>
         <location filename="../../interfaz/vistas/selector_origen.py" line="371"/>
+        <source>Memoria (MiB)</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <location filename="../../interfaz/vistas/selector_origen.py" line="361"/>
+        <location filename="../../interfaz/vistas/selector_origen.py" line="372"/>
         <source>Disco principal (GiB)</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../../interfaz/vistas/selector_origen.py" line="362"/>
-        <location filename="../../interfaz/vistas/selector_origen.py" line="386"/>
-        <location filename="../../interfaz/vistas/selector_origen.py" line="572"/>
-        <location filename="../../interfaz/vistas/selector_origen.py" line="580"/>
+        <location filename="../../interfaz/vistas/selector_origen.py" line="363"/>
+        <location filename="../../interfaz/vistas/selector_origen.py" line="387"/>
+        <location filename="../../interfaz/vistas/selector_origen.py" line="573"/>
+        <location filename="../../interfaz/vistas/selector_origen.py" line="581"/>
         <source>Igual que la plantilla</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../../interfaz/vistas/selector_origen.py" line="363"/>
-        <location filename="../../interfaz/vistas/selector_origen.py" line="369"/>
+        <location filename="../../interfaz/vistas/selector_origen.py" line="364"/>
+        <location filename="../../interfaz/vistas/selector_origen.py" line="370"/>
         <source>Tipo de CPU</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../../interfaz/vistas/selector_origen.py" line="392"/>
+        <location filename="../../interfaz/vistas/selector_origen.py" line="393"/>
         <source>Sistema operativo</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../../interfaz/vistas/selector_origen.py" line="395"/>
+        <location filename="../../interfaz/vistas/selector_origen.py" line="396"/>
         <source>Sistema operativo que vas a instalar</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../../interfaz/vistas/selector_origen.py" line="396"/>
+        <location filename="../../interfaz/vistas/selector_origen.py" line="397"/>
         <source>Elige el sistema operativo…</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../../interfaz/vistas/selector_origen.py" line="403"/>
+        <location filename="../../interfaz/vistas/selector_origen.py" line="404"/>
         <source>Disco compatible (SATA): no hace falta cargar un controlador al instalar</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../../interfaz/vistas/selector_origen.py" line="405"/>
+        <location filename="../../interfaz/vistas/selector_origen.py" line="406"/>
         <source>Disco compatible (SATA)</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../../interfaz/vistas/selector_origen.py" line="423"/>
+        <location filename="../../interfaz/vistas/selector_origen.py" line="424"/>
         <source>Drivers de Windows (virtio-win)</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../../interfaz/vistas/selector_origen.py" line="426"/>
+        <location filename="../../interfaz/vistas/selector_origen.py" line="427"/>
         <source>Drivers virtio-win elegidos</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../../interfaz/vistas/selector_origen.py" line="429"/>
+        <location filename="../../interfaz/vistas/selector_origen.py" line="430"/>
         <source>Elegir otro ISO de drivers…</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../../interfaz/vistas/selector_origen.py" line="434"/>
+        <location filename="../../interfaz/vistas/selector_origen.py" line="435"/>
         <source>Descargarlo en el servidor</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../../interfaz/vistas/selector_origen.py" line="439"/>
+        <location filename="../../interfaz/vistas/selector_origen.py" line="440"/>
         <source>Ya lo tengo en mi equipo</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../../interfaz/vistas/selector_origen.py" line="449"/>
         <location filename="../../interfaz/vistas/selector_origen.py" line="450"/>
+        <location filename="../../interfaz/vistas/selector_origen.py" line="451"/>
         <source>Crear sin los drivers</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../../interfaz/vistas/selector_origen.py" line="454"/>
+        <location filename="../../interfaz/vistas/selector_origen.py" line="455"/>
         <source>Sin los drivers, Windows no verá el disco VirtIO ni la red.</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../../interfaz/vistas/selector_origen.py" line="574"/>
-        <location filename="../../interfaz/vistas/selector_origen.py" line="578"/>
+        <location filename="../../interfaz/vistas/selector_origen.py" line="575"/>
+        <location filename="../../interfaz/vistas/selector_origen.py" line="579"/>
         <source>Igual que la plantilla ({valor})</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../../interfaz/vistas/selector_origen.py" line="592"/>
+        <location filename="../../interfaz/vistas/selector_origen.py" line="593"/>
         <source>Se hará una copia rápida y ligera. Las máquinas comparten el disco base con la plantilla: no borres la plantilla mientras existan.</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../../interfaz/vistas/selector_origen.py" line="601"/>
+        <location filename="../../interfaz/vistas/selector_origen.py" line="602"/>
         <source>Se hará una copia independiente: tarda más y ocupa el espacio completo del disco.</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../../interfaz/vistas/selector_origen.py" line="796"/>
+        <location filename="../../interfaz/vistas/selector_origen.py" line="807"/>
         <source>Conéctate a un servidor para ver si esta opción está disponible.</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../../interfaz/vistas/selector_origen.py" line="811"/>
+        <location filename="../../interfaz/vistas/selector_origen.py" line="822"/>
         <source>Cambiar la forma de crear la máquina</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../../interfaz/vistas/selector_origen.py" line="812"/>
+        <location filename="../../interfaz/vistas/selector_origen.py" line="823"/>
         <source>Si cambias, se pierde lo que elegiste: {que_se_pierde}.</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../../interfaz/vistas/selector_origen.py" line="815"/>
+        <location filename="../../interfaz/vistas/selector_origen.py" line="826"/>
         <source>Cambiar</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../../interfaz/vistas/selector_origen.py" line="816"/>
+        <location filename="../../interfaz/vistas/selector_origen.py" line="827"/>
         <source>Cancelar</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../../interfaz/vistas/selector_origen.py" line="869"/>
+        <location filename="../../interfaz/vistas/selector_origen.py" line="880"/>
         <source>Ningún archivo ISO elegido</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../../interfaz/vistas/selector_origen.py" line="870"/>
+        <location filename="../../interfaz/vistas/selector_origen.py" line="881"/>
         <source>Ningún disco elegido</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../../interfaz/vistas/selector_origen.py" line="877"/>
+        <location filename="../../interfaz/vistas/selector_origen.py" line="888"/>
         <source>Ninguna plantilla elegida</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../../interfaz/vistas/selector_origen.py" line="924"/>
+        <location filename="../../interfaz/vistas/selector_origen.py" line="943"/>
         <source>La máquina se creará sin el CD de drivers.</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../../interfaz/vistas/selector_origen.py" line="926"/>
+        <location filename="../../interfaz/vistas/selector_origen.py" line="945"/>
         <source>Se usará el CD de drivers «{nombre}».</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../../interfaz/vistas/selector_origen.py" line="933"/>
+        <location filename="../../interfaz/vistas/selector_origen.py" line="952"/>
         <source>Se usará el CD de drivers «{nombre}», que ya está en el servidor.</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../../interfaz/vistas/selector_origen.py" line="937"/>
+        <location filename="../../interfaz/vistas/selector_origen.py" line="956"/>
         <source>No hay ningún ISO de virtio-win en el servidor. Elige cómo conseguirlo.</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../../interfaz/vistas/selector_origen.py" line="961"/>
+        <location filename="../../interfaz/vistas/selector_origen.py" line="980"/>
         <source>Para {so} el asistente va a cambiar:</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../../interfaz/vistas/selector_origen.py" line="969"/>
+        <location filename="../../interfaz/vistas/selector_origen.py" line="988"/>
         <source>Para {so} no hace falta cambiar nada más.</source>
         <translation type="unfinished"></translation>
     </message>
@@ -8503,7 +8564,7 @@
     </message>
     <message>
         <location filename="../../interfaz/textos.py" line="3281"/>
-        <location filename="../../interfaz/textos.py" line="3589"/>
+        <location filename="../../interfaz/textos.py" line="3605"/>
         <source>Disponibles: {lista}.</source>
         <translation type="unfinished"></translation>
     </message>
@@ -8723,42 +8784,52 @@
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../../interfaz/textos.py" line="3566"/>
+        <location filename="../../interfaz/textos.py" line="3564"/>
+        <source>Se usará el CD de drivers «{volid}» (almacenamiento «{storage}»), que no es la versión que conoce ProxLaunch. Comprueba que es de confianza antes de crear la máquina.</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <location filename="../../interfaz/textos.py" line="3570"/>
+        <source>Se usará el CD de drivers «{volid}», que no es la versión que conoce ProxLaunch. Comprueba que es de confianza antes de crear la máquina.</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <location filename="../../interfaz/textos.py" line="3582"/>
         <source>La plantilla «{nombre}» no está en el nodo «{nodo}» ni en un almacenamiento compartido con él.</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../../interfaz/textos.py" line="3574"/>
+        <location filename="../../interfaz/textos.py" line="3590"/>
         <source>La plantilla está ocupada con otra operación. Espera a que termine.</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../../interfaz/textos.py" line="3579"/>
+        <location filename="../../interfaz/textos.py" line="3595"/>
         <source>No se pudo leer la configuración de la plantilla «{nombre}».</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../../interfaz/textos.py" line="3585"/>
+        <location filename="../../interfaz/textos.py" line="3601"/>
         <source>Elige una plantilla de la lista.</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../../interfaz/textos.py" line="3586"/>
+        <location filename="../../interfaz/textos.py" line="3602"/>
         <source>No encuentro la plantilla «{nombre}».</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../../interfaz/textos.py" line="3600"/>
+        <location filename="../../interfaz/textos.py" line="3616"/>
         <source>«{nodo}» no tiene {objeto} «{fuente}».</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../../interfaz/textos.py" line="3610"/>
+        <location filename="../../interfaz/textos.py" line="3626"/>
         <source>«{nodo}» no tiene la plantilla «{plantilla}» ni el almacenamiento «{storage}».</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../../interfaz/textos.py" line="3617"/>
+        <location filename="../../interfaz/textos.py" line="3633"/>
         <source>«{nodo}» no tiene la plantilla «{plantilla}».</source>
         <translation type="unfinished"></translation>
     </message>

@@ -63,6 +63,7 @@ from proxlaunch.nucleo.origen.asistente import aplicar_asistente
 from proxlaunch.nucleo.origen.nombres import (
     es_ruta_absoluta,
     parece_url,
+    parece_url_o_credenciales,
     validar_nombre_archivo,
     validar_volid,
 )
@@ -295,7 +296,7 @@ class _Fila:
         columna = mapa.encabezados.get(canonica) if canonica else None
         if canonica is not None and not valor:
             valor = self.celda(canonica)
-        if canonica == "fuente" and parece_url(valor):
+        if canonica == "fuente" and parece_url_o_credenciales(valor):
             valor = url_saneada(valor)  # INV-O6: la URL con credenciales no se conserva
         self.b.problemas.append(
             (
@@ -395,7 +396,7 @@ class _Fila:
             if pos < len(b.fila.celdas):
                 original = sin_control(b.fila.celdas[pos]).strip()
                 if original:
-                    if canonica == "fuente" and parece_url(original):
+                    if canonica == "fuente" and parece_url_o_credenciales(original):
                         original = url_saneada(original)  # INV-O6
                     b.originales[canonica] = original
         return b

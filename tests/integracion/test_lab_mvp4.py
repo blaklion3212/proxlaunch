@@ -2678,3 +2678,491 @@ def test_lab_m4_14_ticket_caducado_simulado_no_se_reintenta(entorno_m4, tmp_path
     assert str(r.error.codigo) in ("sesion_expirada", "credenciales_invalidas")
     assert posts <= 1
     assert archivos_lab() == []
+
+
+# =========================================================================================
+# F7 (revisión QA y seguridad): guía de permisos acotada, QA-M4-07 (balloon/vcpus) y QA-M4-08
+# =========================================================================================
+
+POOL_F7 = "plantillas-proxlaunch"  # el nombre que sugiere la guía
+ROL_CREADOR_F7 = "ProxLaunchCreadorF7"  # mismos privilegios que «ProxLaunchCreador» (la guía);
+# el sufijo evita pisar el rol de 10 privilegios que usa la fixture de sesión ``plc``.
+ROL_MAQUINAS_F7 = "ProxLaunchMaquinas"  # nombre exacto de la guía
+USUARIO_F7 = "plcf7@pve"
+VMID_PLANT_POOL = 9060  # plantilla DENTRO del pool
+VMID_PLANT_FUERA = 9061  # plantilla fuera del pool
+VMID_MV_FUERA = 9062  # MV normal fuera del pool
+VMID_PLANT_BALLOON = 9065  # memory=4096, balloon=2048
+VMID_PLANT_VCPUS = 9066  # cores=4, vcpus=4 (sin ``sockets`` en la config: valor por defecto)
+VMID_PLANT_VCPUS_S = 9068  # sockets=1 explícito, cores=4, vcpus=4
+VMID_PLANT_LOTE = 9067
+
+
+def _crear_plantilla_root(vmid: int, nombre: str, extra: str = "") -> None:
+    lab.ssh(
+        f"sudo qm create {vmid} --name {nombre} --memory 128 --cores 1 --scsihw virtio-scsi-single "
+        f"--scsi0 {STORAGE}:1 --net0 virtio,bridge=vmbr0 {extra} && sudo qm template {vmid}",
+        timeout=180,
+    )
+
+
+def _esperar_plantillas(sesion: Any, vmids: set[int], max_s: float = 60.0) -> None:
+    fin = time.monotonic() + max_s
+    while time.monotonic() < fin and not vmids <= {
+        p.vmid for p in sesion.cliente.plantillas_visibles()
+    }:
+        time.sleep(2)
+
+
+def _limpiar_guia_f7() -> None:
+    """Todo lo que crea la fixture de la guía, también si quedó a medias."""
+    limpiar_vms()
+    lab.borrar_usuario(USUARIO_F7)
+    lab.ssh(f"sudo pveum pool delete {POOL_F7}", comprobar=False)
+    for rol in (ROL_CREADOR_F7, ROL_MAQUINAS_F7):
+        lab.borrar_rol(rol)
+
+
+def aplicar_guia_acotada() -> Cred:
+    """Reproduce, con ``pveum`` como root, los pasos de la guía de alcance acotado
+    (``ayuda.permisos_acotados``): pool con la plantilla, rol completo en el pool, segundo rol sin
+    VM.Clone en ``/vms``, storages, nodo, ``/sdn/zones/localnetwork`` y ``/`` sin propagar."""
+    from proxlaunch.interfaz import ayuda as ay
+
+    guia = "\n".join(ay.permisos_acotados())
+    for ruta in (
+        f"/pool/{POOL_F7}",
+        "/vms",
+        "/storage/<almacenamiento>",
+        "/nodes/<nodo>",
+        "/sdn/zones/localnetwork",
+    ):
+        if ruta.replace(POOL_F7, "plantillas-proxlaunch") not in guia:
+            raise AssertionError(f"la guía ya no menciona {ruta}: hay que actualizar la prueba")
+    _limpiar_guia_f7()
+    lab.crear_rol(PRIVS14, ROL_CREADOR_F7)
+    lab.crear_rol(tuple(ay.PRIVILEGIOS_ROL_MAQUINAS), ROL_MAQUINAS_F7)
+    _crear_plantilla_root(VMID_PLANT_POOL, "plc-f7-tpl")
+    _crear_plantilla_root(VMID_PLANT_FUERA, "plc-f7-fuera")
+    lab.ssh(
+        f"sudo qm create {VMID_MV_FUERA} --name plc-f7-mv --memory 128 --cores 1 "
+        f"--net0 virtio,bridge=vmbr0 --scsi0 {STORAGE}:1 --scsihw virtio-scsi-single",
+        timeout=120,
+    )
+    lab.ssh(
+        f"sudo pveum pool add {POOL_F7} && sudo pveum pool modify {POOL_F7} --vms {VMID_PLANT_POOL}"
+    )
+    lab.ssh(f"sudo pveum user add {USUARIO_F7} --password '{lab.nuevo_secreto()}'")
+    asignaciones = [
+        (f"/pool/{POOL_F7}", ROL_CREADOR_F7, 1),
+        ("/vms", ROL_MAQUINAS_F7, 1),
+        (f"/storage/{LOCAL}", ROL_CREADOR_F7, 1),
+        (f"/storage/{STORAGE}", ROL_CREADOR_F7, 1),
+        (f"/nodes/{NODO}", ROL_CREADOR_F7, 1),
+        ("/sdn/zones/localnetwork", ROL_CREADOR_F7, 1),
+        ("/", ROL_CREADOR_F7, 0),  # SIN Propagar: solo Sys.Audit en la raíz
+    ]
+    for ruta, rol, propaga in asignaciones:
+        lab.ssh(
+            f"sudo pveum acl modify {ruta} --users {USUARIO_F7} --roles {rol} --propagate {propaga}"
+        )
+    completo = lab.crear_token(USUARIO_F7, "tk", privsep=0)
+    token_id, secreto = completo.rsplit("=", 1)
+    return Cred(USUARIO_F7, token_id, secreto)
+
+
+@pytest.fixture(scope="module")
+def cred_guia() -> Iterator[Cred]:
+    try:
+        yield aplicar_guia_acotada()
+    finally:
+        _limpiar_guia_f7()
+
+
+@pytest.fixture(scope="module")
+def sesion_guia(entorno_m4: lab.Entorno, cred_guia: Cred) -> Iterator[Any]:
+    sesion = abrir_sesion(entorno_m4, cred_guia)
+    _esperar_plantillas(sesion, {VMID_PLANT_POOL})
+    yield sesion
+    entorno_m4.servicio.cerrar_sesion(sesion)
+
+
+def _capacidades_de(sesion: Any, plantillas: set[str]) -> Any:
+    from proxlaunch.nucleo.origen.resolucion import NecesidadesCatalogo
+    from proxlaunch.nucleo.servicios.catalogo import con_catalogo
+
+    inv = descubrir(sesion)
+    nec = NecesidadesCatalogo(
+        contenidos=frozenset({Contenido.ISO, Contenido.IMPORT}),
+        plantillas=frozenset(plantillas),
+        formatos=True,
+    )
+    inv = con_catalogo(inv, ServicioCatalogo(sesion, RelojReal()).leer_para(inv, nec, [NODO]))
+    return calcular_capacidades(sesion.capacidades, inv, NODO), inv
+
+
+_CABECERA_CSV = "nombre;cpu;memoria;disco;almacenamiento;red;nodo;vmid;origen;fuente;so;modo_clon"
+
+
+def _definicion_csv(sesion: Any, tmp: Path, filas: list[str], vmid_inicial: int) -> tuple[Any, Any]:
+    from proxlaunch.nucleo.csv_importacion.interpretacion import filas_lote, interpretar
+    from proxlaunch.nucleo.csv_importacion.lectura import leer_archivo_csv
+    from proxlaunch.nucleo.lote.filas import definicion_por_filas
+    from proxlaunch.nucleo.perfiles_maquina.fabrica import perfiles_fabrica
+    from proxlaunch.nucleo.perfiles_maquina.modelos import ID_PREDETERMINADO
+
+    ruta = tmp / f"f7-{vmid_inicial}.csv"
+    ruta.write_bytes(("\r\n".join([_CABECERA_CSV, *filas]) + "\r\n").encode())
+    inv = descubrir(sesion)
+    perfil = {p.id: p for p in perfiles_fabrica()}[ID_PREDETERMINADO]
+    resultado = interpretar(
+        leer_archivo_csv(ruta),
+        perfil_base=perfil,
+        perfiles=perfiles_fabrica(),
+        inv=inv,
+        nodo_referencia=NODO,
+    )
+    errores = [(f.numero, f.problemas) for f in resultado.filas if f.estado.value == "con_error"]
+    assert not errores, errores
+    base = resultado.filas[0].cfg
+    assert base is not None
+    definicion = definicion_por_filas(
+        filas_lote(resultado, resultado.numeros_validos),
+        plantilla_base=base,
+        vmid_inicial=vmid_inicial,
+    )
+    return definicion, inv
+
+
+def _correr_lote(sesion: Any, definicion: Any) -> Any:
+    from .test_lab_mvp3 import _ejecutar, _planificar
+
+    plan, inv = _planificar(sesion, definicion)
+    assert not plan.bloqueado, plan.problemas
+    return _ejecutar(sesion, plan, inv)
+
+
+# --- (a) La guía acotada funciona de verdad ---------------------------------------------------------
+
+
+def test_lab_f7_a1_la_app_ve_clonar_y_el_resto_de_vias_con_los_permisos_de_la_guia(
+    sesion_guia, cred_guia
+):
+    """SEG-M4-01: con el alcance acotado (pool + rol sin VM.Clone en /vms + storages + nodo + SDN +
+    «/» sin propagar), ``/access/permissions`` y ``CapacidadesOrigen`` ofrecen «clonar» y las demás
+    vías, y el catálogo ve la plantilla del pool."""
+    caps, inv = _capacidades_de(sesion_guia, {"plc-f7-tpl"})
+    api = Api(cred_guia)
+    permisos = api.datos(api.get("/access/permissions"))
+    rutas = sorted(permisos)
+    tabla = {v.value: caps.estado(v).disponibilidad.value for v in Via}
+    plantillas = {p.vmid: p.nombre for p in (inv.catalogo.plantillas or ())}
+    evidencia(
+        "F7-a1-capacidades",
+        rutas_con_permisos=rutas,
+        vm_clone_en={r: "VM.Clone" in p for r, p in permisos.items() if "VM.Clone" in p},
+        plantillas_visibles=plantillas,
+        vias=tabla,
+    )
+    # VM.Audit viene también del rol de /vms: el catálogo ve las dos plantillas (la guía dice que
+    # VM.Audit «vale solo para esas plantillas», lo que no es exacto; ver hallazgo F7-a1).
+    assert plantillas == {VMID_PLANT_POOL: "plc-f7-tpl", VMID_PLANT_FUERA: "plc-f7-fuera"}
+    assert tiene_privilegio(permisos, f"/vms/{VMID_PLANT_POOL}", "VM.Clone")
+    assert not tiene_privilegio(permisos, f"/vms/{VMID_PLANT_FUERA}", "VM.Clone")
+    assert not tiene_privilegio(permisos, f"/vms/{VMID_MV_FUERA}", "VM.Clone")
+    assert caps.disponible(Via.CLONAR), caps.estado(Via.CLONAR)
+    for via in (Via.SUBIR_ISO, Via.DESCARGAR_URL, Via.ORDEN_ARRANQUE, Via.AMPLIAR_DISCO, Via.ISO):
+        assert caps.disponible(via), (via.value, caps.estado(via))
+
+
+def test_lab_f7_a2_el_clon_real_funciona_con_los_permisos_de_la_guia(
+    sesion_guia, cred_guia, tmp_path, vmids
+):
+    """SEG-M4-01: clon enlazado real (con etiquetas por PUT y ajuste de memoria) con el token de
+    alcance acotado, ejecutado por el motor de la app."""
+    from proxlaunch.nucleo.lote.modelos import EstadoMV
+
+    nuevo = vmids(9071)
+    definicion, _ = _definicion_csv(
+        sesion_guia,
+        tmp_path,
+        [f"plc-f7-guia;1;192 MiB;1;;;;{nuevo};clonar;plc-f7-tpl;;auto"],
+        nuevo,
+    )
+    libro = _correr_lote(sesion_guia, definicion)
+    estados = {e.elemento.vmid: e.estado for e in libro.instantanea()}
+    conf = Api(cred_guia).config(nuevo)
+    evidencia(
+        "F7-a2-clon",
+        estados={k: str(v) for k, v in estados.items()},
+        memory=conf["memory"],
+        tags=conf.get("tags"),
+    )
+    assert estados == {nuevo: EstadoMV.OK}, libro.instantanea()
+    assert int(conf["memory"]) == 192 and "proxlaunch" in str(conf["tags"])
+
+
+def test_lab_f7_a3_con_ese_token_no_se_puede_clonar_fuera_del_pool(cred_guia, vmids):
+    """SEG-M4-01: VM.Clone solo vale para las plantillas del pool: plantilla ajena, MV normal ->
+    403; la plantilla del pool -> 200 (control)."""
+    api = Api(cred_guia)
+    fuera_plantilla = clonar(api, VMID_PLANT_FUERA, vmids(9072))
+    fuera_mv = clonar(api, VMID_MV_FUERA, vmids(9073))
+    evidencia(
+        "F7-a3-fuera-del-pool",
+        plantilla_ajena=mensaje(fuera_plantilla),
+        mv_normal=mensaje(fuera_mv),
+    )
+    assert fuera_plantilla.status_code == 403, mensaje(fuera_plantilla)
+    assert fuera_mv.status_code == 403, mensaje(fuera_mv)
+    dentro = clonar(api, VMID_PLANT_POOL, vmids(9074))
+    assert dentro.status_code == 200, mensaje(dentro)
+    assert api.tarea(dentro.json()["data"])[0] == "OK"
+
+
+def test_lab_f7_a3b_la_app_bloquea_en_la_planificacion_la_plantilla_visible_pero_no_clonable(
+    sesion_guia, tmp_path
+):
+    """SEG-M4-01 (hallazgo): la plantilla ajena al pool es visible (VM.Audit viene de /vms) pero no
+    clonable. ``CapacidadesOrigen`` solo mira si ALGUNA plantilla es clonable, pero el plan del lote
+    la bloquea con V-O17 (VM.Clone en /vms/<id>) ANTES de enviar nada."""
+    from .test_lab_mvp3 import _planificar
+
+    nuevo = 9086
+    definicion, _ = _definicion_csv(
+        sesion_guia,
+        tmp_path,
+        [f"plc-f7-ajeno;1;128 MiB;1;;;;{nuevo};clonar;plc-f7-fuera;;auto"],
+        nuevo,
+    )
+    plan, _inv = _planificar(sesion_guia, definicion)
+    reglas = [(p.regla, dict(p.params)) for p in plan.problemas]
+    evidencia("F7-a3b-clon-ajeno-por-la-app", bloqueado=plan.bloqueado, problemas=reglas)
+    assert plan.bloqueado
+    assert any(
+        r == "V-O17" and prm.get("privilegio") == "VM.Clone" and prm.get("ruta") == "/vms/9061"
+        for r, prm in reglas
+    )
+    assert nuevo not in lab.vmids_de_prueba()
+
+
+def test_lab_f7_a4_iso_subida_descarga_y_creacion_con_los_permisos_de_la_guia(
+    sesion_guia, cred_guia, servidor_http, vmids
+):
+    """SEG-M4-01: con el alcance acotado funcionan subir un ISO, descargarlo por URL, listarlo y
+    crear una MV con ISO + orden de arranque (VM.Config.Disk viene del rol sin VM.Clone en /vms)."""
+    from proxlaunch.nucleo.lote.modelos import EstadoMV  # noqa: F401  (documenta el estado esperado)
+    from proxlaunch.nucleo.servicios.creacion import Desenlace, Etapa, ServicioCreacion
+
+    try:
+        subida = subir(sesion_guia, ISO_LOCAL, Contenido.ISO, "proxlaunch-lab-f7-subido.iso")
+        assert subida.estado == EstadoTransferencia.TERMINADA, (subida.estado, subida.error)
+        bajada = descargar(
+            sesion_guia,
+            f"{servidor_http}/proxlaunch-lab-alpine.iso",
+            "proxlaunch-lab-f7-bajado.iso",
+            checksum=SHA256_ALPINE,
+        )
+        assert bajada.estado == EstadoTransferencia.TERMINADA, (bajada.estado, bajada.error)
+        vmid = vmids(9075)
+        cfg = cfg_iso(vmid, subida.volid, firmware=Firmware.SEABIOS, tipo_so=TipoSO.LINUX)
+        inv = descubrir(sesion_guia)
+        r = ServicioCreacion(sesion_guia, RelojReal(), intervalo_s=0.5).crear(
+            cfg, inv, lambda _e: None, threading.Event()
+        )
+        conf = Api(cred_guia).config(vmid)
+        evidencia(
+            "F7-a4-iso",
+            desenlace=str(r.desenlace),
+            subido=subida.volid,
+            bajado=bajada.volid,
+            ide2=conf.get("ide2"),
+            boot=conf.get("boot"),
+        )
+        assert r.desenlace in (Desenlace.OK, Desenlace.CON_AVISOS), (r.desenlace, r.error)
+        assert str(conf["ide2"]).startswith(subida.volid) and "ide2" in str(conf["boot"])
+        assert Etapa.LISTO is not None
+    finally:
+        borrar_archivos_lab()
+
+
+# --- (b) QA-M4-07: balloon y vcpus del clon ---------------------------------------------------------
+
+
+@pytest.fixture
+def plantillas_balloon_vcpus() -> Iterator[None]:
+    _crear_plantilla_root(VMID_PLANT_BALLOON, "plc-f7-balloon", "--memory 4096 --balloon 2048")
+    _crear_plantilla_root(VMID_PLANT_VCPUS, "plc-f7-vcpus", "--cores 4 --vcpus 4")
+    _crear_plantilla_root(VMID_PLANT_VCPUS_S, "plc-f7-vcpus-s", "--sockets 1 --cores 4 --vcpus 4")
+    try:
+        yield
+    finally:
+        limpiar_vms()
+
+
+def test_lab_f7_b1_sin_la_correccion_el_servidor_rechaza_el_balloon_y_los_vcpus_rompen_el_arranque(
+    api14, plantillas_balloon_vcpus, vmids
+):
+    """QA-M4-07 (demostración con llamadas directas, sin la corrección de la app): el PUT de solo
+    ``memory`` por debajo del ``balloon`` heredado da error; el de solo ``cores`` por debajo de
+    ``vcpus`` se acepta pero la MV ya no arranca (``Invalid CPU topology``)."""
+    mem = vmids(9076)
+    clonar_ok(api14, VMID_PLANT_BALLOON, mem)
+    r_mem = api14.put(f"/nodes/{NODO}/qemu/{mem}/config", memory=1024)
+    cpu = vmids(9077)
+    clonar_ok(api14, VMID_PLANT_VCPUS, cpu)
+    r_cpu = api14.put(f"/nodes/{NODO}/qemu/{cpu}/config", cores=2)
+    arranque = lab.ssh(f"sudo qm start {cpu} 2>&1; true", comprobar=False, timeout=120)
+    lab.ssh(f"sudo qm stop {cpu} --skiplock 1", comprobar=False, timeout=60)
+    evidencia(
+        "F7-b1-sin-correccion",
+        put_memory=mensaje(r_mem),
+        put_cores=r_cpu.status_code,
+        arranque=arranque.strip()[-160:],
+    )
+    assert r_mem.status_code != 200 and "balloon" in mensaje(r_mem).lower()
+    assert r_cpu.status_code == 200 and "Invalid CPU topology" in arranque
+
+
+def _clonar_con_app(sesion: Any, tmp: Path, filas: list[str], inicio: int) -> dict[int, Any]:
+    definicion, _ = _definicion_csv(sesion, tmp, filas, inicio)
+    libro = _correr_lote(sesion, definicion)
+    return {e.elemento.vmid: e.estado for e in libro.instantanea()}
+
+
+def _arranca(vmid: int) -> str:
+    return lab.ssh(
+        f"sudo qm start {vmid} 2>&1 && echo ARRANCO; sudo qm stop {vmid} --skiplock 1 "
+        ">/dev/null 2>&1; true",
+        comprobar=False,
+        timeout=120,
+    )
+
+
+def test_lab_f7_b2_con_la_app_memoria_menor_que_el_balloon_queda_ok_con_balloon_ajustado(
+    sesion14, plantillas_balloon_vcpus, tmp_path, vmids
+):
+    """QA-M4-07: clonar con memoria 1024 (< balloon 2048): la app envía ``balloon`` = 1024 en el
+    mismo PUT; el resultado es OK (no PARCIAL)."""
+    from proxlaunch.nucleo.lote.modelos import EstadoMV
+
+    _esperar_plantillas(sesion14, {VMID_PLANT_BALLOON})
+    a = vmids(9078)
+    estados = _clonar_con_app(
+        sesion14, tmp_path, [f"plc-f7-mem;1;1024 MiB;1;;;;{a};clonar;plc-f7-balloon;;auto"], a
+    )
+    conf = sesion14.cliente.config_vm(NODO, a)
+    evidencia(
+        "F7-b2-balloon",
+        estados={k: str(v) for k, v in estados.items()},
+        mem=(conf["memory"], conf.get("balloon")),
+    )
+    assert estados == {a: EstadoMV.OK}
+    assert (int(conf["memory"]), int(conf["balloon"])) == (1024, 1024)
+
+
+def test_lab_f7_b3_con_la_app_menos_nucleos_que_vcpus_ajusta_vcpus_y_la_mv_arranca(
+    sesion14, plantillas_balloon_vcpus, tmp_path, vmids
+):
+    """QA-M4-07: plantilla con ``sockets`` explícito, cores=4 y vcpus=4; clon con 2 núcleos: la app
+    envía ``vcpus`` = 2, el clon queda OK y arranca."""
+    from proxlaunch.nucleo.lote.modelos import EstadoMV
+
+    _esperar_plantillas(sesion14, {VMID_PLANT_VCPUS_S})
+    b = vmids(9079)
+    estados = _clonar_con_app(
+        sesion14, tmp_path, [f"plc-f7-cpu;2;128 MiB;1;;;;{b};clonar;plc-f7-vcpus-s;;auto"], b
+    )
+    conf = sesion14.cliente.config_vm(NODO, b)
+    arranque = _arranca(b)
+    evidencia(
+        "F7-b3-vcpus",
+        estados={k: str(v) for k, v in estados.items()},
+        cpu=(conf["cores"], conf.get("vcpus")),
+        arranque=arranque.strip()[-40:],
+    )
+    assert estados == {b: EstadoMV.OK}
+    assert (int(conf["cores"]), int(conf["vcpus"])) == (2, 2) and "ARRANCO" in arranque
+
+
+def test_lab_f7_b4_defecto_vcpus_no_se_ajusta_si_la_plantilla_omite_sockets(
+    sesion14, plantillas_balloon_vcpus, tmp_path, vmids
+):
+    """QA-M4-07, reproducción: misma prueba que la anterior pero con la plantilla 9066, cuya config
+    no trae ``sockets`` (``qm config`` muestra ``cores: 4`` y ``vcpus: 4`` solamente)."""
+    from proxlaunch.nucleo.lote.modelos import EstadoMV
+
+    _esperar_plantillas(sesion14, {VMID_PLANT_VCPUS})
+    c = vmids(9087)
+    plantilla_conf = sesion14.cliente.config_vm(NODO, VMID_PLANT_VCPUS)
+    assert "sockets" not in plantilla_conf and int(plantilla_conf["vcpus"]) == 4
+    estados = _clonar_con_app(
+        sesion14, tmp_path, [f"plc-f7-cpu2;2;128 MiB;1;;;;{c};clonar;plc-f7-vcpus;;auto"], c
+    )
+    conf = sesion14.cliente.config_vm(NODO, c)
+    arranque = _arranca(c)
+    evidencia(
+        "F7-b4-defecto",
+        estados={k: str(v) for k, v in estados.items()},
+        cpu=(conf["cores"], conf.get("vcpus")),
+        arranque=arranque.strip()[-70:],
+    )
+    assert estados == {c: EstadoMV.OK}
+    assert int(conf["vcpus"]) == 2 and "ARRANCO" in arranque
+
+
+# --- (c) QA-M4-08: nunca más de 3 qmclone simultáneos ------------------------------------------------
+
+
+def test_lab_f7_c1_un_lote_de_seis_clones_enlazados_nunca_supera_tres_qmclone_a_la_vez(
+    sesion14, api14, tmp_path, vmids
+):
+    """QA-M4-08: el tope de 3 clones enlazados simultáneos se cuenta en el nodo de la plantilla.
+    Se mide con la lista de tareas activas ``qmclone`` (muestreo cada ~50 ms) y el lote termina OK."""
+    from proxlaunch.nucleo.lote.modelos import EstadoMV
+
+    _crear_plantilla_root(VMID_PLANT_LOTE, "plc-f7-lote")
+    try:
+        _esperar_plantillas(sesion14, {VMID_PLANT_LOTE})
+        ids = list(range(9080, 9086))
+        vmids(*ids)
+        definicion, _ = _definicion_csv(
+            sesion14,
+            tmp_path,
+            [f"plc-f7-l{i};1;128 MiB;1;;;;{v};clonar;plc-f7-lote;;auto" for i, v in enumerate(ids)],
+            ids[0],
+        )
+        muestras: list[int] = []
+        fin = threading.Event()
+
+        def vigilar() -> None:
+            while not fin.is_set():
+                r = api14.get(f"/nodes/{NODO}/tasks", source="active", typefilter="qmclone")
+                if r.status_code == 200:
+                    muestras.append(
+                        sum(1 for t in r.json()["data"] if str(t.get("type")) == "qmclone")
+                    )
+                time.sleep(0.05)
+
+        hilo = threading.Thread(target=vigilar, daemon=True)
+        hilo.start()
+        t0 = time.monotonic()
+        try:
+            libro = _correr_lote(sesion14, definicion)
+        finally:
+            fin.set()
+            hilo.join(timeout=10)
+        total = time.monotonic() - t0
+        estados = {e.elemento.vmid: e.estado for e in libro.instantanea()}
+        evidencia(
+            "F7-c1-concurrencia",
+            clones=len(ids),
+            muestras=len(muestras),
+            maximo_qmclone_activos=max(muestras or [0]),
+            segundos=round(total, 1),
+            estados=sorted({str(s) for s in estados.values()}),
+        )
+        assert set(estados) == set(ids) and set(estados.values()) == {EstadoMV.OK}, estados
+        assert muestras and max(muestras) <= 3, max(muestras or [0])
+    finally:
+        limpiar_vms()

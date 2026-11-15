@@ -17,6 +17,12 @@ from proxlaunch.nucleo.origen.permisos import ROL_PROXLAUNCH
 # vive en el núcleo (única fuente); aquí solo se muestra.
 PRIVILEGIOS_ROL: tuple[str, ...] = ROL_PROXLAUNCH
 NOMBRE_ROL = "ProxLaunchCreador"
+# Segundo rol del alcance acotado para la ruta «/vms»: los privilegios de máquina SIN VM.Clone,
+# de modo que clonar solo valga para las plantillas del pool (SEG-M4-01).
+NOMBRE_ROL_MAQUINAS = "ProxLaunchMaquinas"
+PRIVILEGIOS_ROL_MAQUINAS: tuple[str, ...] = tuple(
+    p for p in ROL_PROXLAUNCH if p.startswith("VM.") and p != "VM.Clone"
+)
 
 _TEXTOS: dict[str, Callable[[], str]] = {
     "vmid": lambda: QCoreApplication.translate(
@@ -504,15 +510,70 @@ def pasos_guia_token() -> list[str]:
         ),
         QCoreApplication.translate(
             "Ayuda",
-            "Ve a Datacenter → Permisos → Añadir → Permiso de usuario (o de token). Ruta «/», "
-            "elige el usuario o el token, rol «{rol}» y deja marcado «Propagar».",
-        ).format(rol=NOMBRE_ROL),
+            "Ve a Datacenter → Permisos → Añadir → Permiso de usuario (o de token) y da al "
+            "usuario o al token los permisos. Lo más seguro es el alcance acotado de abajo; la "
+            "alternativa simple es una sola asignación en la ruta «/».",
+        ),
         QCoreApplication.translate(
             "Ayuda",
             "En ProxLaunch pega el token completo con el formato usuario@realm!nombre=secreto, "
             "por ejemplo proxlaunch@pve!lab=11111111-2222-3333-4444-555555555555.",
         ),
     ]
+
+
+def permisos_acotados() -> list[str]:
+    """Asignaciones del alcance acotado (recomendado), una por línea y en lenguaje llano.
+
+    Coherentes con las rutas donde la aplicación comprueba cada privilegio: ``/vms`` (crear),
+    ``/vms/<id>`` de la plantilla (clonar), ``/storage/<almacenamiento>``, ``/nodes/<nodo>``,
+    ``/sdn/zones/localnetwork`` y ``/`` (solo ver el estado, sin propagar).
+    """
+    t = QCoreApplication.translate
+    return [
+        t(
+            "Ayuda",
+            "Pool de plantillas: en Datacenter → Permisos → Pools crea un pool (por ejemplo "
+            "«plantillas-proxlaunch») y añade solo las plantillas que ProxLaunch podrá clonar. "
+            "Luego añade el permiso en la ruta «/pool/plantillas-proxlaunch» con el rol «{rol}» "
+            "y «Propagar». Así VM.Clone y VM.Audit valen solo para esas plantillas.",
+        ).format(rol=NOMBRE_ROL),
+        t(
+            "Ayuda",
+            "Crear máquinas: crea un segundo rol, «{rol}», con los privilegios de máquina del "
+            "rol anterior SIN VM.Clone ({privilegios}) y asígnalo en la ruta «/vms» con "
+            "«Propagar».",
+        ).format(rol=NOMBRE_ROL_MAQUINAS, privilegios=", ".join(PRIVILEGIOS_ROL_MAQUINAS)),
+        t(
+            "Ayuda",
+            "Almacenamientos: en la ruta «/storage/<almacenamiento>» con el rol «{rol}», solo "
+            "en los que usarás para ISOs, imágenes de disco importadas y discos de las máquinas "
+            "(Datastore.AllocateTemplate y Datastore.AllocateSpace).",
+        ).format(rol=NOMBRE_ROL),
+        t(
+            "Ayuda",
+            "Nodos: en la ruta «/nodes/<nodo>» con el rol «{rol}», solo en los nodos que "
+            "descargarán archivos desde una dirección web (Sys.AccessNetwork).",
+        ).format(rol=NOMBRE_ROL),
+        t(
+            "Ayuda",
+            "Red y estado: en la ruta «/sdn/zones/localnetwork» (SDN.Use) y en la ruta «/» "
+            "con el rol «{rol}» pero SIN «Propagar» (Sys.Audit, solo para ver el estado de los "
+            "nodos).",
+        ).format(rol=NOMBRE_ROL),
+    ]
+
+
+def alternativa_simple_permisos() -> str:
+    """Alternativa simple: el rol completo en «/» con «Propagar», con su riesgo explicado."""
+    return QCoreApplication.translate(
+        "Ayuda",
+        "Alternativa simple: asigna el rol «{rol}» una sola vez en la ruta «/» con «Propagar». "
+        "Es más cómodo, pero el permiso alcanza a todo el servidor: quien consiga el token podría "
+        "clonar cualquier máquina y leer sus discos, subir archivos a cualquier almacenamiento y "
+        "hacer que los nodos descarguen direcciones web. Úsalo solo en un laboratorio o si "
+        "confías plenamente en quien guarde el token.",
+    ).format(rol=NOMBRE_ROL)
 
 
 def notas_guia_token() -> list[str]:
@@ -645,9 +706,11 @@ def texto_pedir_al_administrador() -> str:
         "",
         QCoreApplication.translate(
             "Ayuda",
-            "2. Asignar ese rol a mi usuario o a mi token en la ruta «/», con «Propagar» marcado "
-            "(Datacenter → Permisos → Añadir).",
+            "2. Asignar los permisos a mi usuario o a mi token solo donde hacen falta "
+            "(Datacenter → Permisos → Añadir). Opción recomendada, de alcance acotado:",
         ),
+        *[f"   - {linea}" for linea in permisos_acotados()],
+        "   - " + alternativa_simple_permisos(),
         QCoreApplication.translate(
             "Ayuda",
             "3. Para importar discos: activar el contenido «Import» en un almacenamiento de tipo "

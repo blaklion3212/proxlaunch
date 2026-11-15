@@ -34,10 +34,15 @@ from proxlaunch.nucleo.origen.constantes import (
     RESERVA_RAIZ_MIB,
     RESERVA_STORAGE_MIB,
 )
+from proxlaunch.nucleo.origen.nombres import validar_nombre_archivo
 from proxlaunch.nucleo.origen.permisos import estado_privilegio
 from proxlaunch.nucleo.reloj import Reloj
 from proxlaunch.nucleo.servicios.conexion import Sesion
-from proxlaunch.nucleo.transferencias.archivo_local import abrir_para_subir, calcular_sha256
+from proxlaunch.nucleo.transferencias.archivo_local import (
+    abrir_para_subir,
+    calcular_sha256,
+    comprobar_cabecera_abierto,
+)
 from proxlaunch.nucleo.transferencias.modelos import (
     ComprobacionPrevia,
     DestinoTransferencia,
@@ -125,6 +130,48 @@ def _o_logico(*valores: bool | None) -> bool | None:
 
 def _normalizado(nombre: str) -> str:
     return _RE_NO_SEGURO.sub("_", nombre)
+
+
+_CARACTERES_SEGUROS = re.compile(r"^[A-Za-z0-9._-]+$")
+
+
+def _validar_destino(destino: DestinoTransferencia) -> None:
+    """SEG-M4-04: el destino se valida también en el núcleo (no solo en la interfaz).
+
+    Nombre de archivo según ``validar_nombre_archivo(nombre, contenido)`` y storage / nodo
+    con ``[A-Za-z0-9._-]+``; si no, ``PARAMETRO_INVALIDO`` (sin red).
+    """
+    campo = ""
+    if _CARACTERES_SEGUROS.match(destino.storage) is None:
+        campo = "storage"
+    elif _CARACTERES_SEGUROS.match(destino.nodo) is None:
+        campo = "nodo"
+    elif validar_nombre_archivo(destino.nombre_archivo, destino.contenido) is not None:
+        campo = "nombre_archivo"
+    if campo:
+        raise ErrorProxLaunch(CodigoError.PARAMETRO_INVALIDO, {"campo": campo})
+
+
+def _sin_bytes_por_enviar(
+    seg: _Seguimiento, tipo: TipoTransferencia, tamano: int | None, upid: str | None
+) -> bool:
+    """``True`` si ya no quedan bytes por enviar desde la app: la copia sigue en el servidor.
+
+    Es el caso de una subida con la tarea iniciada o en ``ESPERANDO_SERVIDOR`` /
+    ``VERIFICANDO`` (o con todo el cuerpo ya entregado al socket). Una descarga nunca envía
+    bytes: solo se considera así si el ``POST download-url`` ya se envió (``upid``).
+    """
+    if upid is not None:
+        return True
+    if tipo == TipoTransferencia.DESCARGA:
+        return False
+    if seg.estado in (EstadoTransferencia.ESPERANDO_SERVIDOR, EstadoTransferencia.VERIFICANDO):
+        return True
+    return (
+        seg.estado == EstadoTransferencia.TRANSFIRIENDO
+        and tamano is not None
+        and seg.hechos >= tamano
+    )
 
 
 class _Seguimiento:
@@ -420,6 +467,7 @@ class ServicioTransferencias:
         ``TRANSFERENCIA_EN_CURSO`` si ya hay otra transferencia. ``acepta_aviso_raiz`` es la
         casilla «Entiendo que la subida puede fallar» (CA-O10.4).
         """
+        _validar_destino(destino)
         self._tomar()
         inicio = self._reloj.ahora()
         seg = _Seguimiento(self._reloj, al_progresar)
@@ -428,6 +476,8 @@ class ServicioTransferencias:
         try:
             with abrir_para_subir(ruta) as archivo:
                 tamano = archivo.huella.tamano
+                # SEG-M4-10: la cabecera se vuelve a evaluar sobre el descriptor que se enviará.
+                comprobar_cabecera_abierto(archivo, destino.contenido)
                 seg.emitir(EstadoTransferencia.CALCULANDO_HUELLA, 0, tamano, forzar=True)
                 huella = calcular_sha256(
                     archivo,
@@ -507,9 +557,12 @@ class ServicioTransferencias:
         limite = ESPERA_BASE_S + ESPERA_POR_GIB_S * (tamano / _GIB)
         como, estado = self._sondear(destino.nodo, upid, cancelado, limite)
         if como == "detenido":
-            raise ErrorProxLaunch(
-                CodigoError.TRANSFERENCIA_CANCELADA, {"quedo_archivo": "desconocido"}
+            # QA-M4-02: el cuerpo ya se envió y la copia sigue en el servidor; no se afirma
+            # nada del archivo (quedo_archivo = None) ni se consulta el catálogo.
+            sin_esperar = self._resultado(
+                EstadoTransferencia.SIN_ESPERAR, None, None, None, inicio, upid
             )
+            return self._cerrar(destino, TipoTransferencia.SUBIDA, tamano, sin_esperar)
         if como == "agotado":
             # La tarea sigue en el servidor: no es un fallo, solo se deja de esperar.
             sin_esperar = self._resultado(
@@ -556,6 +609,7 @@ class ServicioTransferencias:
         Un solo ``POST download-url`` (CA-O11.2). ``dejar_de_esperar`` deja de sondear
         (``SIN_ESPERAR``): la descarga sigue en el servidor y no se puede detener desde la app.
         """
+        _validar_destino(destino)
         self._tomar()
         inicio = self._reloj.ahora()
         seg = _Seguimiento(self._reloj, al_progresar)
@@ -563,18 +617,23 @@ class ServicioTransferencias:
         tamano: int | None = None
         try:
             seg.emitir(EstadoTransferencia.COMPROBANDO, 0, None, forzar=True)
+            self._cancelar_si(dejar_de_esperar)
             tamano = self._tamano_del_servidor(destino.nodo, url, verificar_certificados)
+            self._cancelar_si(dejar_de_esperar)
             comp = self.comprobar(destino, tamano, inv, para_subida=False)
             via = _VIA_DESCARGAR.get(destino.contenido.value, "")
             error = self._error_de_problemas(comp, destino, via)
             if error is not None:
                 raise error
+            self._cancelar_si(dejar_de_esperar)
             # CA-O10.2: nombre libre justo antes de pedir la descarga.
             if self._volid_existente(destino) is not None:
                 raise ErrorProxLaunch(
                     CodigoError.NOMBRE_YA_EXISTE,
                     {"storage": destino.storage, "nombre": destino.nombre_archivo},
                 )
+            # QA-M4-01: si el usuario ya dejó de esperar, no se envía el POST (nada quedó).
+            self._cancelar_si(dejar_de_esperar)
             tarea = self._cliente.descargar_url(
                 destino.nodo,
                 destino.storage,
@@ -801,6 +860,14 @@ class ServicioTransferencias:
         seg: _Seguimiento,
     ) -> ResultadoTransferencia:
         """Convierte un error en resultado (cancelada o fallida); mira el catálogo si hace falta."""
+        if error.codigo == CodigoError.TRANSFERENCIA_CANCELADA and _sin_bytes_por_enviar(
+            seg, tipo, tamano, upid
+        ):
+            # QA-M4-02: la copia sigue en el servidor; no se consulta el catálogo para decir «no».
+            sin_esperar = self._resultado(
+                EstadoTransferencia.SIN_ESPERAR, None, None, None, inicio, upid
+            )
+            return self._cerrar(destino, tipo, tamano, sin_esperar)
         if error.codigo == CodigoError.TRANSFERENCIA_CANCELADA:
             quedo = (
                 False if error.params.get("quedo_archivo") == "no" else self._quedo_archivo(destino)
@@ -824,7 +891,14 @@ class ServicioTransferencias:
         if error.codigo == CodigoError.PERMISO_INSUFICIENTE and "via" not in error.params:
             vias = _VIA_SUBIR if tipo == TipoTransferencia.SUBIDA else _VIA_DESCARGAR
             error.params["via"] = vias.get(destino.contenido.value, "")
-        quedo = self._quedo_archivo(destino) if error.codigo in _ERRORES_CON_COMPROBACION else None
+        if error.codigo == CodigoError.ARCHIVO_CAMBIO and upid is not None:
+            # El cuerpo ya se envió y la tarea del servidor puede seguir: solo se afirma el
+            # «sí» (ya está en el catálogo); un «no» sería prematuro (QA-M4-02).
+            quedo = True if self._quedo_archivo(destino) is True else None
+        elif error.codigo in _ERRORES_CON_COMPROBACION:
+            quedo = self._quedo_archivo(destino)
+        else:
+            quedo = None
         fallida = self._resultado(EstadoTransferencia.FALLIDA, None, error, quedo, inicio, upid)
         return self._cerrar(destino, tipo, tamano, fallida)
 

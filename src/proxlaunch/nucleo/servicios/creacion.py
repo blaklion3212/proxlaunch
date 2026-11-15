@@ -53,7 +53,7 @@ AVISO_AJUSTE_OMITIDO = "ajuste_omitido"  # «ajuste_omitido:disco» (permiso no 
 AJUSTE_ETIQUETAS = "etiquetas"
 AJUSTE_CPU_MEMORIA = "cpu_memoria"
 AJUSTE_DISCO = "disco"
-_CLAVES_CPU = ("sockets", "cores", "cpu")
+_CLAVES_CPU = ("sockets", "cores", "cpu", "vcpus")
 _CLAVES_MEMORIA = ("memory", "balloon")
 
 

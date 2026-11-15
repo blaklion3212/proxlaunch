@@ -7,6 +7,10 @@ Cada elemento del plan se clasifica en una ``ClaseCarga``:
   máximo ``pesadas_por_storage`` simultáneas hacia el mismo storage destino.
 - ``LIGERA``: clon enlazado. Hasta ``por_nodo`` simultáneas en el mismo nodo.
 
+El «nodo» de una ``LIGERA`` de clon es donde corre la tarea ``qmclone``: el nodo de la
+PLANTILLA, no el destino (QA-M4-08); así el tope de enlazados simultáneos cuenta por ese nodo
+aunque los destinos sean distintos. El resto de clases cuenta por el nodo destino.
+
 Por nodo hay ``por_nodo`` unidades de cupo: una ``LIGERA`` consume 1 y las demás consumen
 todas. Con ``por_nodo == 1`` el comportamiento es exactamente el de M2 (una creación por
 nodo). La adquisición es atómica (nodo y storages a la vez) y respeta el orden de llegada
@@ -52,6 +56,18 @@ def clase_de(cfg: ConfiguracionVM) -> ClaseCarga:
         # Sin modo resuelto se asume la peor carga (copia completa).
         return ClaseCarga.LIGERA if modo == ModoClon.ENLAZADO else ClaseCarga.PESADA
     return ClaseCarga.NORMAL
+
+
+def nodo_de_cupo(elemento: ElementoPlan) -> str:
+    """Nodo cuyo cupo consume el elemento (QA-M4-08).
+
+    Un clon enlazado trabaja en el nodo de la plantilla (donde corre ``qmclone``); si no se
+    conoce, o no es un clon enlazado, se usa el nodo destino del elemento.
+    """
+    cfg = elemento.cfg
+    if clase_de(cfg) == ClaseCarga.LIGERA and isinstance(cfg.detalle_origen, DetalleClon):
+        return cfg.detalle_origen.plantilla.nodo or elemento.nodo
+    return elemento.nodo
 
 
 class CuposEjecucion:
@@ -104,7 +120,7 @@ class CuposEjecucion:
             turno = self._siguiente_turno
             self._siguiente_turno += 1
             self._turno_de[elemento.vmid] = turno
-            self._esperando[elemento.nodo].add(turno)
+            self._esperando[nodo_de_cupo(elemento)].add(turno)
         return turno
 
     def descartar(self, elemento: ElementoPlan) -> None:
@@ -112,14 +128,16 @@ class CuposEjecucion:
         with self._cond:
             turno = self._turno_de.pop(elemento.vmid, None)
             if turno is not None:
-                self._esperando[elemento.nodo].discard(turno)
+                self._esperando[nodo_de_cupo(elemento)].discard(turno)
                 self._cond.notify_all()
 
     def adquirir(self, elemento: ElementoPlan, control: ControlLote) -> bool:
         """Espera el cupo del elemento. ``False`` si se canceló, suspendió o pausó el lote
-        mientras esperaba (no se adquirió nada y el elemento pierde su turno)."""
+        mientras esperaba. No se adquirió nada y el elemento CONSERVA su turno original
+        (QA-M4-11); quien lo abandone debe llamar a ``descartar``."""
         consumo, claves = self._consumo(elemento)
-        nodo = elemento.nodo
+        nodo = nodo_de_cupo(elemento)
+        adquirido = False
         with self._cond:
             turno = self._reservar_turno(elemento)
             try:
@@ -138,12 +156,15 @@ class CuposEjecucion:
                         for k in claves:
                             self._usado_storage[k] += 1
                         self._tomados[elemento.vmid] = (consumo, claves)
+                        adquirido = True
                         return True
                     self._cond.wait(_PASO_ESPERA_S)
             finally:
-                # Haya o no cupo, el elemento deja de esperar (y los demás pueden avanzar).
-                self._esperando[nodo].discard(turno)
-                self._turno_de.pop(elemento.vmid, None)
+                # Con cupo el elemento deja de esperar. Sin él (pausa, suspensión, cancelación)
+                # conserva el turno: al reanudar no pasa al final de la cola.
+                if adquirido:
+                    self._esperando[nodo].discard(turno)
+                    self._turno_de.pop(elemento.vmid, None)
                 self._cond.notify_all()
 
     def liberar(self, elemento: ElementoPlan) -> None:
@@ -153,7 +174,7 @@ class CuposEjecucion:
             if tomado is None:
                 return
             consumo, claves = tomado
-            self._usado_nodo[elemento.nodo] -= consumo
+            self._usado_nodo[nodo_de_cupo(elemento)] -= consumo
             for k in claves:
                 self._usado_storage[k] -= 1
             self._cond.notify_all()

@@ -14,11 +14,13 @@ nunca se muestra completa: solo ``host/archivo``.
 from __future__ import annotations
 
 import dataclasses
+import ipaddress
 import threading
 import time
 from enum import Enum
 from pathlib import Path
 from typing import Any, Protocol
+from urllib.parse import urlsplit
 
 from PySide6.QtCore import QCoreApplication, QObject, Qt, QTimer, Signal
 from PySide6.QtGui import QKeyEvent
@@ -73,6 +75,7 @@ from proxlaunch.nucleo.transferencias.modelos import (
 )
 from proxlaunch.nucleo.transferencias.servicio import ServicioTransferencias
 from proxlaunch.nucleo.transferencias.url import (
+    AlgoritmoChecksum,
     ChecksumTransferencia,
     UrlDescarga,
     validar_checksum,
@@ -155,6 +158,59 @@ class _Fase(Enum):
     LISTO = "listo"  # todo comprobado: se puede confirmar
     EN_CURSO = "en_curso"
     TERMINADO = "terminado"
+
+
+# Estados en los que la subida ya envió todos los bytes y solo espera al servidor.
+_ESTADOS_ESPERA_SERVIDOR = frozenset(
+    {EstadoTransferencia.ESPERANDO_SERVIDOR, EstadoTransferencia.VERIFICANDO}
+)
+
+
+def _avisos_url(url: UrlDescarga) -> list[str]:
+    """Avisos (no bloquean) de una dirección: IP literal interna o puerto poco habitual.
+
+    Que el servidor descargue de una IP privada, de loopback o de enlace local puede alcanzar
+    equipos de la red interna; un puerto distinto de 80/443 también es poco habitual.
+    """
+    avisos: list[str] = []
+    try:
+        ip = ipaddress.ip_address(url.host.strip("[]"))
+    except ValueError:
+        ip = None
+    if ip is not None and (ip.is_private or ip.is_loopback or ip.is_link_local):
+        avisos.append(
+            QCoreApplication.translate(
+                "DialogoTransferencia",
+                "La dirección apunta a un equipo de la red interna del servidor. Descárgala solo "
+                "si sabes de qué equipo se trata.",
+            )
+        )
+    try:
+        puerto = urlsplit(url.texto.strip()).port
+    except ValueError:
+        puerto = None
+    if puerto is not None and puerto not in (80, 443):
+        avisos.append(
+            QCoreApplication.translate(
+                "DialogoTransferencia",
+                "La dirección usa el puerto {puerto}, que no es el habitual (80 o 443).",
+            ).format(puerto=puerto)
+        )
+    return avisos
+
+
+def _aviso_checksum(checksum: ChecksumTransferencia | None) -> str | None:
+    """Aviso (no bloquea) si la huella usa un algoritmo débil (MD5 o SHA-1)."""
+    if checksum is None or checksum.algoritmo not in (
+        AlgoritmoChecksum.MD5,
+        AlgoritmoChecksum.SHA1,
+    ):
+        return None
+    return QCoreApplication.translate(
+        "DialogoTransferencia",
+        "La huella usa un algoritmo antiguo ({algoritmo}): ya no protege de un archivo "
+        "manipulado a propósito. Si puedes, usa una huella SHA-256 o SHA-512.",
+    ).format(algoritmo=str(checksum.algoritmo.value).upper())
 
 
 def _texto_no_deshacer(tipo: TipoTransferencia) -> str:
@@ -644,6 +700,13 @@ class _DialogoTransferencia(QDialog):
             ).format(volid=resultado.volid or "")
         elif estado == EstadoTransferencia.CANCELADA:
             texto = self._texto_cancelada(resultado)
+        elif estado == EstadoTransferencia.SIN_ESPERAR and self.tipo == TipoTransferencia.SUBIDA:
+            texto = QCoreApplication.translate(
+                "DialogoTransferencia",
+                "Dejaste de esperar. El archivo ya se envió y el servidor sigue copiándolo: no "
+                "se puede cancelar desde ProxLaunch y puede aparecer en el catálogo cuando "
+                "termine. Revísalo allí más tarde.",
+            )
         elif estado == EstadoTransferencia.SIN_ESPERAR:
             texto = QCoreApplication.translate(
                 "DialogoTransferencia",
@@ -734,6 +797,8 @@ class _DialogoTransferencia(QDialog):
         self._ultimo_progreso = progreso
         if not self._cancelando:
             self.etiqueta_estado.setText(texto_progreso_transferencia(progreso))
+            # La subida que ya envió todo cambia «Cancelar subida» por «Dejar de esperar».
+            self.boton_cancelar.setText(self._texto_boton_cancelar_en_curso())
         fraccion: float | None = None
         if progreso.estado in (
             EstadoTransferencia.CALCULANDO_HUELLA,
@@ -962,10 +1027,18 @@ class DialogoSubida(_DialogoTransferencia):
         self.campo_nombre.setEnabled(not congelar and self._inspeccion is not None)
         self.boton_elegir.setEnabled(not congelar)
 
+    def _esperando_servidor(self) -> bool:
+        p = self._ultimo_progreso
+        return p is not None and p.estado in _ESTADOS_ESPERA_SERVIDOR
+
     def _texto_cancelando(self) -> str:
+        if self._esperando_servidor():
+            return self.tr("Dejando de esperar…")
         return self.tr("Cancelando…")
 
     def _texto_boton_cancelar_en_curso(self) -> str:
+        if self._esperando_servidor():
+            return self.tr("Dejar de esperar")
         return self.tr("Cancelar subida")
 
     def _al_pulsar_accion(self) -> None:
@@ -1019,6 +1092,9 @@ class DialogoDescarga(_DialogoTransferencia):
         self._url: UrlDescarga | None = None
         self._checksum: ChecksumTransferencia | None = None
         self._metadatos: MetadatosUrl | None = None
+        # Riesgos ya confirmados (URL, ¿http?, ¿verifica certificados?): no se vuelve a preguntar
+        # al descargar mientras no cambie nada de eso.
+        self._riesgos_confirmados: tuple[str, bool, bool] | None = None
         self._nombre_inicial = nombre_inicial
         self.setWindowTitle(
             self.tr("Descargar un ISO en el servidor")
@@ -1065,6 +1141,13 @@ class DialogoDescarga(_DialogoTransferencia):
         self.error_campos.setProperty("error", True)
         self.error_campos.hide()
 
+        # Avisos que no bloquean (IP interna, puerto raro, huella antigua).
+        self.avisos_descarga = QLabel()
+        self.avisos_descarga.setWordWrap(True)
+        self.avisos_descarga.setTextFormat(Qt.TextFormat.PlainText)
+        self.avisos_descarga.setAccessibleName(self.tr("Avisos de la descarga"))
+        self.avisos_descarga.hide()
+
         self.etiqueta_metadatos = QLabel()
         self.etiqueta_metadatos.setWordWrap(True)
         self.etiqueta_metadatos.setTextFormat(Qt.TextFormat.PlainText)
@@ -1080,6 +1163,12 @@ class DialogoDescarga(_DialogoTransferencia):
         self.aviso_no_se_cancela.setWordWrap(True)
         self.aviso_no_se_cancela.setProperty("secundario", True)
 
+        self.nota_registro = QLabel(
+            self.tr("La dirección quedará en el registro de tareas del servidor.")
+        )
+        self.nota_registro.setWordWrap(True)
+        self.nota_registro.setProperty("secundario", True)
+
         formulario = QFormLayout()
         formulario.addRow(self.tr("Dirección web"), fila_url)
         formulario.addRow(self.tr("Huella"), self.campo_checksum)
@@ -1087,8 +1176,10 @@ class DialogoDescarga(_DialogoTransferencia):
         self._capa.addLayout(formulario)
         self._capa.addWidget(self.casilla_certificados)
         self._capa.addWidget(self.error_campos)
+        self._capa.addWidget(self.avisos_descarga)
         self._capa.addWidget(self.etiqueta_metadatos)
         self._capa.addWidget(self.aviso_no_se_cancela)
+        self._capa.addWidget(self.nota_registro)
         self._terminar_diseno()
 
     # --- API pública --------------------------------------------------------------------
@@ -1119,8 +1210,17 @@ class DialogoDescarga(_DialogoTransferencia):
                 self._mostrar_error_campos(texto_motivo_checksum(motivo_huella or ""))
                 return
         self.error_campos.hide()
+        # Consultar también hace que el servidor se conecte a la dirección: mismas confirmaciones
+        # de riesgo que la descarga (http:// o certificado sin verificar).
+        if not self._confirmar_riesgos(consulta=True, url=url):
+            return
         self._url = url
         self._checksum = checksum
+        avisos = _avisos_url(url)
+        aviso_huella = _aviso_checksum(checksum)
+        if aviso_huella is not None:
+            avisos.append(aviso_huella)
+        poner_mensaje(self.avisos_descarga, "\n".join(avisos), aviso=True)
         if not self._resolver_destino():
             return
         inv = self._controlador.inventario
@@ -1174,6 +1274,7 @@ class DialogoDescarga(_DialogoTransferencia):
         self._fase = _Fase.PREPARANDO
         self._reiniciar_comprobacion()
         self.etiqueta_metadatos.hide()
+        poner_mensaje(self.avisos_descarga, None)
         self.campo_nombre.setEnabled(False)
 
     def _al_obtener_metadatos(self, url: UrlDescarga, meta: MetadatosUrl) -> None:
@@ -1250,10 +1351,15 @@ class DialogoDescarga(_DialogoTransferencia):
     def _texto_boton_cancelar_en_curso(self) -> str:
         return self.tr("Dejar de esperar")
 
-    def _confirmar_riesgos(self) -> bool:
-        """Pide confirmar ``http://`` o certificados sin verificar (DT-O7, CA-O11.3/O11.4)."""
+    def _confirmar_riesgos(self, *, consulta: bool = False, url: UrlDescarga | None = None) -> bool:
+        """Pide confirmar ``http://`` o certificados sin verificar (DT-O7, CA-O11.3/O11.4).
+
+        También se pide al «Comprobar» (``consulta``): el servidor se conecta a la dirección
+        con esas mismas condiciones, así que no se consulta sin la misma confirmación.
+        """
+        url = url or self._url
         riesgos: list[str] = []
-        if self._url is not None and self._url.es_http:
+        if url is not None and url.es_http:
             riesgos.append(
                 self.tr(
                     "La dirección usa http://: no se puede garantizar que el archivo no fue "
@@ -1269,13 +1375,32 @@ class DialogoDescarga(_DialogoTransferencia):
             )
         if not riesgos:
             return True
-        return confirmar(
-            self,
-            self.tr("Descarga con riesgo"),
-            "\n\n".join(riesgos),
-            self.tr("Descargar de todos modos"),
-            self.tr("Cancelar"),
+        clave = (
+            url.texto if url is not None else "",
+            bool(url and url.es_http),
+            self.verificar_certificados,
         )
+        if self._riesgos_confirmados == clave:
+            return True
+        if consulta:
+            aceptado = confirmar(
+                self,
+                self.tr("Consulta con riesgo"),
+                "\n\n".join(riesgos),
+                self.tr("Consultar de todos modos"),
+                self.tr("Cancelar"),
+            )
+        else:
+            aceptado = confirmar(
+                self,
+                self.tr("Descarga con riesgo"),
+                "\n\n".join(riesgos),
+                self.tr("Descargar de todos modos"),
+                self.tr("Cancelar"),
+            )
+        if aceptado:
+            self._riesgos_confirmados = clave
+        return aceptado
 
     def _al_pulsar_accion(self) -> None:
         if not self.listo_para_confirmar or self._url is None:

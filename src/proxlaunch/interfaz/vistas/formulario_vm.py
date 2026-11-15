@@ -99,8 +99,9 @@ class FormularioVM(QWidget):
         self._avanzados: list[tuple[QWidget, Callable[[], bool]]] = []
         # Storage de UEFI cargado de un lote o perfil que el nodo no tiene (CA-G04.3).
         self._efi_ausente: str | None = None
-        # Configuración (widgets) justo antes de aplicar el asistente de SO: base de la lista de
-        # cambios y para reescribir solo el bus al marcar «Disco compatible (SATA)».
+        # Configuración (widgets) justo antes de la PRIMERA aplicación del asistente de SO: cada
+        # SO se aplica sobre esta base (no se arrastra el hardware del anterior) y de ella sale la
+        # lista de cambios. Se descarta al cargar un perfil o lote y al dejar ISO/disco importado.
         self._base_asistente: ConfiguracionVM | None = None
         # Storage de discos recordado para este servidor (RF-O05); None = el de más espacio.
         self._recordado_mv: str | None = None
@@ -153,6 +154,7 @@ class FormularioVM(QWidget):
         g.addWidget(self._nota_clon)
         self.selector_origen.seleccion_cambiada.connect(self._al_cambiar_origen)
         self.selector_origen.asistente_solicitado.connect(self._al_pedir_asistente)
+        self.selector_origen.origen_cambiado.connect(self._al_dejar_origen_con_asistente)
 
     def _registrar_avanzado(self, w: QWidget, condicion: Callable[[], bool] | None = None) -> None:
         self._avanzados.append((w, condicion or (lambda: True)))
@@ -388,6 +390,7 @@ class FormularioVM(QWidget):
 
     def aplicar_configuracion(self, cfg: ConfiguracionVM) -> None:
         """Rellena el formulario con una configuración (pruebas y «Crear otra»)."""
+        self._base_asistente = None
         self._ocupado = True
         try:
             self._aplicar_configuracion_interna(cfg, None, None)
@@ -408,6 +411,7 @@ class FormularioVM(QWidget):
         Con ``asistente`` (perfil con ``tipo_so``) se aplica además, una vez, el asistente de SO
         sobre lo cargado; un lote guardado ya trae lo que el usuario dejó y no se toca.
         """
+        self._base_asistente = None
         self._ocupado = True
         try:
             if origen:
@@ -819,6 +823,12 @@ class FormularioVM(QWidget):
         self._actualizar_para_origen()
         self._al_editar()
 
+    def _al_dejar_origen_con_asistente(self, origen: object) -> None:
+        """Con otro origen que no usa el asistente se descarta su base (los widgets quedan como
+        están): al volver a ISO o disco importado la base será lo que muestre el formulario."""
+        if origen not in (OrigenSO.ISO, OrigenSO.IMPORTAR_DISCO):
+            self._base_asistente = None
+
     def _al_pedir_asistente(self, tipo: object, solo_bus: bool) -> None:
         """El usuario eligió otro SO (o «Disco compatible»): se aplica el asistente una vez."""
         if self._ocupado or not isinstance(tipo, TipoSO):
@@ -833,11 +843,10 @@ class FormularioVM(QWidget):
         los widgets y el modo avanzado puede dejar otros valores (CA-O13.8). Con ``solo_bus`` solo
         se reescribe el bus del primer disco (casilla «Disco compatible»)."""
         selector = self.selector_origen
-        if solo_bus and self._base_asistente is not None:
-            base = self._base_asistente
-        else:
-            base = self._configuracion_base()
-            self._base_asistente = base
+        # La base se fija una sola vez; cada SO (y «Otro», que vuelve a ella) se aplica sobre ella.
+        if self._base_asistente is None:
+            self._base_asistente = self._configuracion_base()
+        base = self._base_asistente
         resultado = aplicar_asistente(base, tipo, disco_compatible=selector.disco_compatible)
         cfg = resultado.cfg
         previo, self._ocupado = self._ocupado, True
@@ -851,7 +860,7 @@ class FormularioVM(QWidget):
                 self.combo_ctrl.setCurrentIndex(
                     max(self.combo_ctrl.findData(cfg.controlador_scsi), 0)
                 )
-                if cfg.redes:
+                if cfg.redes and len({r.modelo for r in cfg.redes}) == 1:
                     self.tabla_redes.establecer_modelo_todas(cfg.redes[0].modelo)
             if cfg.con_disco and cfg.discos:
                 self.tabla_discos.establecer_bus_primero(cfg.discos[0].bus)

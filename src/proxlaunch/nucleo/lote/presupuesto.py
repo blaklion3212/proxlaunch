@@ -25,6 +25,7 @@ from proxlaunch.nucleo.modelos.catalogo import Contenido, DetallePlantilla, Plan
 from proxlaunch.nucleo.modelos.inventario import Inventario, Storage
 from proxlaunch.nucleo.modelos.origen import DetalleClon, DetalleImportacion, ModoClon
 from proxlaunch.nucleo.modelos.vm import ConfiguracionVM, Firmware, OrigenSO
+from proxlaunch.nucleo.origen.clon import disco_principal
 from proxlaunch.nucleo.origen.clon import modo_efectivo as _modo_efectivo_clon
 from proxlaunch.nucleo.origen.constantes import TAM_TPM_MIB
 from proxlaunch.nucleo.validacion import storage_efi_efectivo
@@ -93,8 +94,10 @@ def _discos_pesados_del_clon(cfg: ConfiguracionVM, inv: Inventario) -> list[tupl
     if _modo_del_clon(detalle, plantilla, plantilla.detalle, inv) == ModoClon.ENLAZADO:
         return []
     discos = plantilla.detalle.discos
-    # Disco principal = primer disco de datos (no efidisk ni tpmstate).
-    principal = next((d.clave for d in discos if _es_disco_de_datos(d.clave)), None)
+    # Disco principal = el mismo que amplía el resize: scsi0 > virtio0 > sata0 > ide0
+    # (QA-M4-12); no el primer disco de datos por orden de lista.
+    principal_disco = disco_principal(plantilla.detalle)
+    principal = principal_disco.clave if principal_disco is not None else None
     resultado: list[tuple[str, int, bool]] = []
     for d in discos:
         tam = d.tamano_bytes or 0

@@ -16,7 +16,7 @@ from proxlaunch.nucleo.csv_importacion.modelos import (
     ResultadoImportacion,
     TablaCsv,
 )
-from proxlaunch.nucleo.origen.nombres import parece_url
+from proxlaunch.nucleo.origen.nombres import parece_url_o_credenciales
 from proxlaunch.nucleo.transferencias.url import url_saneada
 from proxlaunch.nucleo.validacion import Severidad
 
@@ -26,7 +26,7 @@ SEPARADOR_PROBLEMAS = " | "  # varios problemas de una fila en una sola celda
 
 def _celda_segura(celda: str, es_fuente: bool) -> str:
     """La celda ``fuente`` con forma de URL se escribe como ``host/archivo`` (INV-O6)."""
-    return url_saneada(celda) if es_fuente and parece_url(celda) else celda
+    return url_saneada(celda) if es_fuente and parece_url_o_credenciales(celda) else celda
 
 
 def filas_con_error(

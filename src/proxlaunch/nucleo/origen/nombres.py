@@ -13,7 +13,11 @@ import unicodedata
 from collections.abc import Mapping
 
 from proxlaunch.nucleo.modelos.catalogo import Contenido
-from proxlaunch.nucleo.origen.constantes import MAX_LONG_NOMBRE_VOLUMEN, PREFIJO_VIRTIO_WIN
+from proxlaunch.nucleo.origen.constantes import (
+    MAX_LONG_NOMBRE_VOLUMEN,
+    PREFIJO_VIRTIO_WIN,
+    URL_VIRTIO_WIN,
+)
 
 # Extensiones admitidas por contenido (en minúsculas y con el punto).
 EXTENSIONES: Mapping[Contenido, frozenset[str]] = {
@@ -52,12 +56,32 @@ def parece_url(texto: str) -> bool:
     return _RE_ESQUEMA_URL.match(texto) is not None or texto.strip().casefold().startswith("www.")
 
 
+def parece_url_o_credenciales(texto: str) -> bool:
+    """``parece_url`` o texto con «@» / que empieza por ``//`` (URL sin esquema o con userinfo).
+
+    Para decidir qué celdas se sanean como URL antes de conservarlas o escribirlas
+    (INV-O6, SEG-M4-05): un volid o un nombre de archivo válido nunca lleva «@».
+    """
+    if not isinstance(texto, str):
+        return False
+    return parece_url(texto) or "@" in texto or texto.strip().startswith("//")
+
+
 def es_virtio_win(nombre: str) -> bool:
     """Nombre que empieza por ``virtio-win`` y termina en ``.iso`` (CA-O14.1)."""
     if not isinstance(nombre, str):
         return False
     n = nombre.casefold()
     return n.startswith(PREFIJO_VIRTIO_WIN) and n.endswith(".iso")
+
+
+def nombre_virtio_win_fijado() -> str:
+    """Nombre de archivo del virtio-win fijado por la app (``virtio-win-<versión>.iso``).
+
+    Se deriva de ``URL_VIRTIO_WIN``: es el único que la detección de drivers elige sin aviso
+    (SEG-M4-02). Vacío si la constante no está definida.
+    """
+    return URL_VIRTIO_WIN.rsplit("/", 1)[-1]
 
 
 def _extension(nombre: str) -> str:

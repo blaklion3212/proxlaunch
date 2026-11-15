@@ -84,6 +84,11 @@ class TransporteSubida(Protocol):
 # Envío de una subida: el socket usa un timeout corto por intento de escritura y se reintenta
 # mientras haya avance (CA-O12.6: 120 s sin avance), comprobando la cancelación en cada vuelta.
 TIMEOUT_ESCRITURA_S = 2.0
+# Riesgo conocido (QA-M4-09): la cancelación solo se comprueba durante la ESCRITURA del cuerpo.
+# Mientras se establece la conexión (``TIMEOUT_CONEXION``, 10 s) y mientras se espera la
+# respuesta del servidor tras enviar el cuerpo (hasta ``timeout_lectura``), cancelar no es
+# inmediata: surte efecto cuando termina esa espera. Por eso, si ya se envió todo el cuerpo,
+# el servicio trata la cancelación como «dejar de esperar» (la copia sigue en el servidor).
 
 
 class _ControlEnvio:

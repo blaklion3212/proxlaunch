@@ -155,6 +155,8 @@ def detalle_de_config(config: Mapping[str, object]) -> DetallePlantilla:
         tipo_cpu=tipo_cpu,
         memoria_mib=_entero(config.get("memory")),
         etiquetas=_etiquetas(config.get("tags")),
+        balloon=_entero(config.get("balloon")),
+        vcpus=_entero(config.get("vcpus")),
     )
 
 
@@ -341,6 +343,18 @@ def construir_ajustes_clon(
         config["cpu"] = a.tipo_cpu
     if a.memoria_mib is not None and a.memoria_mib != plantilla.memoria_mib:
         config["memory"] = str(a.memoria_mib)
+        # QA-M4-07: Proxmox exige balloon <= memory. Si la memoria nueva queda por debajo del
+        # balloon de la plantilla, se baja también (balloon = 0 es «desactivado»: no se toca).
+        if plantilla.balloon is not None and plantilla.balloon > a.memoria_mib > 0:
+            config["balloon"] = str(a.memoria_mib)
+    if "sockets" in config or "cores" in config:
+        # QA-M4-07: vcpus no puede superar sockets*cores; si los nuevos núcleos quedan por
+        # debajo de los vcpus de la plantilla, vcpus = sockets*cores nuevos. DEFECTO-F7-01: PVE
+        # omite los valores por defecto en la config, así que sockets o cores ausentes valen 1.
+        sockets = a.sockets if a.sockets is not None else (plantilla.sockets or 1)
+        cores = a.cores if a.cores is not None else (plantilla.cores or 1)
+        if plantilla.vcpus is not None and sockets * cores < plantilla.vcpus:
+            config["vcpus"] = str(sockets * cores)
     if etiquetas_lote:
         for etiqueta in etiquetas_lote:
             if not etiqueta_valida(etiqueta):

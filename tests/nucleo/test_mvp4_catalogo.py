@@ -26,7 +26,8 @@ from proxlaunch.nucleo.modelos.origen import (
     TipoSO,
 )
 from proxlaunch.nucleo.modelos.vm import Disco, Firmware
-from proxlaunch.nucleo.origen.constantes import MAX_CATALOGO
+from proxlaunch.nucleo.origen.constantes import MAX_CATALOGO, URL_VIRTIO_WIN
+from proxlaunch.nucleo.origen.nombres import nombre_virtio_win_fijado
 from proxlaunch.nucleo.origen.resolucion import (
     NecesidadesCatalogo,
     motivos_nodo_origen,
@@ -38,6 +39,7 @@ from proxlaunch.nucleo.servicios.catalogo import (
     con_catalogo,
     fuente_vigente,
 )
+from proxlaunch.nucleo.validacion import Severidad
 
 from .apoyo_api import crear_sesion
 from .apoyo_lote import GIB, RelojSeguro, TransporteCluster, storage
@@ -315,15 +317,93 @@ def test_inv_o8_un_volid_sin_resolver_o_invalido_cuenta_como_desaparecido():
     )
 
 
-def test_inv_o8_ante_un_error_de_lectura_no_se_da_la_fuente_por_buena():
+def test_inv_o8_ante_un_error_de_lectura_definitivo_no_se_da_la_fuente_por_buena():
+    # QA-M4-05: un fallo que no es de red (p. ej. 403) sigue siendo un resultado, no se relanza.
     cl, _, sesion = _mundo()
     cl.regla(
         "GET",
         r"/content$",
-        ErrorProxLaunch(CodigoError.NODO_NO_DISPONIBLE, {"nodo": "pve1"}, "596"),
+        ErrorProxLaunch(CodigoError.PERMISO_INSUFICIENTE, {"ruta": "/storage/local"}, "403"),
     )
     e = fuente_vigente(sesion.cliente, cfg_import())
-    assert e is not None and e.codigo == CodigoError.NODO_NO_DISPONIBLE
+    assert e is not None and e.codigo == CodigoError.PERMISO_INSUFICIENTE
+
+
+@pytest.mark.parametrize(
+    "codigo,params",
+    [
+        (CodigoError.NODO_NO_DISPONIBLE, {"nodo": "pve1"}),
+        (CodigoError.SERVIDOR_NO_RESPONDE, {"host": "x"}),
+    ],
+)
+def test_qa_m4_05_un_error_de_red_al_releer_la_fuente_se_relanza(codigo, params):
+    # QA-M4-05: la expectativa cambió (antes se devolvía como resultado): ahora se relanza para
+    # que quien crea lo reintente con su tolerancia de red.
+    cl, _, sesion = _mundo()
+    cl.regla("GET", r"/content$", ErrorProxLaunch(codigo, params, "corte"))
+    with pytest.raises(ErrorProxLaunch) as ex:
+        fuente_vigente(sesion.cliente, cfg_import())
+    assert ex.value.codigo == codigo
+
+
+def test_qa_m4_05_fuente_desaparecio_y_403_siguen_siendo_resultado_no_excepcion():
+    cl, _, sesion = _mundo()
+    cl.contenido[("pve1", "local")] = []
+    assert fuente_vigente(sesion.cliente, cfg_iso()).codigo == CodigoError.FUENTE_DESAPARECIO
+
+
+class _MundoCreacion:
+    """Creación de una MV desde ISO sobre el clúster simulado con reloj simulado."""
+
+    def __init__(self, tolerancia_red_s=60.0):
+        from proxlaunch.nucleo.servicios.creacion import ServicioCreacion
+
+        self.cl, _, self.sesion = _mundo(("pve1",))
+        self.cl.contenido[("pve1", "local")] = [VOLID_ISO]
+        self.reloj = RelojSeguro()
+        self.sesion = crear_sesion(TransporteCluster(self.cl), reloj=self.reloj)
+        self.inv = _inv(("pve1",))
+        self.servicio = ServicioCreacion(
+            self.sesion, self.reloj, intervalo_s=1.0, tolerancia_red_s=tolerancia_red_s
+        )
+
+    def crear(self):
+        import threading
+
+        cfg, problemas = resolver_origen(cfg_iso(), self.inv, "pve1")
+        assert problemas == []
+        return self.servicio.crear(cfg, self.inv, lambda _e: None, threading.Event())
+
+
+def test_qa_m4_05_tolerante_reintenta_la_fuente_y_crea_tras_un_corte_breve():
+    m = _MundoCreacion()
+    m.cl.regla(
+        "GET",
+        r"/storage/local/content$",
+        ErrorProxLaunch(CodigoError.NODO_NO_DISPONIBLE, {"nodo": "pve1"}, "596"),
+        veces=3,
+    )
+    r = m.crear()
+    from proxlaunch.nucleo.servicios.creacion import Desenlace
+
+    assert r.desenlace in (Desenlace.OK, Desenlace.CON_AVISOS), r.error
+    assert 100 in m.cl.vms  # la MV se creó pese al corte
+
+
+def test_qa_m4_05_agotada_la_tolerancia_de_60_s_simulados_es_conexion_perdida():
+    from proxlaunch.nucleo.servicios.creacion import Desenlace
+
+    m = _MundoCreacion()
+    m.cl.regla(
+        "GET",
+        r"/storage/local/content$",
+        ErrorProxLaunch(CodigoError.SERVIDOR_NO_RESPONDE, {"host": "x"}, "sin respuesta"),
+    )
+    r = m.crear()
+    assert r.desenlace == Desenlace.CONEXION_PERDIDA
+    assert m.reloj.ahora() >= 60.0  # esperó el plazo con el reloj simulado, ni menos ni infinito
+    assert m.reloj.ahora() < 120.0
+    assert 100 not in m.cl.vms and m.cl.posts == {}  # nunca se envió el POST sin certeza
 
 
 def test_con_catalogo_devuelve_una_copia_y_no_toca_el_original():
@@ -414,27 +494,73 @@ def test_resolver_no_modifica_la_configuracion_original():
     assert original.detalle_origen.iso.volid is None
 
 
-def test_ca_o14_1_detecta_virtio_win_el_mas_reciente_con_orden_natural():
+def _virtio_res(*volids, tipo=TipoSO.WINDOWS_10):
+    inv = _inv(listados=(listado("pve1", "local", Contenido.ISO, VOLID_ISO, *volids),))
+    cfg = _iso_por_nombre(tipo=tipo)
+    cfg.firmware = Firmware.OVMF
+    return resolver_origen(cfg, inv, "pve1")
+
+
+def test_ca_o14_1_detecta_virtio_win_el_mas_reciente_con_orden_natural_y_avisa_v_o31():
+    # SEG-M4-02: la expectativa cambió. Sin el exacto fijado se elige el más reciente (orden
+    # natural) pero con el aviso V-O31 (no bloquea) que lleva el volid elegido.
+    res, problemas = _virtio_res(
+        "local:iso/virtio-win-0.1.9.iso",
+        "local:iso/virtio-win-0.1.271.iso",
+        "local:iso/virtio-win-0.1.100.iso",
+        "local:iso/otro.iso",
+    )
+    assert res.detalle_origen.drivers.volid == "local:iso/virtio-win-0.1.271.iso"
+    assert [(p.campo, p.codigo, p.severidad, p.params) for p in problemas] == [
+        (
+            "detalle_origen",
+            "V-O31",
+            Severidad.AVISO,
+            {"volid": "local:iso/virtio-win-0.1.271.iso"},
+        )
+    ]
+
+
+def test_seg_m4_02_el_nombre_fijado_deriva_de_la_url_de_virtio_win():
+    assert nombre_virtio_win_fijado() == "virtio-win-0.1.302.iso"
+    assert nombre_virtio_win_fijado() == URL_VIRTIO_WIN.rsplit("/", 1)[-1]
+
+
+def test_seg_m4_02_con_el_exacto_presente_se_usa_sin_aviso():
+    res, problemas = _virtio_res("local:iso/virtio-win-0.1.302.iso")
+    assert problemas == []
+    assert res.detalle_origen.drivers.volid == "local:iso/virtio-win-0.1.302.iso"
+
+
+def test_seg_m4_02_una_version_mayor_nunca_se_prefiere_al_exacto():
+    res, problemas = _virtio_res(
+        "local:iso/virtio-win-0.1.999.iso",
+        "local:iso/virtio-win-0.1.302.iso",
+        "local:iso/virtio-win-0.1.400.iso",
+    )
+    assert problemas == []
+    assert res.detalle_origen.drivers.volid == "local:iso/virtio-win-0.1.302.iso"
+
+
+def test_seg_m4_02_varios_candidatos_sin_el_exacto_avisa_una_sola_vez_con_el_elegido():
+    res, problemas = _virtio_res(
+        "local:iso/virtio-win-0.1.100.iso", "local:iso/virtio-win-0.1.250.iso"
+    )
+    avisos = [p for p in problemas if p.codigo == "V-O31"]
+    assert len(avisos) == 1 and avisos[0].severidad == Severidad.AVISO
+    assert avisos[0].params == {"volid": res.detalle_origen.drivers.volid}
+    assert res.detalle_origen.drivers.volid == "local:iso/virtio-win-0.1.250.iso"
+
+
+def test_seg_m4_02_un_driver_elegido_a_mano_no_genera_v_o31():
     inv = _inv(
         listados=(
-            listado(
-                "pve1",
-                "local",
-                Contenido.ISO,
-                VOLID_ISO,
-                "local:iso/virtio-win-0.1.9.iso",
-                "local:iso/virtio-win-0.1.271.iso",
-                "local:iso/virtio-win-0.1.100.iso",
-                "local:iso/otro.iso",
-            ),
+            listado("pve1", "local", Contenido.ISO, VOLID_ISO, "local:iso/virtio-win-0.1.100.iso"),
         )
     )
-    cfg = _iso_por_nombre(tipo=TipoSO.WINDOWS_10)
-    cfg.firmware = Firmware.OVMF
-    res, problemas = resolver_origen(cfg, inv, "pve1")
-    assert (
-        problemas == [] and res.detalle_origen.drivers.volid == "local:iso/virtio-win-0.1.271.iso"
-    )
+    cfg = cfg_iso(VOLID_ISO, TipoSO.WINDOWS_10, drivers="local:iso/virtio-win-0.1.100.iso")
+    _, problemas = resolver_origen(cfg, inv, "pve1")
+    assert [p for p in problemas if p.codigo == "V-O31"] == []
 
 
 def test_ca_o14_2_sin_virtio_win_hay_que_decidir_y_crear_sin_drivers_lo_acepta():

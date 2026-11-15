@@ -30,7 +30,12 @@ from proxlaunch.nucleo.modelos.vm import ConfiguracionVM, OrigenSO
 from proxlaunch.nucleo.origen.asistente import TABLA_SO
 from proxlaunch.nucleo.origen.clon import modo_efectivo
 from proxlaunch.nucleo.origen.constantes import ESPERA_BASE_S, ESPERA_POR_GIB_S
-from proxlaunch.nucleo.origen.nombres import es_virtio_win, partes_volid, validar_volid
+from proxlaunch.nucleo.origen.nombres import (
+    es_virtio_win,
+    nombre_virtio_win_fijado,
+    partes_volid,
+    validar_volid,
+)
 from proxlaunch.nucleo.validacion import TIPOS_BRIDGE, Problema, Severidad
 
 MAX_ALTERNATIVAS = 5  # alternativas que se listan en un «no encontrado» (CA-O28.3)
@@ -169,17 +174,32 @@ def _resolver_ref(
     )
 
 
-def _detectar_drivers(inv: Inventario, nodo: str) -> RefVolumen | None:
-    """virtio-win más reciente presente en un storage ``iso`` activo del nodo (CA-O14.1)."""
+def _detectar_drivers_elegido(inv: Inventario, nodo: str) -> tuple[RefVolumen | None, bool]:
+    """``(drivers, es_el_fijado)``: el virtio-win a usar entre los ``iso`` activos del nodo.
+
+    Se prefiere SIEMPRE el nombre exacto fijado por la app (``virtio-win-<versión>.iso``, el
+    que ella descarga), aunque haya versiones mayores (SEG-M4-02). Si no está, se elige el
+    más reciente y ``es_el_fijado`` es ``False``: quien llama debe avisar (V-O31).
+    """
     if inv.catalogo is None:
-        return None
+        return None, False
     candidatos = [
         v for v in _disponibles(inv, inv.catalogo, nodo, Contenido.ISO) if es_virtio_win(v.nombre)
     ]
     if not candidatos:
-        return None
-    mejor = max(candidatos, key=lambda v: _clave_natural(v.nombre))
-    return RefVolumen(nombre=mejor.nombre, volid=mejor.volid)
+        return None, False
+    fijado = nombre_virtio_win_fijado().casefold()
+    exactos = [v for v in candidatos if fijado and v.nombre.casefold() == fijado]
+    if exactos:
+        elegido = min(exactos, key=lambda v: v.volid)
+        return RefVolumen(nombre=elegido.nombre, volid=elegido.volid), True
+    mejor = max(candidatos, key=lambda v: (_clave_natural(v.nombre), v.volid))
+    return RefVolumen(nombre=mejor.nombre, volid=mejor.volid), False
+
+
+def _detectar_drivers(inv: Inventario, nodo: str) -> RefVolumen | None:
+    """virtio-win preferido presente en un storage ``iso`` activo del nodo (CA-O14.1)."""
+    return _detectar_drivers_elegido(inv, nodo)[0]
 
 
 def _resolver_iso(
@@ -189,7 +209,11 @@ def _resolver_iso(
     if p is not None:
         problemas.append(p)
     drivers = det.drivers
-    quiere = cfg.tipo_so is not None and TABLA_SO[cfg.tipo_so].drivers and not det.sin_drivers
+    usa_drivers = cfg.tipo_so is not None and TABLA_SO[cfg.tipo_so].drivers
+    if not usa_drivers:
+        # QA-M4-06: si el SO no usa drivers la resolución no los conserva (ni se revalidan).
+        drivers = None
+    quiere = usa_drivers and not det.sin_drivers
     if quiere and inv.catalogo is not None:
         if drivers is not None and (drivers.volid or drivers.nombre):
             drivers, p = _resolver_ref(
@@ -198,7 +222,17 @@ def _resolver_iso(
             if p is not None:
                 problemas.append(p)
         else:
-            drivers = _detectar_drivers(inv, nodo)
+            drivers, es_fijado = _detectar_drivers_elegido(inv, nodo)
+            if drivers is not None and not es_fijado:
+                # V-O31 (aviso): no es el virtio-win fijado por la app; no se elige en silencio.
+                problemas.append(
+                    Problema(
+                        "detalle_origen",
+                        "V-O31",
+                        Severidad.AVISO,
+                        {"volid": drivers.volid or ""},
+                    )
+                )
             if drivers is None and _hay_listado(inv.catalogo, nodo, Contenido.ISO):
                 problemas.append(
                     _problema("detalle_origen.drivers", "V-O02.drivers", motivo="sin_drivers")

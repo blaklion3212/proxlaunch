@@ -136,7 +136,15 @@ class CuerpoMultipart:
         yield self._cabecera
         restante = self._parte.tamano
         while restante > 0:
-            bloque = self._parte.flujo.read(min(self._tam_lectura, restante))
+            try:
+                bloque = self._parte.flujo.read(min(self._tam_lectura, restante))
+            except OSError:
+                # Fallo de lectura del disco (no de red): se registra como archivo no accesible,
+                # solo con el nombre (nunca la ruta ni el texto del sistema operativo).
+                raise ErrorProxLaunch(
+                    CodigoError.ARCHIVO_NO_ACCESIBLE,
+                    {"archivo": self._parte.nombre_archivo, "motivo": "otro"},
+                ) from None
             if not bloque:
                 # El archivo se acortó tras anunciar su tamaño: abortar, no colgar al servidor.
                 raise ErrorProxLaunch(CodigoError.ARCHIVO_CAMBIO, {}, "el archivo se acortó")

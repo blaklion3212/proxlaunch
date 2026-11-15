@@ -15,6 +15,7 @@ from concurrent.futures import ThreadPoolExecutor
 from typing import TYPE_CHECKING, TypeVar
 
 from proxlaunch.nucleo.api.cliente import ClienteProxmox
+from proxlaunch.nucleo.api.traductor_errores import CODIGOS_DE_RED
 from proxlaunch.nucleo.errores import CodigoError, ErrorProxLaunch
 from proxlaunch.nucleo.lote.constantes import MAX_CONSULTAS_SIMULTANEAS
 from proxlaunch.nucleo.modelos.catalogo import (
@@ -28,6 +29,7 @@ from proxlaunch.nucleo.modelos.catalogo import (
 from proxlaunch.nucleo.modelos.inventario import Inventario, Storage
 from proxlaunch.nucleo.modelos.origen import DetalleImportacion, DetalleIso
 from proxlaunch.nucleo.modelos.vm import ConfiguracionVM, OrigenSO
+from proxlaunch.nucleo.origen.asistente import TABLA_SO
 from proxlaunch.nucleo.origen.clon import detalle_de_config
 from proxlaunch.nucleo.origen.constantes import MAX_CATALOGO
 from proxlaunch.nucleo.origen.nombres import partes_volid
@@ -205,7 +207,9 @@ def _fuentes_de(cfg: ConfiguracionVM) -> list[tuple[str, str, str | None]]:
     detalle = cfg.detalle_origen
     if cfg.origen == OrigenSO.ISO and isinstance(detalle, DetalleIso):
         fuentes = [(TIPO_FUENTE_ISO, detalle.iso.nombre, detalle.iso.volid)]
-        if detalle.drivers is not None and not detalle.sin_drivers:
+        # Misma condición que el constructor de la petición (QA-M4-06): solo si el SO usa drivers.
+        usa_drivers = cfg.tipo_so is not None and TABLA_SO[cfg.tipo_so].drivers
+        if detalle.drivers is not None and not detalle.sin_drivers and usa_drivers:
             fuentes.append((TIPO_FUENTE_DRIVERS, detalle.drivers.nombre, detalle.drivers.volid))
         return fuentes
     if cfg.origen == OrigenSO.IMPORTAR_DISCO and isinstance(detalle, DetalleImportacion):
@@ -217,8 +221,10 @@ def fuente_vigente(cliente: ClienteProxmox, cfg: ConfiguracionVM) -> ErrorProxLa
     """Relee el contenido del storage de cada archivo fuente y comprueba que sigue (INV-O8).
 
     Devuelve ``None`` si todo está (también si no hay archivo fuente: disco vacío o clon);
-    ``FUENTE_DESAPARECIO`` (E-O16) si un volid ya no está; y, ante cualquier otro fallo de
-    lectura, ese error: quien crea no debe enviar el ``POST`` sin certeza de la fuente.
+    ``FUENTE_DESAPARECIO`` (E-O16) si un volid ya no está; y, ante un fallo de lectura
+    definitivo (p. ej. un 403), ese error: quien crea no debe enviar el ``POST`` sin certeza
+    de la fuente. Los fallos de red (``CODIGOS_DE_RED``: 595/596, servidor sin respuesta) se
+    RELANZAN para que quien llama los reintente con su tolerancia de red (QA-M4-05).
     """
     for tipo, nombre, volid in _fuentes_de(cfg):
         partes = partes_volid(volid) if volid else None
@@ -228,6 +234,8 @@ def fuente_vigente(cliente: ClienteProxmox, cfg: ConfiguracionVM) -> ErrorProxLa
         try:
             volumenes: list[Volumen] = cliente.contenido_storage(cfg.nodo, storage, contenido)
         except ErrorProxLaunch as e:
+            if e.codigo in CODIGOS_DE_RED:
+                raise
             return e
         if not any(v.volid == volid for v in volumenes):
             return ErrorProxLaunch(CodigoError.FUENTE_DESAPARECIO, {"nombre": nombre, "tipo": tipo})

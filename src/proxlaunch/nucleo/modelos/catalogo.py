@@ -66,6 +66,10 @@ class DetallePlantilla:
     tipo_cpu: str | None
     memoria_mib: int | None
     etiquetas: frozenset[str]
+    # Con valor por defecto: tope de memoria del globo (``balloon``, 0 = desactivado) y CPUs
+    # conectadas (``vcpus``) de la plantilla; limitan los ajustes de memoria y CPU (QA-M4-07).
+    balloon: int | None = None
+    vcpus: int | None = None
 
 
 @dataclass(frozen=True)

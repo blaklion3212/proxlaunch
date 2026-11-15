@@ -7,6 +7,7 @@ Aquí solo se valida el texto y se evita que la URL llegue a logs, errores o arc
 from __future__ import annotations
 
 import re
+import unicodedata
 from dataclasses import dataclass
 from enum import StrEnum
 from urllib.parse import quote, quote_plus, unquote, urlsplit
@@ -84,6 +85,15 @@ def _tiene_caracteres_no_permitidos(texto: str) -> bool:
     return any(ord(c) <= 32 or ord(c) >= 127 for c in texto)
 
 
+def _sin_controles(texto: str) -> str:
+    """Sustituye por «_» los caracteres de control (Cc) y de formato (Cf, p. ej. U+202E).
+
+    Tras ``unquote`` el nombre puede traer controles o marcas bidireccionales codificados
+    (``%E2%80%AE``) que falsearían lo que se muestra o registra.
+    """
+    return "".join("_" if unicodedata.category(c) in ("Cc", "Cf") else c for c in texto)
+
+
 def validar_url(texto: str, *, permitir_http: bool) -> tuple[UrlDescarga | None, str | None]:
     """V-O11. Devuelve ``(url, None)`` o ``(None, motivo)``.
 
@@ -116,8 +126,12 @@ def validar_url(texto: str, *, permitir_http: bool) -> tuple[UrlDescarga | None,
         return None, URL_PUERTO
     if not host:
         return None, URL_SIN_HOST
+    if "%" in host:
+        # Un host con «%» (codificado) no es un nombre de host válido.
+        return None, URL_CARACTERES
+    host = _sin_controles(host)
     segmentos = [s for s in partes.path.split("/") if s]
-    archivo = unquote(segmentos[-1]) if segmentos else ""
+    archivo = _sin_controles(unquote(segmentos[-1])) if segmentos else ""
     return UrlDescarga(texto=texto, host=host, archivo=archivo, es_http=esquema == "http"), None
 
 
@@ -147,11 +161,12 @@ def url_saneada(texto: str) -> str:
         partes = urlsplit(texto.strip())
         host = partes.hostname or ""
         segmentos = [s for s in partes.path.split("/") if s]
-        archivo = unquote(segmentos[-1]) if segmentos else ""
+        archivo = _sin_controles(unquote(segmentos[-1])) if segmentos else ""
     except ValueError:
         return "(url)"
-    if not host:
+    if not host or "%" in host:
         return "(url)"
+    host = _sin_controles(host)
     url = UrlDescarga(texto=texto.strip(), host=host, archivo=archivo, es_http=False)
     return ocultar_url(texto.strip(), url)
 

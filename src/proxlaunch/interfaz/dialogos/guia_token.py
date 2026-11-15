@@ -19,9 +19,11 @@ from PySide6.QtWidgets import (
 from proxlaunch.interfaz.ayuda import (
     NOMBRE_ROL,
     PRIVILEGIOS_ROL,
+    alternativa_simple_permisos,
     notas_guia_token,
     notas_privilegios_nuevos,
     pasos_guia_token,
+    permisos_acotados,
     privilegios_guia_token,
     texto_pedir_al_administrador,
     titulo_guia_token,
@@ -60,6 +62,21 @@ class DialogoGuiaToken(QDialog):
         lbl_nuevos.setWordWrap(True)
         lbl_nuevos.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse)
         capa.addWidget(lbl_nuevos)
+        titulo_acotado = QLabel(
+            self.tr("Dónde asignar los permisos (recomendado: alcance acotado):")
+        )
+        titulo_acotado.setWordWrap(True)
+        capa.addWidget(titulo_acotado)
+        for linea in permisos_acotados():
+            lbl_ruta = QLabel(f"• {linea}")
+            lbl_ruta.setWordWrap(True)
+            lbl_ruta.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse)
+            capa.addWidget(lbl_ruta)
+        self.aviso_alternativa = QLabel(alternativa_simple_permisos())
+        self.aviso_alternativa.setWordWrap(True)
+        self.aviso_alternativa.setProperty("aviso", True)
+        self.aviso_alternativa.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse)
+        capa.addWidget(self.aviso_alternativa)
         for nota in notas_guia_token():
             lbl = QLabel(nota)
             lbl.setWordWrap(True)

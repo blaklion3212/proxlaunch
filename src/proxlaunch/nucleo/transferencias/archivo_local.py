@@ -203,12 +203,12 @@ def _abrir_descriptor(ruta: Path) -> tuple[int, os.stat_result]:
     except OSError as exc:
         if os.name == "nt" and ruta.is_dir():
             raise _no_regular(ruta) from None
-        raise _no_accesible(ruta, exc) from exc
+        raise _no_accesible(ruta, exc) from None
     try:
         info = os.fstat(fd)
     except OSError as exc:
         os.close(fd)
-        raise _no_accesible(ruta, exc) from exc
+        raise _no_accesible(ruta, exc) from None
     if not stat.S_ISREG(info.st_mode):
         os.close(fd)
         raise _no_regular(ruta)
@@ -317,7 +317,7 @@ def inspeccionar(ruta: Path, contenido: Contenido) -> InspeccionArchivo:
                 flujo.seek(DESPLAZAMIENTO_ISO9660)
                 firma = flujo.read(len(_FIRMA_ISO))
         except OSError as exc:
-            raise _no_accesible(ruta, exc) from exc
+            raise _no_accesible(ruta, exc) from None
     nombre = ruta.name
     sufijo = ruta.suffix.lower()
     if tamano <= 0:
@@ -336,6 +336,44 @@ def inspeccionar(ruta: Path, contenido: Contenido) -> InspeccionArchivo:
         motivo_rechazo=motivo,
         avisos=avisos,
     )
+
+
+def comprobar_cabecera_abierto(archivo: ArchivoAbierto, contenido: Contenido) -> None:
+    """Vuelve a interpretar la cabecera sobre el descriptor que se va a enviar (SEG-M4-10).
+
+    Cierra la ventana entre la inspección inicial y la subida: si el archivo cambió y ya no es
+    admisible, lanza ``IMAGEN_NO_ADMITIDA`` (o ``ARCHIVO_NO_PERMITIDO`` si quedó vacío). Deja
+    el flujo en 0.
+
+    Raises:
+        ErrorProxLaunch: ``IMAGEN_NO_ADMITIDA``, ``ARCHIVO_NO_PERMITIDO`` o
+            ``ARCHIVO_NO_ACCESIBLE`` (fallo de lectura).
+    """
+    flujo = archivo.flujo
+    tamano = archivo.huella.tamano
+    try:
+        flujo.seek(0)
+        cabecera = flujo.read(TAM_CABECERA)
+        firma: bytes | None = None
+        if contenido == Contenido.ISO and tamano >= DESPLAZAMIENTO_ISO9660 + len(_FIRMA_ISO):
+            flujo.seek(DESPLAZAMIENTO_ISO9660)
+            firma = flujo.read(len(_FIRMA_ISO))
+        flujo.seek(0)
+    except OSError as exc:
+        raise _no_accesible(Path(archivo.nombre), exc) from None
+    sufijo = Path(archivo.nombre).suffix.lower()
+    if contenido != Contenido.ISO and sufijo in (".ova", ".ovf"):
+        motivo: str | None = MOTIVO_OVA
+    else:
+        motivo = interpretar_cabecera(cabecera, firma, tamano, contenido)[2]
+    if motivo == MOTIVO_VACIO:
+        raise ErrorProxLaunch(
+            CodigoError.ARCHIVO_NO_PERMITIDO, {"motivo": MOTIVO_VACIO, "archivo": archivo.nombre}
+        )
+    if motivo is not None:
+        raise ErrorProxLaunch(
+            CodigoError.IMAGEN_NO_ADMITIDA, {"motivo": motivo, "archivo": archivo.nombre}
+        )
 
 
 def calcular_sha256(
@@ -359,7 +397,11 @@ def calcular_sha256(
     while hechos < total:
         if cancelado is not None and cancelado.is_set():
             raise ErrorProxLaunch(CodigoError.TRANSFERENCIA_CANCELADA, {"quedo_archivo": "no"})
-        bloque = flujo.read(min(tam_bloque, total - hechos))
+        try:
+            bloque = flujo.read(min(tam_bloque, total - hechos))
+        except OSError as exc:
+            # Lectura fallida del disco: no es un corte de red (QA-M4-10 / SEG-M4-06).
+            raise _no_accesible(Path(archivo.nombre), exc) from None
         if not bloque:
             raise ErrorProxLaunch(CodigoError.ARCHIVO_CAMBIO, {}, "el archivo se acortó")
         resumen.update(bloque)

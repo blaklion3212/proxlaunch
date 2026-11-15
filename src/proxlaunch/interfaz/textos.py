@@ -3394,7 +3394,7 @@ def _texto_v_o18(prm: Mapping[str, str]) -> str:
 
 
 def _texto_problema_origen(p: Problema) -> str | None:
-    """Reglas V-O01 a V-O30 (docs/requisitos/mvp4.md §7); ``None`` si no es una de ellas."""
+    """Reglas V-O01 a V-O31 (docs/requisitos/mvp4.md §7); ``None`` si no es una de ellas."""
     cod = p.codigo
     prm = p.params
     if cod == "V-O01":
@@ -3556,6 +3556,22 @@ def _texto_problema_origen(p: Problema) -> str | None:
             "Sin disco no podrás instalar el sistema desde el ISO. Agrega un disco si quieres "
             "instalarlo.",
         )
+    if cod == "V-O31":
+        # Aviso (no bloquea): el CD de drivers no es el virtio-win que ProxLaunch conoce.
+        volid = prm.get("volid", "")
+        storage = volid.partition(":")[0] if ":" in volid else ""
+        if storage:
+            return QCoreApplication.translate(
+                "Textos",
+                "Se usará el CD de drivers «{volid}» (almacenamiento «{storage}»), que no es la "
+                "versión que conoce ProxLaunch. Comprueba que es de confianza antes de crear la "
+                "máquina.",
+            ).format(volid=volid, storage=storage)
+        return QCoreApplication.translate(
+            "Textos",
+            "Se usará el CD de drivers «{volid}», que no es la versión que conoce ProxLaunch. "
+            "Comprueba que es de confianza antes de crear la máquina.",
+        ).format(volid=volid)
     return None
 
 

@@ -695,14 +695,26 @@ def test_inv_o6_la_url_con_credenciales_en_la_consulta_nunca_llega_a_logs_ni_reg
     assert "SECRETO-TOKEN-URL" not in todo
 
 
-def test_ca_o11_8_dejar_de_esperar_no_cancela_la_descarga_ni_hace_nada_en_el_servidor(m):
+def test_ca_o11_8_dejar_de_esperar_tras_el_post_no_cancela_la_descarga_ni_toca_el_servidor(m):
+    # QA-M4-01: la expectativa cambió. «Dejar de esperar» activado DESPUÉS del POST download-url
+    # sigue siendo SIN_ESPERAR (la descarga continúa en el servidor).
     dejar = threading.Event()
-    dejar.set()
+    m.srv.fallos["estado_tarea"] = dejar.set  # se activa al sondear la tarea, ya enviado el POST
     r = _descargar(m, dejar=dejar)
     assert r.estado == EstadoTransferencia.SIN_ESPERAR and r.error is None
     assert len(m.srv.llamadas_a("POST", "/download-url$")) == 1
     assert set(m.srv.metodos) <= {"GET", "POST"}  # nada de DELETE ni de «detener tarea»
     assert m.registro.lista()[-1].estado == EstadoTransferencia.SIN_ESPERAR
+
+
+def test_qa_m4_01_dejar_de_esperar_antes_del_post_es_cancelada_sin_post_y_sin_archivo(m):
+    # QA-M4-01: si ya se dejó de esperar antes del POST no se envía y no queda nada.
+    dejar = threading.Event()
+    dejar.set()
+    r = _descargar(m, dejar=dejar)
+    assert r.estado == EstadoTransferencia.CANCELADA and r.quedo_archivo is False
+    assert m.srv.llamadas_a("POST", "/download-url$") == []
+    assert set(m.srv.metodos) <= {"GET"}
 
 
 def test_ca_o10_1_inv_o2_la_descarga_tampoco_sobrescribe(m):

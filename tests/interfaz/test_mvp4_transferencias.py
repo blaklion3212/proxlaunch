@@ -479,17 +479,36 @@ def test_ca_o11_3_http_en_basico_se_rechaza_con_mensaje_claro(qtbot, ctrl):
     assert not d.boton_accion.isEnabled()
 
 
-def test_ca_o11_3_http_en_avanzado_se_acepta_pero_pide_confirmacion_al_descargar(
+def test_ca_o11_3_http_en_avanzado_se_acepta_pero_pide_confirmacion_al_comprobar(
     qtbot, ctrl, servicio, monkeypatch
 ):
+    # SEG-M4-09: la expectativa cambió. La confirmación de riesgo sale al «Comprobar» (el
+    # servidor ya se conecta a la dirección) y, si se rechaza, no se consulta nada.
     ctrl.modo_avanzado = True
     preguntas = []
     monkeypatch.setattr(dt, "confirmar", lambda *a, **k: preguntas.append(a[2]) or False)
     d = _descarga(qtbot, ctrl)
+    d.campo_url.setText("http://mirror.example.org/a.iso")
+    d.comprobar_url()
+    assert len(preguntas) == 1 and "http://" in preguntas[0]
+    assert not [ll for ll in servicio.llamadas if ll[0] == "consultar_url"]  # dijo que no
+    assert not d.listo_para_confirmar
+    assert not [ll for ll in servicio.llamadas if ll[0] == "descargar"]
+
+
+def test_ca_o11_3_la_confirmacion_de_http_se_recuerda_y_no_se_repite_al_descargar(
+    qtbot, ctrl, servicio, monkeypatch
+):
+    # SEG-M4-09: aceptada al Comprobar, no se vuelve a pedir al Descargar.
+    ctrl.modo_avanzado = True
+    preguntas = []
+    monkeypatch.setattr(dt, "confirmar", lambda *a, **k: preguntas.append(a[2]) or True)
+    d = _descarga(qtbot, ctrl)
     _comprobar(qtbot, d, "http://mirror.example.org/a.iso")
+    assert len(preguntas) == 1 and "http://" in preguntas[0]
     d.boton_accion.click()
-    assert preguntas and "http://" in preguntas[0]
-    assert not [ll for ll in servicio.llamadas if ll[0] == "descargar"]  # dijo que no
+    qtbot.waitUntil(lambda: any(ll[0] == "descargar" for ll in servicio.llamadas), timeout=3000)
+    assert len(preguntas) == 1  # no hubo segunda pregunta
 
 
 def test_ca_o11_4_verificar_certificados_solo_existe_en_avanzado_y_por_defecto_verifica(
@@ -503,15 +522,59 @@ def test_ca_o11_4_verificar_certificados_solo_existe_en_avanzado_y_por_defecto_v
     assert d2.casilla_certificados.isVisible() and d2.casilla_certificados.isChecked()
 
 
-def test_ca_o11_4_desmarcar_la_verificacion_exige_confirmar(qtbot, ctrl, servicio, monkeypatch):
+def test_ca_o11_4_desmarcar_la_verificacion_exige_confirmar_al_comprobar(
+    qtbot, ctrl, servicio, monkeypatch
+):
+    # SEG-M4-09: la expectativa cambió: la confirmación sale al «Comprobar».
     ctrl.modo_avanzado = True
     preguntas = []
     monkeypatch.setattr(dt, "confirmar", lambda *a, **k: preguntas.append(a[2]) or False)
     d = _descarga(qtbot, ctrl)
     d.casilla_certificados.setChecked(False)
+    d.campo_url.setText("https://mirror.example.org/alpine.iso")
+    d.comprobar_url()
+    assert len(preguntas) == 1 and "certificado" in preguntas[0]
+    assert not [ll for ll in servicio.llamadas if ll[0] == "consultar_url"]
+
+
+def test_ca_o11_4_la_confirmacion_del_certificado_se_recuerda_hasta_que_algo_cambie(
+    qtbot, ctrl, servicio, monkeypatch
+):
+    # SEG-M4-09: no se vuelve a pedir al Descargar mientras URL, esquema y casilla no cambien.
+    ctrl.modo_avanzado = True
+    preguntas = []
+    monkeypatch.setattr(dt, "confirmar", lambda *a, **k: preguntas.append(a[2]) or True)
+    d = _descarga(qtbot, ctrl)
+    d.casilla_certificados.setChecked(False)
     _comprobar(qtbot, d)
     d.boton_accion.click()
-    assert preguntas and "certificado" in preguntas[0]
+    qtbot.waitUntil(lambda: any(ll[0] == "descargar" for ll in servicio.llamadas), timeout=3000)
+    assert len(preguntas) == 1
+
+
+def test_seg_m4_09_si_cambia_la_url_o_la_casilla_se_vuelve_a_pedir(qtbot, ctrl, monkeypatch):
+    ctrl.modo_avanzado = True
+    preguntas = []
+    monkeypatch.setattr(dt, "confirmar", lambda *a, **k: preguntas.append(a[2]) or True)
+    d = _descarga(qtbot, ctrl)
+    d.casilla_certificados.setChecked(False)
+    _comprobar(qtbot, d)
+    _comprobar(qtbot, d)  # misma URL y casilla: no pregunta de nuevo
+    assert len(preguntas) == 1
+    _comprobar(qtbot, d, "https://otro.example.org/b.iso")  # otra URL
+    assert len(preguntas) == 2
+    d.casilla_certificados.setChecked(True)
+    d.casilla_certificados.setChecked(False)  # misma URL pero se volvió a desmarcar: clave igual
+    _comprobar(qtbot, d, "https://otro.example.org/b.iso")
+    assert len(preguntas) == 2
+
+
+def test_seg_m4_09_sin_riesgo_no_se_pregunta_nada(qtbot, ctrl, monkeypatch):
+    preguntas = []
+    monkeypatch.setattr(dt, "confirmar", lambda *a, **k: preguntas.append(a[2]) or False)
+    d = _descarga(qtbot, ctrl)
+    _comprobar(qtbot, d)
+    assert preguntas == []
 
 
 def test_ca_o11_11_una_huella_con_longitud_invalida_se_rechaza(qtbot, ctrl):

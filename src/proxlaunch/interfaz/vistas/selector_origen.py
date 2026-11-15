@@ -163,6 +163,9 @@ class SelectorOrigen(QWidget):
         self._iso = RefVolumen()
         self._drivers: RefVolumen | None = None
         self._sin_drivers = False
+        # Almacenamiento de destino pedido (lote guardado): se conserva aunque el combo aún no
+        # tenga la lista del servidor o esté oculto (modo básico) y se reaplica al rellenarlo.
+        self._storage_destino: str | None = None
         self._imagen = RefVolumen()
         self._plantilla = RefPlantilla()
         self._modo_efectivo: ModoClon | None = None
@@ -345,9 +348,7 @@ class SelectorOrigen(QWidget):
         self.combo_storage_destino = QComboBox()
         self.combo_storage_destino.setAccessibleName(self.tr("Almacenamiento de la copia"))
         self.combo_storage_destino.addItem(self.tr("El de la plantilla"), None)
-        self.combo_storage_destino.currentIndexChanged.connect(
-            lambda _i: self.seleccion_cambiada.emit()
-        )
+        self.combo_storage_destino.currentIndexChanged.connect(self._al_cambiar_storage_destino)
         capa_dest.addWidget(self.combo_storage_destino, 1)
         capa.addWidget(self.fila_storage_destino)
 
@@ -606,13 +607,12 @@ class SelectorOrigen(QWidget):
 
     def establecer_storages_destino(self, storages: Sequence[str]) -> None:
         """Almacenamientos posibles para una copia completa (solo avanzado)."""
-        actual = self.combo_storage_destino.currentData()
         self.combo_storage_destino.blockSignals(True)
         self.combo_storage_destino.clear()
         self.combo_storage_destino.addItem(self.tr("El de la plantilla"), None)
         for s in storages:
             self.combo_storage_destino.addItem(s, s)
-        indice = self.combo_storage_destino.findData(actual)
+        indice = self.combo_storage_destino.findData(self._storage_destino)
         self.combo_storage_destino.setCurrentIndex(max(0, indice))
         self.combo_storage_destino.blockSignals(False)
 
@@ -693,6 +693,10 @@ class SelectorOrigen(QWidget):
         for spin in (self.spin_sockets, self.spin_cores, self.spin_memoria, self.spin_disco):
             spin.setValue(0)
         self.campo_tipo_cpu.clear()
+        self._storage_destino = None
+        self.combo_storage_destino.blockSignals(True)
+        self.combo_storage_destino.setCurrentIndex(0)
+        self.combo_storage_destino.blockSignals(False)
         if isinstance(det, DetalleIso):
             self._iso, self._drivers, self._sin_drivers = det.iso, det.drivers, det.sin_drivers
         elif isinstance(det, DetalleImportacion):
@@ -708,8 +712,11 @@ class SelectorOrigen(QWidget):
             self.spin_memoria.setValue(a.memoria_mib or 0)
             self.spin_disco.setValue(a.disco_gib or 0)
             self.campo_tipo_cpu.setText(a.tipo_cpu or "")
+            self._storage_destino = det.storage_destino
+            self.combo_storage_destino.blockSignals(True)
             indice_dest = self.combo_storage_destino.findData(det.storage_destino)
             self.combo_storage_destino.setCurrentIndex(max(0, indice_dest))
+            self.combo_storage_destino.blockSignals(False)
         self.combo_so.blockSignals(True)
         self.combo_so.setCurrentIndex(
             max(0, self.combo_so.findData(cfg.tipo_so.value if cfg.tipo_so else None))
@@ -769,14 +776,18 @@ class SelectorOrigen(QWidget):
             memoria_mib=self.spin_memoria.value() or None,
             disco_gib=self.spin_disco.value() or None,
         )
-        destino = self.combo_storage_destino.currentData()
         modo = self.modo_clon
         return DetalleClon(
             plantilla=self._plantilla,
             modo=modo,
             ajustes=ajustes,
-            storage_destino=destino if modo == ModoClon.COMPLETO and self._avanzado else None,
+            # En básico el combo está oculto, pero un destino cargado de un lote se conserva.
+            storage_destino=self._storage_destino if modo == ModoClon.COMPLETO else None,
         )
+
+    def _al_cambiar_storage_destino(self, _indice: int) -> None:
+        self._storage_destino = self.combo_storage_destino.currentData()
+        self.seleccion_cambiada.emit()
 
     def _via_de(self, origen: OrigenSO) -> EstadoVia | None:
         if self._caps is None:
@@ -879,6 +890,14 @@ class SelectorOrigen(QWidget):
 
     def _al_cambiar_so(self, *_args: object) -> None:
         """Otro sistema operativo: el asistente se aplica una vez al formulario."""
+        if self.tipo_so not in _TIPOS_WINDOWS:
+            # Sin drivers que usar: no se conserva el CD de drivers de un SO anterior.
+            self._drivers = None
+            self._sin_drivers = False
+            self.casilla_sin_drivers.blockSignals(True)
+            self.casilla_sin_drivers.setChecked(False)
+            self.casilla_sin_drivers.blockSignals(False)
+            self.aviso_sin_drivers.hide()
         self._actualizar_visibilidad()
         self._actualizar_drivers()
         self._pedir_asistente(solo_bus=False)
