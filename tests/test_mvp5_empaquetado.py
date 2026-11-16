@@ -334,7 +334,8 @@ def test_sha256sums_sin_rutas_ni_usuario_y_formato_estricto(sumas, tmp_path):
     for nombre in ("proxlaunch_0.5.0_amd64.deb", "proxlaunch-0.5.0-windows-x64-setup.exe"):
         sumas.sellar(_artefacto(dist, nombre, nombre.encode()))
     sumas.publicar(dist)
-    texto = (dist / "SHA256SUMS").read_text("utf-8")
+    # Se leen los bytes: read_text() traduciría CRLF a LF y ocultaría el fallo en Windows.
+    texto = (dist / "SHA256SUMS").read_bytes().decode("utf-8")
     for linea in texto.splitlines():
         assert re.fullmatch(r"[0-9a-f]{64}  [^/\\\s]+", linea), linea
     assert getpass.getuser() not in texto

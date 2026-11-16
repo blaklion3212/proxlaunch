@@ -70,7 +70,9 @@ def sellar(artefacto: Path) -> None:
         raise SystemExit("SUMAS: los artefactos provisionales no se sellan (no son publicables)")
     if not artefacto.is_file():
         raise SystemExit(f"SUMAS: no existe {artefacto}")
-    ruta_sello(artefacto).write_text(f"{sha256(artefacto)}  {artefacto.name}\n", encoding="utf-8")
+    ruta_sello(artefacto).write_text(
+        f"{sha256(artefacto)}  {artefacto.name}\n", encoding="utf-8", newline="\n"
+    )
     print(f"sellado {artefacto.name}")
 
 
@@ -109,7 +111,8 @@ def publicar(dist: Path, version: str | None = None) -> int:
     if lineas:
         temporal = dist / f".SHA256SUMS.{os.getpid()}.tmp"
         try:
-            temporal.write_text("\n".join(lineas) + "\n", encoding="utf-8")
+            # newline="\n": en Windows, el modo texto escribiría CRLF y sha256sum -c fallaría.
+            temporal.write_text("\n".join(lineas) + "\n", encoding="utf-8", newline="\n")
             os.replace(temporal, destino)
         finally:
             temporal.unlink(missing_ok=True)
