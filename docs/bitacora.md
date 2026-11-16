@@ -394,6 +394,14 @@ Nunca registres contraseñas, tokens ni datos personales.
 - **Publicación (2026-11-15):** etiqueta `v0.5.0`, repositorio privado en GitHub y «release» `v0.5.0` con el
   `.deb`, el `-setup.exe` y `SHA256SUMS` verificados. CI activada solo con etiquetas `v*` y a mano (D-27,
   actualización de P-E01); el `.deb` viaja entre trabajos como artefacto de 1 día para verificarlo en 24.04.
+- **Puesta a punto de la CI (2026-11-16):** cuatro ejecuciones hasta quedar en verde (run 43806325999: Linux 22.04
+  construcción, verificación del `.deb` en 22.04 y 24.04, y Windows con calidad, construcción y verificación completa
+  con escritorio). Fallos encontrados y corregidos, ninguno de la aplicación: las pruebas de humo en proceso dejaban
+  ~650 widgets por ejecución y el vigilante de 15 s mataba a pytest en un ejecutor lento; falso positivo de `$HOME`
+  por los registros del propio ejecutor; volcado de memoria de la prueba negativa HV-E3 (systemd-coredump); checkout
+  de Windows con CRLF (`.gitattributes` con `* -text`); y `sumas.py` escribía `SHA256SUMS` con CRLF en Windows (la
+  prueba no lo veía; el `SHA256SUMS` de la release se generó en Linux y es correcto). Unos 40 min facturables por
+  ejecución.
 
 ---
 

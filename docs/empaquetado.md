@@ -204,16 +204,16 @@ en 24.04 con un `.deb` construido en 22.04). No se escribe `SHA256SUMS` ni se se
 - Las MVs locales parten de una instantánea limpia y verifican el `.deb` en una máquina sin las bibliotecas de
   construcción; en el ejecutor se usa la imagen alojada más `preparar-build.sh`, así que es una comprobación algo más
   permisiva. La referencia oficial para sellar sigue siendo `verificar-todo.sh`.
-- Los ejecutores de Windows son Windows Server (no un escritorio Windows 10/11). `verificar-windows.ps1` necesita una
-  sesión interactiva (proceso `explorer.exe` del usuario) para el humo con escritorio; si el ejecutor no la ofrece, ese
-  paso falla y el registro lo dirá. `-PermitirFueraDeLaMV` omite solo el marcador de la MV; el resto de guardas se
+- Los ejecutores de Windows son Windows Server (no un escritorio Windows 10/11). `windows-2022` sí ofrece la sesión
+  interactiva (`explorer.exe`) que `verificar-windows.ps1` necesita para el humo con escritorio: la verificación completa
+  pasa allí (comprobado el 2026-11-16). `-PermitirFueraDeLaMV` omite solo el marcador de la MV; el resto de guardas se
   mantiene.
 - La CI no cubre la actualización (`actualizacion-*`) ni la firma Authenticode.
 
-**Coste en minutos (estimación, a confirmar con la primera ejecución).** Con repo privado los minutos salen del cupo del
-plan, y los de Windows cuentan x2. Estimado por ejecución: `construir-linux` 15 a 25 min, cada `verificar-linux` 3 a 6
-min, `windows` 25 a 45 min; unos 45 a 75 min reales y unos 80 a 130 min facturables. El plan Free de GitHub incluye 2000
-min al mes (aproximadamente 15 a 25 ejecuciones). Por eso solo se dispara con etiquetas y a mano; la concurrencia
+**Coste en minutos (medido en la primera ejecución correcta, run 43806325999).** Con repo privado los minutos salen del
+cupo del plan, y los de Windows cuentan x2. `construir-linux` ~10 min, cada `verificar-linux` ~3-5 min, `windows` ~10
+min: unos 16 min reales (los trabajos van en paralelo) y unos 40 min facturables. El plan Free de GitHub incluye 2000 min
+al mes (unas 50 ejecuciones). Por eso solo se dispara con etiquetas y a mano; la concurrencia
 cancela la ejecución anterior de la misma referencia.
 
 **Mantenimiento.** Las acciones están fijadas por SHA de commit con la versión en un comentario
