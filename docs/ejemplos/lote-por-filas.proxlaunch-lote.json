@@ -1,0 +1,149 @@
+{
+  "app_version": "0.5.0",
+  "formato": "proxlaunch.lote",
+  "nombre": "Aula 3 mixta",
+  "por_filas": {
+    "destino": {
+      "algoritmo": "equilibrado"
+    },
+    "etiquetar": true,
+    "filas": [
+      {
+        "config": {
+          "ballooning": null,
+          "con_disco": true,
+          "controlador_scsi": "virtio-scsi-single",
+          "cores": 4,
+          "discos": [
+            {
+              "bus": "scsi",
+              "discard": true,
+              "formato": "auto",
+              "iothread": true,
+              "ssd": true,
+              "storage": "local-lvm",
+              "tamano_gib": 64
+            }
+          ],
+          "firmware": "seabios",
+          "memoria_mib": 4096,
+          "origen": "disco_vacio",
+          "redes": [
+            {
+              "bridge": "vmbr0",
+              "modelo": "virtio",
+              "vlan": null
+            }
+          ],
+          "sockets": 1,
+          "storage_efi": null,
+          "tipo_cpu": "x86-64-v2-AES"
+        },
+        "nodo": "pve1",
+        "nombre": "web-01",
+        "origen": 2,
+        "vmid": 150
+      },
+      {
+        "config": {
+          "ballooning": null,
+          "con_disco": true,
+          "controlador_scsi": "virtio-scsi-single",
+          "cores": 2,
+          "detalle_origen": {
+            "drivers": null,
+            "iso": {
+              "nombre": "ubuntu-24.04-server.iso",
+              "volid": null
+            },
+            "sin_drivers": false
+          },
+          "discos": [
+            {
+              "bus": "scsi",
+              "discard": true,
+              "formato": "auto",
+              "iothread": true,
+              "ssd": true,
+              "storage": "local-lvm",
+              "tamano_gib": 40
+            }
+          ],
+          "firmware": "seabios",
+          "memoria_mib": 4096,
+          "origen": "iso",
+          "redes": [
+            {
+              "bridge": "vmbr0",
+              "modelo": "virtio",
+              "vlan": null
+            }
+          ],
+          "sockets": 1,
+          "storage_efi": null,
+          "tipo_cpu": "x86-64-v2-AES",
+          "tipo_so": "linux"
+        },
+        "nodo": null,
+        "nombre": "ubuntu-01",
+        "origen": 4,
+        "vmid": null
+      },
+      {
+        "config": {
+          "ballooning": null,
+          "con_disco": true,
+          "controlador_scsi": "virtio-scsi-single",
+          "cores": 2,
+          "detalle_origen": {
+            "ajustes": {
+              "cores": 2,
+              "disco_gib": null,
+              "memoria_mib": 4096,
+              "sockets": null,
+              "tipo_cpu": null
+            },
+            "modo": "enlazado",
+            "plantilla": {
+              "nombre": "plantilla-debian12",
+              "vmid": 9000
+            },
+            "storage_destino": null
+          },
+          "discos": [
+            {
+              "bus": "scsi",
+              "discard": true,
+              "formato": "auto",
+              "iothread": true,
+              "ssd": true,
+              "storage": "local-lvm",
+              "tamano_gib": 32
+            }
+          ],
+          "firmware": "seabios",
+          "memoria_mib": 2048,
+          "origen": "clonar_plantilla",
+          "redes": [
+            {
+              "bridge": "",
+              "modelo": "virtio",
+              "vlan": null
+            }
+          ],
+          "sockets": 1,
+          "storage_efi": null,
+          "tipo_cpu": "x86-64-v2-AES"
+        },
+        "nodo": null,
+        "nombre": "clon-01",
+        "origen": 7,
+        "vmid": null
+      }
+    ],
+    "vmid_inicial": null
+  },
+  "tipo": "por_filas",
+  "version_formato": 2,
+  "version_proxmox": "9.2"
+}

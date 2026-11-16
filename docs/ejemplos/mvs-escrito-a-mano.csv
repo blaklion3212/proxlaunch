@@ -1,0 +1,4 @@
+nombre;cpu;memoria;disco;red
+lab-01;2;4;40;vmbr0
+lab-02;2;4;40;vmbr0
+lab-03;4;8;80;vmbr0

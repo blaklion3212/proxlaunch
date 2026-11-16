@@ -1,0 +1,8 @@
+﻿"nombre";"perfil";"cpu";"memoria";"disco";"almacenamiento";"red";"vlan";"nodo";"vmid";"origen";"fuente";"so";"virtio";"modo_clon"
+"web-01";"fabrica.servidor-mediano";"";"";"";"local-lvm";"vmbr0";"";"";"";"vacio";"";"";"";""
+"db-01";"fabrica.base-de-datos";"";"16 GiB";"200 GiB";"local-lvm";"vmbr1";"20";"pve1";"210";"vacio";"";"";"";""
+"ubuntu-01";"";"2";"4 GiB";"40 GiB";"";"vmbr0";"";"";"";"iso";"ubuntu-24.04-server.iso";"linux";"";""
+"win11-01";"fabrica.windows-11";"4";"8 GiB";"80 GiB";"";"vmbr0";"";"";"";"iso";"windows-11-es.iso";"windows 11";"si";""
+"debian-img-01";"";"2";"2 GiB";"60 GiB";"";"vmbr0";"";"";"";"importar";"debian-12-generic.qcow2";"linux";"";""
+"clon-01";"";"2";"4 GiB";"";"";"";"";"";"";"clonar";"plantilla-debian12";"";"";"enlazado"
+"clon-02";"";"";"";"";"";"";"";"";"";"clonar";"plantilla-ubuntu";"";"";"auto"

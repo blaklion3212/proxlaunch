@@ -1,0 +1,4 @@
+﻿"nombre";"perfil";"cpu";"memoria";"disco";"almacenamiento";"disco2";"almacenamiento2";"red";"vlan";"nodo"
+"bd-01";"fabrica.base-de-datos";"8";"32 GiB";"100 GiB";"local-lvm";"500 GiB";"datos";"vmbr1";"30";"pve1"
+"bd-02";"fabrica.base-de-datos";"8";"32 GiB";"100 GiB";"local-lvm";"500 GiB";"datos";"vmbr1";"30";"pve2"
+"app-01";"fabrica.servidor-mediano";"";"";"";"";"";"";"vmbr0";"";"pve1"

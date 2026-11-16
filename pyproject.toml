@@ -58,9 +58,10 @@ select = ["E", "F", "I", "B", "UP", "SIM"]
 testpaths = ["tests"]
 pythonpath = ["src"]
 qt_api = "pyside6"
-addopts = "--disable-socket --allow-unix-socket"
+addopts = "--disable-socket --allow-unix-socket -m \"not capturas\""
 markers = [
     "integracion: requiere el laboratorio real (solo con PROXLAUNCH_LAB=1)",
+    "capturas: genera las capturas de la guía en docs/img (solo con -m capturas)",
 ]
 
 [tool.mypy]
