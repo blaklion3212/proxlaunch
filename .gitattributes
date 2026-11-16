@@ -1,0 +1,4 @@
+# Los bytes del repositorio son la fuente de verdad: ningún checkout (core.autocrlf de los ejecutores de
+# Windows, del usuario, etc.) convierte finales de línea ni filtra contenido. Hace falta porque hay
+# comprobaciones por suma SHA-256 (iconos, SHA256SUMS) y archivos con CRLF a propósito (docs/ejemplos/*.csv).
+* -text

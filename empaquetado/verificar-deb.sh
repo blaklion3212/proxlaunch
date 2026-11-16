@@ -215,17 +215,42 @@ humo_con_secretos() {
     comprobar_json "$TRABAJO/sec.json" xcb SecretService
 }
 
+# Red de seguridad de la prueba negativa: si systemd-coredump guardó igualmente el volcado del aborto
+# provocado, se borra SOLO ese archivo: core.proxlaunch.<uid del usuario de prueba>.*.zst (o .lz4/.xz),
+# más reciente que $1 (marca creada justo antes del lanzamiento). Un volcado de otro proceso, de otro
+# usuario o de otro momento no se toca y lo sigue detectando la comprobación de residuos.
+borrar_volcado_de_la_negativa() {
+    local marca="$1" dir=/var/lib/systemd/coredump uid intento f borrados=0
+    [ -d "$dir" ] || return 0
+    uid="$(id -u "$USUARIO")"
+    # systemd-coredump escribe el volcado de forma asíncrona: se espera hasta 5 s a que aparezca.
+    for intento in 1 2 3 4 5; do
+        while IFS= read -r f; do
+            [ -n "$f" ] || continue
+            sudo -n rm -f -- "$f" && borrados=$((borrados + 1))
+        done < <(sudo -n find "$dir" -maxdepth 1 -type f -name "core.proxlaunch.$uid.*" -newer "$marca" 2>/dev/null)
+        [ "$borrados" -eq 0 ] || break
+        sleep 1
+    done
+    msg "volcados de la prueba negativa borrados: $borrados"
+}
+
 prueba_negativa_cursor() {
     # HV-E3: sin libxcb-cursor0 el plugin xcb no carga y el humo debe fallar nombrando la causa.
     sudo -n dpkg --force-depends -r libxcb-cursor0 >/dev/null 2>&1
-    local rc=0
-    humo_xvfb "$TRABAJO/neg" || rc=$?
+    local rc=0 marca="$TRABAJO/marca-negativa"
+    : > "$marca"
+    # El aborto es a propósito: solo este lanzamiento corre sin volcados (ulimit -c 0 en su subshell; no
+    # afecta al resto del script). Con core_pattern de systemd-coredump el kernel no invoca al manejador
+    # si RLIMIT_CORE es 0, pero no se ha podido confirmar en un ejecutor, así que abajo hay una red de seguridad.
+    ( ulimit -c 0; humo_xvfb "$TRABAJO/neg" ) || rc=$?
     msg "sin libxcb-cursor0: código de salida $rc"
     cat "$TRABAJO/neg.json" "$TRABAJO/neg.err" > "$TRABAJO/neg.txt"
     msg "mensaje: $(tr '\n' ' ' < "$TRABAJO/neg.txt" | cut -c1-400)"
     sudo -n env DEBIAN_FRONTEND=noninteractive apt-get install -y -qq libxcb-cursor0 >/dev/null
     # El aborto de Qt lo recoge apport: se borra el informe para no dejar residuos (es de la prueba).
     sudo -n rm -f -- /var/crash/_opt_proxlaunch_proxlaunch.*.crash
+    borrar_volcado_de_la_negativa "$marca"
     [ "$rc" -ne 0 ] || { msg "HV-E3 REFUTADA: el humo pasó sin libxcb-cursor0"; return 1; }
     grep -qi "xcb-cursor" "$TRABAJO/neg.txt" || { msg "HV-E3: falla, pero sin mencionar xcb-cursor"; return 1; }
     msg "HV-E3 CONFIRMADA: sin libxcb-cursor0 el plugin xcb no arranca (y el .deb la declara en Depends)"

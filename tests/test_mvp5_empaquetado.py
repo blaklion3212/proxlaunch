@@ -1353,6 +1353,7 @@ def _listado_home(tmp_path: Path, **entorno: str) -> tuple[list[str], str]:
     return [linea.split(" ")[0] for linea in r.stdout.splitlines()], r.stderr
 
 
+@requiere_bash
 def test_verificar_deb_no_poda_de_la_ci_en_local(tmp_path):
     rutas, err = _listado_home(tmp_path, RUNNER_WORKSPACE=f"{tmp_path}/home/work/proxlaunch")
     assert "actions-runner/_diag/f.log" in rutas
@@ -1361,6 +1362,7 @@ def test_verificar_deb_no_poda_de_la_ci_en_local(tmp_path):
     assert "MSG" not in err
 
 
+@requiere_bash
 def test_verificar_deb_poda_de_la_ci_solo_con_github_actions(tmp_path):
     rutas, err = _listado_home(
         tmp_path, GITHUB_ACTIONS="true", RUNNER_WORKSPACE=f"{tmp_path}/home/work/proxlaunch"
@@ -1370,6 +1372,7 @@ def test_verificar_deb_poda_de_la_ci_solo_con_github_actions(tmp_path):
     assert "actions-runner" in err
 
 
+@requiere_bash
 def test_verificar_deb_sin_runner_workspace_no_poda_aunque_sea_la_ci(tmp_path):
     rutas, _ = _listado_home(tmp_path, GITHUB_ACTIONS="true")
     assert "actions-runner/_diag/f.log" in rutas
