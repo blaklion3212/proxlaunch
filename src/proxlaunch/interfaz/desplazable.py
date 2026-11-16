@@ -60,6 +60,36 @@ class _AreaDesplazable(QScrollArea):
         return QSize(ancho, ALTO_MINIMO_AREA)
 
 
+class AreaInterna(QScrollArea):
+    """Área interna (sin tope propio) cuyo ancho mínimo es el real de su contenido.
+
+    El ``minimumSizeHint`` de un ``QScrollArea`` es pequeño y ajeno al contenido, y un
+    ``QSplitter`` que las reparte no respeta los mínimos reales: el contenido quedaba recortado.
+    Aquí el mínimo de ancho es el del widget + marcos + la barra vertical si se ve; el
+    desplazamiento del conjunto lo da el área externa de la ventana.
+    """
+
+    def setWidget(self, widget: QWidget) -> None:
+        super().setWidget(widget)
+        widget.installEventFilter(self)
+
+    def eventFilter(self, watched: QObject, event: QEvent) -> bool:
+        if watched is self.widget() and event.type() == QEvent.Type.LayoutRequest:
+            self.updateGeometry()  # el mínimo del contenido pudo cambiar
+        return super().eventFilter(watched, event)
+
+    def minimumSizeHint(self) -> QSize:
+        base = super().minimumSizeHint()
+        widget = self.widget()
+        if widget is None:
+            return base
+        ancho = widget.minimumSizeHint().width() + 2 * self.frameWidth()
+        barra = self.verticalScrollBar()
+        if barra.isVisible():
+            ancho += self.style().pixelMetric(QStyle.PixelMetric.PM_ScrollBarExtent, None, barra)
+        return QSize(ancho, base.height())
+
+
 class AjusteDesplazable(QObject):
     """Mantiene el tamaño de una ventana (diálogo o ventana principal) dentro del área útil.
 

@@ -25,7 +25,6 @@ from PySide6.QtWidgets import (
     QMainWindow,
     QMessageBox,
     QPushButton,
-    QScrollArea,
     QSplitter,
     QStackedWidget,
     QVBoxLayout,
@@ -40,7 +39,7 @@ from proxlaunch.interfaz.archivos_ui import (
     elegir_para_guardar,
 )
 from proxlaunch.interfaz.controlador_origen import ControladorOrigen
-from proxlaunch.interfaz.desplazable import crear_area_desplazable, limitar_a_pantalla
+from proxlaunch.interfaz.desplazable import AreaInterna, crear_area_desplazable, limitar_a_pantalla
 from proxlaunch.interfaz.dialogos.acerca_de import DialogoAcercaDe
 from proxlaunch.interfaz.dialogos.conexion import DialogoConexion
 from proxlaunch.interfaz.dialogos.confirmar import confirmar
@@ -442,7 +441,9 @@ class VentanaPrincipal(QMainWindow):
         self._al_cambiar_tema(deps.gestor_tema.tema_actual)
         self.statusBar().showMessage(self.tr("Sin conexión"))
         # Tamaño y mínimo pedidos, acotados al área útil de la pantalla donde se abre.
-        self.ajuste_pantalla = limitar_a_pantalla(self, tamano_deseado=QSize(1240, 820))
+        self.ajuste_pantalla = limitar_a_pantalla(
+            self, self._paginas, tamano_deseado=QSize(1240, 820)
+        )
 
     # --- Construcción -----------------------------------------------------------------
 
@@ -516,7 +517,7 @@ class VentanaPrincipal(QMainWindow):
         ci.addWidget(self.bloque_lote)
         ci.addWidget(self.formulario)
         ci.addWidget(self.panel_filas, 1)
-        zona = QScrollArea()
+        zona = AreaInterna()
         zona.setWidgetResizable(True)
         zona.setFrameShape(QFrame.Shape.NoFrame)
         zona.setWidget(izquierda)
@@ -528,7 +529,7 @@ class VentanaPrincipal(QMainWindow):
         cd.addWidget(self.resumen)
         cd.addWidget(self.progreso)
         cd.addStretch(1)
-        zona_derecha = QScrollArea()
+        zona_derecha = AreaInterna()
         zona_derecha.setWidgetResizable(True)
         zona_derecha.setFrameShape(QFrame.Shape.NoFrame)
         zona_derecha.setWidget(derecha)
@@ -537,7 +538,7 @@ class VentanaPrincipal(QMainWindow):
         self._pila_derecha = QStackedWidget()
         self._pila_derecha.addWidget(zona_derecha)  # 0: resumen y progreso de una máquina
         for pagina in (self.resumen_lote, self.progreso_lote):  # 1 y 2: lotes
-            area = QScrollArea()
+            area = AreaInterna()
             area.setWidgetResizable(True)
             area.setFrameShape(QFrame.Shape.NoFrame)
             area.setWidget(pagina)
@@ -1276,6 +1277,9 @@ class VentanaPrincipal(QMainWindow):
             texto = texto_error(resultado.error)
         if aviso:
             texto += "\n" + aviso  # CA-L15.2: se creó, pero Proxmox tardó en responder
+        if d in (Desenlace.OK, Desenlace.CON_AVISOS):
+            # El motor no emite LISTO: al terminar bien se marcan todas las etapas como hechas.
+            self.progreso.establecer_etapa(Etapa.LISTO)
         self.progreso.mostrar_resultado(texto, d, resultado.upid)
         self.progreso.detalles.establecer(
             texto_detalles(resultado.error, resultado),
