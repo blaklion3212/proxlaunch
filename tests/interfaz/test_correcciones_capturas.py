@@ -15,7 +15,7 @@ from __future__ import annotations
 import time
 
 import pytest
-from PySide6.QtCore import QSize
+from PySide6.QtCore import QEvent, QSize
 from PySide6.QtWidgets import QApplication, QLabel, QScrollArea, QVBoxLayout, QWidget
 
 from proxlaunch.interfaz.desplazable import AreaInterna
@@ -180,6 +180,122 @@ def test_area_interna_avisa_a_su_layout_cuando_cambia_el_minimo(qtbot):
     contenido.etiqueta.setMinimumWidth(900)
     _asentar(qtbot)
     assert padre.minimumSizeHint().width() >= antes + 500
+
+
+def _padre_ajustado_al_minimo(qtbot, ancho_etiqueta=400, filas=40):
+    """Padre con layout y un ``AreaInterna`` de contenido alto, ajustado a su ancho mínimo."""
+    contenido = QWidget()
+    capa_c = QVBoxLayout(contenido)
+    for _ in range(filas):
+        etiqueta = QLabel("x" * 10)
+        etiqueta.setMinimumWidth(ancho_etiqueta)
+        capa_c.addWidget(etiqueta)
+    area = AreaInterna()
+    area.setWidgetResizable(True)
+    area.setWidget(contenido)
+    padre = QWidget()
+    capa = QVBoxLayout(padre)
+    capa.setContentsMargins(0, 0, 0, 0)
+    capa.addWidget(area)
+    qtbot.addWidget(padre)
+    return padre, area, contenido
+
+
+def test_area_interna_al_perder_alto_aparece_la_barra_y_no_queda_barra_horizontal(qtbot):
+    padre, area, _ = _padre_ajustado_al_minimo(qtbot)
+    padre.resize(10, 2000)  # se ajusta al mínimo de ancho
+    padre.show()
+    qtbot.waitExposed(padre)
+    qtbot.wait(100)
+    _asentar(qtbot)
+    assert not area.verticalScrollBar().isVisible()
+    minimo_sin_barra = area.minimumSizeHint().width()
+    assert area.width() >= minimo_sin_barra
+
+    padre.resize(10, 300)
+    qtbot.wait(200)
+    _asentar(qtbot)
+    assert area.verticalScrollBar().isVisible()
+    assert area.minimumSizeHint().width() > minimo_sin_barra  # se suma el ancho de la barra
+    assert area.width() >= area.minimumSizeHint().width()
+    assert not _barra_h_visible(area)
+    assert area.horizontalScrollBar().maximum() == 0
+
+
+def test_area_interna_al_recuperar_alto_el_minimo_vuelve_a_bajar(qtbot):
+    padre, area, _ = _padre_ajustado_al_minimo(qtbot)
+    padre.resize(10, 2000)
+    padre.show()
+    qtbot.waitExposed(padre)
+    qtbot.wait(100)
+    _asentar(qtbot)
+    minimo_sin_barra = area.minimumSizeHint().width()
+    padre.resize(10, 300)
+    qtbot.wait(200)
+    _asentar(qtbot)
+    assert area.minimumSizeHint().width() > minimo_sin_barra
+
+    padre.resize(10, 2000)
+    qtbot.wait(200)
+    _asentar(qtbot)
+    assert not area.verticalScrollBar().isVisible()
+    assert area.minimumSizeHint().width() == minimo_sin_barra
+    assert not _barra_h_visible(area)
+
+
+def test_area_interna_en_reposo_no_repite_update_geometry(qtbot, monkeypatch):
+    llamadas = []
+    original = AreaInterna.updateGeometry
+
+    def contar(self):
+        llamadas.append(1)
+        return original(self)
+
+    monkeypatch.setattr(AreaInterna, "updateGeometry", contar)
+    padre, area, _ = _padre_ajustado_al_minimo(qtbot)
+    padre.resize(10, 300)
+    padre.show()
+    qtbot.waitExposed(padre)
+    qtbot.wait(300)
+    _asentar(qtbot)
+    llamadas.clear()
+    qtbot.wait(400)
+    assert llamadas == []  # sin bucles de geometría en reposo
+
+
+def test_area_interna_set_widget_none_no_lanza(qtbot):
+    area, _ = _area_con(200)
+    qtbot.addWidget(area)
+    area.setWidget(None)  # Qt lo ignora: el contenido previo sigue ahí y el área sigue usable
+    assert area.minimumSizeHint().width() >= 200
+    nueva = AreaInterna()
+    qtbot.addWidget(nueva)
+    nueva.setWidget(None)  # también sobre un área que nunca tuvo contenido
+
+
+def test_area_interna_take_widget_devuelve_el_widget_y_quita_el_filtro(qtbot, monkeypatch):
+    area, contenido = _area_con(200)
+    padre = QWidget()
+    QVBoxLayout(padre).addWidget(area)
+    qtbot.addWidget(padre)
+    tomado = area.takeWidget()
+    assert tomado is contenido
+    assert area.widget() is None
+    llamadas = []
+    original = AreaInterna.updateGeometry
+    monkeypatch.setattr(
+        AreaInterna, "updateGeometry", lambda self: (llamadas.append(1), original(self))[1]
+    )
+    QApplication.sendEvent(tomado, QEvent(QEvent.Type.LayoutRequest))
+    _asentar(qtbot)
+    assert llamadas == []
+    tomado.deleteLater()
+
+
+def test_area_interna_take_widget_sin_contenido_devuelve_none(qtbot):
+    area = AreaInterna()
+    qtbot.addWidget(area)
+    assert area.takeWidget() is None
 
 
 # --- 2. Ventana principal: formulario y columna derecha sin recorte ---------------------------
@@ -447,6 +563,36 @@ def _etapas_con_texto(p: PanelProgreso) -> list[str]:
     return [lbl.text() for lbl in p._lbl_etapas.values() if not lbl.isHidden()]
 
 
+def test_comprobar_sin_upid_con_maquina_creada_completa_las_etapas(qtbot, entorno):
+    """Ruta «Comprobar» de un envío incierto: si la máquina existe, el panel queda completo."""
+    from .test_ventana_principal_f7 import _comprobar_y_esperar, _crear_incierto_con_cliente
+
+    v, cliente = _crear_incierto_con_cliente(qtbot, entorno)
+    cfg = v._lote.plan.elementos[0].cfg
+    cliente.configs[cfg.vmid] = {"name": cfg.nombre, "tags": ";".join(cfg.etiquetas)}
+    entorno.creacion.respuesta_existe_vm = True
+    _comprobar_y_esperar(qtbot, v)
+    p = v.progreso
+    assert v._ultimo_resultado.desenlace == Desenlace.OK
+    etiquetas = _etiquetas_visibles(p)
+    assert etiquetas
+    for etapa, texto in etiquetas.items():
+        assert texto.startswith("✓"), f"{etapa.name}: {texto!r}"
+    assert p.barra.value() == p.barra.maximum()
+
+
+def test_comprobar_sin_upid_con_maquina_inexistente_listo_no_lleva_visto(qtbot, entorno):
+    from .test_ventana_principal_f7 import _comprobar_y_esperar, _crear_incierto
+
+    v = _crear_incierto(qtbot, entorno)
+    entorno.creacion.respuesta_existe_vm = False
+    _comprobar_y_esperar(qtbot, v)
+    p = v.progreso
+    assert v._ultimo_resultado.desenlace == Desenlace.CANCELADO
+    assert not p._lbl_etapas[Etapa.LISTO].text().startswith("✓")
+    assert p.barra.value() < p.barra.maximum()
+
+
 # --- 6. Sin crecimiento espurio ---------------------------------------------------------------
 
 
@@ -514,3 +660,12 @@ def test_el_ancho_no_depende_del_historial_de_modos(qtbot, entorno):
     _asentar(qtbot)
     assert v.width() == directo
     assert QSize(v.width(), v.height()) == QSize(ANCHO, ALTO)
+
+
+def test_avanzado_al_reducir_el_alto_ninguna_zona_interna_muestra_barra_horizontal(qtbot, entorno):
+    v = _preparar(qtbot, entorno, AREA_HOLGADA)
+    v.resize(ANCHO, 700)
+    qtbot.wait(300)
+    _asentar(qtbot)
+    for zona in _internas(v):
+        assert not _barra_h_visible(zona), zona.objectName() or type(zona).__name__

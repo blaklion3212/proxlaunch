@@ -69,13 +69,41 @@ class AreaInterna(QScrollArea):
     desplazamiento del conjunto lo da el área externa de la ventana.
     """
 
-    def setWidget(self, widget: QWidget) -> None:
+    # Último estado de la barra vertical que se usó para el mínimo de ancho. Valores de clase:
+    # Qt puede entregar eventos al filtro antes de que termine ``__init__``.
+    _barra_vista = False
+    _contenedor_barra: QWidget | None = None
+
+    def __init__(self, *args: object, **kwargs: object) -> None:
+        super().__init__(*args, **kwargs)
+        # La barra vive en un contenedor que Qt muestra y oculta según haga falta.
+        contenedor = self.verticalScrollBar().parentWidget()
+        self._contenedor_barra = contenedor
+        if contenedor is not None:
+            contenedor.installEventFilter(self)
+
+    def setWidget(self, widget: QWidget | None) -> None:
         super().setWidget(widget)
-        widget.installEventFilter(self)
+        if widget is not None:
+            widget.installEventFilter(self)
+
+    def takeWidget(self) -> QWidget | None:
+        widget = super().takeWidget()
+        if widget is not None:
+            widget.removeEventFilter(self)
+        return widget
 
     def eventFilter(self, watched: QObject, event: QEvent) -> bool:
-        if watched is self.widget() and event.type() == QEvent.Type.LayoutRequest:
+        tipo = event.type()
+        if watched is self.widget() and tipo == QEvent.Type.LayoutRequest:
             self.updateGeometry()  # el mínimo del contenido pudo cambiar
+        elif watched is self._contenedor_barra and tipo in (QEvent.Type.Show, QEvent.Type.Hide):
+            # La barra vertical aparece o desaparece sin que el contenido cambie (el área gana
+            # o pierde alto): el mínimo de ancho incluye la barra, así que se avisa al padre.
+            visible = tipo == QEvent.Type.Show
+            if visible != self._barra_vista:
+                self._barra_vista = visible
+                self.updateGeometry()
         return super().eventFilter(watched, event)
 
     def minimumSizeHint(self) -> QSize:

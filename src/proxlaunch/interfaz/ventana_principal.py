@@ -1453,6 +1453,7 @@ class VentanaPrincipal(QMainWindow):
         if existe is True:
             texto = self.tr("La máquina sí se creó. Verifica en Proxmox que quedó como esperabas.")
             self._ultimo_resultado = ResultadoCreacion(Desenlace.OK, cfg.vmid, cfg.nodo, None, None)
+            self.progreso.establecer_etapa(Etapa.LISTO)  # como al terminar la creación
             self.progreso.mostrar_resultado(texto, Desenlace.OK, None)
             # M3: rescatada por «Comprobar»; el aviso consta en el libro y en el informe.
             self._sincronizar_libro_uno(
