@@ -366,8 +366,23 @@ Nunca registres contraseñas, tokens ni datos personales.
     sshd se reinicia solo y las actualizaciones automáticas quedan desactivadas en esa MV (commit `3178cd2`).
   - Verificación de Windows: falla si el humo deja carpetas en `%TEMP%` (QA-M5-03, confirmado en la MV con
     restos anteriores a la corrección).
-- **Verificación final** con el código definitivo: `linux` ✅, `windows` ✅ (calidad 7638 en Windows, 7691 en
-  Ubuntu, 7693 local), `actualizacion-linux` ✅, `actualizacion-windows` ✅. Sumas: `.deb` `daa8b3dc…`, `-setup.exe` `5c39a384…`.
+- **Guía de usuario explicativa** (petición del usuario al cierre): `docs/guia-usuario.md` reescrita con todas
+  las opciones por pantalla, 60 capturas reales generadas offscreen con datos ficticios (`docs/img/`, marca
+  pytest `capturas`, excluida por defecto) y archivos de ejemplo (`docs/ejemplos/`, validados con los lectores
+  reales en `tests/test_docs_ejemplos.py`). Commit `8a5743c`.
+- **Defectos hallados al generar las capturas, corregidos:** formulario avanzado y panel «Tiempo agotado»
+  recortados a 1240 px (las `QScrollArea` internas ocultaban el ancho mínimo de su contenido; existía desde
+  el MVP 1): nueva `AreaInterna`; con una sola máquina el progreso no llegaba a «Listo» (regresión del MVP 2).
+  Revisión QA sin críticos ni altos; sus hallazgos medio y bajos, corregidos. Limitación aceptada: si un
+  clon termina antes del primer sondeo, «Ajustando» no llega a mostrarse (todas las etapas visibles en ✓).
+  Commits `6eee630`, `b1b88a4`, `44012e6`, `2785e30`.
+- **Lecciones:** el venv local no trae los stubs de PySide6 (mypy local no veía errores que sí ve la calidad de
+  las MVs) y sus fuentes difieren de Ubuntu/Windows reales (el avanzado pide ~1315 px allí): las pruebas de
+  tamaño deben comprobar el contrato, no anchos exactos.
+- **Verificación final** con el código definitivo (`2785e30`): `linux` ✅ (calidad 7788 en Ubuntu, `.deb` en
+  22.04 y 24.04), `windows` ✅ (calidad 7735 en Windows 11). Local 7790. `actualizacion-linux` y
+  `actualizacion-windows` ✅ con el código de `b90a027` (los cambios posteriores son solo de interfaz y no
+  afectan a la ruta de actualización). Sumas: `.deb` `8bb854ef…`, `-setup.exe` `d255fc86…`.
 - **Archivos:** `empaquetado/` (completo; ver `empaquetado/LEEME.md`), `src/proxlaunch/interfaz/{app,humo}.py`,
   `src/proxlaunch/nucleo/archivos/reemplazo.py`, `tests/conftest.py`, `docs/requisitos/mvp5.md`,
   `docs/arquitectura/mvp5.md`, `docs/empaquetado.md`, `docs/guia-usuario.md`, `docs/decisiones.md`

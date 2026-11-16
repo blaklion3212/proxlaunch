@@ -179,9 +179,9 @@ siendo la de la MV local.
 
 ## 8. Resultados de referencia (versión 0.5.0)
 
-Verificados al cerrar el MVP 5 (ver la entrada 18 de la [bitácora](bitacora.md)): suite local con 7693 pruebas correctas;
+Verificados al cerrar el MVP 5 (ver la entrada 18 de la [bitácora](bitacora.md)): suite local con 7790 pruebas correctas;
 `verificar-todo.sh linux`, `windows`, `actualizacion-linux` y `actualizacion-windows` correctos; `dist/SHA256SUMS` con el
-`.deb` (`daa8b3dc…`) y el `-setup.exe` (`5c39a384…`). Comprobaciones visuales manuales hechas con el usuario
+`.deb` (`8bb854ef…`) y el `-setup.exe` (`d255fc86…`). Comprobaciones visuales manuales hechas con el usuario
 (asistente en español, SmartScreen, escalado 125/150/175 %, icono del menú Inicio); ver la bitácora.
 
 ## 9. Pendientes conocidos
