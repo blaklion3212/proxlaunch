@@ -74,20 +74,20 @@ class AreaInterna(QScrollArea):
     _barra_vista = False
     _contenedor_barra: QWidget | None = None
 
-    def __init__(self, *args: object, **kwargs: object) -> None:
-        super().__init__(*args, **kwargs)
+    def __init__(self, parent: QWidget | None = None) -> None:
+        super().__init__(parent)
         # La barra vive en un contenedor que Qt muestra y oculta según haga falta.
         contenedor = self.verticalScrollBar().parentWidget()
         self._contenedor_barra = contenedor
         if contenedor is not None:
             contenedor.installEventFilter(self)
 
-    def setWidget(self, widget: QWidget | None) -> None:
+    def setWidget(self, widget: QWidget) -> None:
         super().setWidget(widget)
-        if widget is not None:
+        if widget is not None:  # Qt ignora None en tiempo de ejecución; aquí no debe fallar
             widget.installEventFilter(self)
 
-    def takeWidget(self) -> QWidget | None:
+    def takeWidget(self) -> QWidget:
         widget = super().takeWidget()
         if widget is not None:
             widget.removeEventFilter(self)
