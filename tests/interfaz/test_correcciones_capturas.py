@@ -15,7 +15,7 @@ from __future__ import annotations
 import time
 
 import pytest
-from PySide6.QtCore import QEvent, QSize
+from PySide6.QtCore import QEvent
 from PySide6.QtWidgets import QApplication, QLabel, QScrollArea, QVBoxLayout, QWidget
 
 from proxlaunch.interfaz.desplazable import AreaInterna
@@ -303,7 +303,10 @@ def test_area_interna_take_widget_sin_contenido_devuelve_none(qtbot):
 
 def test_avanzado_con_area_holgada_ninguna_zona_muestra_barra_horizontal(qtbot, entorno):
     v = _preparar(qtbot, entorno, AREA_HOLGADA)
-    assert (v.width(), v.height()) == (ANCHO, ALTO)
+    # Con espacio holgado la ventana parte de 1240 y crece lo que pida el contenido (depende de
+    # las fuentes del sistema: en Ubuntu y Windows reales el avanzado pide más de 1240).
+    assert ANCHO <= v.width() <= v.ajuste_pantalla.limite_ancho()
+    assert v.height() == ALTO
     zonas = _internas(v)
     assert zonas, "no se encontraron zonas desplazables"
     for zona in zonas:
@@ -606,7 +609,10 @@ def test_cambiar_de_modo_varias_veces_no_ensancha_la_ventana(qtbot, entorno):
             qtbot.wait(150)
             _asentar(qtbot)
             tamanos.append(v.size())
-    assert all(t.width() == base.width() for t in tamanos), [t.width() for t in tamanos]
+    # La ventana puede crecer al entrar al avanzado (nunca encoge sola), pero después no
+    # acumula ancho al alternar de modo.
+    assert all(t.width() >= base.width() for t in tamanos), [t.width() for t in tamanos]
+    assert all(t.width() == tamanos[0].width() for t in tamanos), [t.width() for t in tamanos]
     assert all(t.height() <= max(base.height(), ALTO) for t in tamanos)
 
 
@@ -659,7 +665,8 @@ def test_el_ancho_no_depende_del_historial_de_modos(qtbot, entorno):
         qtbot.wait(100)
     _asentar(qtbot)
     assert v.width() == directo
-    assert QSize(v.width(), v.height()) == QSize(ANCHO, ALTO)
+    assert v.width() >= ANCHO
+    assert v.height() == ALTO
 
 
 def test_avanzado_al_reducir_el_alto_ninguna_zona_interna_muestra_barra_horizontal(qtbot, entorno):
