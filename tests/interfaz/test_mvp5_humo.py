@@ -34,7 +34,7 @@ import keyring.backends.fail
 import keyring.backends.null
 import platformdirs
 import pytest
-from PySide6.QtCore import QTimer
+from PySide6.QtCore import QCoreApplication, QEvent, QTimer
 from PySide6.QtGui import QIcon
 from PySide6.QtWidgets import QApplication
 
@@ -120,10 +120,30 @@ def llavero(monkeypatch):
     return espia
 
 
+# Límite del vigilante en las pruebas en proceso: holgado para ejecutores lentos (CI de Windows),
+# donde el límite real de 15 s mataba a pytest con ``os._exit(3)``. El límite real lo verifican
+# la prueba de la constante y los subprocesos; las pruebas que necesitan uno corto lo fijan ellas.
+LIMITE_VIGILANTE_EN_PROCESO_S = 120.0
+
+
+def liberar_ventanas_nuevas(qapp, previas: set) -> None:
+    """Destruye las ventanas de primer nivel creadas desde ``previas``.
+
+    ``humo.ejecutar_prueba_de_humo`` solo hace ``close()`` de la ventana principal: sin
+    ``deleteLater`` queda viva (cientos de widgets) y ralentiza cada ``setStyleSheet`` posterior.
+    """
+    for w in qapp.topLevelWidgets():
+        if w not in previas:
+            w.deleteLater()
+    QCoreApplication.sendPostedEvents(None, QEvent.Type.DeferredDelete)
+
+
 @pytest.fixture
 def entorno_humo(qapp, monkeypatch, tmp_path, llavero):
     """Aísla una ejecución en proceso del humo y restaura el estado compartido al terminar."""
     monkeypatch.delenv(SALIDA, raising=False)
+    monkeypatch.setattr(humo, "LIMITE_VIGILANTE_S", LIMITE_VIGILANTE_EN_PROCESO_S)
+    previas = set(qapp.topLevelWidgets())
     # Sin red: crear_dependencias recibe esta fábrica; si alguien la invoca, la prueba falla.
     monkeypatch.setattr(
         app_mod,
@@ -163,6 +183,7 @@ def entorno_humo(qapp, monkeypatch, tmp_path, llavero):
 
     yield Entorno
 
+    liberar_ventanas_nuevas(qapp, previas)
     for t in traductores:
         qapp.removeTranslator(t)  # type: ignore[arg-type]
     for h in list(logger.handlers):
@@ -181,6 +202,7 @@ def entorno_humo(qapp, monkeypatch, tmp_path, llavero):
     # etc.) saldría al instante. Un bucle vacío (``exec`` lo baja al empezar y al acabar) lo limpia.
     QTimer.singleShot(0, qapp.quit)
     qapp.exec()
+    QCoreApplication.sendPostedEvents(None, QEvent.Type.DeferredDelete)
 
 
 def ejecutar(capsys, *, permitir_sin_llavero=False):
@@ -435,6 +457,26 @@ def test_humo_la_espera_por_defecto_cumple_el_limite_de_5_segundos():
 def test_humo_el_limite_del_vigilante_es_de_15_segundos_y_su_codigo_el_3():
     assert humo.LIMITE_VIGILANTE_S <= 15.0
     assert humo.CODIGO_VIGILANTE == 3
+
+
+def test_humo_en_proceso_usa_un_limite_de_vigilante_holgado(entorno_humo):
+    """La fixture evita que un ejecutor lento dispare el vigilante real y mate a pytest."""
+    assert humo.LIMITE_VIGILANTE_S >= 60.0
+
+
+def test_humo_en_proceso_no_deja_ventanas_vivas_tras_liberarlas(
+    entorno_humo, catalogo_qm, qapp, capsys
+):
+    """Regresión: la acumulación de ventanas del humo ralentizaba todo el resto de la suite."""
+    previas = set(qapp.topLevelWidgets())
+    antes = len(qapp.allWidgets())
+    for _ in range(2):
+        rc, _, _ = ejecutar(capsys)
+        assert rc == 0
+        liberar_ventanas_nuevas(qapp, previas)
+    assert set(qapp.topLevelWidgets()) <= previas
+    # Margen: cachés internas de estilo/fuentes pueden crear unos pocos widgets auxiliares.
+    assert len(qapp.allWidgets()) <= antes + 20
 
 
 def test_humo_solo_consulta_get_keyring_y_nunca_los_secretos(

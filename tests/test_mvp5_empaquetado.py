@@ -1330,3 +1330,46 @@ def test_exclusion_no_se_queja_si_el_puerto_prohibido_esta_libre(tmp_path, oyent
     res = _comprobar_exclusion(tmp_path, libre)
     assert res.returncode == 0, (res.stdout, res.stderr)
     assert "sin conflicto" in res.stdout
+
+
+# --- verificar-deb.sh: poda del listado de $HOME solo en GitHub Actions --------------------------
+
+
+def _listado_home(tmp_path: Path, **entorno: str) -> tuple[list[str], str]:
+    """Ejecuta el bloque PODAS_CI + listado_home de verificar-deb.sh sobre un $HOME falso."""
+    texto = (RAIZ / "empaquetado" / "verificar-deb.sh").read_text(encoding="utf-8")
+    inicio = texto.index("PODAS_CI=()")
+    fin = texto.index("# --- Pasos")
+    home = tmp_path / "home"
+    for d in ("actions-runner/_diag", "work/_temp", "work/proxlaunch/proxlaunch", "otro"):
+        (home / d).mkdir(parents=True, exist_ok=True)
+        (home / d / "f.log").write_text("x", encoding="utf-8")
+    raiz = f"{home}/work/proxlaunch/proxlaunch"
+    script = f'msg() {{ echo "MSG: $*" >&2; }}\nRAIZ="{raiz}"\n{texto[inicio:fin]}\nlistado_home\n'
+    env = {"PATH": "/usr/bin:/bin", "HOME": str(home), **entorno}
+    r = subprocess.run(
+        ["bash", "-eu", "-c", script], capture_output=True, text=True, env=env, check=True
+    )
+    return [linea.split(" ")[0] for linea in r.stdout.splitlines()], r.stderr
+
+
+def test_verificar_deb_no_poda_de_la_ci_en_local(tmp_path):
+    rutas, err = _listado_home(tmp_path, RUNNER_WORKSPACE=f"{tmp_path}/home/work/proxlaunch")
+    assert "actions-runner/_diag/f.log" in rutas
+    assert "work/_temp/f.log" in rutas
+    assert "otro/f.log" in rutas
+    assert "MSG" not in err
+
+
+def test_verificar_deb_poda_de_la_ci_solo_con_github_actions(tmp_path):
+    rutas, err = _listado_home(
+        tmp_path, GITHUB_ACTIONS="true", RUNNER_WORKSPACE=f"{tmp_path}/home/work/proxlaunch"
+    )
+    assert not any(r.startswith(("actions-runner", "work")) for r in rutas)
+    assert "otro/f.log" in rutas
+    assert "actions-runner" in err
+
+
+def test_verificar_deb_sin_runner_workspace_no_poda_aunque_sea_la_ci(tmp_path):
+    rutas, _ = _listado_home(tmp_path, GITHUB_ACTIONS="true")
+    assert "actions-runner/_diag/f.log" in rutas

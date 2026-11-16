@@ -62,13 +62,24 @@ if [ -n "$ANTERIOR" ]; then
         || die "el .deb anterior ($VERSION_ANTERIOR) debe ser menor que el nuevo ($VERSION)"
 fi
 
+# Rutas extra que se podan SOLO en GitHub Actions: en el ejecutor, $HOME (/home/runner) contiene
+# actions-runner/ (su _diag/Worker_*.log crece con la salida del propio paso) y work/ (_temp, el
+# checkout y dist/), que cambian por la ejecución y no por el paquete. En la MV local queda vacío.
+PODAS_CI=()
+if [ "${GITHUB_ACTIONS:-}" = "true" ] && [ -n "${RUNNER_WORKSPACE:-}" ]; then
+    PODAS_CI=(-o -path "$HOME/actions-runner" -o -path "${RUNNER_WORKSPACE%/*}")
+    msg "CI de GitHub Actions: se podan del listado de \$HOME: $HOME/actions-runner ${RUNNER_WORKSPACE%/*}"
+fi
+
 # Listado del $HOME sin lo que cambia por la propia ejecución (copia del repositorio, cachés).
 listado_home() {
     # `|| true`: un archivo que desaparece durante el recorrido no debe abortar el paso (set -e activo).
+    # `${PODAS_CI[@]+...}`: expansión segura de un arreglo vacío con `set -u` en bash antiguo.
     { find "$HOME" -mindepth 1 \
         \( -path "$RAIZ" -o -path "$HOME/.cache" -o -path "$HOME/.local/share/uv" \
         -o -path "$HOME/.local/bin" -o -path "$HOME/herramientas" -o -path "$HOME/venv-build" \
-        -o -path "$HOME/.ssh" -o -path "$HOME/.bash_history" -o -path "$HOME/.sudo_as_admin_successful" \) -prune \
+        -o -path "$HOME/.ssh" -o -path "$HOME/.bash_history" -o -path "$HOME/.sudo_as_admin_successful" \
+        ${PODAS_CI[@]+"${PODAS_CI[@]}"} \) -prune \
         -o -printf '%P %y %s %T@\n' || true; } | sort
 }
 
