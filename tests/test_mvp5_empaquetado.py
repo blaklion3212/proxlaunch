@@ -825,11 +825,12 @@ def test_tamano_arbol_no_sigue_enlaces(presupuesto, tmp_path):
 
 @pytest.fixture
 def repo_copia(estatico, tmp_path):
-    """Copia mínima del repo (solo ``empaquetado/``) sobre la que se introducen defectos."""
+    """Copia mínima del repo (``empaquetado/`` y ``.github/``) para introducir defectos."""
     raiz = tmp_path / "repo"
     shutil.copytree(
         RAIZ / "empaquetado", raiz / "empaquetado", ignore=shutil.ignore_patterns("__pycache__")
     )
+    shutil.copytree(RAIZ / ".github", raiz / ".github")
     return raiz
 
 
@@ -928,9 +929,8 @@ def test_calidad_sin_el_filtro_not_integracion_se_detecta(estatico, repo_copia):
 
 
 def test_detecta_un_archivo_de_ci_activo(estatico, repo_copia):
-    """CA-E30.1."""
+    """CA-E30.1: solo se permite .github/workflows/empaquetado.yml."""
     flujo = repo_copia / ".github" / "workflows" / "x.yml"
-    flujo.parent.mkdir(parents=True)
     flujo.write_text("name: x\n", encoding="utf-8")
     p = _problemas(estatico, repo_copia)
     assert any("CA-E30.1" in x and ".github/workflows/x.yml" in x for x in p), p
@@ -943,7 +943,7 @@ def test_detecta_otros_proveedores_de_ci(estatico, repo_copia, nombre):
 
 
 def _editar_plantilla(repo, buscar, reemplazo):
-    ruta = repo / "empaquetado" / "ci" / "github-actions.yml.plantilla"
+    ruta = repo / ".github" / "workflows" / "empaquetado.yml"
     texto = ruta.read_text("utf-8")
     assert buscar in texto
     ruta.write_text(texto.replace(buscar, reemplazo, 1), encoding="utf-8")
@@ -982,13 +982,30 @@ def test_detecta_secretos_en_la_plantilla(estatico, repo_copia):
 
 
 def test_detecta_paso_que_no_invoca_empaquetado(estatico, repo_copia):
-    _editar_plantilla(repo_copia, "run: empaquetado/calidad.sh", "run: pytest -q")
+    _editar_plantilla(repo_copia, "run: bash empaquetado/construir-linux.sh", "run: pytest -q")
     assert any("solo invoca empaquetado/" in x for x in _problemas(estatico, repo_copia))
 
 
-def test_falta_de_plantilla_se_reporta(estatico, repo_copia):
-    (repo_copia / "empaquetado" / "ci" / "github-actions.yml.plantilla").unlink()
-    assert any("falta la plantilla" in x for x in _problemas(estatico, repo_copia))
+def test_falta_del_flujo_se_reporta(estatico, repo_copia):
+    (repo_copia / ".github" / "workflows" / "empaquetado.yml").unlink()
+    assert any("falta el flujo" in x for x in _problemas(estatico, repo_copia))
+
+
+def test_detecta_disparo_por_pull_request(estatico, repo_copia):
+    _editar_plantilla(
+        repo_copia, "  workflow_dispatch:\n", "  workflow_dispatch:\n  pull_request:\n"
+    )
+    assert any("CA-E30.2" in x and "pull_request" in x for x in _problemas(estatico, repo_copia))
+
+
+def test_detecta_disparo_por_ramas(estatico, repo_copia):
+    _editar_plantilla(repo_copia, "    tags: ['v*']\n", "    branches: [main]\n    tags: ['v*']\n")
+    assert any("por ramas" in x for x in _problemas(estatico, repo_copia))
+
+
+def test_detecta_falta_de_disparo_manual(estatico, repo_copia):
+    _editar_plantilla(repo_copia, "  workflow_dispatch:\n", "")
+    assert any("workflow_dispatch" in x for x in _problemas(estatico, repo_copia))
 
 
 def test_detecta_secreto_literal(estatico, repo_copia):

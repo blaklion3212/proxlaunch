@@ -168,14 +168,59 @@ lo anuncia («Firma Authenticode OMITIDA») y sigue. Nunca guardes certificados 
 
 Nota: tras activar la firma, la suma del instalador cambia; vuelve a verificar y sellar con `verificar-todo.sh windows`.
 
-## 7. Plantilla de CI (inactiva)
+## 7. CI en GitHub Actions (activa)
 
-No hay CI activa (decisión P-E01). `empaquetado/ci/github-actions.yml.plantilla` es solo una referencia: está fuera de
-`.github/workflows/` a propósito, usa acciones fijadas por SHA de commit, `permissions: contents: read`, no usa secretos
-y solo llama a los scripts de `empaquetado/`. Para activarla en el futuro, cópiala a la ruta que lea el proveedor
-(por ejemplo `.github/workflows/empaquetado.yml`) y comprueba antes los SHA de las acciones. Los ejecutores de Windows de
-los proveedores son Windows Server, no un escritorio Windows 10/11, así que la verificación con escritorio real sigue
-siendo la de la MV local.
+La CI vive en [`.github/workflows/empaquetado.yml`](../.github/workflows/empaquetado.yml), que es la única fuente de
+verdad (la antigua plantilla `empaquetado/ci/github-actions.yml.plantilla` se retiró; el historial de la decisión P-E01
+está en `decisiones.md`). Solo llama a los scripts de `empaquetado/`, usa acciones fijadas por SHA de commit,
+`permissions: contents: read`, `persist-credentials: false`, no usa secretos y no publica nada.
+
+**Disparadores (decisión del usuario: repo privado y cupo de minutos).** Solo al subir una etiqueta `v*` y a mano
+(`workflow_dispatch`). No se dispara por push a ramas ni por pull request. Para lanzarla a mano:
+
+```bash
+gh workflow run empaquetado.yml --ref main      # --ref puede ser una rama o una etiqueta
+gh run list --workflow empaquetado.yml          # estado
+gh run watch                                    # seguir la última en vivo
+gh run download <id> -n registros-windows-windows-2022   # bajar los registros de una ejecución
+```
+
+**Trabajos.**
+
+| Trabajo | Ejecutor | Qué hace |
+|---|---|---|
+| `construir-linux` | `ubuntu-22.04` | `preparar-build.sh`, `construir-linux.sh` (incluye la calidad completa y el límite de glibc 2.35, por eso se construye solo en 22.04). |
+| `verificar-linux` | `ubuntu-22.04` y `ubuntu-24.04` | Recibe el `.deb` y ejecuta `preparar-build.sh` y `verificar-deb.sh` (instalación, humo con xvfb y sin red, `remove`/`purge`). |
+| `windows` | `windows-2022` | Descarga CPython e Inno Setup con `descargar-herramientas.py` (SHA-256 fijado en `herramientas.json`), `windows/preparar-build.ps1` (vuelve a comprobar suma y firma), `construir-windows.ps1` (incluye calidad) y `verificar-windows.ps1 -PermitirFueraDeLaMV`, todo con Windows PowerShell 5.1 como en la MV. |
+
+**Artefactos.** Solo registros de build (`build/registros/`, con `$HOME` sustituido por `~`) con retención de 7 días,
+subidos aunque el trabajo falle. Los instaladores finales (`-setup.exe`) nunca se suben. Único caso especial: el `.deb`
+viaja entre `construir-linux` y `verificar-linux` como artefacto intermedio de 1 día (no hay otra forma de verificarlo
+en 24.04 con un `.deb` construido en 22.04). No se escribe `SHA256SUMS` ni se sella nada: eso sigue siendo local
+(`verificar-todo.sh`).
+
+**Diferencias con la verificación local (y límites).**
+
+- Las MVs locales parten de una instantánea limpia y verifican el `.deb` en una máquina sin las bibliotecas de
+  construcción; en el ejecutor se usa la imagen alojada más `preparar-build.sh`, así que es una comprobación algo más
+  permisiva. La referencia oficial para sellar sigue siendo `verificar-todo.sh`.
+- Los ejecutores de Windows son Windows Server (no un escritorio Windows 10/11). `verificar-windows.ps1` necesita una
+  sesión interactiva (proceso `explorer.exe` del usuario) para el humo con escritorio; si el ejecutor no la ofrece, ese
+  paso falla y el registro lo dirá. `-PermitirFueraDeLaMV` omite solo el marcador de la MV; el resto de guardas se
+  mantiene.
+- La CI no cubre la actualización (`actualizacion-*`) ni la firma Authenticode.
+
+**Coste en minutos (estimación, a confirmar con la primera ejecución).** Con repo privado los minutos salen del cupo del
+plan, y los de Windows cuentan x2. Estimado por ejecución: `construir-linux` 15 a 25 min, cada `verificar-linux` 3 a 6
+min, `windows` 25 a 45 min; unos 45 a 75 min reales y unos 80 a 130 min facturables. El plan Free de GitHub incluye 2000
+min al mes (aproximadamente 15 a 25 ejecuciones). Por eso solo se dispara con etiquetas y a mano; la concurrencia
+cancela la ejecución anterior de la misma referencia.
+
+**Mantenimiento.** Las acciones están fijadas por SHA de commit con la versión en un comentario
+(`actions/checkout` v7.0.1, `actions/upload-artifact` v7.0.2, `actions/download-artifact` v8.0.2). Para actualizarlas,
+comprueba el SHA con `gh api repos/actions/<acción>/git/ref/tags/<versión>` y no uses etiquetas móviles.
+`revisar_estatico.py` (parte de la calidad) rechaza cualquier otro archivo de CI, disparadores distintos de etiquetas
+`v*` y `workflow_dispatch`, acciones sin SHA, secretos y permisos de escritura.
 
 ## 8. Resultados de referencia (versión 0.5.0)
 

@@ -1,8 +1,10 @@
-"""Revisión estática de los scripts de empaquetado y de la plantilla de CI.
+"""Revisión estática de los scripts de empaquetado y del flujo de CI de GitHub Actions.
 
-Aplica: CA-E30.1 (sin CI activa), CA-E30.2/E31.2 (plantilla válida, solo invoca ``empaquetado/``,
-disparadores y matriz), CA-E21.3 (sin etiquetas móviles), CA-E33.1 (el nombre de la variable de
-laboratorio y la opción que habilita sockets reales solo aparecen en guardas que las prohíben),
+Aplica: CA-E30.1 (la única CI activa es ``.github/workflows/empaquetado.yml``; cualquier otro
+archivo o proveedor de CI se rechaza), CA-E30.2/E31.2 (flujo válido, solo invoca ``empaquetado/``,
+disparadores solo por etiquetas ``v*`` y a mano, y matriz), CA-E21.3 (sin etiquetas móviles),
+CA-E33.1 (el nombre de la variable de laboratorio y la opción que habilita sockets reales solo
+aparecen en guardas que las prohíben),
 CA-E35.1 (sin trazas del shell, sin volcado del entorno, sin secretos literales, permisos de solo
 lectura), CA-E23.4 (sin publicación) y CA-E24.2 (sin certificados, claves ni contraseñas).
 También revisa los scripts de PowerShell (.ps1): sin trazas ni transcripciones, sin volcado de
@@ -15,7 +17,7 @@ Uso::
     python empaquetado/comun/revisar_estatico.py [--raiz DIR]
 
 Sale con 1 y lista cada incumplimiento si hay alguno. Solo usa la biblioteca estándar; si PyYAML
-está disponible valida la plantilla con él (si no, hace una comprobación estructural reducida).
+está disponible valida el flujo con él (si no, hace una comprobación estructural reducida).
 """
 
 from __future__ import annotations
@@ -32,7 +34,9 @@ RAIZ = Path(__file__).resolve().parents[2]
 ESTE_ARCHIVO = Path(__file__).resolve()
 CARPETAS_IGNORADAS = {".git", ".venv", "venv", "build", "dist", "__pycache__", "node_modules"}
 
-# Archivos de CI que nunca deben estar activos (CA-E30.1).
+# Único archivo de CI permitido (CA-E30.1): el flujo de GitHub Actions de empaquetado.
+FLUJO_CI = ".github/workflows/empaquetado.yml"
+# Archivos de CI que nunca deben estar activos, salvo FLUJO_CI (CA-E30.1).
 CI_ACTIVA = (
     re.compile(r"(^|/)\.github/workflows/"),
     re.compile(r"(^|/)\.gitlab-ci\.ya?ml$"),
@@ -46,7 +50,7 @@ CI_ACTIVA = (
     re.compile(r"(^|/)\.buildkite/"),
 )
 EXTENSIONES_SECRETOS = {".pfx", ".p12", ".pem", ".key", ".crt", ".cer", ".snk", ".jks", ".keystore"}
-EXTENSIONES_SCRIPT = {".sh", ".ps1", ".plantilla"}
+EXTENSIONES_SCRIPT = {".sh", ".ps1"}
 EXTENSIONES_TEXTO = EXTENSIONES_SCRIPT | {".py", ".spec", ".iss", ".toml", ".json", ".in", ".md"}
 
 NOMBRE_LAB = "PROXLAUNCH" + "_LAB"
@@ -70,7 +74,7 @@ TRAZAS = (
     (re.compile(r"^\s*set\s*(\||$)"), "volcado del entorno (set)"),
     (re.compile(r"(Get-ChildItem|gci|dir|ls|Get-Item)\s+(-Path\s+)?env:", re.I), "volcado Env:"),
     (re.compile(r"GetEnvironmentVariables\(\)"), "volcado del entorno (.NET)"),
-    (re.compile(r"toJSON\((env|secrets|github)\b"), "volcado de contexto en la plantilla"),
+    (re.compile(r"toJSON\((env|secrets|github)\b"), "volcado de contexto en el flujo"),
     (re.compile(r"\bStart-Transcript\b", re.I), "transcripción de PowerShell (registra todo)"),
     (re.compile(r"\bTrace-Command\b", re.I), "traza de PowerShell (Trace-Command)"),
     (re.compile(r"\b(Get-Variable|gv)\s*(\||$|>)", re.I), "volcado de variables de PowerShell"),
@@ -151,7 +155,7 @@ def es_comentario(linea: str) -> bool:
 def revisar_ci_activa(rev: Revision, archivos: list[Path]) -> None:
     for ruta in archivos:
         rel = ruta.relative_to(rev.raiz).as_posix()
-        if any(p.search(rel) for p in CI_ACTIVA):
+        if rel != FLUJO_CI and any(p.search(rel) for p in CI_ACTIVA):
             rev.error("CA-E30.1", rel, None, "archivo de CI activo en el repositorio")
 
 
@@ -372,11 +376,11 @@ def _cargar_yaml(texto: str, rev: Revision, rel: str):  # noqa: ANN202
         return {}
 
 
-def revisar_plantilla(rev: Revision) -> None:
-    ruta = rev.raiz / "empaquetado" / "ci" / "github-actions.yml.plantilla"
+def revisar_flujo(rev: Revision) -> None:
+    ruta = rev.raiz / FLUJO_CI
     rel = ruta.relative_to(rev.raiz).as_posix()
     if not ruta.is_file():
-        rev.error("CA-E30.2", rel, None, "falta la plantilla de CI")
+        rev.error("CA-E30.2", rel, None, "falta el flujo de CI")
         return
     texto = ruta.read_text("utf-8")
     sin_comentarios = [(n, ln) for n, ln in lineas_de(ruta) if not es_comentario(ln)]
@@ -396,7 +400,7 @@ def revisar_plantilla(rev: Revision) -> None:
         if m and "@sha256:" not in m.group(2):
             rev.error("CA-E21.3", rel, n, f"imagen sin digest: {m.group(2)}")
         if re.search(r"\$\{\{\s*secrets\.", linea):
-            rev.error("CA-E35.1", rel, n, "la plantilla no debe usar secretos")
+            rev.error("CA-E35.1", rel, n, "el flujo no debe usar secretos")
         if "pull_request_target" in linea:
             rev.error("CA-E35.1", rel, n, "pull_request_target no está permitido")
         if re.search(r"permissions:.*write|:\s*write\b", linea):
@@ -404,19 +408,20 @@ def revisar_plantilla(rev: Revision) -> None:
 
     datos = _cargar_yaml(texto, rev, rel)
     if datos is None:  # sin PyYAML: comprobación reducida por texto
-        for clave in (
-            "name:",
-            "permissions:",
-            "jobs:",
-            "workflow_dispatch",
-            "pull_request",
-            "tags:",
-        ):
+        for clave in ("name:", "permissions:", "jobs:", "workflow_dispatch", "tags:"):
             if clave not in texto:
                 rev.error("CA-E30.2", rel, None, f"falta '{clave}'")
+        for clave in ("pull_request", "branches:"):
+            if clave in "\n".join(ln for _, ln in sin_comentarios):
+                rev.error("CA-E30.2", rel, None, f"no debe haber disparador '{clave}'")
         if not re.search(r"os:\s*\[.*ubuntu.*windows|ubuntu-\d+\.\d+[\s\S]*windows", texto):
             rev.error("CA-E31.2", rel, None, "la matriz no cubre Ubuntu y Windows")
-        pasos = [ln for _, ln in sin_comentarios]
+        # Solo las órdenes `run:` de una línea (el resto de claves del YAML no son órdenes).
+        pasos = [
+            re.sub(r"^\s*(-\s*)?run:\s*", "", ln)
+            for _, ln in sin_comentarios
+            if re.match(r"\s*(-\s*)?run:\s*\S", ln)
+        ]
     else:
         if not isinstance(datos, dict) or "jobs" not in datos:
             rev.error("CA-E30.2", rel, None, "no define jobs")
@@ -425,14 +430,17 @@ def revisar_plantilla(rev: Revision) -> None:
         if not isinstance(disparadores, dict):
             rev.error("CA-E30.2", rel, None, "'on' debe ser un mapa de disparadores")
             disparadores = {}
+        # Decisión del usuario: solo etiquetas v* y a mano (repo privado, cupo de minutos).
         push = disparadores.get("push") or {}
-        if "main" not in (push.get("branches") or []):
-            rev.error("CA-E30.2", rel, None, "falta el disparador push a la rama principal")
         if not any(str(t).startswith("v") for t in (push.get("tags") or [])):
             rev.error("CA-E30.2", rel, None, "falta el disparador por etiquetas v*")
-        for clave in ("pull_request", "workflow_dispatch"):
-            if clave not in disparadores:
-                rev.error("CA-E30.2", rel, None, f"falta el disparador {clave}")
+        if push.get("branches") or push.get("branches-ignore"):
+            rev.error("CA-E30.2", rel, None, "push no debe dispararse por ramas")
+        if "workflow_dispatch" not in disparadores:
+            rev.error("CA-E30.2", rel, None, "falta el disparador workflow_dispatch")
+        extra = sorted(set(disparadores) - {"push", "workflow_dispatch"})
+        if extra:
+            rev.error("CA-E30.2", rel, None, f"disparadores no permitidos: {', '.join(extra)}")
         if datos.get("permissions") != {"contents": "read"}:
             rev.error("CA-E35.1", rel, None, "permissions debe ser exactamente {contents: read}")
         sistemas: list[str] = []
@@ -445,11 +453,12 @@ def revisar_plantilla(rev: Revision) -> None:
                     pasos += [x for x in str(paso["run"]).splitlines() if x.strip()]
         if not (any("ubuntu" in s for s in sistemas) and any("windows" in s for s in sistemas)):
             rev.error("CA-E31.2", rel, None, "la matriz debe cubrir Ubuntu y Windows")
-    permitido = re.compile(r"^(bash |pwsh |powershell |sh )?(\./)?empaquetado/\S+")
+    # Además de los scripts, se admite `python -I empaquetado/...` (herramientas fijadas).
+    permitido = re.compile(r"^(bash |pwsh |powershell |sh |python3? -I )?(\./)?empaquetado/\S+")
     for orden in pasos:
         if not permitido.match(orden.strip().lstrip("-").strip()):
             rev.error(
-                "CA-E30.2", rel, None, f"la plantilla solo invoca empaquetado/: '{orden.strip()}'"
+                "CA-E30.2", rel, None, f"el flujo solo invoca empaquetado/: '{orden.strip()}'"
             )
 
 
@@ -461,7 +470,7 @@ def revisar(raiz: Path) -> list[str]:
     revisar_texto(rev, archivos)
     revisar_guardas(rev)
     revisar_paso(rev)
-    revisar_plantilla(rev)
+    revisar_flujo(rev)
     revisar_codificacion_ps1(rev, archivos)
     revisar_sintaxis_powershell(rev, archivos)
     revisar_instalador(rev)

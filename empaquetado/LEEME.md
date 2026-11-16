@@ -102,8 +102,9 @@ repositorio (ver la cabecera del script).
 
 ## Revisión estática
 
-`python empaquetado/comun/revisar_estatico.py` aplica CA-E30.1, E30.2, E33.1, E35.1, E21.3, E23.4 y E24.2 (sin CI activa,
-plantilla válida y fijada por SHA, sin trazas del shell ni de PowerShell, sin volcado del entorno, sin certificados ni
+`python empaquetado/comun/revisar_estatico.py` aplica CA-E30.1, E30.2, E33.1, E35.1, E21.3, E23.4 y E24.2 (única CI activa:
+`.github/workflows/empaquetado.yml`, válida, con disparadores solo `v*` y manual y fijada por SHA, sin trazas del shell ni de PowerShell, sin volcado del entorno, sin certificados ni
 secretos), exige BOM UTF-8 en los `.ps1` con acentos (Windows PowerShell 5.1), valida su sintaxis si hay PowerShell
-disponible y comprueba las condiciones del `.iss` (CA-E01.4) y de `herramientas.json`. No hay CI activa:
-`empaquetado/ci/github-actions.yml.plantilla` es solo una referencia.
+disponible y comprueba las condiciones del `.iss` (CA-E01.4) y de `herramientas.json`. La CI de GitHub
+Actions (`.github/workflows/empaquetado.yml`) se describe en [`docs/empaquetado.md` §7](../docs/empaquetado.md); solo se dispara al subir
+etiquetas `v*` o con `gh workflow run empaquetado.yml`.

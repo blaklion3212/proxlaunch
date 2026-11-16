@@ -337,6 +337,9 @@ MVP 4; el punto 5 fue una decisión explícita del usuario. Detalle en `docs/arq
 Requisitos en `docs/requisitos/mvp5.md` (§14).
 1. **P-E01 (usuario): solo scripts locales.** La CI queda como plantilla inactiva
    (GitHub Actions de referencia); los criterios se verifican con los scripts.
+   **Actualización (2026-11-15, usuario):** tras subir el repositorio (privado) a GitHub, la CI se activa en
+   `.github/workflows/empaquetado.yml` solo con etiquetas `v*` y lanzamiento manual (cupo de minutos de un repo
+   privado). La plantilla se retira. La verificación de referencia para sellar sigue siendo `verificar-todo.sh`.
 2. **P-E02 (usuario): Ubuntu solo `.deb`.** AppImage fuera del alcance.
 3. **P-E03 (usuario): Windows sin firma** en este MVP; SHA-256 publicado, guía de SmartScreen
    y paso de firma preparado y desactivado (cierra el pendiente de D-06).

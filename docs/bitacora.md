@@ -387,8 +387,13 @@ Nunca registres contraseñas, tokens ni datos personales.
   `src/proxlaunch/nucleo/archivos/reemplazo.py`, `tests/conftest.py`, `docs/requisitos/mvp5.md`,
   `docs/arquitectura/mvp5.md`, `docs/empaquetado.md`, `docs/guia-usuario.md`, `docs/decisiones.md`
   (D-27), `README.md`. Últimos commits del MVP: `5a5a2c8`, `527a5dc`, `683703a`, `431064d`, `9c9bbfb`.
-- **Siguientes pasos:** aprobación del usuario y limpieza total
-  (`mv.sh destruir-todo`, laboratorio incluido según D-15).
+- **Cierre:** MVP 5 aprobado por el usuario el 2026-11-15. Limpieza total hecha ese día: `mv.sh destruir-todo`
+  (MVs de empaquetado, ISO, TPM y temporales) y `lab.sh destruir` (laboratorio, D-15); el usuario salió del grupo
+  `kvm`. Sin procesos, puertos ni temporales restantes.
+
+- **Publicación (2026-11-15):** etiqueta `v0.5.0`, repositorio privado en GitHub y «release» `v0.5.0` con el
+  `.deb`, el `-setup.exe` y `SHA256SUMS` verificados. CI activada solo con etiquetas `v*` y a mano (D-27,
+  actualización de P-E01); el `.deb` viaja entre trabajos como artefacto de 1 día para verificarlo en 24.04.
 
 ---
 
