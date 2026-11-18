@@ -9,6 +9,7 @@ import sys
 from collections.abc import Callable, Sequence
 from importlib import resources
 
+from PySide6 import QtCore as _QtCore
 from PySide6.QtCore import (
     QMessageLogContext,
     QSize,
@@ -18,7 +19,6 @@ from PySide6.QtCore import (
     qInstallMessageHandler,
     qVersion,
 )
-from PySide6.QtCore import __version__ as version_pyside
 from PySide6.QtGui import QFont, QGuiApplication, QIcon
 from PySide6.QtWidgets import QApplication
 
@@ -137,7 +137,11 @@ def instalar_mensajes_qt(receptor: ReceptorMensajesQt) -> Callable[[], None]:
         receptor(_NIVELES_QT.get(tipo, logging.WARNING), contexto.category, mensaje)
 
     previo = qInstallMessageHandler(manejador)
-    return lambda: qInstallMessageHandler(previo)
+
+    def revertir() -> None:
+        qInstallMessageHandler(previo)
+
+    return revertir
 
 
 def registrar_arranque() -> None:
@@ -148,7 +152,7 @@ def registrar_arranque() -> None:
         __version__,
         platform.python_version(),
         qVersion(),
-        version_pyside,
+        getattr(_QtCore, "__version__", "?"),  # los stubs no declaran __version__
         platform.system(),
         platform.release(),
         platform.version(),

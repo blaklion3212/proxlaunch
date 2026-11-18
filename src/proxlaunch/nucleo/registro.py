@@ -270,7 +270,7 @@ def _banderas_seguras() -> int:
 def _abrir_privado(ruta: Path, banderas: int) -> int:
     """Abre ``ruta`` sin seguir enlaces (POSIX) y la deja 0o600 sobre el descriptor."""
     descriptor = os.open(ruta, banderas | _banderas_seguras(), 0o600)
-    if os.name == "posix":
+    if sys.platform != "win32":  # mypy entiende sys.platform (os.fchmod no existe en Windows)
         with contextlib.suppress(OSError):
             os.fchmod(descriptor, 0o600)
     return descriptor
