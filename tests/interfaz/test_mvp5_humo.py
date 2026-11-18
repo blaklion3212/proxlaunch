@@ -717,12 +717,18 @@ def test_humo_usa_rutas_con_base_temporal_y_no_las_carpetas_reales(
         return rutas_original(base)
 
     monkeypatch.setattr(humo, "Rutas", rutas)
+    # En Windows la caché (...\\ProxLaunch\\ProxLaunch\\Cache) cuelga de la carpeta de
+    # configuración y otra prueba de la sesión pudo crearla: se compara el contenido, no si existe.
+    reales = [
+        Path(platformdirs.user_config_dir("ProxLaunch")),
+        Path(platformdirs.user_data_dir("ProxLaunch")),
+    ]
+    antes = [sorted(c.rglob("*")) if c.exists() else None for c in reales]
     rc, _, _ = ejecutar(capsys)
     assert rc == 0
     assert len(bases) == 1 and bases[0] is not None
     assert Path(bases[0]) == entorno_humo.carpetas[0]
-    assert not Path(platformdirs.user_config_dir("ProxLaunch")).exists()
-    assert not Path(platformdirs.user_data_dir("ProxLaunch")).exists()
+    assert [sorted(c.rglob("*")) if c.exists() else None for c in reales] == antes
 
 
 def test_humo_no_crea_transporte_http(entorno_humo, catalogo_qm, capsys):

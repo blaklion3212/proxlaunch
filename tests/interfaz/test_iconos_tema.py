@@ -6,6 +6,7 @@ import re
 import xml.etree.ElementTree as ET
 from pathlib import Path
 
+import platformdirs
 import pytest
 from PySide6.QtWidgets import QCheckBox, QComboBox, QDoubleSpinBox, QSpinBox, QWidget
 
@@ -278,7 +279,8 @@ def test_r8_directorio_cache_con_base_inyectada(tmp_path):
 def test_r8_directorio_cache_por_defecto_cuelga_de_la_cache_del_sistema(monkeypatch):
     monkeypatch.undo()  # quita el desvío autouse a tmp_path; la sesión ya aísla XDG_CACHE_HOME
     cache = Rutas().directorio_cache
-    assert cache.name == "ProxLaunch"
+    # Linux: ~/.cache/ProxLaunch; Windows: %LOCALAPPDATA%\\ProxLaunch\\ProxLaunch\\Cache.
+    assert cache == Path(platformdirs.user_cache_dir("ProxLaunch"))
     if os.name == "posix":
         assert cache.parent == Path(os.environ["XDG_CACHE_HOME"])
 

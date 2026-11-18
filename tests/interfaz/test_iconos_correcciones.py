@@ -10,6 +10,7 @@ from __future__ import annotations
 import logging
 import os
 import re
+import sys
 import xml.etree.ElementTree as ET
 from collections.abc import Iterator
 from pathlib import Path
@@ -223,8 +224,12 @@ def test_c9_si_el_reemplazo_falla_y_el_destino_difiere_es_error(tmp_path, monkey
 
 # --- C11: rutas que romperían url("...") -------------------------------------------------
 
+# En Windows la barra invertida separa carpetas: as_posix() la convierte y la ruta es válida.
+_BARRA_WIN = "en Windows '\\' es separador de ruta, no un carácter del nombre"
+_BARRA = pytest.param("a\\b", marks=pytest.mark.skipif(sys.platform == "win32", reason=_BARRA_WIN))
 
-@pytest.mark.parametrize("nombre", ['a"b', "a\\b", "a\nb", "a\x7fb"])
+
+@pytest.mark.parametrize("nombre", ['a"b', _BARRA, "a\nb", "a\x7fb"])
 def test_c11_ruta_con_caracteres_prohibidos_da_vacio_y_avisa(tmp_path, avisos, nombre):
     carpeta = tmp_path / nombre
     assert generar_iconos(TOKENS_CLARO, carpeta) == {}
@@ -232,7 +237,7 @@ def test_c11_ruta_con_caracteres_prohibidos_da_vacio_y_avisa(tmp_path, avisos, n
     assert not carpeta.exists()  # se rechaza antes de crear nada
 
 
-@pytest.mark.parametrize("nombre", ['a"b', "a\\b"])
+@pytest.mark.parametrize("nombre", ['a"b', _BARRA])
 def test_c11_aplicar_con_ruta_prohibida_instala_hoja_sin_url(hoja, tmp_path, nombre):
     gestor = GestorTema(hoja, ModoTema.CLARO, directorio_iconos=tmp_path / nombre)
     gestor.aplicar()
