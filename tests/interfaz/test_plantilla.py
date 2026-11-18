@@ -8,6 +8,7 @@ import pytest
 
 import proxlaunch.interfaz as paquete_interfaz
 from proxlaunch.interfaz.tema.gestor_tema import generar_qss, leer_plantilla
+from proxlaunch.interfaz.tema.iconos import generar_iconos
 from proxlaunch.interfaz.tema.paleta import TOKENS_CLARO, TOKENS_OSCURO
 
 TEMAS = {"oscuro": TOKENS_OSCURO, "claro": TOKENS_CLARO}
@@ -28,34 +29,49 @@ def plantilla():
     return leer_plantilla()
 
 
+@pytest.fixture(scope="module")
+def valores(tmp_path_factory):
+    """Tokens de cada tema más los marcadores de iconos (rutas en una carpeta temporal)."""
+    carpeta = tmp_path_factory.mktemp("iconos_plantilla")
+    return {
+        nombre: {**tokens, **generar_iconos(tokens, carpeta / nombre)}
+        for nombre, tokens in TEMAS.items()
+    }
+
+
 def test_la_plantilla_no_esta_vacia_y_tiene_marcadores(plantilla):
     assert len(plantilla) > 100
     assert RE_MARCADOR.search(plantilla)
 
 
 @pytest.mark.parametrize("tema", TEMAS)
-def test_ca22_4_generar_qss_no_usa_tokens_inexistentes(plantilla, tema):
-    qss = generar_qss(plantilla, TEMAS[tema])  # KeyError si falta algún token
+def test_ca22_4_generar_qss_no_usa_tokens_inexistentes(plantilla, valores, tema):
+    qss = generar_qss(plantilla, valores[tema])  # KeyError si falta algún token
     assert "{{" not in qss
     assert "}}" not in qss
 
 
-def test_ca22_4_todos_los_tokens_usados_existen_en_ambos_temas(plantilla):
+def test_ca22_4_todos_los_tokens_usados_existen_en_ambos_temas(plantilla, valores):
     usados = set(RE_MARCADOR.findall(plantilla))
     assert usados
-    assert usados <= set(TOKENS_OSCURO)
-    assert usados <= set(TOKENS_CLARO)
+    # Existen en el tema: colores de la paleta o marcadores de iconos generados.
+    assert usados <= set(valores["oscuro"])
+    assert usados <= set(valores["claro"])
+    # Todo lo que no es icono debe venir de la paleta.
+    assert {u for u in usados if not u.startswith("icono_")} <= set(TOKENS_OSCURO) & set(
+        TOKENS_CLARO
+    )
 
 
 @pytest.mark.parametrize("tema", TEMAS)
-def test_los_colores_del_tema_llegan_al_qss(plantilla, tema):
-    qss = generar_qss(plantilla, TEMAS[tema])
+def test_los_colores_del_tema_llegan_al_qss(plantilla, valores, tema):
+    qss = generar_qss(plantilla, valores[tema])
     for nombre in set(RE_MARCADOR.findall(plantilla)):
-        assert TEMAS[tema][nombre] in qss
+        assert valores[tema][nombre] in qss
 
 
-def test_los_dos_temas_producen_hojas_distintas(plantilla):
-    assert generar_qss(plantilla, TOKENS_OSCURO) != generar_qss(plantilla, TOKENS_CLARO)
+def test_los_dos_temas_producen_hojas_distintas(plantilla, valores):
+    assert generar_qss(plantilla, valores["oscuro"]) != generar_qss(plantilla, valores["claro"])
 
 
 def test_generar_qss_con_token_inexistente_lanza_keyerror():

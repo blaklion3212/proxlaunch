@@ -403,6 +403,34 @@ Nunca registres contraseñas, tokens ni datos personales.
   prueba no lo veía; el `SHA256SUMS` de la release se generó en Linux y es correcto). Unos 40 min facturables por
   ejecución.
 
+### 2026-11-18 · 19. Versión 0.5.1: indicadores visuales, registro de cierres y guía en PDF
+
+- **Origen:** el usuario probó la 0.5.0 en Windows. Los desplegables no mostraban flecha, ni las casillas marcadas
+  una palomita: `plantilla.qss` estilizaba los subcontroles sin definir las flechas. Además, la app se cerró en la
+  primera conexión y el registro no tenía nada: sin `excepthook` ni `faulthandler`, y en Windows no hay consola.
+  La causa de aquel cierre sigue sin conocerse.
+- **Indicadores:** `interfaz/tema/iconos.py` genera los SVG (flechas ▾/▴, palomita y sus variantes deshabilitadas)
+  con los tokens de `paleta.py` en la caché de la app (`Rutas.directorio_cache`). Si la caché falla, la app arranca
+  sin iconos (`GestorTema.iconos_activos`). El humo usa su carpeta temporal y avisa si faltan los iconos.
+- **Registro de cierres** (`nucleo/registro.py`, `interfaz/app.py`):
+  - `instalar_captura_de_fallos` se instala antes de crear `QApplication`.
+  - Hooks de `sys`, hilos y excepciones no propagables: las trazas enmascaradas van a `proxlaunch.log`.
+  - `faulthandler` escribe en `fallo-nativo.txt`. El archivo se borra al cerrar con normalidad; si queda, se rota a
+    `.1` (máximo 256 KB) y el registro avisa, distinguiendo las excepciones nativas que sí se manejaron.
+  - Los mensajes de Qt van al registro, con resumen de repetidos, y las avalanchas de una misma excepción se resumen.
+- **Revisión:** QA y seguridad, sin hallazgos críticos ni altos. Corregidos los 6 medios y los bajos útiles: SVG
+  corrupto, captura antes de `QApplication`, stderr enmascarado, temporales únicos, `O_NOFOLLOW`, rutas con `"`.
+  Riesgo aceptado: dos instancias a la vez comparten `fallo-nativo.txt`.
+- **Pruebas:** unas 170 nuevas o ampliadas, entre ellas una de píxeles que detecta si vuelven a faltar las flechas.
+  Suite completa: 7950 pasan y 0 fallan.
+- **Guía:** 38 capturas regeneradas, nueva entrada «ProxLaunch se cerró solo» y el PDF de la guía generado con
+  `empaquetado/comun/generar_pdf_guia.py` (WeasyPrint, venv temporal).
+- **CI:** guarda 7 días el `.deb` y el `-setup.exe` verificados (`deb-verificado`, `instalador-verificado-*`),
+  porque el laboratorio de MVs ya no existe. Se sellan y se suman a mano tras una ejecución en verde
+  (`docs/empaquetado.md` §7).
+- **Pendiente:** probar en un Windows real las flechas, el registro de cierres y `faulthandler` (posibles volcados de
+  excepciones nativas que el sistema sí maneja).
+
 ---
 
 ## Pendientes y riesgos abiertos

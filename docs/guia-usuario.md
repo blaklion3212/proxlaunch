@@ -96,8 +96,8 @@ todo lo que necesitan. Quien desarrolla o prefiere ejecutar desde el código fue
 
 Los archivos se llaman:
 
-- `proxlaunch_0.5.0_amd64.deb` (Ubuntu 22.04 y 24.04)
-- `proxlaunch-0.5.0-windows-x64-setup.exe` (Windows 10 y 11)
+- `proxlaunch_0.5.1_amd64.deb` (Ubuntu 22.04 y 24.04)
+- `proxlaunch-0.5.1-windows-x64-setup.exe` (Windows 10 y 11)
 - `SHA256SUMS` (las sumas de control de los dos, para comprobar que no están dañados ni alterados)
 
 ### Comprobar la descarga (recomendado)
@@ -111,12 +111,12 @@ En **Ubuntu**, desde la carpeta donde dejaste los archivos (`--ignore-missing` e
 sha256sum -c SHA256SUMS --ignore-missing
 ```
 
-Debe responder `proxlaunch_0.5.0_amd64.deb: OK`.
+Debe responder `proxlaunch_0.5.1_amd64.deb: OK`.
 
 En **Windows**, en PowerShell, desde esa carpeta:
 
 ```powershell
-Get-FileHash -Algorithm SHA256 .\proxlaunch-0.5.0-windows-x64-setup.exe
+Get-FileHash -Algorithm SHA256 .\proxlaunch-0.5.1-windows-x64-setup.exe
 ```
 
 Compara el valor de `Hash` con el de la línea del instalador en `SHA256SUMS` (puedes abrirlo con el Bloc de notas;
@@ -130,7 +130,7 @@ mayúsculas y minúsculas no importan).
 **Instalar.** Desde la carpeta del `.deb`:
 
 ```bash
-sudo apt install ./proxlaunch_0.5.0_amd64.deb
+sudo apt install ./proxlaunch_0.5.1_amd64.deb
 ```
 
 Escribe `./` al principio: sin ella, `apt` buscaría un paquete en los repositorios. `apt` instala también las
@@ -173,7 +173,7 @@ y elimina a mano las entradas del servicio `ProxLaunch`.
 
 ### Windows
 
-**Instalar.** Haz doble clic en `proxlaunch-0.5.0-windows-x64-setup.exe`. El asistente está en español.
+**Instalar.** Haz doble clic en `proxlaunch-0.5.1-windows-x64-setup.exe`. El asistente está en español.
 
 - **¿Para quién?** Al inicio eliges entre instalar **solo para ti** (opción predeterminada, no pide permisos de
   administrador) o **para todos los usuarios** del equipo (pide permisos de administrador). Si dudas, deja la
@@ -2028,7 +2028,7 @@ Tema y modo se guardan y se recuerdan en la siguiente sesión (archivo `preferen
 | **¿Cómo creo un API Token?** | Abre la guía del token ([Cómo se prepara](#cómo-se-prepara-pasos-para-el-administrador)). |
 | **Acerca de ProxLaunch** | Abre la ventana de información. |
 
-![Ventana «Acerca de ProxLaunch»: el logotipo, «ProxLaunch 0.5.0», «Compatible con Proxmox VE», la nota «Asistente para crear máquinas virtuales. Proxmox es una marca de Proxmox Server Solutions GmbH; ProxLaunch es un proyecto independiente.», la nota sobre las etiquetas «proxlaunch» y «lote-...», una lista desplegable «Licencia de la fuente Open Sans (SIL Open Font License)», el texto de la licencia y el botón «Cerrar».](img/12-acerca-de.png)
+![Ventana «Acerca de ProxLaunch»: el logotipo, «ProxLaunch 0.5.1», «Compatible con Proxmox VE», la nota «Asistente para crear máquinas virtuales. Proxmox es una marca de Proxmox Server Solutions GmbH; ProxLaunch es un proyecto independiente.», la nota sobre las etiquetas «proxlaunch» y «lote-...», una lista desplegable «Licencia de la fuente Open Sans (SIL Open Font License)», el texto de la licencia y el botón «Cerrar».](img/12-acerca-de.png)
 
 **Acerca de ProxLaunch** muestra la versión, que la aplicación es compatible con Proxmox VE (ProxLaunch es un proyecto
 independiente; Proxmox es una marca de Proxmox Server Solutions GmbH), la nota de que las máquinas que crea llevan la
@@ -2493,6 +2493,15 @@ pero solo se han previsto `pam` y `pve`. *No verificado:* otros realms.
 **No verificado en Windows:** los mensajes «el archivo está abierto en otro programa» (por ejemplo, un CSV abierto en Excel) y
 «la ruta es demasiado larga» (más de 260 caracteres) no se han comprobado todavía en un Windows real.
 
+**ProxLaunch se cerró solo.** Vuelve a abrirlo y busca en la carpeta de registro:
+
+- Windows: `%LOCALAPPDATA%\ProxLaunch\ProxLaunch\Logs` (pega la ruta en la barra de direcciones del Explorador).
+- Ubuntu: `~/.local/state/ProxLaunch/log`.
+
+En `proxlaunch.log`, las líneas `CRITICAL` con «Error no controlado» muestran el error y dónde ocurrió. Si el cierre fue
+interno (de Qt o del sistema), al volver a abrir verás un aviso en el registro y la traza estará en `fallo-nativo.txt.1`.
+Comparte esos archivos con quien te dé soporte (ver [qué contienen](#qué-se-guarda-y-dónde)).
+
 **No puedo guardar mis credenciales.** Revisa que tu sistema tenga un llavero (en Ubuntu, el servicio de secretos del
 escritorio). Si no, verás un aviso y tendrás que escribir el secreto cada vez.
 
@@ -2513,7 +2522,8 @@ ProxLaunch guarda sus datos en las carpetas de tu usuario que elige tu sistema o
 | `huellas.json` | Las huellas de los servidores en los que confiaste, por servidor y puerto. |
 | `preferencias.json` | Tema, modo (básico o avanzado) y versión forzada. |
 | `perfiles_maquina.json` | Tus [perfiles de máquina](#perfiles-de-máquina): solo hardware y, si lo dejaste marcado, los nombres de almacenamiento y red. Nunca nombres de máquina, números, nodos, servidores, usuarios ni secretos. |
-| `proxlaunch.log` (carpeta de registro) | Registro de lo que hace la aplicación. Se rota solo (hasta 5 copias de 1 MB). |
+| `proxlaunch.log` (carpeta de registro) | Registro de lo que hace la aplicación, incluidos los errores no controlados. Se rota solo (hasta 5 copias de 1 MB). |
+| `fallo-nativo.txt` y `.1` (carpeta de registro) | Traza de un cierre interno (de Qt o del sistema). Se borra al cerrar ProxLaunch con normalidad; si queda, al abrir se guarda como `.1` (máximo 256 KB). Solo lleva nombres de archivos y funciones, pero esas rutas pueden incluir tu nombre de usuario. |
 | `informes/` (carpeta de datos) | Carpeta que **sugiere** ProxLaunch al guardar un informe de lote y donde deja el informe parcial (`parcial-<código>.txt`). Sin host, IP, usuario ni secretos, pero con nombres de máquinas y nodos. |
 | `lotes/` (carpeta de datos) | Carpeta que **sugiere** ProxLaunch al guardar un [lote](#guardar-y-abrir-lotes). Sin servidor, usuario ni secretos. |
 

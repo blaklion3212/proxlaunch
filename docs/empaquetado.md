@@ -1,6 +1,6 @@
 # Empaquetado de ProxLaunch: construcción y verificación (para desarrolladores)
 
-Versión: 0.5.0 (MVP 5) · Decisiones: D-27 · Requisitos: `docs/requisitos/mvp5.md` · Arquitectura: `docs/arquitectura/mvp5.md`
+Versión: 0.5.1 (MVP 5) · Decisiones: D-27 · Requisitos: `docs/requisitos/mvp5.md` · Arquitectura: `docs/arquitectura/mvp5.md`
 
 Esta guía explica cómo se construyen y se verifican el `.deb` (Ubuntu 22.04 y 24.04) y el instalador de Windows
 (`-setup.exe`). Es la vista de conjunto y el orden de las órdenes. El detalle de cada opción, las reglas de los scripts y
@@ -102,6 +102,21 @@ Opciones sueltas (por ejemplo `calidad.sh`, `construir-linux.sh`, `verificar-deb
 la tabla de «Comandos principales» de `LEEME.md`. Los registros de cada ejecución quedan en `build/registros/` (ignorado
 por git).
 
+### Guía de usuario en PDF
+
+`empaquetado/comun/generar_pdf_guia.py` convierte `docs/guia-usuario.md` (con sus capturas de `docs/img/`) en
+`dist/proxlaunch-<versión>-guia-usuario.pdf`, con portada, índice paginado y enlaces internos. Usa la hoja de estilos
+`guia_pdf.css` y las fuentes incluidas en la aplicación. Sus dependencias (`markdown` y `weasyprint`) no forman parte del
+proyecto: se instalan en un entorno temporal fuera del repositorio.
+
+```bash
+uv venv /tmp/venv-pdf && uv pip install --python /tmp/venv-pdf/bin/python markdown weasyprint
+/tmp/venv-pdf/bin/python empaquetado/comun/generar_pdf_guia.py          # o --salida RUTA
+```
+
+WeasyPrint necesita Pango en el sistema (en Ubuntu ya suele estar). Los enlaces a `ejemplos/` y a otros documentos se
+muestran como texto, porque en el PDF esos archivos no existen. El PDF no entra en `SHA256SUMS`.
+
 ## 4. Qué garantiza cada paso
 
 | Paso | Qué comprueba |
@@ -193,11 +208,20 @@ gh run download <id> -n registros-windows-windows-2022   # bajar los registros d
 | `verificar-linux` | `ubuntu-22.04` y `ubuntu-24.04` | Recibe el `.deb` y ejecuta `preparar-build.sh` y `verificar-deb.sh` (instalación, humo con xvfb y sin red, `remove`/`purge`). |
 | `windows` | `windows-2022` | Descarga CPython e Inno Setup con `descargar-herramientas.py` (SHA-256 fijado en `herramientas.json`), `windows/preparar-build.ps1` (vuelve a comprobar suma y firma), `construir-windows.ps1` (incluye calidad) y `verificar-windows.ps1 -PermitirFueraDeLaMV`, todo con Windows PowerShell 5.1 como en la MV. |
 
-**Artefactos.** Solo registros de build (`build/registros/`, con `$HOME` sustituido por `~`) con retención de 7 días,
-subidos aunque el trabajo falle. Los instaladores finales (`-setup.exe`) nunca se suben. Único caso especial: el `.deb`
-viaja entre `construir-linux` y `verificar-linux` como artefacto intermedio de 1 día (no hay otra forma de verificarlo
-en 24.04 con un `.deb` construido en 22.04). No se escribe `SHA256SUMS` ni se sella nada: eso sigue siendo local
-(`verificar-todo.sh`).
+**Artefactos.** Registros de build (`build/registros/`, con `$HOME` sustituido por `~`) con retención de 7 días,
+subidos aunque el trabajo falle. El `.deb` viaja entre `construir-linux` y `verificar-linux` como artefacto intermedio de
+1 día. **Desde la 0.5.1** (el laboratorio de MVs se destruyó al cerrar el MVP 5) la CI también guarda, 7 días y **solo si
+su verificación pasó**, los instaladores que se publican: `deb-verificado` (el `.deb` tras `verificar-deb.sh` en 22.04)
+e `instalador-verificado-windows-2022` (el `-setup.exe` tras `verificar-windows.ps1`). La CI no sella, no escribe
+`SHA256SUMS` ni publica: eso se hace a mano tras comprobar que la ejecución entera está en verde:
+
+```bash
+gh run download <id> -n deb-verificado -D dist
+gh run download <id> -n instalador-verificado-windows-2022 -D dist
+python3 -I empaquetado/comun/sumas.py sellar dist/proxlaunch_<v>_amd64.deb
+python3 -I empaquetado/comun/sumas.py sellar dist/proxlaunch-<v>-windows-x64-setup.exe
+python3 -I empaquetado/comun/sumas.py publicar && python3 -I empaquetado/comun/sumas.py comprobar
+```
 
 **Diferencias con la verificación local (y límites).**
 

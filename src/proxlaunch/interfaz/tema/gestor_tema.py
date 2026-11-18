@@ -6,15 +6,20 @@ import logging
 import re
 from enum import StrEnum
 from importlib import resources
+from pathlib import Path
 
 from PySide6.QtCore import QObject, Qt, Signal, Slot
 from PySide6.QtWidgets import QApplication
 
+from proxlaunch.interfaz.tema.iconos import generar_iconos
 from proxlaunch.interfaz.tema.paleta import TOKENS_CLARO, TOKENS_OSCURO
+from proxlaunch.nucleo.persistencia.rutas import Rutas
 
 _log = logging.getLogger(__name__)
 
 _MARCADOR = re.compile(r"\{\{(\w+)\}\}")
+# Declaración ``image: url("{{icono_...}}");`` completa, para quitarla si no hay iconos.
+_IMAGEN_ICONO = re.compile(r'[ \t]*image:\s*url\("\{\{icono_\w+\}\}"\);[ \t]*\n?')
 
 
 class ModoTema(StrEnum):
@@ -37,6 +42,11 @@ def generar_qss(plantilla: str, tokens: dict[str, str]) -> str:
     return _MARCADOR.sub(lambda m: tokens[m.group(1)], plantilla)
 
 
+def quitar_iconos(plantilla: str) -> str:
+    """Elimina de la plantilla las imágenes de iconos (respaldo cuando no se pudieron escribir)."""
+    return _IMAGEN_ICONO.sub("", plantilla)
+
+
 def leer_plantilla() -> str:
     """Lee ``plantilla.qss`` incluida en el paquete."""
     return resources.files("proxlaunch.interfaz.tema").joinpath("plantilla.qss").read_text("utf-8")
@@ -56,12 +66,19 @@ class GestorTema(QObject):
         aplicacion: QApplication,
         modo: ModoTema = ModoTema.AUTOMATICO,
         parent: QObject | None = None,
+        directorio_iconos: Path | None = None,
     ) -> None:
         super().__init__(parent)
+        self._directorio_iconos = (
+            directorio_iconos
+            if directorio_iconos is not None
+            else Rutas().directorio_cache / "tema"
+        )
         self._app = aplicacion
         self._modo = ModoTema(modo)
         self._plantilla = leer_plantilla()
         self._tema = TEMA_OSCURO
+        self._iconos_activos = False
         self._app.styleHints().colorSchemeChanged.connect(self._al_cambiar_esquema)
 
     @property
@@ -74,6 +91,11 @@ class GestorTema(QObject):
         """Tema efectivo aplicado: ``"oscuro"`` o ``"claro"``."""
         return self._tema
 
+    @property
+    def iconos_activos(self) -> bool:
+        """True si la última ``aplicar`` pudo generar los iconos del tema."""
+        return self._iconos_activos
+
     def establecer_modo(self, modo: ModoTema) -> None:
         """Cambia el modo y reaplica el tema."""
         self._modo = ModoTema(modo)
@@ -83,7 +105,10 @@ class GestorTema(QObject):
         """Calcula el tema efectivo, aplica la QSS y emite ``tema_cambiado``."""
         tema = self._resolver_tema()
         tokens = TOKENS_CLARO if tema == TEMA_CLARO else TOKENS_OSCURO
-        self._app.setStyleSheet(generar_qss(self._plantilla, tokens))
+        iconos = generar_iconos(tokens, self._directorio_iconos)
+        self._iconos_activos = bool(iconos)
+        plantilla = self._plantilla if iconos else quitar_iconos(self._plantilla)
+        self._app.setStyleSheet(generar_qss(plantilla, {**tokens, **iconos}))
         self._tema = tema
         _log.info("Tema aplicado: %s (modo %s)", tema, self._modo.value)
         self.tema_cambiado.emit(tema)

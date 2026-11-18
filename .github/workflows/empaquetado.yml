@@ -83,6 +83,16 @@ jobs:
         run: bash empaquetado/linux/preparar-build.sh
       - name: Verificar el .deb instalado
         run: bash empaquetado/verificar-deb.sh dist/proxlaunch_*_amd64.deb
+      # Solo tras verificar con exito: el .deb que se publica en la release (se sella al descargarlo).
+      # actions/upload-artifact v7.0.2
+      - name: Guardar el .deb verificado (retencion de 7 dias)
+        if: matrix.os == 'ubuntu-22.04'
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+        with:
+          name: deb-verificado
+          path: dist/proxlaunch_*_amd64.deb
+          retention-days: 7
+          if-no-files-found: error
       # actions/upload-artifact v7.0.2
       - name: Registros de verificacion (retencion de 7 dias)
         if: always()
@@ -121,6 +131,15 @@ jobs:
         run: empaquetado/construir-windows.ps1
       - name: Verificar el instalador
         run: empaquetado/verificar-windows.ps1 -PermitirFueraDeLaMV
+      # Solo tras verificar con exito: el instalador que se publica en la release.
+      # actions/upload-artifact v7.0.2
+      - name: Guardar el instalador verificado (retencion de 7 dias)
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+        with:
+          name: instalador-verificado-${{ matrix.os }}
+          path: dist/proxlaunch-*-windows-x64-setup.exe
+          retention-days: 7
+          if-no-files-found: error
       # actions/upload-artifact v7.0.2
       - name: Registros de build (retencion de 7 dias)
         if: always()

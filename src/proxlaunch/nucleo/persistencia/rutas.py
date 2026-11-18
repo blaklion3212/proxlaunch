@@ -68,10 +68,12 @@ class Rutas:
             self._config = Path(platformdirs.user_config_dir(NOMBRE_APP))
             self._datos = Path(platformdirs.user_data_dir(NOMBRE_APP))
             self._log = Path(platformdirs.user_log_dir(NOMBRE_APP))
+            self._cache = Path(platformdirs.user_cache_dir(NOMBRE_APP))
         else:
             self._config = Path(base)
             self._log = self._config / "log"
             self._datos = self._config / "datos"
+            self._cache = self._config / "cache"
 
     @property
     def directorio_config(self) -> Path:
@@ -82,6 +84,11 @@ class Rutas:
     def directorio_log(self) -> Path:
         """Carpeta del registro rotativo."""
         return self._log
+
+    @property
+    def directorio_cache(self) -> Path:
+        """Caché regenerable (iconos del tema): ``user_cache_dir`` o ``base/cache``."""
+        return self._cache
 
     @property
     def perfiles(self) -> Path:

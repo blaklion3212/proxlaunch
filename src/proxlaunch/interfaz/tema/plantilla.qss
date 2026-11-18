@@ -136,8 +136,21 @@ QLineEdit[invalido="true"] {
 }
 
 QComboBox::drop-down {
+    subcontrol-origin: padding;
+    subcontrol-position: center right;
+    width: 22px;
     border: none;
-    width: 20px;
+    border-left: 1px solid {{borde_suave}};
+}
+
+QComboBox::down-arrow {
+    image: url("{{icono_flecha_abajo}}");
+    width: 10px;
+    height: 10px;
+}
+
+QComboBox::down-arrow:disabled {
+    image: url("{{icono_flecha_abajo_deshabilitada}}");
 }
 
 QComboBox QAbstractItemView {
@@ -149,11 +162,53 @@ QComboBox QAbstractItemView {
     outline: none;
 }
 
+QSpinBox, QDoubleSpinBox {
+    padding-right: 22px;
+}
+
 QSpinBox::up-button, QSpinBox::down-button,
 QDoubleSpinBox::up-button, QDoubleSpinBox::down-button {
-    width: 16px;
+    width: 20px;
     border: none;
+    border-left: 1px solid {{borde_suave}};
     background: transparent;
+}
+
+QSpinBox::up-button, QDoubleSpinBox::up-button {
+    subcontrol-origin: border;
+    subcontrol-position: top right;
+}
+
+QSpinBox::down-button, QDoubleSpinBox::down-button {
+    subcontrol-origin: border;
+    subcontrol-position: bottom right;
+}
+
+QSpinBox::up-button:hover, QSpinBox::down-button:hover,
+QDoubleSpinBox::up-button:hover, QDoubleSpinBox::down-button:hover {
+    background-color: {{boton_hover}};
+}
+
+QSpinBox::up-arrow, QDoubleSpinBox::up-arrow {
+    image: url("{{icono_flecha_arriba}}");
+    width: 8px;
+    height: 8px;
+}
+
+QSpinBox::down-arrow, QDoubleSpinBox::down-arrow {
+    image: url("{{icono_flecha_abajo}}");
+    width: 8px;
+    height: 8px;
+}
+
+QSpinBox::up-arrow:disabled, QSpinBox::up-arrow:off,
+QDoubleSpinBox::up-arrow:disabled, QDoubleSpinBox::up-arrow:off {
+    image: url("{{icono_flecha_arriba_deshabilitada}}");
+}
+
+QSpinBox::down-arrow:disabled, QSpinBox::down-arrow:off,
+QDoubleSpinBox::down-arrow:disabled, QDoubleSpinBox::down-arrow:off {
+    image: url("{{icono_flecha_abajo_deshabilitada}}");
 }
 
 /* Casillas y botones de opción */
@@ -180,6 +235,16 @@ QRadioButton::indicator {
 QCheckBox::indicator:checked, QRadioButton::indicator:checked {
     background-color: {{acento}};
     border: 1px solid {{acento_presionado}};
+}
+
+QCheckBox::indicator:checked {
+    image: url("{{icono_palomita}}");
+}
+
+QCheckBox::indicator:checked:disabled {
+    background-color: {{deshabilitado_fondo}};
+    border: 1px solid {{borde_suave}};
+    image: url("{{icono_palomita_deshabilitada}}");
 }
 
 QCheckBox::indicator:focus, QRadioButton::indicator:focus {

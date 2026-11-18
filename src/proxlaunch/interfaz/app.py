@@ -4,11 +4,21 @@ from __future__ import annotations
 
 import argparse
 import logging
+import platform
 import sys
-from collections.abc import Sequence
+from collections.abc import Callable, Sequence
 from importlib import resources
 
-from PySide6.QtCore import QSize, Qt, QTranslator
+from PySide6.QtCore import (
+    QMessageLogContext,
+    QSize,
+    Qt,
+    QtMsgType,
+    QTranslator,
+    qInstallMessageHandler,
+    qVersion,
+)
+from PySide6.QtCore import __version__ as version_pyside
 from PySide6.QtGui import QFont, QGuiApplication, QIcon
 from PySide6.QtWidgets import QApplication
 
@@ -26,7 +36,12 @@ from proxlaunch.nucleo.persistencia.perfiles import RepositorioPerfiles
 from proxlaunch.nucleo.persistencia.preferencias import RepositorioPreferencias
 from proxlaunch.nucleo.persistencia.rutas import Rutas
 from proxlaunch.nucleo.persistencia.secretos import AlmacenSecretos
-from proxlaunch.nucleo.registro import configurar_registro
+from proxlaunch.nucleo.registro import (
+    ReceptorMensajesQt,
+    configurar_registro,
+    desinstalar_captura_de_fallos,
+    instalar_captura_de_fallos,
+)
 from proxlaunch.nucleo.reloj import RelojReal
 from proxlaunch.nucleo.servicios.conexion import ServicioConexion
 
@@ -106,6 +121,41 @@ def adjuntar_consola_del_padre() -> None:
         return
 
 
+_NIVELES_QT = {
+    QtMsgType.QtDebugMsg: logging.DEBUG,
+    QtMsgType.QtInfoMsg: logging.DEBUG,
+    QtMsgType.QtWarningMsg: logging.WARNING,
+    QtMsgType.QtCriticalMsg: logging.ERROR,
+    QtMsgType.QtFatalMsg: logging.CRITICAL,
+}
+
+
+def instalar_mensajes_qt(receptor: ReceptorMensajesQt) -> Callable[[], None]:
+    """Lleva los mensajes de Qt al receptor del registro; devuelve la función que lo revierte."""
+
+    def manejador(tipo: QtMsgType, contexto: QMessageLogContext, mensaje: str) -> None:
+        receptor(_NIVELES_QT.get(tipo, logging.WARNING), contexto.category, mensaje)
+
+    previo = qInstallMessageHandler(manejador)
+    return lambda: qInstallMessageHandler(previo)
+
+
+def registrar_arranque() -> None:
+    """Línea INFO con versiones y sistema operativo (sin usuario, rutas personales ni hostname)."""
+    _log.info(
+        "Arranque de %s %s | Python %s | Qt %s | PySide6 %s | %s %s (%s) %s",
+        NOMBRE_APP,
+        __version__,
+        platform.python_version(),
+        qVersion(),
+        version_pyside,
+        platform.system(),
+        platform.release(),
+        platform.version(),
+        platform.machine(),
+    )
+
+
 def _analizar_argumentos(argv: Sequence[str]) -> tuple[argparse.Namespace, list[str]]:
     """Separa las opciones propias de las de Qt (que pasan intactas a ``QApplication``)."""
     analizador = argparse.ArgumentParser(add_help=True, prog="proxlaunch", allow_abbrev=False)
@@ -142,6 +192,15 @@ def main(argv: Sequence[str] | None = None) -> int:
 
         return ejecutar_prueba_de_humo(argv_qt, permitir_sin_llavero=propios.permitir_sin_llavero)
 
+    # La captura de fallos va antes de crear QApplication: el manejador de mensajes de Qt
+    # es estático y así recoge también los avisos del arranque.
+    rutas = Rutas()
+    configurar_registro(rutas.directorio_log)
+    try:
+        instalar_captura_de_fallos(rutas.directorio_log, instalar_mensajes_qt)
+    except Exception as exc:  # noqa: BLE001 - la captura nunca debe impedir arrancar
+        _log.warning("No se pudo instalar la captura de fallos: %s", exc)
+
     # Alta resolución: escalado fraccionario sin redondeos (150 %, 175 %...) (RNF-11).
     QGuiApplication.setHighDpiScaleFactorRoundingPolicy(
         Qt.HighDpiScaleFactorRoundingPolicy.PassThrough
@@ -154,9 +213,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     # Asocia la ventana con proxlaunch.desktop en Wayland (HV-E11).
     app.setDesktopFileName("proxlaunch")
     app.setWindowIcon(crear_icono())
-
-    rutas = Rutas()
-    configurar_registro(rutas.directorio_log)
+    registrar_arranque()
 
     familia, _mono = cargar_fuentes()
     fuente = QFont(familia)
@@ -170,7 +227,11 @@ def main(argv: Sequence[str] | None = None) -> int:
 
     ventana = VentanaPrincipal(crear_dependencias(rutas, gestor))
     ventana.show()
-    return app.exec()
+    try:
+        return app.exec()
+    finally:
+        # Salida normal: se desinstala la captura y se elimina fallo-nativo.txt.
+        desinstalar_captura_de_fallos(limpio=True)
 
 
 if __name__ == "__main__":

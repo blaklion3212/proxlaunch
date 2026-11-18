@@ -328,8 +328,13 @@ def ejecutar_prueba_de_humo(
             problemas.append("Recursos faltantes: " + ", ".join(faltantes))
 
         progreso.paso = "tema"
-        gestor = GestorTema(app, ModoTema.AUTOMATICO)
+        # Los iconos van a la carpeta temporal del humo: nunca a la caché real del usuario.
+        gestor = GestorTema(
+            app, ModoTema.AUTOMATICO, directorio_iconos=rutas.directorio_cache / "tema"
+        )
         gestor.aplicar()
+        if not gestor.iconos_activos:
+            problemas.append("No se generaron los iconos del tema")
 
         progreso.paso = "llavero"
         backend = _nombre_backend()

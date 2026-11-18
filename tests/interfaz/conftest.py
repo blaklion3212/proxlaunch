@@ -24,6 +24,20 @@ from .apoyo import (
 )
 
 
+@pytest.fixture
+def dir_iconos(tmp_path):
+    """Carpeta de iconos del tema en ``tmp_path`` (la que usa ``GestorTema`` por defecto)."""
+    return tmp_path / "cache" / "tema"
+
+
+@pytest.fixture(autouse=True)
+def _cache_de_iconos_en_tmp(monkeypatch, tmp_path):
+    """Ningún ``GestorTema`` escribe iconos en la caché real: se desvía a ``tmp_path``."""
+    monkeypatch.setattr(
+        Rutas, "directorio_cache", property(lambda self: tmp_path / "cache"), raising=True
+    )
+
+
 @pytest.fixture(autouse=True)
 def _sin_pregunta_de_cambios_sin_guardar(monkeypatch):
     """«¿Guardar el lote antes de continuar?» (RF-G08) responde «No guardar» por defecto."""
@@ -65,7 +79,7 @@ def servicio_falso():
 @pytest.fixture
 def deps(qapp, rutas, llavero, servicio_falso):
     """Dependencias con repositorios en ``tmp_path``, llavero en memoria y servicio falso."""
-    gestor = GestorTema(qapp, ModoTema.OSCURO)
+    gestor = GestorTema(qapp, ModoTema.OSCURO, directorio_iconos=rutas.directorio_cache / "tema")
     return Dependencias(
         servicio_conexion=servicio_falso,  # type: ignore[arg-type]
         perfiles=RepositorioPerfiles(rutas.perfiles),

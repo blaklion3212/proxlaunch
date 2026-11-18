@@ -84,7 +84,7 @@ def test_cargar_traductor_sin_catalogo_no_falla(qapp):
 
 def test_crear_dependencias_usa_las_rutas_dadas(qapp, tmp_path):
     rutas = Rutas(tmp_path / "datos")
-    gestor = GestorTema(qapp, ModoTema.OSCURO)
+    gestor = GestorTema(qapp, ModoTema.OSCURO, directorio_iconos=rutas.directorio_cache / "tema")
     deps = modulo_app.crear_dependencias(rutas, gestor)
     assert isinstance(deps, Dependencias)
     assert deps.gestor_tema is gestor

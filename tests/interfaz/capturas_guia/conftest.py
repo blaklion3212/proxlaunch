@@ -95,7 +95,7 @@ def qapp(qapp_args, pytestconfig):
 
 
 @pytest.fixture(scope="session")
-def apariencia(qapp):
+def apariencia(qapp, tmp_path_factory):
     """Fuentes, tamaño de texto, icono, traductor y tema claro, como en ``app.py``."""
     qapp.setWindowIcon(crear_icono())
     familia, _mono = cargar_fuentes()
@@ -103,7 +103,7 @@ def apariencia(qapp):
     fuente.setPixelSize(13)
     qapp.setFont(fuente)
     cargar_traductor(qapp)
-    gestor = GestorTema(qapp, ModoTema.CLARO)
+    gestor = GestorTema(qapp, ModoTema.CLARO, directorio_iconos=tmp_path_factory.mktemp("iconos"))
     gestor.aplicar()
     return gestor
 

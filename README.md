@@ -9,7 +9,7 @@ Solutions GmbH. La aplicación solo se presenta como «Compatible con Proxmox VE
 
 ## Estado del proyecto
 
-**Versión `0.5.0` (MVP 5, en cierre).** Hay instaladores para Ubuntu (`.deb`) y Windows
+**Versión `0.5.1` (MVP 5).** Hay instaladores para Ubuntu (`.deb`) y Windows
 (`-setup.exe`), además de poder ejecutarse desde el código fuente. Sobre el MVP 4 (origen del
 sistema operativo), el MVP 3 (perfiles de máquina, lotes guardados e importación CSV), el MVP 2
 (creación por lotes) y el MVP 1. Las secciones «Qué hace/añade» de más abajo describen cada
@@ -130,8 +130,8 @@ Los artefactos están en `dist/` (se generan con los scripts de [`empaquetado/`]
 
 | Sistema | Archivo |
 |---|---|
-| Ubuntu 22.04 / 24.04 (64 bits) | `proxlaunch_0.5.0_amd64.deb` |
-| Windows 10 / 11 (64 bits) | `proxlaunch-0.5.0-windows-x64-setup.exe` |
+| Ubuntu 22.04 / 24.04 (64 bits) | `proxlaunch_0.5.1_amd64.deb` |
+| Windows 10 / 11 (64 bits) | `proxlaunch-0.5.1-windows-x64-setup.exe` |
 | Comprobación | `SHA256SUMS` (suma SHA-256 de cada instalador) |
 
 Comprueba la descarga y luego instala:
@@ -139,12 +139,12 @@ Comprueba la descarga y luego instala:
 ```bash
 # Ubuntu
 sha256sum -c SHA256SUMS --ignore-missing
-sudo apt install ./proxlaunch_0.5.0_amd64.deb
+sudo apt install ./proxlaunch_0.5.1_amd64.deb
 ```
 
 ```powershell
 # Windows (PowerShell): compara el Hash con la línea de SHA256SUMS y ejecuta el instalador
-Get-FileHash -Algorithm SHA256 .\proxlaunch-0.5.0-windows-x64-setup.exe
+Get-FileHash -Algorithm SHA256 .\proxlaunch-0.5.1-windows-x64-setup.exe
 ```
 
 Los instaladores incluyen su propio Python: no hace falta instalar nada más (en Ubuntu, `apt` instala las

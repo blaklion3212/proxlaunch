@@ -11,6 +11,7 @@ from proxlaunch.interfaz.tema.gestor_tema import (
     generar_qss,
     leer_plantilla,
 )
+from proxlaunch.interfaz.tema.iconos import generar_iconos
 from proxlaunch.interfaz.tema.paleta import TOKENS_CLARO, TOKENS_OSCURO
 from proxlaunch.nucleo.persistencia.preferencias import Tema
 
@@ -67,8 +68,14 @@ def plantilla():
 
 
 def _gestor(qapp, esquema, modo=ModoTema.AUTOMATICO):
+    # Sin directorio_iconos: usa Rutas().directorio_cache, desviado a tmp_path por el conftest.
     app = AppFalsa(esquema)
     return app, GestorTema(app, modo)
+
+
+def _esperada(plantilla, tokens, carpeta):
+    """Hoja esperada: colores del tema más las rutas de iconos generadas en ``carpeta``."""
+    return generar_qss(plantilla, {**tokens, **generar_iconos(tokens, carpeta)})
 
 
 # --- CA-22.1 / CA-22.3 --------------------------------------------------------------
@@ -86,11 +93,11 @@ def test_ca22_3_el_modo_inicial_es_automatico(qapp):
         pytest.param(Qt.ColorScheme.Light, "claro", TOKENS_CLARO, id="CA-22.1-sistema-claro"),
     ],
 )
-def test_ca22_1_automatico_sigue_al_sistema(qapp, plantilla, esquema, esperado, tokens):
+def test_ca22_1_automatico_sigue_al_sistema(qapp, plantilla, esquema, esperado, tokens, dir_iconos):
     app, gestor = _gestor(qapp, esquema)
     assert gestor.aplicar() == esperado
     assert gestor.tema_actual == esperado
-    assert app.hoja == generar_qss(plantilla, tokens)
+    assert app.hoja == _esperada(plantilla, tokens, dir_iconos)
 
 
 @pytest.mark.parametrize("esquema", [Qt.ColorScheme.Dark, Qt.ColorScheme.Light])
@@ -109,13 +116,13 @@ def test_ca22_3_los_modos_coinciden_con_los_valores_que_se_persisten():
     assert {m.value for m in ModoTema} == {t.value for t in Tema}
 
 
-def test_ca22_3_establecer_modo_reaplica_el_tema(qapp, plantilla):
+def test_ca22_3_establecer_modo_reaplica_el_tema(qapp, plantilla, dir_iconos):
     app, gestor = _gestor(qapp, Qt.ColorScheme.Dark)
     gestor.aplicar()
     gestor.establecer_modo(ModoTema.CLARO)
     assert gestor.modo == ModoTema.CLARO
     assert gestor.tema_actual == "claro"
-    assert app.hoja == generar_qss(plantilla, TOKENS_CLARO)
+    assert app.hoja == _esperada(plantilla, TOKENS_CLARO, dir_iconos)
 
 
 def test_ca22_3_modo_recibido_como_texto_se_acepta(qapp):
@@ -171,12 +178,12 @@ def test_ca22_6_si_la_deteccion_lanza_una_excepcion_usa_oscuro_y_lo_registra(qap
     assert any(r.levelno >= logging.WARNING for r in caplog.records)
 
 
-def test_ca22_6_tras_el_respaldo_el_selector_sigue_funcionando(qapp, plantilla):
+def test_ca22_6_tras_el_respaldo_el_selector_sigue_funcionando(qapp, plantilla, dir_iconos):
     app, gestor = _gestor(qapp, Qt.ColorScheme.Unknown)
     gestor.aplicar()
     gestor.establecer_modo(ModoTema.CLARO)
     assert gestor.tema_actual == "claro"
-    assert app.hoja == generar_qss(plantilla, TOKENS_CLARO)
+    assert app.hoja == _esperada(plantilla, TOKENS_CLARO, dir_iconos)
     gestor.establecer_modo(ModoTema.OSCURO)
     assert gestor.tema_actual == "oscuro"
 
@@ -191,14 +198,14 @@ def test_ca22_6_el_esquema_desconocido_se_recupera_cuando_el_sistema_responde(qa
 # --- Con una QApplication real ------------------------------------------------------
 
 
-def test_aplicar_sobre_la_qapplication_real_instala_la_hoja(qapp):
+def test_aplicar_sobre_la_qapplication_real_instala_la_hoja(qapp, dir_iconos):
     anterior = qapp.styleSheet()
     try:
-        gestor = GestorTema(qapp, ModoTema.CLARO)
+        gestor = GestorTema(qapp, ModoTema.CLARO, directorio_iconos=dir_iconos)
         gestor.aplicar()
-        assert qapp.styleSheet() == generar_qss(leer_plantilla(), TOKENS_CLARO)
+        assert qapp.styleSheet() == _esperada(leer_plantilla(), TOKENS_CLARO, dir_iconos)
         gestor.establecer_modo(ModoTema.OSCURO)
-        assert qapp.styleSheet() == generar_qss(leer_plantilla(), TOKENS_OSCURO)
+        assert qapp.styleSheet() == _esperada(leer_plantilla(), TOKENS_OSCURO, dir_iconos)
     finally:
         qapp.setStyleSheet(anterior)
 

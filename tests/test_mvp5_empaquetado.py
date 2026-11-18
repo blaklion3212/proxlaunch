@@ -23,6 +23,8 @@ from types import ModuleType
 
 import pytest
 
+import proxlaunch
+
 RAIZ = Path(__file__).resolve().parents[1]
 COMUN = RAIZ / "empaquetado" / "comun"
 VARIABLE_LAB = "PROXLAUNCH" + "_LAB"  # se parte para no activar búsquedas textuales ajenas
@@ -131,7 +133,7 @@ def version_simulada(version, tmp_path, monkeypatch):
 def test_version_del_codigo_coincide_con_el_paquete(version):
     import proxlaunch
 
-    assert version.version_del_codigo() == proxlaunch.__version__ == "0.5.0"
+    assert version.version_del_codigo() == proxlaunch.__version__ == "0.5.1"
 
 
 def test_comprobar_acepta_pyproject_dinamico_sin_etiqueta(version_simulada):
@@ -205,7 +207,7 @@ def test_cli_imprime_version_y_formato_windows(version_simulada, capsys):
 def test_repositorio_real_es_coherente(version, monkeypatch):
     """CA-E10.1 sobre el repo real (sin depender de si HEAD está etiquetado)."""
     monkeypatch.setattr(version, "etiqueta_de_head", lambda: None)
-    assert version.comprobar() == "0.5.0"
+    assert version.comprobar() == "0.5.1"
 
 
 # =============================================================================================
@@ -222,12 +224,14 @@ def _artefacto(dist: Path, nombre: str, contenido: bytes) -> Path:
 
 def test_publicar_solo_incluye_artefactos_sellados(sumas, tmp_path, capsys):
     dist = tmp_path / "dist"
-    deb = _artefacto(dist, "proxlaunch_0.5.0_amd64.deb", b"deb-contenido")
-    _artefacto(dist, "proxlaunch-0.5.0-windows-x64-setup.exe", b"exe-sin-verificar")
+    deb = _artefacto(dist, f"proxlaunch_{proxlaunch.__version__}_amd64.deb", b"deb-contenido")
+    _artefacto(
+        dist, f"proxlaunch-{proxlaunch.__version__}-windows-x64-setup.exe", b"exe-sin-verificar"
+    )
     sumas.sellar(deb)
     assert sumas.publicar(dist) == 1  # hay uno sin sello
     texto = (dist / "SHA256SUMS").read_text("utf-8")
-    assert "proxlaunch_0.5.0_amd64.deb" in texto
+    assert f"proxlaunch_{proxlaunch.__version__}_amd64.deb" in texto
     assert "setup.exe" not in texto
     assert "sin verificación vigente" in capsys.readouterr().err
 
@@ -331,7 +335,10 @@ def test_sha256_coincide_con_hashlib(sumas, tmp_path):
 def test_sha256sums_sin_rutas_ni_usuario_y_formato_estricto(sumas, tmp_path):
     """CA-E20.3: solo «suma␠␠nombre», sin separadores de ruta ni nombre de usuario."""
     dist = tmp_path / "dist"
-    for nombre in ("proxlaunch_0.5.0_amd64.deb", "proxlaunch-0.5.0-windows-x64-setup.exe"):
+    for nombre in (
+        f"proxlaunch_{proxlaunch.__version__}_amd64.deb",
+        f"proxlaunch-{proxlaunch.__version__}-windows-x64-setup.exe",
+    ):
         sumas.sellar(_artefacto(dist, nombre, nombre.encode()))
     sumas.publicar(dist)
     # Se leen los bytes: read_text() traduciría CRLF a LF y ocultaría el fallo en Windows.
