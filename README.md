@@ -274,8 +274,6 @@ recursos/marca/  Logos originales y el generador (generador/generar_logo.py)
 - [Arquitectura del MVP 1](docs/arquitectura/mvp1.md), [del MVP 2](docs/arquitectura/mvp2.md),
   [del MVP 3](docs/arquitectura/mvp3.md) y [del MVP 5](docs/arquitectura/mvp5.md): módulos,
   trazabilidad y firmas públicas.
-- [Investigación de la API de Proxmox](docs/investigacion/f1-api-proxmox.md): permisos,
-  2FA, parámetros de creación y hechos verificados en laboratorio.
 - [Bitácora](docs/bitacora.md): historial y estado actual.
 
 ## Seguridad en resumen

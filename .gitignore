@@ -48,3 +48,6 @@ Thumbs.db
 # Configuración del asistente: solo local (retirada del repositorio el 2026-11-21)
 /.claude/
 /CLAUDE.md
+
+# Investigaciones: solo local (retiradas del repositorio el 2026-11-21)
+/docs/investigacion/
