@@ -186,8 +186,7 @@ Nota: tras activar la firma, la suma del instalador cambia; vuelve a verificar y
 ## 7. CI en GitHub Actions (activa)
 
 La CI vive en [`.github/workflows/empaquetado.yml`](../.github/workflows/empaquetado.yml), que es la única fuente de
-verdad (la antigua plantilla `empaquetado/ci/github-actions.yml.plantilla` se retiró; el historial de la decisión P-E01
-está en `decisiones.md`). Solo llama a los scripts de `empaquetado/`, usa acciones fijadas por SHA de commit,
+verdad (la antigua plantilla `empaquetado/ci/github-actions.yml.plantilla` se retiró). Solo llama a los scripts de `empaquetado/`, usa acciones fijadas por SHA de commit,
 `permissions: contents: read`, `persist-credentials: false`, no usa secretos y no publica nada.
 
 **Disparadores (decisión del usuario: repo privado y cupo de minutos).** Solo al subir una etiqueta `v*` y a mano
@@ -248,7 +247,7 @@ comprueba el SHA con `gh api repos/actions/<acción>/git/ref/tags/<versión>` y 
 
 ## 8. Resultados de referencia (versión 0.5.0)
 
-Verificados al cerrar el MVP 5 (ver la entrada 18 de la [bitácora](bitacora.md)): suite local con 7790 pruebas correctas;
+Verificados al cerrar el MVP 5: suite local con 7790 pruebas correctas;
 `verificar-todo.sh linux`, `windows`, `actualizacion-linux` y `actualizacion-windows` correctos; `dist/SHA256SUMS` con el
 `.deb` (`8bb854ef…`) y el `-setup.exe` (`d255fc86…`). Comprobaciones visuales manuales hechas con el usuario
 (asistente en español, SmartScreen, escalado 125/150/175 %, icono del menú Inicio); ver la bitácora.

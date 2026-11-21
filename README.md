@@ -13,9 +13,8 @@ Solutions GmbH. La aplicación solo se presenta como «Compatible con Proxmox VE
 (`-setup.exe`), además de poder ejecutarse desde el código fuente. Sobre el MVP 4 (origen del
 sistema operativo), el MVP 3 (perfiles de máquina, lotes guardados e importación CSV), el MVP 2
 (creación por lotes) y el MVP 1. Las secciones «Qué hace/añade» de más abajo describen cada
-etapa; la del MVP 4 está en la [guía de usuario](docs/guia-usuario.md#elegir-el-origen-del-sistema-operativo)
-y el estado vivo en la [bitácora](docs/bitacora.md). El MVP 5 es el último del plan; falta su
-aprobación final.
+etapa; la del MVP 4 está en la [guía de usuario](docs/guia-usuario.md#elegir-el-origen-del-sistema-operativo).
+Las novedades de cada versión están en las [releases](https://github.com/blaklion3212/proxlaunch/releases).
 
 Qué hace el MVP 1:
 
@@ -77,13 +76,12 @@ Qué añade el MVP 3 (**perfiles, lotes guardados y CSV**, D-22):
 
 Fuera del MVP 3: ISO/OVA/migración desde VMware (MVP 4), contenedores LXC, alta disponibilidad,
 editar o borrar MV que no creó un lote, instaladores (MVP 5), interfaz en otros idiomas y macOS.
-El plan completo está en [`docs/decisiones.md`](docs/decisiones.md) (D-12).
 
 > Validado contra Proxmox VE 9.2 real en laboratorio (rol mínimo, parámetros, 2FA, mensajes
 > de error, y en el MVP 2 lotes de hasta 30 MV con deshacer; ver `tests/integracion/`).
 > Clústeres multinodo (incluido el reparto entre nodos) y Proxmox 8.x solo con respuestas
 > simuladas. Pendiente en el MVP 3: verificar en un Windows real los mensajes de «archivo
-> bloqueado» y de rutas largas. Ver [`docs/bitacora.md`](docs/bitacora.md).
+> bloqueado» y de rutas largas.
 
 ### Permisos de Proxmox
 
@@ -267,8 +265,6 @@ recursos/marca/  Logos originales y el generador (generador/generar_logo.py)
   `-setup.exe`, SmartScreen, datos y verificación de `SHA256SUMS`.
 - [Empaquetado](docs/empaquetado.md): construcción y verificación de los instaladores
   (para desarrolladores); detalle de los scripts en [`empaquetado/LEEME.md`](empaquetado/LEEME.md).
-- [Decisiones](docs/decisiones.md): decisiones del proyecto (D-01 a D-27).
-- [Bitácora](docs/bitacora.md): historial y estado actual.
 
 ## Seguridad en resumen
 
