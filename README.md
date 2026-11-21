@@ -240,7 +240,7 @@ PROXLAUNCH_LAB=1 .venv/bin/python -m pytest -m integracion --force-enable-socket
 Nunca ejecutes pruebas que creen o borren MV contra un servidor de producción (D-15). Las
 pruebas de lotes del laboratorio (`tests/integracion/test_lab_lotes.py`) crean y borran MV de
 verdad: úsalas solo contra el laboratorio.
-Más detalle en [`.claude/proyecto/pruebas.md`](.claude/proyecto/pruebas.md).
+Cobertura mínima: núcleo 85 % y global 75 % (`.venv/bin/python -m pytest --cov=proxlaunch --cov-report=term-missing`).
 
 ## Estructura del proyecto
 

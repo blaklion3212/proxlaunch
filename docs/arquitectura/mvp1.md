@@ -408,7 +408,7 @@ su propio intérprete, por eso Ubuntu 22.04 con Python 3.10 del sistema no es un
 
 | Fase | Responsable | Depende de | Entregable |
 |---|---|---|---|
-| F0 Entorno y esqueleto | `devops-ci` | — | `pyproject.toml`, venv, estructura vacía, ruff/pytest configurados, `.claude/proyecto/*.md` |
+| F0 Entorno y esqueleto | `devops-ci` | — | `pyproject.toml`, venv, estructura vacía, ruff/pytest configurados, `.claude/proyecto/*.md` (solo local desde el 2026-11-21) |
 | F1 ADR-01 proxmoxer | `investigador` | — | D-17 con fuentes |
 | F2a Modelos, validación, constructor, capacidades, valores por defecto | `implementador` | F0 | `nucleo/modelos`, `validacion.py`, `constructor_peticion.py`, `capacidades.py` |
 | F2b Persistencia, secretos, registro, reloj | `implementador` | F0 | `nucleo/persistencia`, `registro.py`, `reloj.py` |

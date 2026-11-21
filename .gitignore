@@ -44,3 +44,7 @@ Thumbs.db
 
 # Especificación original: solo local (retirada del repositorio el 2026-11-21)
 /prompt.md
+
+# Configuración del asistente: solo local (retirada del repositorio el 2026-11-21)
+/.claude/
+/CLAUDE.md
