@@ -1,7 +1,7 @@
 # Registro de decisiones — ProxLaunch
 
 Fuente de verdad de las decisiones de producto y técnicas. La especificación
-original está en `prompt.md`; donde este documento la contradiga, **manda este
+original está en `prompt.md` (retirado del repositorio el 2026-11-21; queda en el historial, commit `ab133c0`); donde este documento la contradiga, **manda este
 documento**. Cada decisión indica su fecha y su estado.
 
 Estados: **Aprobada** (confirmada por el usuario) | **Propuesta** (pendiente de

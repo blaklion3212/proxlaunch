@@ -41,3 +41,6 @@ recursos/marca/generador/*.ttf
 Thumbs.db
 .idea/
 .vscode/
+
+# Especificación original: solo local (retirada del repositorio el 2026-11-21)
+/prompt.md

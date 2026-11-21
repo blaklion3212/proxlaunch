@@ -3,7 +3,7 @@
 Versión del documento: 1.0 (2026-11-11) · Estado: borrador para revisión del orquestador
 
 Fuentes, en orden de autoridad: `docs/decisiones.md` (D-01 a D-15 y "Correcciones
-técnicas", abreviadas **CT-n**) y `prompt.md` (abreviado **P§n**, sección n). Si se
+técnicas", abreviadas **CT-n**) y `prompt.md` (retirado del repositorio el 2026-11-21; queda en el historial, commit `ab133c0`) (abreviado **P§n**, sección n). Si se
 contradicen, manda `decisiones.md`.
 
 Convenciones:

@@ -5,7 +5,7 @@ Versión del documento: 1.0 (2026-11-13) · Estado: borrador para revisión del 
 Fuentes, en orden de autoridad: `docs/decisiones.md` (D-01 a D-19 y "Correcciones
 técnicas", abreviadas **CT-n**), `docs/requisitos/mvp1.md` (abreviado **M1**, sigue vigente
 salvo las enmiendas de la sección 12), `docs/investigacion/f1-api-proxmox.md` (**F1**),
-`docs/bitacora.md` (entradas 10 a 13, "lecciones") y `prompt.md` (**P§n**). Si se
+`docs/bitacora.md` (entradas 10 a 13, "lecciones") y `prompt.md` (retirado del repositorio el 2026-11-21; queda en el historial, commit `ab133c0`) (**P§n**). Si se
 contradicen, manda `decisiones.md`. El comportamiento de la API que no consta en F1 ni en
 las respuestas reales de `tests/datos/respuestas/9.2-lab/` se marca **[LAB]** (hipótesis a
 verificar en el laboratorio, sección 10) y no puede darse por cierto.

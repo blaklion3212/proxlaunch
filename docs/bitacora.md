@@ -5,7 +5,7 @@
 Registro cronológico de lo que se hizo en el proyecto y con qué resultado, para
 que cualquiera pueda retomarlo. Las decisiones de fondo viven en
 `decisiones.md` (D-01 a D-23); aquí solo se remite a ellas. La especificación
-original es `prompt.md`; si difieren, manda `decisiones.md`.
+original es `prompt.md` (retirado del repositorio el 2026-11-21; queda en el historial, commit `ab133c0`); si difieren, manda `decisiones.md`.
 
 **Cómo agregar una entrada:** añádela al final de "Entradas", con este formato
 y sin borrar las anteriores. Actualiza también "Estado actual" y
