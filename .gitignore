@@ -51,3 +51,7 @@ Thumbs.db
 
 # Investigaciones: solo local (retiradas del repositorio el 2026-11-21)
 /docs/investigacion/
+
+# Requisitos y arquitectura de cada MVP: solo local (retirados del repositorio el 2026-11-21)
+/docs/requisitos/
+/docs/arquitectura/

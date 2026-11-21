@@ -268,12 +268,6 @@ recursos/marca/  Logos originales y el generador (generador/generar_logo.py)
 - [Empaquetado](docs/empaquetado.md): construcción y verificación de los instaladores
   (para desarrolladores); detalle de los scripts en [`empaquetado/LEEME.md`](empaquetado/LEEME.md).
 - [Decisiones](docs/decisiones.md): decisiones del proyecto (D-01 a D-27).
-- [Requisitos del MVP 1](docs/requisitos/mvp1.md), [del MVP 2](docs/requisitos/mvp2.md),
-  [del MVP 3](docs/requisitos/mvp3.md) y [del MVP 5](docs/requisitos/mvp5.md): requisitos, reglas de
-  validación y errores.
-- [Arquitectura del MVP 1](docs/arquitectura/mvp1.md), [del MVP 2](docs/arquitectura/mvp2.md),
-  [del MVP 3](docs/arquitectura/mvp3.md) y [del MVP 5](docs/arquitectura/mvp5.md): módulos,
-  trazabilidad y firmas públicas.
 - [Bitácora](docs/bitacora.md): historial y estado actual.
 
 ## Seguridad en resumen
