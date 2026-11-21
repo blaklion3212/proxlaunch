@@ -1,6 +1,6 @@
 # Empaquetado de ProxLaunch: construcción y verificación (para desarrolladores)
 
-Versión: 0.5.1 (MVP 5) · Decisiones: D-27 · Requisitos: `docs/requisitos/mvp5.md` · Arquitectura: `docs/arquitectura/mvp5.md`
+Versión: 0.5.1 (MVP 5)
 
 Esta guía explica cómo se construyen y se verifican el `.deb` (Ubuntu 22.04 y 24.04) y el instalador de Windows
 (`-setup.exe`). Es la vista de conjunto y el orden de las órdenes. El detalle de cada opción, las reglas de los scripts y
@@ -169,7 +169,7 @@ la MV: un fallo a medias no puede dejar un artefacto viejo con aspecto de nuevo.
 
 ## 6. Firma de código (desactivada)
 
-Los instaladores salen **sin firma** (D-27). El paso existe en `construir-windows.ps1` y solo se activa si defines
+Los instaladores salen **sin firma**. El paso existe en `construir-windows.ps1` y solo se activa si defines
 `PROXLAUNCH_FIRMA_CONFIG` con la ruta de un archivo JSON **fuera del repositorio** con:
 
 | Campo | Contenido |

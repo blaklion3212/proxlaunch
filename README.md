@@ -30,7 +30,7 @@ Qué hace el MVP 1:
 - Modo básico y avanzado. Tema claro y oscuro, según el sistema o a elección.
 - La MV se crea **detenida**: ProxLaunch no la enciende.
 
-Qué añade el MVP 2 (**creación por lotes**, D-20 y D-21):
+Qué añade el MVP 2 (**creación por lotes**):
 
 - Crea de **1 a 100 MV iguales** de una vez, con un patrón de nombres (`srv-web-01`,
   `srv-web-02`...) y números de MV (VMID) consecutivos que **salta los ocupados**.
@@ -47,11 +47,11 @@ Qué añade el MVP 2 (**creación por lotes**, D-20 y D-21):
 - **Etiquetas** `proxlaunch` y `lote-<id>` en las MV creadas (activadas por defecto y
   desactivables en modo avanzado) para demostrar de quién es cada MV.
 - **Deshacer** (manual, con confirmación): elimina solo las MV que creó el lote, nunca MV
-  ajenas, protegidas, encendidas o bloqueadas, ni discos sueltos (D-21).
+  ajenas, protegidas, encendidas o bloqueadas, ni discos sueltos.
 - **Informe** del lote en texto plano (copiar o guardar `.txt`), sin host, IP, usuario ni
   secretos, e informe parcial si se cierra la aplicación con un lote en curso.
 
-Qué añade el MVP 3 (**perfiles, lotes guardados y CSV**, D-22):
+Qué añade el MVP 3 (**perfiles, lotes guardados y CSV**):
 
 - **Perfiles de máquina**: seis de fábrica (solo lectura) y los tuyos (crear, guardar cambios,
   duplicar, renombrar, eliminar, exportar e importar). Aplican solo hardware y redes; nunca el
@@ -235,7 +235,7 @@ permitas sockets:
 PROXLAUNCH_LAB=1 .venv/bin/python -m pytest -m integracion --force-enable-socket
 ```
 
-Nunca ejecutes pruebas que creen o borren MV contra un servidor de producción (D-15). Las
+Nunca ejecutes pruebas que creen o borren MV contra un servidor de producción. Las
 pruebas de lotes del laboratorio (`tests/integracion/test_lab_lotes.py`) crean y borran MV de
 verdad: úsalas solo contra el laboratorio.
 Cobertura mínima: núcleo 85 % y global 75 % (`.venv/bin/python -m pytest --cov=proxlaunch --cov-report=term-missing`).
@@ -272,7 +272,7 @@ recursos/marca/  Logos originales y el generador (generador/generar_logo.py)
   archivos ni en el registro. Solo se guardan, si lo pides, en el llavero del sistema.
 - Se verifica la huella SHA-256 del certificado del servidor. «Ignorar verificación SSL»
   existe solo en modo avanzado.
-- La conexión es directa: se ignoran las variables de proxy del sistema y `.netrc` (D-18).
+- La conexión es directa: se ignoran las variables de proxy del sistema y `.netrc`.
 - Los archivos de terceros (perfiles, lotes y CSV) solo se leen, con límites de tamaño y
   contenido; no se ejecuta nada de lo que traen. Los que escribe ProxLaunch son atómicos y, en
   POSIX, 0600 (carpetas propias 0700).
@@ -289,11 +289,11 @@ Detalles para usuarios en la [guía](docs/guia-usuario.md#privacidad-y-seguridad
 - El generador del logo usa la fuente **Montserrat** (también OFL):
   `recursos/marca/generador/LICENCIA-Montserrat-OFL.txt`.
 - El logo de ProxLaunch es un rediseño propio en SVG (`recursos/marca/`). No se debe
-  cambiar sin consultar al responsable del proyecto (D-01). No se usan el nombre ni el logo
+  cambiar sin consultar al responsable del proyecto. No se usan el nombre ni el logo
   de Proxmox como identidad de la aplicación.
 
 ## Licencia del proyecto
 
-Uso interno, todos los derechos reservados (D-19). Ver [`LICENSE`](LICENSE).
+Uso interno, todos los derechos reservados. Ver [`LICENSE`](LICENSE).
 Las bibliotecas y fuentes de terceros conservan sus licencias (PySide6/Qt bajo LGPL-3.0;
 fuentes bajo OFL).

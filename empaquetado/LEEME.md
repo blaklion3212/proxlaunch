@@ -1,6 +1,6 @@
 # Empaquetado de ProxLaunch (MVP 5)
 
-Parte común, de Linux y de Windows. La arquitectura está en `docs/arquitectura/mvp5.md`.
+Parte común, de Linux y de Windows.
 
 ## Comandos principales
 
