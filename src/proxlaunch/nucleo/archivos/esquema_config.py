@@ -25,6 +25,15 @@ from dataclasses import dataclass
 
 from proxlaunch.nucleo.archivos.constantes import MAX_LONG_TEXTO
 from proxlaunch.nucleo.archivos.esquema import LectorEsquema, MotivoCampo
+from proxlaunch.nucleo.archivos.esquema_opciones import (
+    CLAVES_OPCIONES_CFG,
+    leer_limite,
+    leer_mtu,
+    leer_opciones_cfg,
+    limite_para_escribir,
+    mtu_para_escribir,
+    opciones_cfg_a_dict,
+)
 from proxlaunch.nucleo.archivos.texto import exigir_sin_credencial
 from proxlaunch.nucleo.errores import CodigoError, ErrorProxLaunch
 from proxlaunch.nucleo.modelos.catalogo import Contenido
@@ -105,12 +114,13 @@ _CLAVES_BASE = frozenset(
         "detalle_origen",
     }
 )
-CLAVES_CONFIG_PERFIL = _CLAVES_BASE | {"storage_efi_preferido"}
-CLAVES_CONFIG_LOTE = _CLAVES_BASE | {"storage_efi"}
+# Fase A: un perfil solo guarda «Arrancar con el servidor» (RF-A1.4); el lote guarda todas.
+CLAVES_CONFIG_PERFIL = _CLAVES_BASE | {"storage_efi_preferido", "arranque_auto"}
+CLAVES_CONFIG_LOTE = _CLAVES_BASE | {"storage_efi"} | CLAVES_OPCIONES_CFG
 _CLAVES_DISCO = frozenset({"tamano_gib", "bus", "formato", "discard", "ssd", "iothread"})
 CLAVES_DISCO_PERFIL = _CLAVES_DISCO | {"storage_preferido"}
 CLAVES_DISCO_LOTE = _CLAVES_DISCO | {"storage"}
-_CLAVES_RED = frozenset({"modelo", "vlan"})
+_CLAVES_RED = frozenset({"modelo", "vlan", "mtu", "limite_mb"})
 CLAVES_RED_PERFIL = _CLAVES_RED | {"bridge_preferido"}
 CLAVES_RED_LOTE = _CLAVES_RED | {"bridge"}
 _CLAVES_BALLOONING = frozenset({"activo", "minimo_mib"})
@@ -130,6 +140,30 @@ def requiere_version_2(cfg: ConfiguracionVM | ConfigPerfil) -> bool:
     if cfg.origen != OrigenSO.DISCO_VACIO or cfg.tipo_so is not None or cfg.tpm or cfg.agente_qemu:
         return True
     return isinstance(cfg, ConfigPerfil) and cfg.pista_origen is not None
+
+
+def requiere_version_3(cfg: ConfiguracionVM | ConfigPerfil) -> bool:
+    """¿La configuración usa algo de la fase A? Entonces el archivo se escribe como v3 (DT-A9).
+
+    Cuenta cualquier campo nuevo distinto de su valor por defecto SALVO ``notas_origen``: esa
+    casilla se escribe como clave aunque el archivo siga siendo v1/v2 (P-4; 0.5.1 la ignora con
+    aviso).
+    """
+    if any(r.mtu is not None or r.limite_mb is not None for r in cfg.redes):
+        return True
+    if isinstance(cfg, ConfigPerfil):
+        return cfg.arranque_auto
+    return bool(
+        cfg.encender
+        or cfg.arranque_auto
+        or cfg.arranque_orden is not None
+        or cfg.arranque_espera is not None
+        or cfg.notas_usuario
+        or cfg.notas
+        or cfg.etiquetas_usuario
+        or cfg.pool is not None
+        or cfg.proteger
+    )
 
 
 def _no_guardable(campo: str) -> ErrorProxLaunch:
@@ -286,6 +320,16 @@ def _claves_origen_a_dict(
 # --- Serializadores (lista blanca por construcción) ---------------------------------------
 
 
+def _claves_red_fase_a(mtu: int | None, limite_mb: float | None) -> dict[str, object]:
+    """``mtu`` y ``limite_mb`` de una tarjeta, solo si no son ``None``."""
+    extra: dict[str, object] = {}
+    if mtu is not None:
+        extra["mtu"] = mtu_para_escribir(mtu, "redes.mtu")
+    if limite_mb is not None:
+        extra["limite_mb"] = limite_para_escribir(limite_mb, "redes.limite_mb")
+    return extra
+
+
 def _ballooning_a_dict(activo: bool, minimo_mib: int) -> dict[str, object]:
     return {"activo": activo, "minimo_mib": minimo_mib}
 
@@ -316,6 +360,7 @@ def config_perfil_a_dict(config: ConfigPerfil, *, con_pistas: bool) -> dict[str,
         if con_pistas and r.bridge_preferido is not None:
             exigir_sin_credencial(r.bridge_preferido, "bridge_preferido")
         red: dict[str, object] = {"modelo": str(r.modelo), "vlan": r.vlan}
+        red.update(_claves_red_fase_a(r.mtu, r.limite_mb))
         if con_pistas:
             red["bridge_preferido"] = r.bridge_preferido
         redes.append(red)
@@ -338,6 +383,8 @@ def config_perfil_a_dict(config: ConfigPerfil, *, con_pistas: bool) -> dict[str,
     }
     if con_pistas:
         datos["storage_efi_preferido"] = config.storage_efi_preferido
+    if config.arranque_auto:
+        datos["arranque_auto"] = True  # fase A: el único campo nuevo que guarda un perfil
     datos.update(
         _claves_origen_a_dict(
             config.tipo_so,
@@ -387,12 +434,21 @@ def configuracion_a_dict(cfg: ConfiguracionVM) -> dict[str, object]:
         ],
         "storage_efi": cfg.storage_efi,
         "controlador_scsi": str(cfg.controlador_scsi),
-        "redes": [{"bridge": r.bridge, "modelo": str(r.modelo), "vlan": r.vlan} for r in cfg.redes],
+        "redes": [
+            {
+                "bridge": r.bridge,
+                "modelo": str(r.modelo),
+                "vlan": r.vlan,
+                **_claves_red_fase_a(r.mtu, r.limite_mb),
+            }
+            for r in cfg.redes
+        ],
         "origen": str(cfg.origen),
     }
     datos.update(
         _claves_origen_a_dict(cfg.tipo_so, cfg.tpm, cfg.agente_qemu, detalle_origen_a_dict(cfg))
     )
+    datos.update(opciones_cfg_a_dict(cfg))
     return datos
 
 
@@ -533,7 +589,7 @@ def _campos_disco(
 
 def _campos_red(
     lector: LectorEsquema, r: dict[str, object], ruta: str, *, perfil: bool
-) -> tuple[ModeloRed, int | None] | None:
+) -> tuple[ModeloRed, int | None, int | None, float | None] | None:
     n0 = len(lector.errores)
     modelo = lector.enumerado(
         r, "modelo", ruta, ModeloRed, requerido=False, defecto=ModeloRed.VIRTIO
@@ -541,9 +597,11 @@ def _campos_red(
     vlan = _entero(
         lector, r, "vlan", ruta, _limites(perfil, VLAN_MIN, VLAN_MAX), nulo=True, requerido=False
     )
+    _, mtu = leer_mtu(lector, r, ruta)
+    _, limite = leer_limite(lector, r, ruta)
     if len(lector.errores) > n0 or modelo is None:
         return None
-    return modelo, vlan
+    return modelo, vlan, mtu, limite
 
 
 def _pista(lector: LectorEsquema, obj: dict[str, object], clave: str, ruta: str) -> str | None:
@@ -856,13 +914,14 @@ def leer_config_perfil(lector: LectorEsquema, valor: object, ruta: str) -> Confi
         campos_r = _campos_red(lector, red, r, perfil=True)
         pista = _pista(lector, red, "bridge_preferido", r)
         if campos_r is not None:
-            redes.append(RedPerfil(campos_r[0], campos_r[1], pista))
+            redes.append(RedPerfil(campos_r[0], campos_r[1], pista, campos_r[2], campos_r[3]))
+    arranque_auto = lector.booleano(obj, "arranque_auto", ruta, requerido=False, defecto=False)
     pista_org: PistaOrigen | None = None
     if "detalle_origen" in obj and hw is not None:
         pista_org = leer_pista_origen(
             lector, obj["detalle_origen"], _ruta_hija(ruta, "detalle_origen"), hw.origen
         )
-    if len(lector.errores) > n0 or hw is None:
+    if len(lector.errores) > n0 or hw is None or arranque_auto is None:
         return None
     return ConfigPerfil(
         firmware=hw.firmware,
@@ -881,6 +940,7 @@ def leer_config_perfil(lector: LectorEsquema, valor: object, ruta: str) -> Confi
         tpm=hw.tpm,
         agente_qemu=hw.agente_qemu,
         pista_origen=pista_org,
+        arranque_auto=arranque_auto,
     )
 
 
@@ -918,13 +978,14 @@ def leer_configuracion(lector: LectorEsquema, valor: object, ruta: str) -> Confi
         campos_r = _campos_red(lector, red, r, perfil=False)
         bridge = lector.texto(red, "bridge", r, minimo=0, maximo=MAX_LONG_TEXTO, sin_token=True)
         if campos_r is not None and bridge is not None:
-            redes.append(InterfazRed(bridge, campos_r[0], campos_r[1]))
+            redes.append(InterfazRed(bridge, campos_r[0], campos_r[1], campos_r[2], campos_r[3]))
     detalle: DetalleOrigen | None = None
     if "detalle_origen" in obj and hw is not None:
         detalle = leer_detalle_origen(
             lector, obj["detalle_origen"], _ruta_hija(ruta, "detalle_origen"), hw.origen
         )
-    if len(lector.errores) > n0 or hw is None:
+    opciones = leer_opciones_cfg(lector, obj, ruta)
+    if len(lector.errores) > n0 or hw is None or opciones is None:
         return None
     return ConfiguracionVM(
         vmid=0,
@@ -946,4 +1007,14 @@ def leer_configuracion(lector: LectorEsquema, valor: object, ruta: str) -> Confi
         tpm=hw.tpm,
         agente_qemu=hw.agente_qemu,
         detalle_origen=detalle,
+        encender=opciones.encender,
+        arranque_auto=opciones.arranque_auto,
+        arranque_orden=opciones.arranque_orden,
+        arranque_espera=opciones.arranque_espera,
+        notas_origen=opciones.notas_origen,
+        notas_usuario=opciones.notas_usuario,
+        notas=opciones.notas,
+        etiquetas_usuario=opciones.etiquetas_usuario,
+        pool=opciones.pool,
+        proteger=opciones.proteger,
     )

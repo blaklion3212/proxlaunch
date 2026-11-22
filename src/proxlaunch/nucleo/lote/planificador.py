@@ -11,6 +11,7 @@ from collections.abc import Callable, Sequence
 from concurrent.futures import FIRST_COMPLETED, Future, ThreadPoolExecutor, wait
 from dataclasses import replace
 
+from proxlaunch import __version__ as VERSION_APP
 from proxlaunch.nucleo.capacidades import Capacidades
 from proxlaunch.nucleo.errores import CodigoError, ErrorProxLaunch
 from proxlaunch.nucleo.lote import presupuesto
@@ -37,10 +38,15 @@ from proxlaunch.nucleo.lote.modelos import (
 )
 from proxlaunch.nucleo.lote.nombres import validar_patron
 from proxlaunch.nucleo.lote.reparto import repartir_filas
+from proxlaunch.nucleo.modelos.catalogo import DetallePlantilla
 from proxlaunch.nucleo.modelos.inventario import Inventario, VMRemota
-from proxlaunch.nucleo.modelos.vm import OrigenSO
+from proxlaunch.nucleo.modelos.origen import DetalleClon
+from proxlaunch.nucleo.modelos.vm import ConfiguracionVM, OrigenSO
+from proxlaunch.nucleo.opciones.modelos import ContextoNotas, OpcionesLote
+from proxlaunch.nucleo.opciones.notas import usuario_para_notas
+from proxlaunch.nucleo.opciones.preparacion import aplicar_opciones_lote, preparar_elemento
 from proxlaunch.nucleo.origen.resolucion import necesidades_catalogo, resolver_origen
-from proxlaunch.nucleo.reloj import Reloj
+from proxlaunch.nucleo.reloj import Reloj, RelojCalendario, RelojCalendarioSistema
 from proxlaunch.nucleo.servicios.catalogo import ServicioCatalogo, con_catalogo
 from proxlaunch.nucleo.servicios.conexion import Sesion, permisos_faltantes_detalle
 from proxlaunch.nucleo.validacion import Problema as ProblemaM1
@@ -156,6 +162,34 @@ def _etiquetas(base: Sequence[str], etiquetar: bool, id_lote: str) -> tuple[str,
     return propias_cfg + tuple(e for e in del_lote if e not in propias_cfg)
 
 
+def _detalle_de_plantilla(cfg: ConfiguracionVM, inv: Inventario) -> DetallePlantilla | None:
+    """Detalle (config leída) de la plantilla de un clon en el catálogo; ``None`` si no consta."""
+    detalle = cfg.detalle_origen
+    if inv.catalogo is None or not isinstance(detalle, DetalleClon):
+        return None
+    ref = detalle.plantilla
+    for p in inv.catalogo.plantillas or ():
+        if (ref.vmid is not None and p.vmid == ref.vmid) or (
+            ref.vmid is None and p.nombre == ref.nombre
+        ):
+            return p.detalle
+    return None
+
+
+def _usa_pool_o_etiquetas(definicion: DefinicionLote) -> bool:
+    """¿Algún elemento pide un pool o etiquetas propias? (hay que leer pools y política)."""
+    de_lote = definicion.opciones
+    if de_lote is not None and (de_lote.pool or de_lote.etiquetas_usuario):
+        return True
+    for fila in filas_efectivas(definicion):
+        if fila.cfg.pool or fila.cfg.etiquetas_usuario:
+            return True
+        o = fila.opciones
+        if o is not None and (o.pool or o.etiquetas_usuario):
+            return True
+    return False
+
+
 def _agrupar_m1(problemas: Sequence[Problema]) -> list[Problema]:
     """Une los problemas de M1 iguales de varios elementos (primer índice + ``elementos``)."""
     cuenta: Counter[tuple[str, str | None, tuple[tuple[str, str], ...]]] = Counter()
@@ -168,6 +202,26 @@ def _agrupar_m1(problemas: Sequence[Problema]) -> list[Problema]:
     for k, pr in primeros.items():
         if cuenta[k] > 1:
             pr = replace(pr, params={**pr.params, "elementos": str(cuenta[k])})
+        resultado.append(pr)
+    return resultado
+
+
+def _agrupar_va03(problemas: Sequence[Problema]) -> list[Problema]:
+    """Une los V-A03 de una misma etiqueta y motivo en uno solo (primera fila + ``elementos``)."""
+    cuenta: Counter[tuple[str, str]] = Counter()
+    for pr in problemas:
+        if pr.regla == "V-A03":
+            cuenta[(pr.params.get("etiqueta", ""), pr.params.get("motivo", ""))] += 1
+    vistos: set[tuple[str, str]] = set()
+    resultado: list[Problema] = []
+    for pr in problemas:
+        if pr.regla == "V-A03":
+            k = (pr.params.get("etiqueta", ""), pr.params.get("motivo", ""))
+            if k in vistos:
+                continue
+            vistos.add(k)
+            if cuenta[k] > 1:
+                pr = replace(pr, params={**pr.params, "elementos": str(cuenta[k])})
         resultado.append(pr)
     return resultado
 
@@ -255,6 +309,7 @@ def construir_plan(
     version_validacion: tuple[int, int],
     vms_visibles: Sequence[VMRemota] | None,
     problemas_extra: Sequence[Problema] = (),
+    contexto_notas: ContextoNotas | None = None,
 ) -> Plan:
     """Construye y valida el plan completo sin hacer E/S (pura y determinista).
 
@@ -262,6 +317,12 @@ def construir_plan(
     traer uno por MV (``Planificador.reservar_vmids``); ``vms_visibles=None`` omite el
     aviso V-L06; ``problemas_extra`` añade los que dependen de E/S (V-L16). Con errores
     de definición, de destino o de capacidad el plan sale bloqueado y sin elementos.
+
+    Fase A (0.6): a cada MV se le aplican las opciones del lote (``definicion.opciones`` o, sin
+    ellas, las de su propia configuración, y encima las de su fila) y se calcula su descripción
+    final con ``contexto_notas`` (``id_lote`` ``None`` se completa con el del plan; el usuario
+    solo se incluye si la MV lo pide). Sin ``contexto_notas`` no se calcula la descripción: el
+    plan sigue siendo puro y determinista (``Planificador.planificar`` siempre lo aporta).
     """
 
     def plan(
@@ -333,11 +394,25 @@ def construir_plan(
         cfg = copy.deepcopy(fila.cfg)
         cfg.vmid, cfg.nombre, cfg.nodo = vmids[i], fila.nombre, nodos[i]
         cfg.etiquetas = _etiquetas(fila.cfg.etiquetas, definicion.etiquetar, id_lote)
+        # Fase A: opciones del lote y de la fila sobre la configuración de la MV.
+        base = definicion.opciones or OpcionesLote.desde_config(cfg)
+        cfg = aplicar_opciones_lote(cfg, base, fila.opciones)
         if cfg.origen != OrigenSO.DISCO_VACIO:
             # MVP 4 (§4.4): fuente, drivers, plantilla y modo del clon, resueltos en el nodo.
             hay_origen = True
             cfg, resueltos = resolver_origen(cfg, inv, nodos[i])
             de_origen.extend(_problema_de_m1(pm, i) for pm in resueltos)
+        if contexto_notas is not None:
+            # La descripción se calcula ANTES de validar (V-A07/V-A08 miden ``cfg.descripcion``).
+            ctx_mv = replace(
+                contexto_notas,
+                id_lote=contexto_notas.id_lote or id_lote,
+                perfil=fila.perfil or contexto_notas.perfil,  # QA-A-09: el perfil de cada fila
+                usuario=contexto_notas.usuario if cfg.notas_usuario else None,
+            )
+            cfg = preparar_elemento(
+                cfg, ctx_mv, _detalle_de_plantilla(cfg, inv), version_validacion
+            )
         elementos.append(ElementoPlan(i, fila.nombre, vmids[i], nodos[i], cfg))
 
     nombres = [fila.nombre for fila in filas]
@@ -372,8 +447,9 @@ def construir_plan(
             if pm.codigo in _REGLAS_M1_SUBSUMIDAS:
                 continue
             de_m1.append(_problema_de_m1(pm, e.indice))
-    # Por filas cada problema conserva su fila (``indice``): no se agrupan.
-    problemas.extend(de_m1 if por_filas else _agrupar_m1(de_m1))
+    # Por filas cada problema conserva su fila (``indice``), salvo V-A03: «una por etiqueta y
+    # lote» (CA-A3.4.11), que se agrupa con la primera fila afectada.
+    problemas.extend(_agrupar_va03(de_m1) if por_filas else _agrupar_m1(de_m1))
     # Los problemas de resolución del origen llevan siempre su fila (V-O02, V-O03, V-O04...).
     problemas.extend(de_origen)
 
@@ -394,10 +470,27 @@ class Planificador:
         reloj: Reloj,
         *,
         generador_id: Callable[[], str] | None = None,
+        reloj_calendario: RelojCalendario | None = None,
+        version_app: str | None = None,
     ) -> None:
+        """``reloj_calendario`` (fecha de las notas de origen; por defecto la hora local) y
+        ``version_app`` (por defecto la del paquete) se inyectan para las pruebas."""
         self._sesion = sesion
         self._reloj = reloj
         self._generador_id = generador_id or _id_aleatorio
+        self._calendario: RelojCalendario = reloj_calendario or RelojCalendarioSistema()
+        self._version_app = version_app or VERSION_APP
+
+    def _contexto_notas(self) -> ContextoNotas:
+        """Contexto por defecto de las notas de origen: sin perfil y con el usuario de la sesión
+        (solo se incluye en las MVs que lo piden). ``id_lote`` lo completa ``construir_plan``."""
+        return ContextoNotas(
+            version_app=self._version_app,
+            fecha=self._calendario.ahora(),
+            id_lote=None,
+            perfil=None,
+            usuario=usuario_para_notas(self._sesion.usuario_efectivo) or None,
+        )
 
     def reservar_vmids(
         self, inicio: int, cantidad: int, *, excluir: frozenset[int] = frozenset()
@@ -503,10 +596,12 @@ class Planificador:
         """Lee el catálogo del servidor (solo GET) si hay filas con origen distinto de disco
         vacío; si no, devuelve ``inv`` intacto sin ninguna lectura nueva (CA-O03.1, INV-O8)."""
         necesidades = necesidades_catalogo(filas_efectivas(definicion))
-        if necesidades.vacias:
+        # Fase A: con pool o etiquetas del usuario se refrescan también pools y política (2 GET).
+        opciones = _usa_pool_o_etiquetas(definicion)
+        if necesidades.vacias and not opciones:
             return inv
         catalogo = ServicioCatalogo(self._sesion, self._reloj).leer_para(
-            inv, necesidades, self._nodos_del_catalogo(definicion, inv)
+            inv, necesidades, self._nodos_del_catalogo(definicion, inv), opciones=opciones
         )
         previo = inv.catalogo
         if catalogo.permisos is None and previo is not None and previo.permisos is not None:
@@ -530,8 +625,14 @@ class Planificador:
         inv: Inventario,
         *,
         version_forzada: tuple[int, int] | None = None,
+        contexto_notas: ContextoNotas | None = None,
     ) -> Plan:
         """Valida el lote, reserva VMIDs y devuelve el plan (V-L01..V-L16, RF-L01..RF-L09).
+
+        ``contexto_notas`` (fase A) fija la fecha, el perfil y el usuario de las notas de origen;
+        sin él se usa el del planificador (hora del ``RelojCalendario`` inyectado, versión de la
+        app, sin perfil y con el usuario de la sesión). ``id_lote`` ``None`` se completa con el
+        id del plan.
 
         Errores de la definición salen como plan bloqueado SIN consultar al servidor. Un
         fallo de red al reservar VMIDs lanza ``ErrorProxLaunch`` (sin plan parcial).
@@ -592,6 +693,7 @@ class Planificador:
             version_validacion=version_validacion,
             vms_visibles=visibles,
             problemas_extra=extra,
+            contexto_notas=contexto_notas or self._contexto_notas(),
         )
         # Si no se pudieron leer los permisos no se bloquea, pero el plan queda marcado.
         return replace(plan, permisos_verificados=faltan is not None)

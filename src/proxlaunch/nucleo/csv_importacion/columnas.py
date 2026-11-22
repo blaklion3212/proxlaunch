@@ -50,6 +50,15 @@ COLUMNAS: tuple[DefColumna, ...] = (
     DefColumna("so", ("sistema",)),
     DefColumna("virtio", ("drivers",)),
     DefColumna("modo_clon", ("clon",), avanzada=True),
+    # Fase A (RF-A7.3): opciones de la MV. Alias en inglés = nombre de la opción en Proxmox.
+    DefColumna("encender", ("start",)),
+    DefColumna("arranque_auto", ("onboot",)),
+    DefColumna("notas", ("notes",)),
+    DefColumna("etiquetas", ("tags",)),
+    DefColumna("pool"),
+    DefColumna("proteger", ("protection",)),
+    DefColumna("mtu", avanzada=True),
+    DefColumna("limite_red", ("rate",), avanzada=True),
 )
 
 _SEPARADORES = re.compile(r"[\s\-_]+")
@@ -97,6 +106,21 @@ def _error(
             "posiciones": ", ".join(str(p + 1) for p in posiciones),  # base 1, como en Excel
             "reconocidas": ", ".join(reconocidas),
         },
+    )
+
+
+def posiciones_de_columna(
+    encabezado: Sequence[str], canonica: str, alias_extra: Mapping[str, str] | None = None
+) -> frozenset[int]:
+    """Índices de las celdas del encabezado que se resuelven a la columna ``canonica``.
+
+    Versión tolerante de ``resolver_columnas`` (nunca falla ante vacías ni duplicadas): la usa el
+    lector para fijar el límite de celda de cada columna (DT-A11)."""
+    tabla = _tabla_alias(alias_extra)
+    return frozenset(
+        i
+        for i, celda in enumerate(encabezado)
+        if _buscar(tabla, normalizar_encabezado(celda)) == canonica
     )
 
 

@@ -190,10 +190,11 @@ def upid_de(nodo_: str, vmid: int, tipo: str = "qmcreate") -> str:
     return f"UPID:{nodo_}:0003A1B2:00F4C1D3:6535AB12:{tipo}:{vmid}:root@pam:"
 
 
-_RE_UPID_VMID = re.compile(r"UPID:[^:]+:[^:]+:[^:]+:[^:]+:(qmcreate|qmdestroy):(\d+):")
+_RE_UPID_VMID = re.compile(r"UPID:[^:]+:[^:]+:[^:]+:[^:]+:(qmcreate|qmdestroy|qmstop):(\d+):")
 _RE_QEMU = re.compile(r"^/nodes/(?P<n>[^/]+)/qemu$")
 _RE_CONFIG = re.compile(r"^/nodes/(?P<n>[^/]+)/qemu/(?P<v>\d+)/config$")
 _RE_ACTUAL = re.compile(r"^/nodes/(?P<n>[^/]+)/qemu/(?P<v>\d+)/status/current$")
+_RE_STOP = re.compile(r"^/nodes/(?P<n>[^/]+)/qemu/(?P<v>\d+)/status/stop$")
 _RE_QEMU_VM = re.compile(r"^/nodes/(?P<n>[^/]+)/qemu/(?P<v>\d+)$")
 _RE_ESTADO_NODO = re.compile(r"^/nodes/(?P<n>[^/]+)/status$")
 _RE_TAREA = re.compile(r"^/nodes/(?P<n>[^/]+)/tasks/(?P<u>.+)/(?P<q>status|log)$")
@@ -400,6 +401,10 @@ class Cluster:
             return self._get(ll, ruta)
         if m == "POST" and (mt := _RE_QEMU.match(ruta)):
             return self._post(ll, mt["n"])
+        if m == "POST" and (mt := _RE_STOP.match(ruta)):
+            return self._stop(mt["n"], int(mt["v"]))
+        if m == "PUT" and (mt := _RE_CONFIG.match(ruta)):
+            return self._put_config(ll, int(mt["v"]))
         if m == "DELETE" and (mt := _RE_QEMU_VM.match(ruta)):
             return self._delete(ll, mt["n"], int(mt["v"]))
         raise AssertionError(f"ruta no simulada: {m} {ruta}")
@@ -506,6 +511,24 @@ class Cluster:
         finally:
             with self._cerrojo:
                 self._activos_post[nodo_] -= 1
+
+    def _stop(self, nodo_: str, vmid: int) -> Any:
+        with self._cerrojo:
+            vm = self.vms.get(vmid)
+            if vm is None:
+                raise ErrorProxLaunch(CodigoError.RECURSO_INEXISTENTE, {}, "no such VM")
+            if self.exitstatus.get(vmid, "OK") == "OK":
+                vm["status"] = "stopped"
+        return upid_de(nodo_, vmid, "qmstop")
+
+    def _put_config(self, ll: Llamada, vmid: int) -> Any:
+        with self._cerrojo:
+            vm = self.vms.get(vmid)
+            if vm is None:
+                raise ErrorProxLaunch(CodigoError.RECURSO_INEXISTENTE, {}, "no such VM")
+            for clave, valor in (ll.datos or {}).items():
+                vm["config"][clave] = valor
+        return None
 
     def _delete(self, ll: Llamada, nodo_: str, vmid: int) -> Any:
         with self._cerrojo:

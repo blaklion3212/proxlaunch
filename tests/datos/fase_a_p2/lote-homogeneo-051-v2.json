@@ -1,0 +1,57 @@
+{
+  "app_version": "0.5.1",
+  "formato": "proxlaunch.lote",
+  "homogeneo": {
+    "cantidad": 3,
+    "config": {
+      "agente_qemu": true,
+      "ballooning": null,
+      "con_disco": true,
+      "controlador_scsi": "virtio-scsi-single",
+      "cores": 2,
+      "discos": [
+        {
+          "bus": "scsi",
+          "discard": true,
+          "formato": "auto",
+          "iothread": true,
+          "ssd": true,
+          "storage": "datos",
+          "tamano_gib": 32
+        }
+      ],
+      "firmware": "seabios",
+      "memoria_mib": 4096,
+      "origen": "disco_vacio",
+      "redes": [
+        {
+          "bridge": "vmbr0",
+          "modelo": "virtio",
+          "vlan": null
+        }
+      ],
+      "sockets": 1,
+      "storage_efi": null,
+      "tipo_cpu": "x86-64-v2-AES",
+      "tipo_so": "linux",
+      "tpm": true
+    },
+    "destino": {
+      "algoritmo": "equilibrado",
+      "modo": "automatico",
+      "nodos": []
+    },
+    "etiquetar": true,
+    "patron": {
+      "inicio": 1,
+      "prefijo": "srv",
+      "relleno": 2,
+      "separador": "-"
+    },
+    "vmid_inicial": null
+  },
+  "nombre": "Servidores v2",
+  "tipo": "homogeneo",
+  "version_formato": 2,
+  "version_proxmox": "9.2"
+}

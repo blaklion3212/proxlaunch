@@ -99,4 +99,6 @@ def configuracion_por_defecto(
         discos=[disco_por_defecto(storage)] if storage is not None else [],
         controlador_scsi=ControladorScsi.VIRTIO_SINGLE,
         redes=[red_por_defecto(bridge)] if bridge is not None else [],
+        # Fase A: el formulario parte con las notas de origen marcadas (el dataclass, no).
+        notas_origen=True,
     )

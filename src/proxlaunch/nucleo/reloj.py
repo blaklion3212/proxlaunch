@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import sys
 import time
+from datetime import datetime
 from typing import Protocol
 
 
@@ -64,3 +65,18 @@ class RelojSimulado:
         """Adelanta el reloj `segundos` (los valores negativos se ignoran)."""
         if segundos > 0:
             self._t += segundos
+
+
+class RelojCalendario(Protocol):
+    """Fuente de la fecha y hora de calendario (para las notas de origen, fase A)."""
+
+    def ahora(self) -> datetime:
+        """Devuelve la fecha y hora actuales (con zona horaria)."""
+        ...
+
+
+class RelojCalendarioSistema:
+    """Calendario real: hora local con su zona horaria."""
+
+    def ahora(self) -> datetime:
+        return datetime.now().astimezone()

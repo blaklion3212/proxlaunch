@@ -53,6 +53,7 @@ from proxlaunch.nucleo.modelos.conexion import PerfilConexion
 from proxlaunch.nucleo.modelos.inventario import Inventario
 from proxlaunch.nucleo.modelos.origen import DetalleClon, RefPlantilla
 from proxlaunch.nucleo.modelos.vm import ConfiguracionVM, OrigenSO
+from proxlaunch.nucleo.opciones.modelos import EstadoPools, PoliticaEtiquetas, PoolsServidor
 from proxlaunch.nucleo.origen.capacidades_origen import CapacidadesOrigen, calcular_capacidades
 from proxlaunch.nucleo.origen.clon import modo_efectivo
 from proxlaunch.nucleo.origen.constantes import SHA256_VIRTIO_WIN, URL_VIRTIO_WIN
@@ -137,6 +138,10 @@ class ControladorOrigen(QObject):
         self._errores_lectura: dict[_Clave, ErrorProxLaunch] = {}
         self._plantillas: tuple[Plantilla, ...] | None = None
         self._formatos: dict[str, frozenset[str]] = {}
+        # Fase A: pools y política de etiquetas del servidor (los lee el descubrimiento).
+        self._pools = PoolsServidor(EstadoPools.NO_LEIDO)
+        self._politica_etiquetas: PoliticaEtiquetas | None = None
+        self._politica_etiquetas_fallida = False
         self._en_curso: set[object] = set()  # lecturas lanzadas y aún sin respuesta
         self._fallidas: set[object] = set()  # lecturas que fallaron: no se repiten solas
         self._necesidades_hechas: set[NecesidadesCatalogo] = set()
@@ -230,6 +235,13 @@ class ControladorOrigen(QObject):
         """
         self._inv = inv
         self._permisos = inv.catalogo.permisos if inv.catalogo is not None else None
+        # Fase A: pools y política de etiquetas los lee el descubrimiento; no se pierden al
+        # reconstruir el catálogo.
+        previo = inv.catalogo
+        if previo is not None:
+            self._pools = previo.pools
+            self._politica_etiquetas = previo.politica_etiquetas
+            self._politica_etiquetas_fallida = previo.politica_etiquetas_fallida
         self._reiniciar_lecturas()
         self._reconstruir()
         self._recalcular_capacidades(self._nodo_caps)
@@ -257,6 +269,9 @@ class ControladorOrigen(QObject):
             plantillas=self._plantillas,
             formatos=dict(self._formatos),
             leido_en=self._reloj.ahora(),
+            pools=self._pools,
+            politica_etiquetas=self._politica_etiquetas,
+            politica_etiquetas_fallida=self._politica_etiquetas_fallida,
         )
         inv.catalogo = catalogo
         return catalogo
@@ -510,6 +525,10 @@ class ControladorOrigen(QObject):
                 for p in catalogo.plantillas
             )
         self._formatos.update(catalogo.formatos)
+        # Fase A: la lectura con ``opciones=True`` trae pools y política recién leídos.
+        self._pools = catalogo.pools
+        self._politica_etiquetas = catalogo.politica_etiquetas
+        self._politica_etiquetas_fallida = catalogo.politica_etiquetas_fallida
         self._publicar()
 
     def _fallo_lectura(self, gen: int, clave: object, error: ErrorProxLaunch) -> None:

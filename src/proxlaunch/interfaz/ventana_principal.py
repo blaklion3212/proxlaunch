@@ -43,6 +43,10 @@ from proxlaunch.interfaz.desplazable import AreaInterna, crear_area_desplazable,
 from proxlaunch.interfaz.dialogos.acerca_de import DialogoAcercaDe
 from proxlaunch.interfaz.dialogos.conexion import DialogoConexion
 from proxlaunch.interfaz.dialogos.confirmar import confirmar
+from proxlaunch.interfaz.dialogos.confirmar_deshacer import (
+    DialogoConfirmarDeshacerForzado,
+    EleccionDeshacer,
+)
 from proxlaunch.interfaz.dialogos.deshacer import DialogoDeshacer
 from proxlaunch.interfaz.dialogos.guardar_lote import AccionGuardarLote, DialogoGuardarLote
 from proxlaunch.interfaz.dialogos.guardar_perfil import DialogoGuardarPerfil
@@ -66,10 +70,12 @@ from proxlaunch.interfaz.textos import (
     texto_aviso,
     texto_aviso_archivo,
     texto_aviso_pista,
+    texto_comprobando_antes_de_deshacer,
     texto_desenlace,
     texto_error,
     texto_existe_sin_confirmar,
     texto_fallo,
+    texto_inspeccion_fallida,
     texto_motivo_nodo,
     texto_problema,
     texto_problema_lote,
@@ -89,6 +95,7 @@ from proxlaunch.interfaz.trabajadores import (
     ejecutar_lote,
     escribir_informe_csv,
     guardar_lote_guardado,
+    inspeccionar_lotes,
     leer_lote_guardado,
     planificar_lote,
     reanudar_seguimiento,
@@ -154,7 +161,7 @@ from proxlaunch.nucleo.lote.modelos import (
 )
 from proxlaunch.nucleo.lote.motor import ControlLote
 from proxlaunch.nucleo.lote.reconciliacion import AVISO_CREADA_TRAS_COMPROBAR
-from proxlaunch.nucleo.lote.rollback import ServicioRollback
+from proxlaunch.nucleo.lote.rollback import InspeccionRollback, ServicioRollback
 from proxlaunch.nucleo.lotes_guardados.formato import lote_a_dict
 from proxlaunch.nucleo.lotes_guardados.modelos import LoteGuardado
 from proxlaunch.nucleo.lotes_guardados.revalidacion import (
@@ -163,10 +170,21 @@ from proxlaunch.nucleo.lotes_guardados.revalidacion import (
     desajustes,
     sustituir,
 )
-from proxlaunch.nucleo.modelos.catalogo import Contenido
+from proxlaunch.nucleo.modelos.catalogo import Contenido, DetallePlantilla
 from proxlaunch.nucleo.modelos.inventario import Inventario
+from proxlaunch.nucleo.modelos.origen import DetalleClon
 from proxlaunch.nucleo.modelos.tarea import Desenlace, Etapa, ResultadoCreacion
 from proxlaunch.nucleo.modelos.vm import ConfiguracionVM, OrigenSO
+from proxlaunch.nucleo.opciones.disponibilidad import disponibilidad_opciones
+from proxlaunch.nucleo.opciones.modelos import (
+    ContextoNotas,
+    EstadoOpcion,
+    EstadoPools,
+    OpcionA,
+    PoolsServidor,
+)
+from proxlaunch.nucleo.opciones.notas import usuario_para_notas
+from proxlaunch.nucleo.opciones.preparacion import preparar_elemento
 from proxlaunch.nucleo.origen.storages import candidatos_servidor
 from proxlaunch.nucleo.perfiles_maquina.almacen import AlmacenPerfilesMaquina
 from proxlaunch.nucleo.perfiles_maquina.aplicar import (
@@ -187,7 +205,7 @@ from proxlaunch.nucleo.persistencia.preferencias import (
 )
 from proxlaunch.nucleo.persistencia.rutas import crear_carpeta_privada
 from proxlaunch.nucleo.persistencia.secretos import AlmacenSecretos
-from proxlaunch.nucleo.reloj import Reloj
+from proxlaunch.nucleo.reloj import Reloj, RelojCalendario, RelojCalendarioSistema
 from proxlaunch.nucleo.servicios.conexion import CodigoAviso, ServicioConexion, Sesion
 from proxlaunch.nucleo.servicios.creacion import ServicioCreacion
 from proxlaunch.nucleo.validacion import Severidad, validar_vm
@@ -218,6 +236,8 @@ class Dependencias:
     perfiles_maquina: AlmacenPerfilesMaquina | None = None
     # Versión que se escribe en los archivos propios (``app_version``).
     version_app: str = __version__
+    # Fecha de las notas de origen (fase A); por defecto la hora local del sistema.
+    reloj_calendario: RelojCalendario | None = None
 
 
 # Estados que permiten reintentar la máquina en un lote nuevo: nunca se creó (RF-L21).
@@ -263,6 +283,7 @@ class _Lote:
     continuacion: AccionPausa | None = None
     esperando_reconexion: bool = False
     deshaciendo: bool = False
+    inspeccionando: bool = False  # Deshacer: comprobando encendidas y protegidas (solo GET)
     control_rollback: ControlLote | None = None
     puente_rollback: PuenteRollback | None = None
     resultados_rollback: list[ResultadoRollback] = field(default_factory=list)
@@ -371,6 +392,10 @@ class VentanaPrincipal(QMainWindow):
         self._ruta_lote: Path | None = None  # archivo desde el que se abrió o donde se guardó
         self._huella_guardada: dict[str, object] | None = None  # None = nada que proteger
         self._hay_problemas = False
+        # Fase A: última disponibilidad aplicada al formulario y código de lote de la MV individual
+        # que se está preparando (el mismo en la validación en vivo y al crear).
+        self._opciones_aplicadas: tuple[dict[OpcionA, EstadoOpcion], PoolsServidor] | None = None
+        self._id_lote_previo: str | None = None
         self._cierre_confirmado = False
         self._guardando_para_cerrar = False  # escritura asíncrona de «Guardar y cerrar» en curso
 
@@ -969,6 +994,10 @@ class VentanaPrincipal(QMainWindow):
             self._reiniciar_lote()
         self.bloque_lote.establecer_inventario(inv)
         self.formulario.establecer_inventario(inv, reiniciar=reiniciar)
+        if self._sesion is not None:
+            # Antes de fijar la huella del formulario recién abierto: lo que el servidor no permite
+            # vuelve a su valor por defecto y no cuenta como «cambio sin guardar».
+            self._actualizar_disponibilidad_opciones(self._sesion, inv)
         self._formulario_listo = True
         if reiniciar:
             self._fijar_perfil_inicial(inv)
@@ -1092,6 +1121,7 @@ class VentanaPrincipal(QMainWindow):
         sesion, inv = self._sesion, self._inv
         if sesion is None or inv is None:
             return
+        self._actualizar_disponibilidad_opciones(sesion, inv)
         if self.bloque_lote.es_por_filas:
             self._revalidar_por_filas()
             return
@@ -1110,7 +1140,11 @@ class VentanaPrincipal(QMainWindow):
             nombres = self.bloque_lote.nombres_previstos()
             cfg.nombre = nombres[0] if nombres else ""
             cfg.vmid = self.bloque_lote.definicion(cfg).vmid_inicial or inv.proximo_vmid
-        problemas = validar_vm(cfg, inv, sesion.capacidades) + self.formulario.problemas_extra()
+        # Fase A: se valida con las etiquetas fijas y la descripción final, como al crear.
+        cfg_validar = self._cfg_preparada(cfg, sesion, inv, self._id_lote_de_uno())
+        problemas = (
+            validar_vm(cfg_validar, inv, sesion.capacidades) + self.formulario.problemas_extra()
+        )
         vistos = {(p.codigo, p.campo) for p in problemas}
         problemas += [p for p in problemas_origen if (p.codigo, p.campo) not in vistos]
         if en_lote:
@@ -1170,6 +1204,14 @@ class VentanaPrincipal(QMainWindow):
             self._ver_resumen_lote()
             self._timer_validar.start()
             return
+        bloqueantes = self._errores_fase_a(sesion, inv)
+        if bloqueantes:
+            # Las reglas V-A ya bloquean el botón; esto cubre un cambio entre la validación en
+            # vivo y el clic: no se envía nada y se muestra el motivo.
+            self.resumen.liberar()
+            self.statusBar().showMessage(bloqueantes[0])
+            self._timer_validar.start()
+            return
         self._creando = True
         self._upid_recibido = None
         cfg, _ = self.origen.resolver(self.formulario.configuracion())
@@ -1185,9 +1227,9 @@ class VentanaPrincipal(QMainWindow):
     def _plan_de_uno(self, cfg: ConfiguracionVM, sesion: Sesion) -> Plan:
         """Plan de una sola máquina con el nombre, VMID y nodo que escribió el usuario."""
         etiquetar = self.bloque_lote.chk_etiquetar.isChecked()
-        id_lote = secrets.token_hex(4)
-        propias = (ETIQUETA_APP, f"{PREFIJO_ETIQUETA_LOTE}{id_lote}") if etiquetar else ()
-        cfg_final = dataclasses.replace(cfg, etiquetas=tuple(cfg.etiquetas) + propias)
+        id_lote = self._id_lote_de_uno()
+        self._id_lote_previo = None  # la próxima máquina tendrá un código nuevo
+        cfg_final = self._cfg_preparada(cfg, sesion, self._inv, id_lote)
         definicion = DefinicionLote(
             plantilla=cfg,
             cantidad=1,
@@ -1211,6 +1253,99 @@ class VentanaPrincipal(QMainWindow):
             if cfg.origen != OrigenSO.DISCO_VACIO and self._inv
             else None,
         )
+
+    # --- Opciones de la fase A: disponibilidad, notas y validación ---
+
+    def _actualizar_disponibilidad_opciones(self, sesion: Sesion, inv: Inventario) -> None:
+        """Habilita o deshabilita las opciones del formulario según permisos, versión y pools.
+
+        Se vuelve a calcular en cada validación (es puro y barato) y solo se toca el formulario
+        si algo cambió: al conectar, cambiar de servidor, forzar la versión o releer los pools.
+        """
+        catalogo = inv.catalogo
+        permisos = catalogo.permisos if catalogo is not None else None
+        pools = catalogo.pools if catalogo is not None else PoolsServidor(EstadoPools.NO_LEIDO)
+        estados = disponibilidad_opciones(permisos, sesion.capacidades, pools)
+        if self._opciones_aplicadas == (estados, pools):
+            return
+        self._opciones_aplicadas = (estados, pools)
+        self.formulario.establecer_disponibilidad(estados, pools)
+
+    def _id_lote_de_uno(self) -> str:
+        """Código de lote de la máquina individual en preparación (estable hasta crearla)."""
+        if self._id_lote_previo is None:
+            self._id_lote_previo = secrets.token_hex(4)
+        return self._id_lote_previo
+
+    def _nombre_perfil_notas(self) -> str | None:
+        """Nombre del perfil de máquina elegido (para las notas); ``None`` si es «Personalizado»."""
+        id_perfil = self.selector_perfil.perfil_actual_id
+        if id_perfil is None:
+            return None
+        try:
+            return self._almacen_perfiles.obtener(id_perfil).nombre or None
+        except ErrorProxLaunch:
+            return None
+
+    def _contexto_notas(self, sesion: Sesion) -> ContextoNotas:
+        """Contexto de las notas de origen: versión de la app, fecha, perfil y usuario.
+
+        ``id_lote`` queda en ``None``: lo completa el plan (lote) o se omite (máquina individual).
+        El usuario solo se escribe en las máquinas que lo piden.
+        """
+        calendario = self._deps.reloj_calendario or RelojCalendarioSistema()
+        return ContextoNotas(
+            version_app=self._deps.version_app,
+            fecha=calendario.ahora(),
+            id_lote=None,
+            perfil=self._nombre_perfil_notas(),
+            usuario=usuario_para_notas(sesion.usuario_efectivo) or None,
+        )
+
+    @staticmethod
+    def _detalle_plantilla_de(
+        cfg: ConfiguracionVM, inv: Inventario | None
+    ) -> DetallePlantilla | None:
+        """Detalle (descripción) de la plantilla de un clon según el catálogo; ``None`` si no se
+        conoce."""
+        det = cfg.detalle_origen
+        if inv is None or inv.catalogo is None or not isinstance(det, DetalleClon):
+            return None
+        ref = det.plantilla
+        for p in inv.catalogo.plantillas or ():
+            if (ref.vmid is not None and p.vmid == ref.vmid) or (
+                ref.vmid is None and p.nombre == ref.nombre
+            ):
+                return p.detalle
+        return None
+
+    def _cfg_preparada(
+        self, cfg: ConfiguracionVM, sesion: Sesion, inv: Inventario | None, id_lote: str
+    ) -> ConfiguracionVM:
+        """Copia de ``cfg`` como se enviará: con las etiquetas fijas (``proxlaunch`` y el código
+        del lote) y la descripción final (notas de origen y texto libre)."""
+        etiquetar = self.bloque_lote.chk_etiquetar.isChecked()
+        propias = (ETIQUETA_APP, f"{PREFIJO_ETIQUETA_LOTE}{id_lote}") if etiquetar else ()
+        cfg_final = dataclasses.replace(cfg, etiquetas=tuple(cfg.etiquetas) + propias)
+        contexto = self._contexto_notas(sesion)
+        if not cfg_final.notas_usuario:
+            contexto = dataclasses.replace(contexto, usuario=None)
+        return preparar_elemento(
+            cfg_final,
+            contexto,
+            self._detalle_plantilla_de(cfg_final, inv),
+            sesion.capacidades.version,
+        )
+
+    def _errores_fase_a(self, sesion: Sesion, inv: Inventario) -> list[str]:
+        """Errores V-A de la máquina individual con lo que se enviaría (textos para el usuario)."""
+        cfg, _ = self.origen.resolver(self.formulario.configuracion())
+        preparada = self._cfg_preparada(cfg, sesion, inv, self._id_lote_de_uno())
+        return [
+            texto_problema(p)
+            for p in validar_vm(preparada, inv, sesion.capacidades)
+            if p.severidad == Severidad.ERROR and p.codigo.startswith("V-A")
+        ]
 
     def _nuevo_servicio_creacion(self, sesion: Sesion) -> ServicioCreacion:
         """Servicio ligado a la sesión ACTUAL (la anterior pudo expirar o cambiar)."""
@@ -1560,6 +1695,7 @@ class VentanaPrincipal(QMainWindow):
         vf = self._version_forzada(sesion)
         reloj = self._deps.reloj
         gen = self._gen_plan
+        contexto = self._contexto_notas(sesion)
         if simulando and self._reintento is not None:
             # B6: con un reintento pendiente se simula el plan del reintento, no un lote nuevo.
             self._lanzador.lanzar(
@@ -1581,6 +1717,7 @@ class VentanaPrincipal(QMainWindow):
                 definicion,
                 inv,
                 vf,
+                contexto,
                 al_terminar=self._si_vigente(gen, self._al_simulado),
                 al_fallar=self._si_vigente(gen, self._fallo_planificacion),
             )
@@ -1604,6 +1741,7 @@ class VentanaPrincipal(QMainWindow):
                 definicion,
                 inv,
                 vf,
+                contexto,
                 al_terminar=self._si_vigente(gen, self._al_planificado),
                 al_fallar=self._si_vigente(gen, self._fallo_planificacion),
             )
@@ -1737,6 +1875,7 @@ class VentanaPrincipal(QMainWindow):
             self._deps.reloj,
             plan.definicion,
             vf,
+            self._contexto_notas(sesion),
             al_terminar=self._si_vigente(gen, lambda r: self._tras_replanificar(plan, r)),
             al_fallar=self._si_vigente(gen, self._fallo_planificacion),
         )
@@ -2327,7 +2466,9 @@ class VentanaPrincipal(QMainWindow):
 
     def _deshacer(self) -> None:
         lote = self._lote
-        if lote is None or lote.libro is None or lote.deshaciendo or self._sesion is None:
+        if lote is None or lote.libro is None or self._sesion is None:
+            return
+        if lote.deshaciendo or lote.inspeccionando:
             return
         if lote.perfil_id != self._perfil_id:
             return  # otro servidor: ya no se puede deshacer (CA-L18.14)
@@ -2353,7 +2494,7 @@ class VentanaPrincipal(QMainWindow):
         elegidos = dialogo.elegidos() if r == QDialog.DialogCode.Accepted else []
         dialogo.deleteLater()
         sesion = self._sesion
-        if not elegidos or sesion is None or lote.deshaciendo:
+        if not elegidos or sesion is None or lote.deshaciendo or lote.inspeccionando:
             return
         # A2: mientras el diálogo estaba abierto pudo cambiar el perfil o cerrarse el lote.
         # Nunca se deshace un lote contra un servidor distinto del suyo.
@@ -2367,6 +2508,108 @@ class VentanaPrincipal(QMainWindow):
             and dueno.perfil_id == self._perfil_id
         ]
         if not elegidos:
+            return
+        # Cada lote se deshace con su propio id y su propia política de etiquetas.
+        grupos: list[tuple[list[CandidatoRollback], str, bool]] = []
+        dueno_de_vmid: dict[int, _Lote] = {}
+        for lt in {id(x): x for x in (duenos.get(id(c), lote) for c in elegidos)}.values():
+            propios = [c for c in elegidos if duenos.get(id(c), lote) is lt]
+            grupos.append((propios, lt.plan.id_lote, lt.plan.definicion.etiquetar))
+            for c in propios:
+                dueno_de_vmid[c.entrada.elemento.vmid] = lt
+        # Fase A (RF-A6.4): antes de borrar se inspeccionan (solo lectura, en un trabajador) las
+        # máquinas propias encendidas o protegidas; si las hay, se pide confirmación expresa.
+        lote.inspeccionando = True
+        self.statusBar().showMessage(texto_comprobando_antes_de_deshacer())
+        inv = self._inv
+        permisos = inv.catalogo.permisos if inv is not None and inv.catalogo is not None else None
+        self._lanzador.lanzar(
+            inspeccionar_lotes,
+            sesion,
+            self._deps.reloj,
+            grupos,
+            permisos,
+            al_terminar=lambda insp: self._tras_inspeccion_deshacer(
+                lote, elegidos, grupos, dueno_de_vmid, insp
+            ),
+            al_fallar=lambda e: self._fallo_inspeccion_deshacer(lote, e),
+        )
+
+    def _fallo_inspeccion_deshacer(self, lote: _Lote, error: ErrorProxLaunch) -> None:
+        lote.inspeccionando = False
+        if not self._vigente(lote):
+            return
+        self.statusBar().clearMessage()
+        QMessageBox.warning(
+            self,
+            self.tr("Deshacer"),
+            texto_inspeccion_fallida() + "\n" + texto_error(error),
+        )
+
+    def _tras_inspeccion_deshacer(
+        self,
+        lote: _Lote,
+        elegidos: list[CandidatoRollback],
+        grupos: list[tuple[list[CandidatoRollback], str, bool]],
+        dueno_de_vmid: dict[int, _Lote],
+        inspeccion: InspeccionRollback,
+    ) -> None:
+        lote.inspeccionando = False
+        if not self._vigente(lote) or lote.perfil_id != self._perfil_id:
+            return
+        self.statusBar().clearMessage()
+        if not inspeccion.hay_algo_que_avisar:
+            # CA-A6.4.1: nada que forzar, sin diálogo extra (flujo de 0.5.1).
+            self._ejecutar_deshacer(lote, elegidos, grupos, dueno_de_vmid)
+            return
+        dialogo = DialogoConfirmarDeshacerForzado(inspeccion, self)
+        dialogo.finished.connect(
+            lambda _r: self._tras_confirmar_forzado(
+                lote, dialogo, elegidos, grupos, dueno_de_vmid, inspeccion
+            )
+        )
+        dialogo.open()
+
+    def _tras_confirmar_forzado(
+        self,
+        lote: _Lote,
+        dialogo: DialogoConfirmarDeshacerForzado,
+        elegidos: list[CandidatoRollback],
+        grupos: list[tuple[list[CandidatoRollback], str, bool]],
+        dueno_de_vmid: dict[int, _Lote],
+        inspeccion: InspeccionRollback,
+    ) -> None:
+        eleccion = dialogo.eleccion
+        dialogo.deleteLater()
+        if eleccion == EleccionDeshacer.CANCELAR:
+            return  # CA-A1.5.2: sin confirmar no se escribe nada
+        if not self._vigente(lote) or lote.perfil_id != self._perfil_id or lote.deshaciendo:
+            return
+        # SEG-A-01: solo se fuerzan exactamente las máquinas que el usuario vio en el diálogo.
+        if eleccion == EleccionDeshacer.FORZAR:
+            self._ejecutar_deshacer(
+                lote,
+                elegidos,
+                grupos,
+                dueno_de_vmid,
+                forzar_apagado=frozenset(inspeccion.encendidas),
+                forzar_desproteccion=frozenset(inspeccion.protegidas),
+            )
+        else:
+            self._ejecutar_deshacer(lote, elegidos, grupos, dueno_de_vmid)
+
+    def _ejecutar_deshacer(
+        self,
+        lote: _Lote,
+        elegidos: list[CandidatoRollback],
+        grupos: list[tuple[list[CandidatoRollback], str, bool]],
+        dueno_de_vmid: dict[int, _Lote],
+        *,
+        forzar_apagado: frozenset[int] = frozenset(),
+        forzar_desproteccion: frozenset[int] = frozenset(),
+    ) -> None:
+        sesion = self._sesion
+        if sesion is None:
             return
         lote.deshaciendo = True
         self._accion_ultimo_lote.setEnabled(False)
@@ -2384,14 +2627,8 @@ class VentanaPrincipal(QMainWindow):
         )
         self.progreso_lote.establecer_fase(FaseLote.DESHACIENDO)
         self.statusBar().showMessage(self.tr("Eliminando las máquinas elegidas…"))
-        # Cada lote se deshace con su propio id y su propia política de etiquetas.
-        grupos: list[tuple[list[CandidatoRollback], str, bool]] = []
-        dueno_de_vmid: dict[int, _Lote] = {}
-        for lt in {id(x): x for x in (duenos.get(id(c), lote) for c in elegidos)}.values():
-            propios = [c for c in elegidos if duenos.get(id(c), lote) is lt]
-            grupos.append((propios, lt.plan.id_lote, lt.plan.definicion.etiquetar))
-            for c in propios:
-                dueno_de_vmid[c.entrada.elemento.vmid] = lt
+        inv = self._inv
+        permisos = inv.catalogo.permisos if inv is not None and inv.catalogo is not None else None
         self._lanzador.lanzar(
             deshacer_lotes,
             sesion,
@@ -2399,6 +2636,9 @@ class VentanaPrincipal(QMainWindow):
             grupos,
             lote.puente_rollback.observar,
             lote.control_rollback,
+            forzar_apagado,
+            forzar_desproteccion,
+            permisos,
             al_terminar=lambda r2: self._tras_deshacer(lote, r2, dueno_de_vmid),
             al_fallar=lambda e: self._fallo_deshacer(lote, e),
         )
@@ -3052,6 +3292,9 @@ class VentanaPrincipal(QMainWindow):
             if definicion.es_por_filas:
                 origen = _OrigenLote("guardado", lote.nombre, total_filas=0)
                 self._entrar_por_filas(definicion, origen)
+                if definicion.opciones is not None:
+                    # Las opciones de lote del archivo vuelven al formulario (ida y vuelta).
+                    self.formulario.aplicar_opciones_lote(definicion.opciones)
                 self._origen_lote = origen
             else:
                 self._mostrar_modo_filas(False)

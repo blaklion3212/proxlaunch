@@ -276,6 +276,7 @@ class LectorEsquema:
         minimo: int = 0,
         maximo: int = MAX_LONG_TEXTO,
         multilinea: bool = False,
+        tabulador: bool = False,
         nulo: bool = False,
         requerido: bool = True,
         sin_token: bool = False,
@@ -295,7 +296,9 @@ class LectorEsquema:
         if not isinstance(valor, str):
             self.error(campo, MotivoCampo.TIPO)
             return None
-        texto, motivo = analizar_texto(valor, maximo=maximo, multilinea=multilinea)
+        texto, motivo = analizar_texto(
+            valor, maximo=maximo, multilinea=multilinea, tabulador=tabulador
+        )
         if motivo == MOTIVO_LONGITUD:
             self.error(campo, MotivoCampo.LONGITUD, maximo=str(maximo))
             return None

@@ -197,13 +197,24 @@ def validar_vm(cfg: ConfiguracionVM, inv: Inventario, caps: Capacidades) -> list
         # Un clon hereda discos, firmware y redes de la plantilla: los del formulario se
         # ignoran (V-O29) y no se validan.
         _validar_origen(cfg, inv, caps, p)
+        _validar_opciones(cfg, inv, caps, p)
         return p
     discos = cfg.discos if cfg.con_disco else []
     _validar_discos(cfg, inv, discos, p)
     _validar_efi(cfg, inv, discos, p)
     _validar_redes(cfg, inv, p)
     _validar_origen(cfg, inv, caps, p)
+    _validar_opciones(cfg, inv, caps, p)
     return p
+
+
+def _validar_opciones(
+    cfg: ConfiguracionVM, inv: Inventario, caps: Capacidades, p: list[Problema]
+) -> None:
+    """Reglas V-A de la fase A (importación diferida: el módulo importado importa este)."""
+    from proxlaunch.nucleo.opciones.validacion import validar_opciones
+
+    p.extend(validar_opciones(cfg, inv, caps))
 
 
 def _validar_origen(
@@ -265,6 +276,17 @@ CODIGOS_SIN_SERVIDOR = (
             "V-22",
             "V-23",
             "V-24",
+            # Fase A: reglas de la propia configuración (las que usan el catálogo se omiten solas
+            # porque el inventario vacío no lo trae).
+            "V-A01",
+            "V-A02",
+            "V-A04",
+            "V-A05",
+            "V-A06",
+            "V-A07",
+            "V-A08",
+            "V-A14",
+            "V-A16",
         }
     )
     | CODIGOS_ORIGEN_SIN_SERVIDOR

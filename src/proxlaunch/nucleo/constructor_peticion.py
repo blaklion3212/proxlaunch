@@ -4,6 +4,8 @@ Función pura: devuelve valores SIN codificar; la codificación del formulario l
 el transporte (CT-9).
 """
 
+from decimal import Decimal
+
 from proxlaunch.nucleo.capacidades import admite_etiquetas
 from proxlaunch.nucleo.errores import CodigoError, ErrorProxLaunch
 from proxlaunch.nucleo.modelos.catalogo import Contenido
@@ -15,8 +17,11 @@ from proxlaunch.nucleo.modelos.vm import (
     Disco,
     Firmware,
     FormatoDisco,
+    InterfazRed,
+    ModeloRed,
     OrigenSO,
 )
+from proxlaunch.nucleo.opciones.etiquetas import etiquetas_finales
 from proxlaunch.nucleo.origen.asistente import TABLA_SO
 from proxlaunch.nucleo.origen.constantes import (
     ORDEN_ARRANQUE,
@@ -196,15 +201,58 @@ def construir_parametros(
         params["tpmstate0"] = _valor_tpm(cfg, inv, discos)
 
     for i, r in enumerate(cfg.redes):
-        valor = f"{r.modelo.value},bridge={r.bridge}"
-        if r.vlan is not None:
-            valor += f",tag={r.vlan}"
-        params[f"net{i}"] = valor
+        params[f"net{i}"] = valor_red(r)
     if con_origen and cfg.agente_qemu and cfg.tipo_so != TipoSO.OTRO:
         params["agent"] = "1"
-    if cfg.etiquetas and (version is None or admite_etiquetas(version)):
-        params["tags"] = ";".join(cfg.etiquetas)
+    etiquetas = etiquetas_finales(cfg)
+    if etiquetas and (version is None or admite_etiquetas(version)):
+        params["tags"] = ";".join(etiquetas)
+    # Fase A (0.6): solo si difieren del valor por defecto y en este orden (arq. §3.1), de modo
+    # que con las opciones por defecto la petición es idéntica a la de 0.5.1.
+    if cfg.arranque_auto:
+        params["onboot"] = "1"
+    valor_inicio = valor_startup(cfg)
+    if valor_inicio is not None:
+        params["startup"] = valor_inicio
+    if cfg.descripcion is not None:
+        params["description"] = cfg.descripcion
+    if cfg.pool:
+        params["pool"] = cfg.pool
+    if cfg.proteger:
+        params["protection"] = "1"
     return params
+
+
+def formato_limite(mb: float) -> str:
+    """``rate=`` en notación decimal fija sin ceros sobrantes: ``100``, ``12.5``, ``0.00001``."""
+    if mb == int(mb):
+        return str(int(mb))
+    return format(Decimal(repr(mb)), "f").rstrip("0").rstrip(".")
+
+
+def valor_red(r: InterfazRed) -> str:
+    """Valor de ``netN``: ``<modelo>,bridge=…[,tag=…][,mtu=…][,rate=…]``.
+
+    ``mtu`` solo se envía con VirtIO (el resto de modelos no lo admite).
+    """
+    valor = f"{r.modelo.value},bridge={r.bridge}"
+    if r.vlan is not None:
+        valor += f",tag={r.vlan}"
+    if r.mtu is not None and r.modelo == ModeloRed.VIRTIO:
+        valor += f",mtu={r.mtu}"
+    if r.limite_mb is not None:
+        valor += f",rate={formato_limite(r.limite_mb)}"
+    return valor
+
+
+def valor_startup(cfg: ConfiguracionVM) -> str | None:
+    """``order=N,up=S`` con las partes fijadas, o ``None`` si no hay ninguna."""
+    partes = []
+    if cfg.arranque_orden is not None:
+        partes.append(f"order={cfg.arranque_orden}")
+    if cfg.arranque_espera is not None:
+        partes.append(f"up={cfg.arranque_espera}")
+    return ",".join(partes) or None
 
 
 def _valor_tpm(cfg: ConfiguracionVM, inv: Inventario, discos: list[Disco]) -> str:

@@ -45,8 +45,13 @@ CSV_VALIDOS = {
     "mvs-mixtas.csv": 7,
     "mvs-multidisco-cluster.csv": 3,
     "mvs-escrito-a-mano.csv": 3,
+    "mvs-opciones.csv": 4,
 }
-LOTES = ("lote-homogeneo.proxlaunch-lote.json", "lote-por-filas.proxlaunch-lote.json")
+LOTES = (
+    "lote-homogeneo.proxlaunch-lote.json",
+    "lote-por-filas.proxlaunch-lote.json",
+    "lote-con-opciones.proxlaunch-lote.json",
+)
 PERFILES = "perfiles-ejemplo.proxlaunch-perfiles.json"
 
 REDES_DOCUMENTACION = (
@@ -226,7 +231,7 @@ def _archivos_ejemplo() -> list[Path]:
     return sorted(p for p in EJEMPLOS.iterdir() if p.is_file())
 
 
-def test_hay_los_nueve_archivos_esperados() -> None:
+def test_hay_los_once_archivos_esperados() -> None:
     nombres = {p.name for p in _archivos_ejemplo()}
     assert nombres == {"LEEME.md", "mvs-con-errores.csv", *CSV_VALIDOS, *LOTES, PERFILES}
 

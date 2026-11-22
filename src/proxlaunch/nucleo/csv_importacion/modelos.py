@@ -5,6 +5,7 @@ from enum import StrEnum
 
 from proxlaunch.nucleo.archivos.esquema import AvisoArchivo
 from proxlaunch.nucleo.modelos.vm import ConfiguracionVM
+from proxlaunch.nucleo.opciones.modelos import OpcionesParciales
 from proxlaunch.nucleo.validacion import Severidad
 
 
@@ -97,6 +98,7 @@ class FilaInterpretada:
     problemas: tuple[ProblemaCelda, ...]  # ordenados por columna; ≤ MAX_PROBLEMAS_FILA
     problemas_omitidos: int = 0
     originales: dict[str, str] = field(default_factory=dict)  # canónica -> texto original
+    opciones: OpcionesParciales | None = None  # fase A: celdas fijadas (None = hereda todo)
 
     @property
     def estado(self) -> EstadoFila:

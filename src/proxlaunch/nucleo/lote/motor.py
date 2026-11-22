@@ -40,12 +40,12 @@ from proxlaunch.nucleo.lote.politica_pausa import PoliticaPausa
 from proxlaunch.nucleo.lote.reconciliacion import reconciliar_incierta
 from proxlaunch.nucleo.modelos.inventario import Inventario
 from proxlaunch.nucleo.modelos.tarea import Desenlace, Etapa, ResultadoCreacion
-from proxlaunch.nucleo.modelos.vm import OrigenSO
+from proxlaunch.nucleo.modelos.vm import ConfiguracionVM, OrigenSO
 from proxlaunch.nucleo.registro import enmascarar
 from proxlaunch.nucleo.reloj import Reloj
 from proxlaunch.nucleo.servicios.catalogo import con_catalogo
 from proxlaunch.nucleo.servicios.conexion import Sesion
-from proxlaunch.nucleo.servicios.creacion import ServicioCreacion
+from proxlaunch.nucleo.servicios.creacion import AVISO_ENCENDIDO_OMITIDO, ServicioCreacion
 
 _log = logging.getLogger("proxlaunch.lote.motor")
 
@@ -55,6 +55,22 @@ FabricaCreacion = Callable[[Sesion, Reloj], ServicioCreacion]
 _MAX_DETALLE_LOG = 300
 # Aviso de una importación fallida tras el POST: pudo quedar un volumen suelto (E-L21, CA-O30.4).
 AVISO_DISCOS_SUELTOS = "discos_sueltos_posibles"
+
+
+def _avisos_con_encendido(
+    cfg: ConfiguracionVM, estado: EstadoMV, avisos: tuple[str, ...]
+) -> tuple[str, ...]:
+    """Añade ``encendido_omitido`` si se pedía encender y la MV quedó bien sin haberse encendido
+    (una comprobación o una reconciliación solo leen: nunca encienden; QA-A-02)."""
+    if (
+        cfg.encender
+        and estado in (EstadoMV.OK, EstadoMV.CON_AVISOS)
+        and AVISO_ENCENDIDO_OMITIDO not in avisos
+    ):
+        return (*avisos, AVISO_ENCENDIDO_OMITIDO)
+    return avisos
+
+
 # Privilegios de las escrituras del MVP 4: un 403 por cualquiera de ellos a mitad del lote es un
 # error global y pausa de inmediato (D-20.8, CA-O30.7); el resto de 403 no detiene el lote.
 PRIVILEGIOS_DE_ESCRITURA = frozenset(
@@ -79,6 +95,9 @@ _ESTADO_POR_ETAPA: dict[Etapa, EstadoMV] = {
     Etapa.CREANDO: EstadoMV.CREANDO,
     Etapa.COMPROBANDO: EstadoMV.COMPROBANDO,
     Etapa.AJUSTANDO: EstadoMV.AJUSTANDO,
+    # Fase A: encender no tiene estado propio en el libro; se muestra como «ajustando» (la MV
+    # ya existe y se está terminando de dejar como se pidió).
+    Etapa.ENCENDIENDO: EstadoMV.AJUSTANDO,
 }
 _ESTADO_POR_DESENLACE: dict[Desenlace, EstadoMV] = {
     Desenlace.OK: EstadoMV.OK,
@@ -631,7 +650,9 @@ class MotorLote:
                         etiquetar=libro.plan.definicion.etiquetar,
                         cliente=self._sesion.cliente,
                     )
-                    avisos = (*avisos, *((aviso,) if aviso else ()))
+                    avisos = _avisos_con_encendido(
+                        el.cfg, estado, (*avisos, *((aviso,) if aviso else ()))
+                    )
                     if estado == EstadoMV.CONEXION_PERDIDA:
                         error = error_rec
                     elif estado == EstadoMV.OK:
@@ -741,7 +762,7 @@ class MotorLote:
                     upid=entrada.upid,
                     error=res.error,
                     log=res.log_tarea,
-                    avisos=tuple(res.avisos),
+                    avisos=_avisos_con_encendido(elemento.cfg, estado, tuple(res.avisos)),
                 )
             else:
                 estado, aviso, error = reconciliar_incierta(
@@ -758,7 +779,7 @@ class MotorLote:
                     estado,
                     t_fin=self._reloj.ahora() if estado not in ESTADOS_DUDOSOS else None,
                     error=error,
-                    avisos=(aviso,) if aviso else (),
+                    avisos=_avisos_con_encendido(elemento.cfg, estado, (aviso,) if aviso else ()),
                 )
         except Exception:
             _log.exception("Fallo al comprobar la MV dudosa (vmid=%s)", elemento.vmid)

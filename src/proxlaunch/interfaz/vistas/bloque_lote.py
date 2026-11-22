@@ -43,6 +43,7 @@ from proxlaunch.nucleo.lote.nombres import generar_nombres, validar_patron
 from proxlaunch.nucleo.lote.planificador import validar_definicion
 from proxlaunch.nucleo.modelos.inventario import Inventario
 from proxlaunch.nucleo.modelos.vm import ConfiguracionVM
+from proxlaunch.nucleo.opciones.modelos import OpcionesLote
 
 # Campos de ``Problema.campo`` -> clave de la fila que los muestra.
 _FILA_DE_CAMPO = {
@@ -614,7 +615,9 @@ class BloqueLote(QGroupBox):
         """Lote que describe el bloque con la configuración del formulario como plantilla.
 
         Por filas devuelve las filas cargadas con los ajustes actuales del bloque (algoritmo,
-        VMID inicial, etiquetas); la ``plantilla`` del formulario no se usa (D-22).
+        VMID inicial, etiquetas); el hardware sale de las filas (D-22), pero las opciones de lote
+        de la fase A (encender, notas, etiquetas, pool, protección) salen del formulario y cada
+        fila puede sobrescribirlas (DT-A10).
         """
         texto_vmid = self.vmid_inicial.text().strip()
         base = self._base_por_filas
@@ -626,6 +629,7 @@ class BloqueLote(QGroupBox):
                 ),
                 vmid_inicial=_entero(texto_vmid, 0) if texto_vmid else None,
                 etiquetar=self.chk_etiquetar.isChecked(),
+                opciones=OpcionesLote.desde_config(plantilla),
             )
         return DefinicionLote(
             plantilla=plantilla,

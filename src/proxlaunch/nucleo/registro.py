@@ -50,6 +50,12 @@ _RE_CABECERA = re.compile(
 # codificada en URL totp%3A...). No toca `"recovery": [..]` del desafío (lleva comillas).
 _RE_CODIGO_TFA = re.compile(r"(?i)\b(totp|recovery)(:|%3A)[^\s&;,\"'}]+")
 
+# Token de API genérico (``usuario@realm!id=secreto``) en cualquier parte del texto: se oculta lo
+# que va tras el «=» (SEG-A-07). Cuantificadores acotados: sin retroceso cuadrático.
+_RE_TOKEN_GENERICO = re.compile(
+    r"""([^@!=\s]{1,128}@[^@!=\s]{1,128}![A-Za-z0-9._-]{1,128}=)[^\s"'&;,}]+"""
+)
+
 _lock = threading.Lock()
 _secretos: set[str] = set()
 
@@ -74,6 +80,8 @@ def enmascarar(texto: str) -> str:
     texto = _RE_CABECERA.sub(lambda m: f"{m.group(1)}{m.group(2)}{MASCARA}", texto)
     texto = _RE_CAMPO.sub(lambda m: f"{m.group(1)}{m.group(2)}{MASCARA}", texto)
     texto = _RE_CODIGO_TFA.sub(lambda m: f"{m.group(1)}{m.group(2)}{MASCARA}", texto)
+    if "@" in texto and "!" in texto and "=" in texto:  # evita la expresión en textos sin token
+        texto = _RE_TOKEN_GENERICO.sub(lambda m: f"{m.group(1)}{MASCARA}", texto)
     with _lock:
         conocidos = sorted(_secretos, key=len, reverse=True)
     for s in conocidos:

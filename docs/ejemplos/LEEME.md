@@ -24,7 +24,9 @@ aplicación escribe y acepta.
 | `mvs-multidisco-cluster.csv` | 3 MVs en un clúster: dos discos (`disco2`, `almacenamiento2`), VLAN y nodo por fila. Necesita el almacenamiento `datos` y varios nodos. | **Lote > Importar desde CSV…** |
 | `mvs-con-errores.csv` | Contiene errores a propósito para practicar la vista previa (qué se ve, cómo filtrar, importar solo las filas correctas). | **Lote > Importar desde CSV…** |
 | `mvs-escrito-a-mano.csv` | Lo mismo que un CSV hecho en Excel, LibreOffice o un editor de texto: sin comillas, sin BOM y con saltos de línea simples. Demuestra que no hace falta usar la plantilla de la aplicación. | **Lote > Importar desde CSV…** |
+| `mvs-opciones.csv` | 4 MVs que usan las columnas de opciones de la versión 0.6: `encender`, `arranque_auto`, `notas`, `etiquetas`, `pool`, `proteger`, `mtu` y `limite_red`. Una fila lo fija todo, otra no fija nada (hereda lo del formulario) y las demás mezclan valores. | **Lote > Importar desde CSV…** |
 | `lote-homogeneo.proxlaunch-lote.json` | Lote guardado de 3 MVs iguales (`srv-web-01`...`srv-web-03`; 2 núcleos, 2 GiB, disco de 32 GiB). | **Lote > Abrir lote…** (`Ctrl+O`) |
+| `lote-con-opciones.proxlaunch-lote.json` | El mismo lote de 3 servidores web, pero con las opciones de la versión 0.6 (encender, arrancar con el servidor con orden y espera, notas, etiquetas, pool, protección, MTU y límite de red). Es un archivo de **formato 3**: ProxLaunch 0.5.1 no lo abre. | **Lote > Abrir lote…** (`Ctrl+O`) |
 | `lote-por-filas.proxlaunch-lote.json` | Lote guardado de 3 MVs distintas (disco vacío con VMID y nodo fijos, instalación desde ISO y clon de plantilla). Es el resultado de importar filas de `mvs-mixtas.csv`. | **Lote > Abrir lote…** (`Ctrl+O`) |
 | `perfiles-ejemplo.proxlaunch-perfiles.json` | Dos perfiles de máquina: un servidor web sencillo y un escritorio Windows 11 con ISO sugerido y nombres de almacenamiento y red como pistas. | **Perfiles > Administrar perfiles… > Importar…** |
 
@@ -52,7 +54,8 @@ Reglas generales:
 - Una celda vacía significa «usa el valor del perfil». Precedencia: valores por defecto,
   luego el perfil de la fila (columna `perfil`) o el **Perfil base** del diálogo, luego las
   columnas del CSV.
-- Límites: hasta 100 filas, 40 columnas, 256 caracteres por celda y 1 MiB.
+- Límites: hasta 100 filas, 60 columnas, 256 caracteres por celda (la columna `notas` admite
+  hasta 8192) y 1 MiB.
 - Las filas se numeran como en Excel: el encabezado es la fila 1.
 - Memoria en GiB si no pones unidad (admite `M`, `MiB`, `G`, `GiB`, `T`, `TiB`...). Disco en
   GiB. Si el número no lleva unidad, ProxLaunch lo avisa («se entendieron como GiB»): es
@@ -85,6 +88,14 @@ Solo `nombre` es obligatoria. Las demás son opcionales.
 | `so` (`sistema`) | No | `linux`, `windows 10`, `windows 11`, `windows server 2016/2019`, `windows server 2022/2025`, `otro` | `windows 11` | Solo con `iso` o `importar`. Aplica el asistente (UEFI, TPM, agente de QEMU, drivers). Es necesaria con `iso` si el perfil no define el sistema. |
 | `virtio` (`drivers`) | No | `si` o `no` (también `yes`, `true`, `1`, `false`, `0`) | `si` | Solo Windows con `iso`. Vacío = detectar el ISO de virtio-win. |
 | `modo_clon` (`clon`) | No | `auto`, `enlazado`, `completo` | `enlazado` | Solo con `clonar`. Vacío = `auto`. |
+| `encender` (`start`) | No | `si` o `no` (también `yes`, `true`, `1`, `false`, `0`) | `si` | Enciende la MV al terminar de crearla. Vacío = lo que marque el formulario. |
+| `arranque_auto` (`onboot`) | No | `si` o `no` | `si` | La MV arranca con el servidor Proxmox. Vacío = lo que marque el formulario. |
+| `notas` (`notes`) | No | Texto libre, hasta 8192 caracteres | `Servidor web de la oficina` | Va a las notas de la MV, tras el bloque automático si está activado. Vacío = lo del formulario. |
+| `etiquetas` (`tags`) | No | Etiquetas separadas por `,` o `;` | `web,produccion` | Se suman a `proxlaunch` y `lote-…`. Vacío = las del formulario. |
+| `pool` | No | Nombre de un pool existente (admite `padre/hijo`); `ninguno` = sin pool | `produccion` | Vacío = el pool del formulario. |
+| `proteger` (`protection`) | No | `si` o `no` | `si` | Protege la MV contra borrado. Vacío = lo que marque el formulario. |
+| `mtu` | No | `heredar`, `igual` (igual al bridge) o un número de 576 a 65520 | `1500` | Solo con tarjeta VirtIO. Se aplica a la **primera** tarjeta. Uso avanzado. |
+| `limite_red` (`rate`) | No | Número mayor que 0, en MB/s (admite decimales con punto) | `100` | Se aplica a la **primera** tarjeta. Vacío = sin límite. Uso avanzado. |
 
 ### Equivalencias que enseñan los ejemplos
 
@@ -93,6 +104,43 @@ Solo `nombre` es obligatoria. Las demás son opcionales.
   copia queda igual que la plantilla.
 - `origen=iso` con `so=windows 11` y `virtio=si`: instala Windows 11 con el ISO de drivers
   virtio-win detectado en el servidor.
+
+## `mvs-opciones.csv`: las columnas de opciones
+
+```text
+"nombre";"perfil";"cpu";"memoria";"disco";"almacenamiento";"red";"encender";"arranque_auto";"notas";"etiquetas";"pool";"proteger";"mtu";"limite_red"
+"web-01";"fabrica.servidor-mediano";"";"";"";"local-lvm";"vmbr0";"si";"si";"Servidor web de la oficina";"web,produccion";"produccion";"si";"1500";"100"
+"web-02";"fabrica.servidor-mediano";"";"";"";"local-lvm";"vmbr0";"";"";"";"";"";"";"";""
+"bd-01";"fabrica.base-de-datos";"";"";"";"local-lvm";"vmbr0";"no";"si";"Base de datos principal";"bd;produccion";"ninguno";"si";"igual";""
+"lab-01";"fabrica.minimo";"";"";"";"local-lvm";"vmbr0";"no";"no";"";"laboratorio";"";"no";"heredar";"12.5"
+```
+
+Qué enseña cada fila:
+
+- `web-01` lo fija todo: se enciende al terminar, arranca con el servidor, lleva notas, las etiquetas `web` y
+  `produccion`, va al pool `produccion`, queda protegida contra borrado, con MTU 1500 y un límite de 100 MB/s.
+- `web-02` deja vacías todas las columnas de opciones: usa lo que tengas marcado en el formulario al importar.
+- `bd-01` separa las etiquetas con `;`, escribe `ninguno` en `pool` (sin pool aunque el formulario tenga uno) y
+  pone el MTU «igual al bridge».
+- `lab-01` escribe `no` donde otras filas escriben `si` (no se enciende, no arranca con el servidor, sin protección),
+  `heredar` en `mtu` (anula el MTU del perfil) y un límite de 12.5 MB/s.
+
+El pool `produccion` y los nombres de almacenamiento y red son inventados: para importar y crear de verdad,
+sustitúyelos por los de tu servidor. Si tu usuario no tiene el privilegio que pide una opción (por ejemplo
+`VM.PowerMgmt` para `encender`), la validación previa bloquea esas filas y dice cuál falta (ver la
+[guía de usuario](../guia-usuario.md#privilegios-opcionales-no-forman-parte-del-rol)).
+
+## `lote-con-opciones.proxlaunch-lote.json`: un lote guardado de formato 3
+
+Es el lote `lote-homogeneo` con las opciones nuevas. Fíjate en tres cosas:
+
+- `"version_formato": 3`. Un archivo que usa alguna opción nueva se escribe en formato 3; uno que no usa ninguna
+  sigue escribiéndose en formato 1 o 2, que ProxLaunch 0.5.1 sí abre.
+- Las opciones van dentro de `config` (`encender`, `arranque_auto`, `arranque_orden`, `arranque_espera`,
+  `notas_origen`, `notas_usuario`, `notas`, `etiquetas_usuario`, `pool` y `proteger`) y, por tarjeta, en `redes` (`mtu` y
+  `limite_mb`). Solo se escriben las que difieren de su valor por defecto.
+- El bloque `opciones` repite las que valen para todo el lote; en un lote por filas, cada fila puede llevar su propio
+  bloque `opciones` con lo que sobrescribe.
 
 ## `mvs-con-errores.csv`: lo que verás en la vista previa
 

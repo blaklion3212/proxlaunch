@@ -39,6 +39,13 @@ ROL_PROXLAUNCH: tuple[str, ...] = (
     "Sys.AccessNetwork",
 )
 
+# Fase A (0.6): privilegios opcionales (no forman parte del rol; solo habilitan opciones). Aparte
+# de ``ROL_PROXLAUNCH``, que sigue con 14. (privilegio, ruta)
+PRIVILEGIOS_OPCIONALES: tuple[tuple[str, str], ...] = (
+    ("VM.PowerMgmt", "/vms"),
+    ("Pool.Audit", "/pool"),
+)
+
 _CREAR = frozenset(
     {
         "VM.Allocate",

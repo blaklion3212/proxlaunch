@@ -2,7 +2,8 @@
 
 from __future__ import annotations
 
-from collections.abc import Sequence
+import math
+from collections.abc import Mapping, Sequence
 from typing import cast
 
 from PySide6.QtCore import QCoreApplication, Qt, Signal
@@ -18,14 +19,22 @@ from PySide6.QtWidgets import (
 )
 
 from proxlaunch.interfaz.ayuda import ayuda
-from proxlaunch.interfaz.textos import texto_problema
-from proxlaunch.interfaz.vistas.campos import mensaje, poner_mensaje, poner_propiedad
+from proxlaunch.interfaz.textos import (
+    texto_estado_opcion,
+    texto_mtu_solo_virtio,
+    texto_opcion_restablecida,
+    texto_problema,
+)
+from proxlaunch.interfaz.vistas.campos import etiqueta, mensaje, poner_mensaje, poner_propiedad
+from proxlaunch.nucleo.constructor_peticion import formato_limite
 from proxlaunch.nucleo.modelos.inventario import Bridge
-from proxlaunch.nucleo.modelos.vm import InterfazRed, ModeloRed
+from proxlaunch.nucleo.modelos.vm import MTU_IGUAL_BRIDGE, InterfazRed, ModeloRed
+from proxlaunch.nucleo.opciones.modelos import EstadoOpcion, OpcionA
+from proxlaunch.nucleo.origen.capacidades_origen import Disponibilidad
 from proxlaunch.nucleo.validacion import Problema, Severidad
 from proxlaunch.nucleo.valores_defecto import bridge_por_defecto
 
-_C_INDICE, _C_BRIDGE, _C_MODELO, _C_VLAN, _C_QUITAR = range(5)
+_C_INDICE, _C_BRIDGE, _C_MODELO, _C_VLAN, _C_MTU, _C_LIMITE, _C_QUITAR = range(7)
 
 
 def vlan_desde_texto(texto: str) -> int | None:
@@ -37,6 +46,27 @@ def vlan_desde_texto(texto: str) -> int | None:
         return int(t)
     except ValueError:
         return 0
+
+
+def limite_desde_texto(texto: str) -> float | None:
+    """Límite en MB/s: vacío = sin límite; un texto que no es un número se convierte en 0.0 (la
+    regla V-A06 lo rechaza, como el VLAN no numérico con V-15)."""
+    t = texto.strip().replace(",", ".")
+    if not t:
+        return None
+    try:
+        return float(t)
+    except ValueError:
+        return 0.0
+
+
+def texto_limite(limite: float | None) -> str:
+    """Límite como texto del campo, sin ceros sobrantes ni notación científica (100.0 → «100»)."""
+    if limite is None:
+        return ""
+    if not math.isfinite(limite):
+        return f"{limite:g}"  # no es un límite válido: V-A06 lo marcará
+    return formato_limite(limite)
 
 
 def texto_ausente(valor: str) -> str:
@@ -63,6 +93,19 @@ class _FilaRed:
         self.vlan = QLineEdit()
         self.vlan.setMaximumWidth(80)
         self.vlan.setPlaceholderText(QCoreApplication.translate("TablaRedes", "Sin VLAN"))
+        # Fase A (A5): MTU (Heredar / Igual al bridge / valor) y límite de velocidad en MB/s.
+        self.mtu = QComboBox()
+        self.mtu.setEditable(True)
+        self.mtu.setInsertPolicy(QComboBox.InsertPolicy.NoInsert)
+        self.mtu.addItem(QCoreApplication.translate("TablaRedes", "Heredar del bridge"), None)
+        self.mtu.addItem(QCoreApplication.translate("TablaRedes", "Igual al bridge"), 1)
+        self.mtu.setMinimumContentsLength(14)
+        self.mtu.setSizeAdjustPolicy(
+            QComboBox.SizeAdjustPolicy.AdjustToMinimumContentsLengthWithIcon
+        )
+        self.limite = QLineEdit()
+        self.limite.setMaximumWidth(90)
+        self.limite.setPlaceholderText(QCoreApplication.translate("TablaRedes", "Sin límite"))
         self.quitar = QPushButton(QCoreApplication.translate("TablaRedes", "Quitar"))
 
     def widgets(self) -> list[tuple[int, QWidget]]:
@@ -71,6 +114,8 @@ class _FilaRed:
             (_C_BRIDGE, self.bridge),
             (_C_MODELO, self.modelo),
             (_C_VLAN, self.vlan),
+            (_C_MTU, self.mtu),
+            (_C_LIMITE, self.limite),
             (_C_QUITAR, self.quitar),
         ]
 
@@ -86,6 +131,11 @@ class TablaRedes(QWidget):
         self._bridges: list[Bridge] = []
         self._avanzado = False
         self._avanzados: list[QWidget] = []
+        # Disponibilidad de las opciones de red de la fase A (privilegio VM.Config.Network).
+        self._mtu_ok = True
+        self._limite_ok = True
+        self._texto_mtu_bloqueado = ""
+        self._texto_limite_bloqueado = ""
         self._rejilla = QGridLayout()
         self._rejilla.setHorizontalSpacing(8)
         self._rejilla.setVerticalSpacing(4)
@@ -95,6 +145,8 @@ class TablaRedes(QWidget):
             (_C_BRIDGE, QCoreApplication.translate("TablaRedes", "Red (bridge)"), "bridge"),
             (_C_MODELO, QCoreApplication.translate("TablaRedes", "Tarjeta"), "modelo_red"),
             (_C_VLAN, QCoreApplication.translate("TablaRedes", "VLAN"), "vlan"),
+            (_C_MTU, QCoreApplication.translate("TablaRedes", "MTU"), None),
+            (_C_LIMITE, QCoreApplication.translate("TablaRedes", "Límite (MB/s)"), None),
         ):
             lbl = QLabel(texto)
             lbl.setProperty("secundario", True)
@@ -103,17 +155,24 @@ class TablaRedes(QWidget):
             self._cabeceras[col] = lbl
             self._rejilla.addWidget(lbl, 0, col)
         self._avanzados.append(self._cabeceras[_C_MODELO])
+        self._avanzados.append(self._cabeceras[_C_MTU])
+        self._avanzados.append(self._cabeceras[_C_LIMITE])
         self._rejilla.setColumnStretch(_C_BRIDGE, 1)
         self._agregar = QPushButton(QCoreApplication.translate("TablaRedes", "Agregar interfaz"))
         self._agregar.clicked.connect(lambda: self.agregar_red())
         self._errores = mensaje(error=True)
         self._aviso_nodo = mensaje(aviso=True)
         self._sin_redes = mensaje(error=True)
+        self._aviso_opciones = mensaje(aviso=True)
+        self._nota_mtu = etiqueta(texto_mtu_solo_virtio(), secundario=True)
+        self._nota_mtu.hide()
         capa = QVBoxLayout(self)
         capa.setContentsMargins(0, 0, 0, 0)
         capa.addLayout(self._rejilla)
         capa.addWidget(self._agregar, 0, Qt.AlignmentFlag.AlignLeft)
         capa.addWidget(self._sin_redes)
+        capa.addWidget(self._nota_mtu)
+        capa.addWidget(self._aviso_opciones)
         capa.addWidget(self._errores)
         capa.addWidget(self._aviso_nodo)
         self._aplicar_visibilidad()
@@ -129,6 +188,12 @@ class TablaRedes(QWidget):
     def _aplicar_visibilidad(self) -> None:
         for w in self._avanzados:
             w.setVisible(self._avanzado)
+        self._refrescar_nota_mtu()
+
+    def _refrescar_nota_mtu(self) -> None:
+        """Explica por qué el MTU de una tarjeta que no es VirtIO está deshabilitado."""
+        hay_otra = any(f.modelo.currentData() != ModeloRed.VIRTIO for f in self._filas)
+        self._nota_mtu.setVisible(self._avanzado and self._mtu_ok and hay_otra)
 
     def establecer_bridges(self, bridges: Sequence[Bridge]) -> list[str]:
         """Recarga los bridges del nodo; devuelve los que ya no existen (CA-11.7)."""
@@ -175,6 +240,7 @@ class TablaRedes(QWidget):
         for r in redes:
             self._nueva_fila(r, conservar_ausente=conservar_ausentes)
         self._renumerar()
+        self._refrescar_opciones(emitir=False)
         self.cambiado.emit()
 
     def establecer_modelo_todas(self, modelo: ModeloRed) -> None:
@@ -214,9 +280,117 @@ class TablaRedes(QWidget):
                 bridge=str(f.bridge.currentData() or ""),
                 modelo=ModeloRed(f.modelo.currentData()),
                 vlan=vlan_desde_texto(f.vlan.text()),
+                mtu=self._mtu_de(f),
+                limite_mb=limite_desde_texto(f.limite.text()),
             )
             for f in self._filas
         ]
+
+    @staticmethod
+    def _mtu_de(f: _FilaRed) -> int | None:
+        """MTU escrito: ``None`` = heredar; un texto que no es un entero se convierte en 0 (la regla
+        V-A04 lo rechaza)."""
+        texto = f.mtu.currentText().strip()
+        if not texto:
+            return None
+        indice = f.mtu.findText(texto)
+        if indice >= 0:
+            valor = f.mtu.itemData(indice)
+            return None if valor is None else int(valor)
+        try:
+            return int(texto)
+        except ValueError:
+            return 0
+
+    @staticmethod
+    def _poner_mtu(f: _FilaRed, mtu: int | None) -> None:
+        if mtu is None:
+            f.mtu.setCurrentIndex(0)
+        elif mtu == MTU_IGUAL_BRIDGE:
+            f.mtu.setCurrentIndex(1)
+        else:
+            f.mtu.setCurrentIndex(-1)
+            f.mtu.setEditText(str(mtu))
+
+    def mtu_no_numericas(self) -> list[str]:
+        """Etiquetas («net0»…) de las interfaces cuyo MTU escrito no es un número entero."""
+        malas: list[str] = []
+        for f in self._filas:
+            texto = f.mtu.currentText().strip()
+            if not texto or f.mtu.findText(texto) >= 0:
+                continue
+            try:
+                int(texto)
+            except ValueError:
+                malas.append(f.indice.text())
+        return malas
+
+    def limites_no_numericos(self) -> list[str]:
+        """Etiquetas de las interfaces cuyo límite escrito no es un número."""
+        malas: list[str] = []
+        for f in self._filas:
+            texto = f.limite.text().strip().replace(",", ".")
+            if not texto:
+                continue
+            try:
+                float(texto)
+            except ValueError:
+                malas.append(f.indice.text())
+        return malas
+
+    def establecer_disponibilidad(self, estados: Mapping[OpcionA, EstadoOpcion]) -> None:
+        """Habilita o deshabilita MTU y límite según ``VM.Config.Network`` (RF-A0.3).
+
+        Un valor ya escrito en una opción que deja de estar disponible vuelve a su valor por
+        defecto con un aviso (CL-A15). El texto de ayuda nombra el privilegio y la ruta.
+        """
+        mtu = estados.get(OpcionA.MTU)
+        limite = estados.get(OpcionA.LIMITE_RED)
+        self._mtu_ok = mtu is None or mtu.disponibilidad != Disponibilidad.NO
+        self._limite_ok = limite is None or limite.disponibilidad != Disponibilidad.NO
+        self._texto_mtu_bloqueado = "" if self._mtu_ok or mtu is None else texto_estado_opcion(mtu)
+        self._texto_limite_bloqueado = (
+            "" if self._limite_ok or limite is None else texto_estado_opcion(limite)
+        )
+        self._refrescar_opciones(emitir=True)
+
+    def _refrescar_opciones(self, *, emitir: bool) -> None:
+        """Aplica la disponibilidad a todas las filas: lo que no se puede usar vuelve a su valor
+        por defecto (con aviso) y se deshabilita con la explicación al lado."""
+        avisos: list[str] = []
+        for f in self._filas:
+            if not self._mtu_ok and self._mtu_de(f) is not None:
+                self._poner_mtu(f, None)
+                avisos.append(texto_opcion_restablecida(OpcionA.MTU.value, ""))
+            if not self._limite_ok and f.limite.text().strip():
+                f.limite.clear()
+                avisos.append(texto_opcion_restablecida(OpcionA.LIMITE_RED.value, ""))
+        for f in self._filas:
+            self._aplicar_estado_fila(f)
+        explicaciones = [self._texto_mtu_bloqueado, self._texto_limite_bloqueado]
+        poner_mensaje(
+            self._aviso_opciones,
+            "\n".join(dict.fromkeys([*avisos, *(x for x in explicaciones if x)])),
+            aviso=True,
+        )
+        self._refrescar_nota_mtu()
+        if avisos and emitir:
+            self.cambiado.emit()
+
+    def _aplicar_estado_fila(self, f: _FilaRed) -> None:
+        """MTU solo con VirtIO y con privilegio; el límite, solo con privilegio."""
+        virtio = f.modelo.currentData() == ModeloRed.VIRTIO
+        f.mtu.setEnabled(self._mtu_ok and virtio)
+        f.limite.setEnabled(self._limite_ok)
+        motivo_mtu = (
+            self._texto_mtu_bloqueado
+            if not self._mtu_ok
+            else ("" if virtio else texto_mtu_solo_virtio())
+        )
+        f.mtu.setToolTip(motivo_mtu)
+        f.mtu.setAccessibleDescription(motivo_mtu)
+        f.limite.setToolTip(self._texto_limite_bloqueado)
+        f.limite.setAccessibleDescription(self._texto_limite_bloqueado)
 
     def hay_bridges(self) -> bool:
         return bool(self._bridges)
@@ -224,8 +398,13 @@ class TablaRedes(QWidget):
     def aplicar_problemas(self, problemas: Sequence[Problema]) -> None:
         errores: list[str] = []
         con_vlan: set[int] = set()
+        con_mtu: set[int] = set()
+        con_limite: set[int] = set()
         for p in problemas:
             if p.severidad != Severidad.ERROR:
+                continue
+            if p.campo in ("mtu", "limite_red"):  # V-A12: opción sin privilegio o sin versión
+                errores.append(texto_problema(p))
                 continue
             if p.campo == "redes":  # reglas de la lista completa (V-23)
                 errores.append(texto_problema(p))
@@ -241,8 +420,14 @@ class TablaRedes(QWidget):
             errores.append(f"{self._filas[i].indice.text()}: {texto_problema(p)}")
             if p.campo.endswith(".vlan"):
                 con_vlan.add(i)
+            elif p.campo.endswith(".mtu"):
+                con_mtu.add(i)
+            elif p.campo.endswith(".limite_mb"):
+                con_limite.add(i)
         for i, f in enumerate(self._filas):
             poner_propiedad(f.vlan, "invalido", i in con_vlan)
+            poner_propiedad(f.mtu, "invalido", i in con_mtu)
+            poner_propiedad(f.limite, "invalido", i in con_limite)
         poner_mensaje(self._errores, "\n".join(dict.fromkeys(errores)))
 
     def mostrar_aviso_nodo(self, texto: str | None) -> None:
@@ -272,15 +457,31 @@ class TablaRedes(QWidget):
         f.bridge.setCurrentIndex(f.bridge.findData(red.bridge))
         f.modelo.setCurrentIndex(max(f.modelo.findData(red.modelo), 0))
         f.vlan.setText("" if red.vlan is None else str(red.vlan))
+        self._poner_mtu(f, red.mtu)
+        f.limite.setText(texto_limite(red.limite_mb))
         f.bridge.currentIndexChanged.connect(lambda _i, fila=f: self._al_cambiar_bridge(fila))
-        f.modelo.currentIndexChanged.connect(lambda _i: self.cambiado.emit())
+        f.modelo.currentIndexChanged.connect(lambda _i, fila=f: self._al_cambiar_modelo(fila))
         f.vlan.textEdited.connect(lambda _t: self.cambiado.emit())
+        f.mtu.currentIndexChanged.connect(lambda _i: self.cambiado.emit())
+        f.mtu.editTextChanged.connect(lambda _t: self.cambiado.emit())
+        f.limite.textEdited.connect(lambda _t: self.cambiado.emit())
         f.quitar.clicked.connect(lambda _c=False, fila=f: self._quitar_fila(fila))
         self._filas.append(f)
         for col, w in f.widgets():
             self._rejilla.addWidget(w, len(self._filas), col)
-        self._avanzados.append(f.modelo)
-        f.modelo.setVisible(self._avanzado)
+        for w in (f.modelo, f.mtu, f.limite):
+            self._avanzados.append(w)
+            w.setVisible(self._avanzado)
+        self._aplicar_estado_fila(f)
+        self._refrescar_nota_mtu()
+
+    def _al_cambiar_modelo(self, f: _FilaRed) -> None:
+        """Al dejar VirtIO el MTU vuelve a «Heredar» (P-18); el MTU no vale con otras tarjetas."""
+        if f.modelo.currentData() != ModeloRed.VIRTIO:
+            self._poner_mtu(f, None)
+        self._aplicar_estado_fila(f)
+        self._refrescar_nota_mtu()
+        self.cambiado.emit()
 
     def _al_cambiar_bridge(self, f: _FilaRed) -> None:
         if f.bridge.currentIndex() >= 0:
@@ -299,6 +500,7 @@ class TablaRedes(QWidget):
         for n, resto in enumerate(self._filas, start=1):
             for col, w in resto.widgets():
                 self._rejilla.addWidget(w, n, col)
+        self._refrescar_nota_mtu()
         if emitir:
             self._renumerar()
             self.cambiado.emit()
@@ -306,3 +508,11 @@ class TablaRedes(QWidget):
     def _renumerar(self) -> None:
         for n, f in enumerate(self._filas):
             f.indice.setText(f"net{n}")
+            f.mtu.setAccessibleName(
+                QCoreApplication.translate("TablaRedes", "MTU de net{n}").format(n=n)
+            )
+            f.limite.setAccessibleName(
+                QCoreApplication.translate(
+                    "TablaRedes", "Límite de velocidad de net{n} (MB/s)"
+                ).format(n=n)
+            )

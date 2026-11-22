@@ -44,6 +44,9 @@ class RedPerfil:
     modelo: ModeloRed = ModeloRed.VIRTIO
     vlan: int | None = None
     bridge_preferido: str | None = None  # pista
+    # Fase A: hardware de la tarjeta (no son pistas: se guardan siempre).
+    mtu: int | None = None  # None = heredar; 1 = igual al bridge; 576..65520
+    limite_mb: float | None = None  # rate en MB/s; None = sin límite
 
 
 @dataclass(frozen=True)
@@ -90,6 +93,9 @@ class ConfigPerfil:
     tpm: bool = False
     agente_qemu: bool = False
     pista_origen: PistaOrigen | None = None
+    # Fase A: «Arrancar con el servidor». «Encender al terminar», notas, etiquetas, pool y
+    # protección NO se guardan en un perfil (RF-A1.4, A2.6, A3.6, A4.6, A6.2).
+    arranque_auto: bool = False
 
 
 @dataclass(frozen=True)

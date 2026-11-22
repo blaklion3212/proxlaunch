@@ -16,6 +16,7 @@ import os
 import tempfile
 import time
 from collections.abc import Callable
+from datetime import UTC, datetime
 from pathlib import Path
 
 import pytest
@@ -108,6 +109,13 @@ def apariencia(qapp, tmp_path_factory):
     return gestor
 
 
+class RelojCalendarioFijo:
+    """Calendario fijo (10 de marzo de 2025, 12:00 UTC) para las notas de origen."""
+
+    def ahora(self) -> datetime:
+        return datetime(2025, 3, 10, 12, 0, 0, tzinfo=UTC)
+
+
 @pytest.fixture
 def deps(qapp, apariencia, rutas, llavero, servicio_falso):
     """Dependencias de las pruebas, pero con el tema claro ya aplicado y reloj simulado."""
@@ -118,6 +126,7 @@ def deps(qapp, apariencia, rutas, llavero, servicio_falso):
         secretos=AlmacenSecretos(backend=llavero),
         preferencias=RepositorioPreferencias(rutas.preferencias),
         reloj=RelojSimulado(),
+        reloj_calendario=RelojCalendarioFijo(),
         gestor_tema=apariencia,
         directorio_informes=rutas.directorio_datos / "informes",
         directorio_lotes=rutas.lotes,

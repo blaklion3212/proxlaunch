@@ -13,14 +13,15 @@ from dataclasses import replace
 
 import pytest
 from PySide6.QtCore import QPoint, Qt
-from PySide6.QtGui import QPainter, QPixmap
-from PySide6.QtWidgets import QGroupBox, QMessageBox
+from PySide6.QtGui import QPainter, QPixmap, QTextCursor
+from PySide6.QtWidgets import QGroupBox, QMessageBox, QScrollArea
 
 from proxlaunch.interfaz import controlador_origen
 from proxlaunch.interfaz.dialogos.acerca_de import DialogoAcercaDe
 from proxlaunch.interfaz.dialogos.capacidades import DialogoCapacidades
 from proxlaunch.interfaz.dialogos.catalogo import DialogoCatalogo, FuenteCatalogo
 from proxlaunch.interfaz.dialogos.conexion import DialogoConexion
+from proxlaunch.interfaz.dialogos.confirmar_deshacer import DialogoConfirmarDeshacerForzado
 from proxlaunch.interfaz.dialogos.deshacer import DialogoDeshacer
 from proxlaunch.interfaz.dialogos.dos_factores import DialogoDosFactores
 from proxlaunch.interfaz.dialogos.elegir_storage import DialogoElegirStorage
@@ -47,6 +48,7 @@ from proxlaunch.nucleo.lote.modelos import (
     MotivoPausa,
 )
 from proxlaunch.nucleo.lote.modelos import EstadoMV as EM
+from proxlaunch.nucleo.lote.rollback import InspeccionRollback
 from proxlaunch.nucleo.modelos.catalogo import (
     CatalogoServidor,
     Contenido,
@@ -55,7 +57,16 @@ from proxlaunch.nucleo.modelos.catalogo import (
 )
 from proxlaunch.nucleo.modelos.origen import ModoClon, TipoSO
 from proxlaunch.nucleo.modelos.tarea import Desenlace
-from proxlaunch.nucleo.modelos.vm import Ballooning, Bus, Disco, Firmware, OrigenSO
+from proxlaunch.nucleo.modelos.vm import (
+    Ballooning,
+    Bus,
+    Disco,
+    Firmware,
+    InterfazRed,
+    ModeloRed,
+    OrigenSO,
+)
+from proxlaunch.nucleo.opciones.modelos import EstadoPools, PoliticaEtiquetas, PoolsServidor
 from proxlaunch.nucleo.origen.capacidades_origen import Via
 from proxlaunch.nucleo.perfiles_maquina.aplicar import config_desde_configuracion
 from proxlaunch.nucleo.perfiles_maquina.formato import leer_perfiles, perfiles_a_bytes
@@ -70,7 +81,18 @@ from proxlaunch.nucleo.transferencias.modelos import (
 )
 from proxlaunch.nucleo.transferencias.servicio import RegistroSesion
 
-from ..apoyo import GIB, CreacionPorVmid, info_huella, perfil, resultado, sesion_falsa, upid_de
+from ..apoyo import (
+    GIB,
+    ClienteLoteFalso,
+    CreacionPorVmid,
+    _VistaSoloLectura,
+    info_huella,
+    perfil,
+    resultado,
+    sesion_falsa,
+    upid_de,
+)
+from ..apoyo_fase_a import inventario_con, permisos_fase_a
 from ..apoyo_lote import entrada, informe_de, upid_con_usuario
 from ..apoyo_mvp3 import archivos as archivos  # noqa: F401  (fixture)
 from ..apoyo_mvp3 import definicion_homogenea, escribir_lote_guardado, importar_csv_por_menu
@@ -259,6 +281,13 @@ def _lecturas_del_servidor(monkeypatch):
             permisos=permisos,
             listados=listados,
             plantillas=plantillas(sesion, reloj) if necesidades.plantillas else None,
+            # Los pools y la política de etiquetas son los del inventario (los lee el servidor
+            # falso): sin esto el lote avisaría de lecturas fallidas que en la guía no ocurren.
+            pools=inv.catalogo.pools if inv.catalogo is not None else PoolsServidor(),
+            politica_etiquetas=(
+                inv.catalogo.politica_etiquetas if inv.catalogo is not None else None
+            ),
+            politica_etiquetas_fallida=False,
         )
 
     monkeypatch.setattr(controlador_origen, "leer_catalogo_para", catalogo_para)
@@ -1135,3 +1164,161 @@ def test_60_cambios_sin_guardar(
     v._accion_abrir_lote.trigger()
     # Se vuelve a «No guardar» para que cerrar la ventana al terminar no pregunte otra vez.
     monkeypatch.setattr(VentanaPrincipal, "_preguntar_guardar_cambios", lambda self: "descartar")
+
+
+# --- 9. Opciones de la fase A (0.6.0) -------------------------------------------------------
+
+POOLS_GUIA = PoolsServidor(EstadoPools.OK, ("produccion", "pruebas"))
+
+
+def _inventario_fase_a(inv, *, opcionales=("VM.PowerMgmt", "Pool.Audit"), pools=POOLS_GUIA):
+    """Inventario con los permisos del rol más los opcionales dados y los pools del servidor."""
+    inv2 = inventario_con(inv, permisos_fase_a(anadir=opcionales), pools)
+    inv2.catalogo = replace(inv2.catalogo, politica_etiquetas=PoliticaEtiquetas(permiso="free"))
+    return inv2
+
+
+def _cfg_opciones(**cambios):
+    """Configuración de la guía con todas las opciones de la fase A rellenas (datos ficticios)."""
+    base = {
+        "nodo": "pve",
+        "encender": True,
+        "arranque_auto": True,
+        "arranque_orden": 2,
+        "arranque_espera": 30,
+        "notas_origen": True,
+        "notas_usuario": True,
+        "notas": "Servidor web del equipo de ejemplo",
+        "etiquetas_usuario": ("web", "produccion"),
+        "pool": "produccion",
+        "proteger": True,
+        "redes": [
+            InterfazRed("vmbr0", ModeloRed.VIRTIO, None, mtu=1500, limite_mb=100.0),
+            InterfazRed("vmbr1", ModeloRed.VIRTIO, None, mtu=1, limite_mb=12.5),
+        ],
+    }
+    base.update(cambios)
+    return configuracion_guia(**base)
+
+
+def _formulario_con_opciones(qtbot, entorno, alto, **kw):
+    inv = _inventario_fase_a(inventario_guia_individual(), **kw)
+    v = conectado(qtbot, entorno, inv, alto)
+    esperar_validacion(qtbot, v)
+    return v
+
+
+def test_61_opciones_general(qtbot, entorno, guardar):  # noqa: F811
+    v = _formulario_con_opciones(qtbot, entorno, 1900)
+    v.formulario.aplicar_configuracion(_cfg_opciones())
+    poner_nombre(qtbot, v, "srv-web-01")
+    qtbot.wait(100)
+    guardar(v, "61-opciones-general")
+
+
+def test_62_opciones_avanzadas(qtbot, entorno, guardar):  # noqa: F811
+    v = _formulario_con_opciones(qtbot, entorno, 2100)
+    v.establecer_modo(Modo.AVANZADO)
+    v.formulario.aplicar_configuracion(_cfg_opciones())
+    poner_nombre(qtbot, v, "srv-web-01")
+    qtbot.wait(100)
+    guardar(v, "62-opciones-avanzadas")
+
+
+def test_63_opciones_deshabilitadas(qtbot, entorno, guardar):  # noqa: F811
+    v = _formulario_con_opciones(
+        qtbot, entorno, 1900, opcionales=(), pools=PoolsServidor(EstadoPools.SIN_PERMISO)
+    )
+    poner_nombre(qtbot, v, "srv-web-01")
+    qtbot.wait(100)
+    guardar(v, "63-opciones-deshabilitadas")
+
+
+class _VistaGuiaSoloLectura(_VistaSoloLectura):
+    """Vista de solo lectura que deja pasar también las dos lecturas de la fase A."""
+
+    _LECTURAS = _VistaSoloLectura._LECTURAS | {"pools", "opciones_cluster"}
+
+
+class ClienteGuiaFalso(ClienteLoteFalso):
+    """Cliente falso que, además, sirve los pools y la política de etiquetas del servidor."""
+
+    def pools(self):
+        return [{"poolid": p} for p in POOLS_GUIA.ids]
+
+    def opciones_cluster(self):
+        return {"user-tag-access": {"user-allow": "free"}}
+
+    def solo_lectura(self):
+        self.pidio_solo_lectura += 1
+        return _VistaGuiaSoloLectura(self)
+
+
+def _lote_con_opciones(qtbot, entorno, alto=1000):
+    entorno.inv = _inventario_fase_a(inventario_guia_cluster())
+    preparar_lote(
+        qtbot,
+        entorno,
+        cantidad=5,
+        prefijo="srv-web",
+        nodo=None,
+        cliente=ClienteGuiaFalso(),
+        perfil_=perfil(*PERFIL),
+    )
+    v = entorno.ventana
+    preparar(qtbot, v, alto, 1900)
+    cfg = _cfg_opciones(nodo="pve1", redes=[InterfazRed("vmbr0")])
+    v.formulario.aplicar_configuracion(cfg)
+    esperar_validacion(qtbot, v)
+    ver_resumen(qtbot, v)
+    return v
+
+
+def test_64_lote_resumen_opciones(qtbot, entorno, guardar):  # noqa: F811
+    v = _lote_con_opciones(qtbot, entorno, 700)
+    qtbot.wait(100)
+    guardar(v.resumen_lote, "64-lote-resumen-opciones")
+
+
+def test_65_simulacion_encender(qtbot, entorno, guardar):  # noqa: F811
+    v = _lote_con_opciones(qtbot, entorno)
+    r = v.resumen_lote
+    r.boton_simular.click()
+    qtbot.waitUntil(lambda: r.es_simulacion and not v._planificando, timeout=4000)
+    if not r.detalles_peticiones._texto.isVisible():
+        r.detalles_peticiones._boton.click()
+    qtbot.wait(100)
+    # Se baja el texto técnico hasta la petición que enciende la primera máquina.
+    texto = r.detalles_peticiones._texto
+    texto.moveCursor(QTextCursor.MoveOperation.Start)
+    texto.find("status/start")
+    cursor = texto.textCursor()
+    cursor.clearSelection()
+    texto.setTextCursor(cursor)
+    texto.ensureCursorVisible()
+    qtbot.wait(100)
+    guardar(r, "65-simulacion-encender")
+
+
+def test_66_deshacer_confirmacion_forzada(qtbot, guardar):
+    inspeccion = InspeccionRollback(
+        encendidas=(101, 102),
+        protegidas=(102, 103),
+        encendidas_sin_privilegio=(104,),
+        nombres={101: "srv-web-01", 102: "srv-web-02", 103: "srv-web-03", 104: "srv-web-04"},
+    )
+    guardar(
+        mostrar(qtbot, DialogoConfirmarDeshacerForzado(inspeccion)),
+        "66-deshacer-confirmacion-forzada",
+    )
+
+
+def test_67_guia_privilegios_opcionales(qtbot, guardar):
+    d = DialogoGuiaToken()
+    d.resize(760, 1100)
+    mostrar(qtbot, d)
+    # Se baja la lista hasta «Privilegios opcionales».
+    barra = d.findChild(QScrollArea).verticalScrollBar()
+    barra.setValue(barra.maximum())
+    qtbot.wait(100)
+    guardar(d, "67-guia-privilegios-opcionales")

@@ -1,7 +1,9 @@
 """Aplicar un perfil a una configuración (RF-P05, RF-P06). Puro: sin E/S de red (INV-M1).
 
 El perfil copia SOLO hardware; ``vmid``, ``nombre``, ``nodo`` y ``etiquetas`` se conservan de la
-configuración actual. Las pistas de storage y bridge se resuelven contra el inventario del
+configuración actual (fase A: también las opciones de notas, etiquetas, pool y protección; el
+perfil solo fija «Arrancar con el servidor» y «Encender al terminar» vuelve a su valor por
+defecto, CA-A1.4.1). Las pistas de storage y bridge se resuelven contra el inventario del
 nodo efectivo (``actual.nodo``) y nunca se inventa un valor (CA-P06.7).
 """
 
@@ -199,7 +201,7 @@ def aplicar_config(
         else:
             avisar("bridge", r.bridge_preferido, br_defecto)
             bridge = br_defecto
-        redes.append(InterfazRed(bridge or "", r.modelo, r.vlan))
+        redes.append(InterfazRed(bridge or "", r.modelo, r.vlan, r.mtu, r.limite_mb))
 
     detalle = _detalle_desde_pista(config, inv, nodo, avisar)
     if config.origen == OrigenSO.CLONAR_PLANTILLA:
@@ -213,6 +215,8 @@ def aplicar_config(
             tpm=False,
             agente_qemu=False,
             detalle_origen=detalle,
+            encender=False,  # CA-A1.4.1: «Encender al terminar» vuelve a su valor por defecto
+            arranque_auto=config.arranque_auto,
         )
         return ResultadoAplicacion(clon, tuple(avisos))
     cfg = ConfiguracionVM(
@@ -240,6 +244,18 @@ def aplicar_config(
         tpm=config.tpm,
         agente_qemu=config.agente_qemu,
         detalle_origen=detalle,
+        # Fase A: el perfil fija «Arrancar con el servidor»; «Encender al terminar» vuelve a su
+        # valor por defecto (CA-A1.4.1) y el resto de opciones de fase A es del formulario.
+        encender=False,
+        arranque_auto=config.arranque_auto,
+        arranque_orden=actual.arranque_orden,
+        arranque_espera=actual.arranque_espera,
+        notas_origen=actual.notas_origen,
+        notas_usuario=actual.notas_usuario,
+        notas=actual.notas,
+        etiquetas_usuario=actual.etiquetas_usuario,
+        pool=actual.pool,
+        proteger=actual.proteger,
     )
     return ResultadoAplicacion(cfg, tuple(avisos))
 
@@ -316,12 +332,15 @@ def config_desde_configuracion(cfg: ConfiguracionVM, *, con_pistas: bool) -> Con
         ),
         storage_efi_preferido=pista(cfg.storage_efi),
         controlador_scsi=cfg.controlador_scsi,
-        redes=tuple(RedPerfil(r.modelo, r.vlan, pista(r.bridge)) for r in cfg.redes),
+        redes=tuple(
+            RedPerfil(r.modelo, r.vlan, pista(r.bridge), r.mtu, r.limite_mb) for r in cfg.redes
+        ),
         origen=origen,
         tipo_so=None if es_clon or origen == OrigenSO.DISCO_VACIO else cfg.tipo_so,
         tpm=False if es_clon or origen == OrigenSO.DISCO_VACIO else cfg.tpm,
         agente_qemu=False if es_clon or origen == OrigenSO.DISCO_VACIO else cfg.agente_qemu,
         pista_origen=pista_origen,
+        arranque_auto=cfg.arranque_auto,
     )
 
 
@@ -349,7 +368,8 @@ def _huella(cfg: ConfiguracionVM) -> tuple[object, ...]:
             for d in cfg.discos
         ),
         cfg.controlador_scsi,
-        tuple((r.bridge, r.modelo, r.vlan) for r in cfg.redes),
+        tuple((r.bridge, r.modelo, r.vlan, r.mtu, r.limite_mb) for r in cfg.redes),
+        cfg.arranque_auto,
         cfg.origen,
         cfg.tipo_so,
         cfg.tpm,

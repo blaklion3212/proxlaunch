@@ -115,7 +115,7 @@ ESPERADOS_EL = {
         "«web-01» está encendida. Apágala en Proxmox y vuelve a intentarlo."
     ],
     CodigoError.ROLLBACK_BLOQUEADA: [  # E-L20
-        "«web-01» está protegida o bloqueada. Quita la protección en Proxmox."
+        "«web-01» está bloqueada por una tarea de Proxmox. Espera a que termine."
     ],
     CodigoError.ROLLBACK_DISCOS_SUELTOS: [  # E-L21
         "Pueden haber quedado discos sueltos de «web-01»; revísalos en Proxmox."

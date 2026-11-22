@@ -10,11 +10,12 @@ import re
 from collections.abc import Iterable, Mapping, Sequence
 from dataclasses import dataclass
 
+from proxlaunch.nucleo.constructor_peticion import valor_startup
 from proxlaunch.nucleo.errores import CodigoError, ErrorProxLaunch
 from proxlaunch.nucleo.modelos.catalogo import DetallePlantilla, DiscoPlantilla
 from proxlaunch.nucleo.modelos.inventario import Inventario, Storage
 from proxlaunch.nucleo.modelos.origen import DetalleClon, ModoClon
-from proxlaunch.nucleo.modelos.vm import ConfiguracionVM
+from proxlaunch.nucleo.modelos.vm import ConfiguracionVM, pool_valido
 from proxlaunch.nucleo.validacion import (
     DISCO_MAX_GIB,
     DISCO_MIN_GIB,
@@ -145,6 +146,7 @@ def detalle_de_config(config: Mapping[str, object]) -> DetallePlantilla:
         tipo_cpu = primero if tipo_cpu_valido(primero) else None
     bloqueo = config.get("lock")
     plantilla = config.get("template")
+    descripcion = config.get("description")
     return DetallePlantilla(
         es_plantilla=plantilla in (1, "1", True),
         bloqueo=bloqueo if isinstance(bloqueo, str) and bloqueo else None,
@@ -157,6 +159,9 @@ def detalle_de_config(config: Mapping[str, object]) -> DetallePlantilla:
         etiquetas=_etiquetas(config.get("tags")),
         balloon=_entero(config.get("balloon")),
         vcpus=_entero(config.get("vcpus")),
+        # Fase A: sin clave ``description`` la plantilla no tiene notas (None); un valor que
+        # no sea texto se ignora.
+        descripcion=descripcion if isinstance(descripcion, str) else None,
     )
 
 
@@ -249,7 +254,11 @@ def _invalido(campo: str) -> ErrorProxLaunch:
     return ErrorProxLaunch(CodigoError.PARAMETRO_INVALIDO, {"campo": campo})
 
 
-def _id_seguro(valor: object) -> bool:
+def _id_seguro(valor: object, *, anidado: bool = False) -> bool:
+    """Identificador sin caracteres peligrosos. Con ``anidado`` admite «/» como separador de
+    pools anidados (formato ``pve-poolid``, SEG-A-04); node y storage no lo admiten."""
+    if anidado:
+        return pool_valido(valor)
     return isinstance(valor, str) and _RE_ID.fullmatch(valor) is not None
 
 
@@ -300,6 +309,13 @@ def construir_peticion_clon(cfg: ConfiguracionVM, inv: Inventario) -> PeticionCl
         if not _id_seguro(cfg.nodo):
             raise _invalido("nodo")
         parametros["target"] = cfg.nodo
+    # Fase A (0.6): descripción ya calculada por el plan (plantilla + bloque + notas) y pool.
+    if cfg.descripcion is not None:
+        parametros["description"] = cfg.descripcion
+    if cfg.pool:
+        if not _id_seguro(cfg.pool, anidado=True):
+            raise _invalido("pool")
+        parametros["pool"] = cfg.pool
     return PeticionClon(plantilla.nodo, plantilla.vmid, parametros)
 
 
@@ -326,6 +342,8 @@ def construir_ajustes_clon(
 
     Valores **absolutos** (INV-O3). ``tags`` = unión de las de la plantilla y las del lote
     (``clone`` no admite ``tags``); sin etiquetas del lote ni cambios no hay ``PUT``.
+    Fase A: ``onboot``, ``startup`` y ``protection`` (solo si difieren del defecto, pues el
+    clon hereda lo de la plantilla); ``etiquetas_lote`` debe incluir las del usuario.
     El disco solo se amplía si el tamaño pedido supera el actual del disco principal.
     """
     detalle = cfg.detalle_origen
@@ -362,6 +380,13 @@ def construir_ajustes_clon(
         union = union_etiquetas(plantilla.etiquetas, etiquetas_lote)
         if union != union_etiquetas(plantilla.etiquetas):
             config["tags"] = union
+    if cfg.arranque_auto:
+        config["onboot"] = "1"
+    inicio = valor_startup(cfg)
+    if inicio is not None:
+        config["startup"] = inicio
+    if cfg.proteger:
+        config["protection"] = "1"
     disco: tuple[str, int] | None = None
     if a.disco_gib is not None:
         principal = disco_principal(plantilla)

@@ -43,7 +43,7 @@ from proxlaunch.nucleo.lote.motor import ControlLote, MotorLote
 from proxlaunch.nucleo.lote.planificador import Planificador
 from proxlaunch.nucleo.lote.presupuesto import evaluar_espacio, uso_por_clave
 from proxlaunch.nucleo.lote.reconciliacion import config_en_creacion, tiene_etiqueta_del_lote
-from proxlaunch.nucleo.lote.rollback import ServicioRollback
+from proxlaunch.nucleo.lote.rollback import InspeccionRollback, ServicioRollback
 from proxlaunch.nucleo.lote.simulacion import simular
 from proxlaunch.nucleo.lotes_guardados.formato import guardar_lote, leer_archivo_lote
 from proxlaunch.nucleo.lotes_guardados.modelos import ArchivoLote, LoteGuardado
@@ -52,12 +52,14 @@ from proxlaunch.nucleo.modelos.catalogo import (
     Contenido,
     DetallePlantilla,
     ListadoStorage,
+    PermisosEfectivos,
     Plantilla,
 )
 from proxlaunch.nucleo.modelos.conexion import PerfilConexion
 from proxlaunch.nucleo.modelos.inventario import Bridge, Inventario, Storage
 from proxlaunch.nucleo.modelos.tarea import Desenlace, Etapa, ResultadoCreacion
 from proxlaunch.nucleo.modelos.vm import ConfiguracionVM
+from proxlaunch.nucleo.opciones.modelos import ContextoNotas
 from proxlaunch.nucleo.origen.resolucion import NecesidadesCatalogo
 from proxlaunch.nucleo.origen.storages import con_recordado
 from proxlaunch.nucleo.perfiles_maquina.formato import (
@@ -441,9 +443,15 @@ def planificar_lote(
     definicion: DefinicionLote,
     inv: Inventario,
     version_forzada: tuple[int, int] | None,
+    contexto_notas: ContextoNotas | None = None,
 ) -> Plan:
-    """Planifica el lote (reserva VMIDs con lecturas) fuera del hilo de la interfaz."""
-    return Planificador(sesion, reloj).planificar(definicion, inv, version_forzada=version_forzada)
+    """Planifica el lote (reserva VMIDs con lecturas) fuera del hilo de la interfaz.
+
+    ``contexto_notas`` (fase A) trae el perfil elegido y la fecha de las notas de origen.
+    """
+    return Planificador(sesion, reloj).planificar(
+        definicion, inv, version_forzada=version_forzada, contexto_notas=contexto_notas
+    )
 
 
 def replanificar_lote(
@@ -451,10 +459,13 @@ def replanificar_lote(
     reloj: Reloj,
     definicion: DefinicionLote,
     version_forzada: tuple[int, int] | None,
+    contexto_notas: ContextoNotas | None = None,
 ) -> tuple[Inventario, Plan]:
     """Relee el inventario y vuelve a planificar (plan viejo o simulación, CA-L10.6)."""
     inv = descubrir(sesion)
-    plan = Planificador(sesion, reloj).planificar(definicion, inv, version_forzada=version_forzada)
+    plan = Planificador(sesion, reloj).planificar(
+        definicion, inv, version_forzada=version_forzada, contexto_notas=contexto_notas
+    )
     return inv, plan
 
 
@@ -464,9 +475,17 @@ def simular_lote(
     definicion: DefinicionLote,
     inv: Inventario,
     version_forzada: tuple[int, int] | None,
+    contexto_notas: ContextoNotas | None = None,
 ) -> ResultadoSimulacion:
     """Simulación de solo lectura (RF-L11)."""
-    return simular(sesion, definicion, inv, version_forzada=version_forzada, reloj=reloj)
+    return simular(
+        sesion,
+        definicion,
+        inv,
+        version_forzada=version_forzada,
+        reloj=reloj,
+        contexto_notas=contexto_notas,
+    )
 
 
 def simular_reintento(
@@ -568,10 +587,58 @@ def deshacer_lote(
     control: ControlLote,
     id_lote: str,
     etiquetado: bool,
+    forzar_apagado: frozenset[int] = frozenset(),
+    forzar_desproteccion: frozenset[int] = frozenset(),
+    permisos: PermisosEfectivos | None = None,
 ) -> list[ResultadoRollback]:
-    """Elimina las máquinas elegidas del lote (acción confirmada por el usuario)."""
+    """Elimina las máquinas elegidas del lote (acción confirmada por el usuario).
+
+    Solo las máquinas de ``forzar_apagado`` / ``forzar_desproteccion`` (las que el usuario vio
+    en la confirmación expresa) se apagan y desprotegen antes de borrar; el resto se omite.
+    """
     return ServicioRollback(sesion, reloj).deshacer(
-        candidatos, observador, control, id_lote=id_lote, etiquetado=etiquetado
+        candidatos,
+        observador,
+        control,
+        id_lote=id_lote,
+        etiquetado=etiquetado,
+        forzar_apagado=forzar_apagado,
+        forzar_desproteccion=forzar_desproteccion,
+        permisos=permisos,
+    )
+
+
+def inspeccionar_lotes(
+    sesion: Sesion,
+    reloj: Reloj,
+    grupos: list[tuple[list[CandidatoRollback], str, bool]],
+    permisos: PermisosEfectivos | None = None,
+) -> InspeccionRollback:
+    """Inspecciona las máquinas propias encendidas, protegidas e ilegibles de los grupos (GET)."""
+    servicio = ServicioRollback(sesion, reloj)
+    encendidas: list[int] = []
+    protegidas: list[int] = []
+    encendidas_sin: list[int] = []
+    protegidas_sin: list[int] = []
+    ilegibles: list[int] = []
+    nombres: dict[int, str] = {}
+    for candidatos, id_lote, etiquetado in grupos:
+        inspeccion = servicio.inspeccionar(
+            candidatos, id_lote=id_lote, etiquetado=etiquetado, permisos=permisos
+        )
+        encendidas.extend(inspeccion.encendidas)
+        protegidas.extend(inspeccion.protegidas)
+        encendidas_sin.extend(inspeccion.encendidas_sin_privilegio)
+        protegidas_sin.extend(inspeccion.protegidas_sin_privilegio)
+        ilegibles.extend(inspeccion.ilegibles)
+        nombres.update(inspeccion.nombres)
+    return InspeccionRollback(
+        tuple(encendidas),
+        tuple(protegidas),
+        tuple(encendidas_sin),
+        tuple(protegidas_sin),
+        tuple(ilegibles),
+        nombres,
     )
 
 
@@ -581,12 +648,26 @@ def deshacer_lotes(
     grupos: list[tuple[list[CandidatoRollback], str, bool]],
     observador: Callable[[ResultadoRollback], None],
     control: ControlLote,
+    forzar_apagado: frozenset[int] = frozenset(),
+    forzar_desproteccion: frozenset[int] = frozenset(),
+    permisos: PermisosEfectivos | None = None,
 ) -> list[ResultadoRollback]:
     """Deshace las máquinas elegidas de uno o varios lotes de la sesión, lote por lote."""
     resultados: list[ResultadoRollback] = []
     for candidatos, id_lote, etiquetado in grupos:
         resultados.extend(
-            deshacer_lote(sesion, reloj, candidatos, observador, control, id_lote, etiquetado)
+            deshacer_lote(
+                sesion,
+                reloj,
+                candidatos,
+                observador,
+                control,
+                id_lote,
+                etiquetado,
+                forzar_apagado,
+                forzar_desproteccion,
+                permisos,
+            )
         )
         if control.cancelado.is_set():
             break
@@ -730,7 +811,7 @@ def leer_catalogo_para(
     nodos: Sequence[str],
 ) -> CatalogoServidor:
     """Lo que necesita un lote cargado o importado para revisar sus desajustes (RF-O27)."""
-    return ServicioCatalogo(sesion, reloj).leer_para(inv, necesidades, nodos)
+    return ServicioCatalogo(sesion, reloj).leer_para(inv, necesidades, nodos, opciones=True)
 
 
 def guardar_storage_recordado(

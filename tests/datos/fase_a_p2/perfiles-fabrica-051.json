@@ -1,0 +1,320 @@
+{
+  "app_version": "0.5.1",
+  "formato": "proxlaunch.perfiles",
+  "perfiles": [
+    {
+      "config": {
+        "ballooning": null,
+        "con_disco": true,
+        "controlador_scsi": "virtio-scsi-single",
+        "cores": 2,
+        "discos": [
+          {
+            "bus": "scsi",
+            "discard": true,
+            "formato": "auto",
+            "iothread": true,
+            "ssd": true,
+            "storage_preferido": null,
+            "tamano_gib": 32
+          }
+        ],
+        "firmware": "seabios",
+        "memoria_mib": 2048,
+        "origen": "disco_vacio",
+        "redes": [
+          {
+            "bridge_preferido": null,
+            "modelo": "virtio",
+            "vlan": null
+          }
+        ],
+        "sockets": 1,
+        "storage_efi_preferido": null,
+        "tipo_cpu": "x86-64-v2-AES"
+      },
+      "descripcion": "",
+      "nombre": "servidor-pequeno"
+    },
+    {
+      "config": {
+        "ballooning": null,
+        "con_disco": true,
+        "controlador_scsi": "virtio-scsi-single",
+        "cores": 4,
+        "discos": [
+          {
+            "bus": "scsi",
+            "discard": true,
+            "formato": "auto",
+            "iothread": true,
+            "ssd": true,
+            "storage_preferido": null,
+            "tamano_gib": 64
+          }
+        ],
+        "firmware": "seabios",
+        "memoria_mib": 4096,
+        "origen": "disco_vacio",
+        "redes": [
+          {
+            "bridge_preferido": null,
+            "modelo": "virtio",
+            "vlan": null
+          }
+        ],
+        "sockets": 1,
+        "storage_efi_preferido": null,
+        "tipo_cpu": "x86-64-v2-AES"
+      },
+      "descripcion": "",
+      "nombre": "servidor-mediano"
+    },
+    {
+      "config": {
+        "ballooning": null,
+        "con_disco": true,
+        "controlador_scsi": "virtio-scsi-single",
+        "cores": 4,
+        "discos": [
+          {
+            "bus": "scsi",
+            "discard": true,
+            "formato": "auto",
+            "iothread": true,
+            "ssd": true,
+            "storage_preferido": null,
+            "tamano_gib": 100
+          }
+        ],
+        "firmware": "seabios",
+        "memoria_mib": 8192,
+        "origen": "disco_vacio",
+        "redes": [
+          {
+            "bridge_preferido": null,
+            "modelo": "virtio",
+            "vlan": null
+          }
+        ],
+        "sockets": 1,
+        "storage_efi_preferido": null,
+        "tipo_cpu": "x86-64-v2-AES"
+      },
+      "descripcion": "",
+      "nombre": "base-de-datos"
+    },
+    {
+      "config": {
+        "ballooning": null,
+        "con_disco": true,
+        "controlador_scsi": "virtio-scsi-single",
+        "cores": 8,
+        "discos": [
+          {
+            "bus": "scsi",
+            "discard": true,
+            "formato": "auto",
+            "iothread": true,
+            "ssd": true,
+            "storage_preferido": null,
+            "tamano_gib": 128
+          }
+        ],
+        "firmware": "seabios",
+        "memoria_mib": 16384,
+        "origen": "disco_vacio",
+        "redes": [
+          {
+            "bridge_preferido": null,
+            "modelo": "virtio",
+            "vlan": null
+          }
+        ],
+        "sockets": 1,
+        "storage_efi_preferido": null,
+        "tipo_cpu": "x86-64-v2-AES"
+      },
+      "descripcion": "",
+      "nombre": "servidor-grande"
+    },
+    {
+      "config": {
+        "ballooning": null,
+        "con_disco": true,
+        "controlador_scsi": "virtio-scsi-single",
+        "cores": 4,
+        "discos": [
+          {
+            "bus": "sata",
+            "discard": true,
+            "formato": "auto",
+            "iothread": false,
+            "ssd": true,
+            "storage_preferido": null,
+            "tamano_gib": 80
+          }
+        ],
+        "firmware": "ovmf",
+        "memoria_mib": 4096,
+        "origen": "disco_vacio",
+        "redes": [
+          {
+            "bridge_preferido": null,
+            "modelo": "e1000",
+            "vlan": null
+          }
+        ],
+        "sockets": 1,
+        "storage_efi_preferido": null,
+        "tipo_cpu": "x86-64-v2-AES"
+      },
+      "descripcion": "",
+      "nombre": "escritorio-compatible"
+    },
+    {
+      "config": {
+        "ballooning": null,
+        "con_disco": true,
+        "controlador_scsi": "virtio-scsi-single",
+        "cores": 1,
+        "discos": [
+          {
+            "bus": "scsi",
+            "discard": true,
+            "formato": "auto",
+            "iothread": true,
+            "ssd": true,
+            "storage_preferido": null,
+            "tamano_gib": 8
+          }
+        ],
+        "firmware": "seabios",
+        "memoria_mib": 512,
+        "origen": "disco_vacio",
+        "redes": [
+          {
+            "bridge_preferido": null,
+            "modelo": "virtio",
+            "vlan": null
+          }
+        ],
+        "sockets": 1,
+        "storage_efi_preferido": null,
+        "tipo_cpu": "x86-64-v2-AES"
+      },
+      "descripcion": "",
+      "nombre": "minimo"
+    },
+    {
+      "config": {
+        "agente_qemu": true,
+        "ballooning": null,
+        "con_disco": true,
+        "controlador_scsi": "virtio-scsi-single",
+        "cores": 4,
+        "discos": [
+          {
+            "bus": "scsi",
+            "discard": true,
+            "formato": "auto",
+            "iothread": true,
+            "ssd": true,
+            "storage_preferido": null,
+            "tamano_gib": 64
+          }
+        ],
+        "firmware": "ovmf",
+        "memoria_mib": 8192,
+        "origen": "iso",
+        "redes": [
+          {
+            "bridge_preferido": null,
+            "modelo": "virtio",
+            "vlan": null
+          }
+        ],
+        "sockets": 1,
+        "storage_efi_preferido": null,
+        "tipo_cpu": "x86-64-v2-AES",
+        "tipo_so": "windows_11",
+        "tpm": true
+      },
+      "descripcion": "",
+      "nombre": "windows-11"
+    },
+    {
+      "config": {
+        "agente_qemu": true,
+        "ballooning": null,
+        "con_disco": true,
+        "controlador_scsi": "virtio-scsi-single",
+        "cores": 4,
+        "discos": [
+          {
+            "bus": "scsi",
+            "discard": true,
+            "formato": "auto",
+            "iothread": true,
+            "ssd": true,
+            "storage_preferido": null,
+            "tamano_gib": 80
+          }
+        ],
+        "firmware": "ovmf",
+        "memoria_mib": 8192,
+        "origen": "iso",
+        "redes": [
+          {
+            "bridge_preferido": null,
+            "modelo": "virtio",
+            "vlan": null
+          }
+        ],
+        "sockets": 1,
+        "storage_efi_preferido": null,
+        "tipo_cpu": "x86-64-v2-AES",
+        "tipo_so": "windows_server_2022_2025",
+        "tpm": true
+      },
+      "descripcion": "",
+      "nombre": "windows-server"
+    },
+    {
+      "config": {
+        "ballooning": null,
+        "con_disco": true,
+        "controlador_scsi": "virtio-scsi-single",
+        "cores": 2,
+        "discos": [
+          {
+            "bus": "scsi",
+            "discard": true,
+            "formato": "auto",
+            "iothread": true,
+            "ssd": true,
+            "storage_preferido": null,
+            "tamano_gib": 40
+          }
+        ],
+        "firmware": "seabios",
+        "memoria_mib": 4096,
+        "origen": "iso",
+        "redes": [
+          {
+            "bridge_preferido": null,
+            "modelo": "virtio",
+            "vlan": null
+          }
+        ],
+        "sockets": 1,
+        "storage_efi_preferido": null,
+        "tipo_cpu": "x86-64-v2-AES",
+        "tipo_so": "linux"
+      },
+      "descripcion": "",
+      "nombre": "linux-red-hat"
+    }
+  ],
+  "version_formato": 2
+}

@@ -1,5 +1,6 @@
 """Modelos de la configuración de la MV: ConfiguracionVM, Disco, InterfazRed y enumeraciones."""
 
+import re
 from dataclasses import dataclass, field
 from enum import StrEnum
 from typing import Any
@@ -68,11 +69,30 @@ class Disco:
     iothread: bool = True
 
 
+# Fase A (0.6): MTU y límite de velocidad por tarjeta.
+MTU_IGUAL_BRIDGE = 1  # mtu=1: la tarjeta usa el MTU del bridge
+MTU_MIN, MTU_MAX = 576, 65520
+MAX_LIMITE_MB = 10**9  # tope compartido del límite de velocidad (MB/s): V-A06, CSV y archivos
+
+# Formato de un pool de Proxmox (``pve-poolid``): hasta 3 niveles separados por «/» (anidados).
+_RE_POOL = re.compile(r"[A-Za-z0-9_-]+(?:/[A-Za-z0-9_-]+){0,2}")
+
+
+def pool_valido(valor: object) -> bool:
+    """¿``valor`` tiene el formato de un pool de Proxmox? (regla de capa 1, V-A16)."""
+    return isinstance(valor, str) and _RE_POOL.fullmatch(valor) is not None
+
+
 @dataclass
 class InterfazRed:
+    """Tarjeta de red. No es ``frozen``: el CSV y el asistente la modifican en el sitio
+    (desviación respecto a la arquitectura de la fase A, que la mostraba inmutable)."""
+
     bridge: str
     modelo: ModeloRed = ModeloRed.VIRTIO
     vlan: int | None = None
+    mtu: int | None = None  # None = heredar; 1 = igual al bridge; 576..65520
+    limite_mb: float | None = None  # rate en MB/s; None = sin límite; > 0
 
 
 @dataclass
@@ -89,6 +109,16 @@ def _enum(tipo: type[StrEnum], valor: Any, campo: str) -> Any:
         raise ErrorProxLaunch(
             CodigoError.PARAMETRO_INVALIDO, {"campo": campo, "valor": str(valor)}
         ) from None
+
+
+def _red_a_dict(r: InterfazRed) -> dict[str, Any]:
+    """Serializa una tarjeta; ``mtu`` y ``limite_mb`` solo si no son ``None`` (fase A)."""
+    d: dict[str, Any] = {"bridge": r.bridge, "modelo": str(r.modelo), "vlan": r.vlan}
+    if r.mtu is not None:
+        d["mtu"] = r.mtu
+    if r.limite_mb is not None:
+        d["limite_mb"] = r.limite_mb
+    return d
 
 
 def _ref_volumen_a_dict(r: RefVolumen) -> dict[str, Any]:
@@ -191,6 +221,19 @@ class ConfiguracionVM:
     tpm: bool = False  # tpmstate0 v2.0 (DT-O6, DT-O8)
     agente_qemu: bool = False  # agent=1 (CA-O13.11)
     detalle_origen: DetalleOrigen | None = None  # obligatorio si origen ≠ disco_vacio (V-O01)
+    # --- Fase A (0.6): al final y con el valor por defecto = comportamiento de 0.5.1 ---
+    encender: bool = False  # encender al terminar (status/start tras los ajustes)
+    arranque_auto: bool = False  # onboot
+    arranque_orden: int | None = None  # startup order (>= 0)
+    arranque_espera: int | None = None  # startup up (>= 0, segundos)
+    notas_origen: bool = False  # el formulario lo pone a True (valores_defecto)
+    notas_usuario: bool = False  # incluir usuario@realm en el bloque automático
+    notas: str = ""  # texto libre del usuario
+    etiquetas_usuario: tuple[str, ...] = ()  # se suman a ``etiquetas`` (marca de propiedad)
+    pool: str | None = None
+    proteger: bool = False  # protection=1
+    # CALCULADO por ``opciones.preparacion.preparar_elemento``; nunca se serializa.
+    descripcion: str | None = None
 
     def __post_init__(self) -> None:
         # CA-18.2: cualquier origen distinto de "disco_vacio" es un error de validación.
@@ -232,9 +275,7 @@ class ConfiguracionVM:
                 for d in self.discos
             ],
             "controlador_scsi": str(self.controlador_scsi),
-            "redes": [
-                {"bridge": r.bridge, "modelo": str(r.modelo), "vlan": r.vlan} for r in self.redes
-            ],
+            "redes": [_red_a_dict(r) for r in self.redes],
             "origen": str(self.origen),
         }
         if self.etiquetas:  # solo si existen: el formato de M1 no cambia
@@ -248,6 +289,28 @@ class ConfiguracionVM:
             datos["agente_qemu"] = True
         if self.detalle_origen is not None:
             datos["detalle_origen"] = _detalle_a_dict(self.detalle_origen)
+        # Claves de la fase A: solo si difieren del valor por defecto. ``descripcion`` es
+        # calculado y nunca se serializa.
+        if self.encender:
+            datos["encender"] = True
+        if self.arranque_auto:
+            datos["arranque_auto"] = True
+        if self.arranque_orden is not None:
+            datos["arranque_orden"] = self.arranque_orden
+        if self.arranque_espera is not None:
+            datos["arranque_espera"] = self.arranque_espera
+        if self.notas_origen:
+            datos["notas_origen"] = True
+        if self.notas_usuario:
+            datos["notas_usuario"] = True
+        if self.notas:
+            datos["notas"] = self.notas
+        if self.etiquetas_usuario:
+            datos["etiquetas_usuario"] = list(self.etiquetas_usuario)
+        if self.pool is not None:
+            datos["pool"] = self.pool
+        if self.proteger:
+            datos["proteger"] = True
         return datos
 
     @classmethod
@@ -287,6 +350,8 @@ class ConfiguracionVM:
                     bridge=x["bridge"],
                     modelo=_enum(ModeloRed, x["modelo"], "redes.modelo"),
                     vlan=x["vlan"],
+                    mtu=x.get("mtu"),
+                    limite_mb=x.get("limite_mb"),
                 )
                 for x in d["redes"]
             ],
@@ -296,4 +361,14 @@ class ConfiguracionVM:
             tpm=bool(d.get("tpm", False)),
             agente_qemu=bool(d.get("agente_qemu", False)),
             detalle_origen=None if detalle is None else _detalle_desde_dict(origen, detalle),
+            encender=bool(d.get("encender", False)),
+            arranque_auto=bool(d.get("arranque_auto", False)),
+            arranque_orden=d.get("arranque_orden"),
+            arranque_espera=d.get("arranque_espera"),
+            notas_origen=bool(d.get("notas_origen", False)),
+            notas_usuario=bool(d.get("notas_usuario", False)),
+            notas=str(d.get("notas", "")),
+            etiquetas_usuario=tuple(str(e) for e in d.get("etiquetas_usuario", ())),
+            pool=d.get("pool"),
+            proteger=bool(d.get("proteger", False)),
         )

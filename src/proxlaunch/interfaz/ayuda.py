@@ -11,7 +11,7 @@ from collections.abc import Callable
 from PySide6.QtCore import QCoreApplication
 
 from proxlaunch.nucleo.lote.constantes import MAX_LOTE
-from proxlaunch.nucleo.origen.permisos import ROL_PROXLAUNCH
+from proxlaunch.nucleo.origen.permisos import PRIVILEGIOS_OPCIONALES, ROL_PROXLAUNCH
 
 # Privilegios del rol ProxLaunchCreador: los 10 de siempre y los 4 del MVP 4 (RF-O24). La lista
 # vive en el núcleo (única fuente); aquí solo se muestra.
@@ -636,6 +636,10 @@ def descripcion_privilegio(privilegio: str) -> str:
         "Sys.AccessNetwork": lambda: QCoreApplication.translate(
             "Ayuda", "que el servidor descargue archivos desde una dirección web"
         ),
+        "VM.PowerMgmt": lambda: QCoreApplication.translate(
+            "Ayuda", "encender máquinas al terminar y apagarlas a la fuerza al deshacer"
+        ),
+        "Pool.Audit": lambda: QCoreApplication.translate("Ayuda", "ver la lista de pools"),
     }
     fabrica = textos.get(privilegio)
     return fabrica() if fabrica is not None else ""
@@ -673,6 +677,76 @@ def funcion_perdida_sin_privilegio(privilegio: str) -> str:
 def notas_privilegios_nuevos() -> list[str]:
     """Una línea por privilegio nuevo del rol: «VM.Clone: sin él no se pueden clonar…»."""
     return [f"{p}: {funcion_perdida_sin_privilegio(p)}" for p in PRIVILEGIOS_NUEVOS]
+
+
+# --- Fase A: privilegios opcionales (RF-A8.1, RF-A8.2) ------------------------------------------
+
+
+def titulo_privilegios_opcionales() -> str:
+    """Título de la sección de la guía sobre los privilegios que no forman parte del rol."""
+    return QCoreApplication.translate("Ayuda", "Privilegios opcionales")
+
+
+def intro_privilegios_opcionales() -> str:
+    return QCoreApplication.translate(
+        "Ayuda",
+        "No forman parte del rol «{rol}» y no hacen falta para crear máquinas: sin ellos "
+        "ProxLaunch solo desactiva la opción afectada y te explica por qué.",
+    ).format(rol=NOMBRE_ROL)
+
+
+def efecto_privilegio_opcional(privilegio: str) -> str:
+    """Qué habilita un privilegio opcional ("" si no se conoce)."""
+    if privilegio == "VM.PowerMgmt":
+        return QCoreApplication.translate(
+            "Ayuda",
+            "permite «Encender al terminar» y apagar a la fuerza las máquinas encendidas del "
+            "lote al usar Deshacer. Debe concederse en «/vms» (no solo en una máquina concreta) "
+            "para que «Encender al terminar» se habilite. Sin él, esas máquinas encendidas no "
+            "se tocan.",
+        )
+    if privilegio == "Pool.Audit":
+        return QCoreApplication.translate(
+            "Ayuda",
+            "permite ver la lista de pools para elegir uno. Sin él no se puede elegir pool, "
+            "aunque existan.",
+        )
+    return ""
+
+
+def privilegios_opcionales_guia() -> list[str]:
+    """Una línea por privilegio opcional: «VM.PowerMgmt en «/vms»: permite…»."""
+    return [
+        QCoreApplication.translate("Ayuda", "{privilegio} en «{ruta}»: {efecto}").format(
+            privilegio=privilegio, ruta=ruta, efecto=efecto_privilegio_opcional(privilegio)
+        )
+        for privilegio, ruta in PRIVILEGIOS_OPCIONALES
+    ]
+
+
+def nota_sys_modify() -> str:
+    """Sys.Modify no se pide (solo lo tiene Administrator)."""
+    return QCoreApplication.translate(
+        "Ayuda",
+        "ProxLaunch no pide el privilegio Sys.Modify, que solo tiene el rol Administrator. No "
+        "hace falta darlo.",
+    )
+
+
+def nota_etiquetas_administrador() -> str:
+    """Cómo el administrador autoriza las etiquetas de usuario."""
+    return QCoreApplication.translate(
+        "Ayuda",
+        "Las etiquetas propias dependen de la política del servidor: si Proxmox solo admite "
+        "etiquetas autorizadas, el administrador debe añadirlas en Datacenter → Opciones → "
+        "Etiquetas (lista de etiquetas permitidas a usuarios, «user-allow-list», o etiquetas "
+        "registradas, «registered-tags»).",
+    )
+
+
+def notas_opcionales_guia() -> list[str]:
+    """Notas de la sección «Privilegios opcionales»: Sys.Modify y etiquetas autorizadas."""
+    return [nota_sys_modify(), nota_etiquetas_administrador()]
 
 
 def nota_archivos_subidos() -> str:
@@ -727,5 +801,13 @@ def texto_pedir_al_administrador() -> str:
             "5. Los ISOs e imágenes que suba no los puede borrar ProxLaunch: habrá que eliminarlos "
             "desde Proxmox cuando ya no hagan falta.",
         ),
+        QCoreApplication.translate(
+            "Ayuda",
+            "6. Opcional: para encender las máquinas al terminar y apagarlas a la fuerza al "
+            "deshacer, el privilegio VM.PowerMgmt en «/vms»; para elegir un pool, Pool.Audit en "
+            "«/pool». No forman parte del rol.",
+        ),
+        *[f"   - {linea}" for linea in privilegios_opcionales_guia()],
+        "   - " + nota_etiquetas_administrador(),
     ]
     return "\n".join(lineas)

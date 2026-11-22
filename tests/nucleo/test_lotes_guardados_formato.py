@@ -571,10 +571,10 @@ def test_un_archivo_de_perfiles_abierto_como_lote_da_e_m02_con_la_pista():
 
 def test_version_futura_es_e_m03_sin_lectura_parcial_y_con_version_invalida_e_m02():
     """CA-G06.2 / CA-X01.4: aunque el resto del archivo sea válido."""
-    # MVP 4 (CA-O26.8): la 2 ya se lee; la futura es la 3.
-    e = _error_lote(archivo_lote(version_formato=3))
+    # Fase A (CA-A7.1.4): la 3 ya se lee; la futura es la 4.
+    e = _error_lote(archivo_lote(version_formato=4))
     assert e.codigo == CodigoError.ARCHIVO_VERSION_FUTURA
-    assert e.params == {"version_archivo": "3", "version_soportada": "2"}
+    assert e.params == {"version_archivo": "4", "version_soportada": "3"}
     for malo in (0, -1, True, "1", 1.0, None):
         assert (
             _error_lote(archivo_lote(version_formato=malo)).codigo
@@ -657,7 +657,7 @@ def test_un_lote_sin_avisos_no_trae_ninguno():
 
 @pytest.mark.parametrize(
     "contenido",
-    [archivo_lote(), b"{ roto", b"\xff\xfe", archivo_lote(version_formato=3)],
+    [archivo_lote(), b"{ roto", b"\xff\xfe", archivo_lote(version_formato=4)],
     ids=["valido", "json_roto", "utf8_roto", "version_futura"],
 )
 def test_abrir_un_lote_no_lo_modifica_ni_aunque_este_danado(tmp_path, contenido):

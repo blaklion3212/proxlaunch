@@ -17,6 +17,7 @@ from proxlaunch.nucleo.archivos.constantes import (
     MAX_BYTES_LOTE,
     VERSION_FORMATO,
     VERSION_FORMATO_BASE,
+    VERSION_FORMATO_MVP4,
 )
 from proxlaunch.nucleo.archivos.envoltura import (
     FORMATO_LOTE,
@@ -30,6 +31,15 @@ from proxlaunch.nucleo.archivos.esquema_config import (
     configuracion_a_dict,
     leer_configuracion,
     requiere_version_2,
+    requiere_version_3,
+)
+from proxlaunch.nucleo.archivos.esquema_opciones import (
+    leer_opciones_lote,
+    leer_opciones_parciales,
+    opciones_lote_a_dict,
+    opciones_lote_requieren_v3,
+    opciones_parciales_a_dict,
+    opciones_parciales_requieren_v3,
 )
 from proxlaunch.nucleo.archivos.json_estricto import cargar_json_estricto
 from proxlaunch.nucleo.archivos.lector import leer_archivo_limitado
@@ -45,6 +55,7 @@ from proxlaunch.nucleo.lote.modelos import (
     PatronNombres,
 )
 from proxlaunch.nucleo.lotes_guardados.modelos import ArchivoLote, LoteGuardado
+from proxlaunch.nucleo.opciones.modelos import OpcionesLote
 
 _log = logging.getLogger("proxlaunch.lotes_guardados.formato")
 
@@ -75,7 +86,27 @@ def _fila_a_dict(f: FilaLote) -> dict[str, object]:
     }
     if f.origen is not None:
         datos["origen"] = f.origen
+    if f.opciones is not None:
+        parciales = opciones_parciales_a_dict(f.opciones)
+        if parciales:  # una fila sin sobrescrituras equivale a ``None`` (hereda todo)
+            datos["opciones"] = parciales
     return datos
+
+
+def _opciones_a_escribir(d: DefinicionLote) -> dict[str, object] | None:
+    """Clave ``opciones`` del lote o ``None`` si no hay que escribirla.
+
+    ``DefinicionLote.opciones = None`` significa «las de la plantilla»: no se escribe nada. Con
+    opciones iguales a las de la plantilla y a las de por defecto la clave sobra (el lote queda
+    como el de 0.5.1); si difieren de la plantilla se escribe aunque sea ``{}``.
+    """
+    op = d.opciones
+    if op is None:
+        return None
+    plantilla = d.filas[0].cfg if d.es_por_filas else d.plantilla  # la que se leerá al volver
+    if op == OpcionesLote() and op == OpcionesLote.desde_config(plantilla):
+        return None
+    return opciones_lote_a_dict(op)
 
 
 def lote_a_dict(lote: LoteGuardado) -> dict[str, object]:
@@ -88,12 +119,16 @@ def lote_a_dict(lote: LoteGuardado) -> dict[str, object]:
         datos["version_proxmox"] = lote.version_proxmox
     if d.es_por_filas:
         datos["tipo"] = str(TipoLote.POR_FILAS)
-        datos["por_filas"] = {
+        por_filas: dict[str, object] = {
             "filas": [_fila_a_dict(f) for f in d.filas],
             "destino": {"algoritmo": str(d.destino.algoritmo)},
             "vmid_inicial": d.vmid_inicial,
             "etiquetar": d.etiquetar,
         }
+        opciones = _opciones_a_escribir(d)
+        if opciones is not None:
+            por_filas["opciones"] = opciones
+        datos["por_filas"] = por_filas
         return datos
     exigir_sin_credencial(d.patron.prefijo, "prefijo")
     exigir_sin_credencial(d.patron.separador, "separador")
@@ -116,6 +151,9 @@ def lote_a_dict(lote: LoteGuardado) -> dict[str, object]:
         "vmid_inicial": d.vmid_inicial,
         "etiquetar": d.etiquetar,
     }
+    opciones_h = _opciones_a_escribir(d)
+    if opciones_h is not None:
+        homogeneo["opciones"] = opciones_h
     if _es_nombre_de_plantilla(d):
         exigir_sin_credencial(d.plantilla.nombre, "nombre_maquina")
         homogeneo["nombre_maquina"] = d.plantilla.nombre
@@ -125,10 +163,18 @@ def lote_a_dict(lote: LoteGuardado) -> dict[str, object]:
 
 
 def version_para(lote: LoteGuardado) -> int:
-    """2 solo si alguna MV del lote usa algo del MVP 4 (DT-O15, CA-O27.5); 1 en otro caso."""
+    """3 si el lote usa algo de la fase A (CA-A7.1.5; ``notas_origen`` sola no cuenta, P-4); si no,
+    2 si alguna MV usa algo del MVP 4 (DT-O15, CA-O27.5) y 1 en otro caso."""
     d = lote.definicion
     cfgs = [f.cfg for f in d.filas] if d.es_por_filas else [d.plantilla]
-    return VERSION_FORMATO if any(requiere_version_2(c) for c in cfgs) else VERSION_FORMATO_BASE
+    if any(requiere_version_3(c) for c in cfgs):
+        return VERSION_FORMATO
+    if d.opciones is not None and opciones_lote_requieren_v3(d.opciones):
+        return VERSION_FORMATO
+    if any(f.opciones is not None and opciones_parciales_requieren_v3(f.opciones) for f in d.filas):
+        return VERSION_FORMATO
+    usa_mvp4 = any(requiere_version_2(c) for c in cfgs)
+    return VERSION_FORMATO_MVP4 if usa_mvp4 else VERSION_FORMATO_BASE
 
 
 def lote_a_bytes(lote: LoteGuardado, *, app_version: str) -> bytes:
@@ -210,6 +256,7 @@ def _leer_homogeneo(lector: LectorEsquema, valor: object, ruta: str) -> Definici
                 "vmid_inicial",
                 "etiquetar",
                 "nombre_maquina",
+                "opciones",
             }
         ),
     )
@@ -227,6 +274,11 @@ def _leer_homogeneo(lector: LectorEsquema, valor: object, ruta: str) -> Definici
         else Destino()
     )
     vmid_inicial, etiquetar = _leer_comunes(lector, obj, ruta)
+    opciones = (
+        leer_opciones_lote(lector, obj["opciones"], _ruta(ruta, "opciones"))
+        if "opciones" in obj
+        else None
+    )
     nombre_maquina = lector.texto(
         obj, "nombre_maquina", ruta, requerido=False, defecto="", sin_token=True
     )
@@ -249,6 +301,7 @@ def _leer_homogeneo(lector: LectorEsquema, valor: object, ruta: str) -> Definici
         destino=destino,
         vmid_inicial=vmid_inicial,
         etiquetar=etiquetar,
+        opciones=opciones,
     )
 
 
@@ -282,7 +335,9 @@ def _leer_patron(
 
 
 def _leer_fila(lector: LectorEsquema, valor: object, ruta: str) -> FilaLote | None:
-    obj = lector.objeto(valor, ruta, frozenset({"nombre", "vmid", "nodo", "config", "origen"}))
+    obj = lector.objeto(
+        valor, ruta, frozenset({"nombre", "vmid", "nodo", "config", "origen", "opciones"})
+    )
     if obj is None:
         return None
     n0 = len(lector.errores)
@@ -295,13 +350,20 @@ def _leer_fila(lector: LectorEsquema, valor: object, ruta: str) -> FilaLote | No
     cfg = leer_configuracion(lector, obj.get("config"), _ruta(ruta, "config"))
     if "config" not in obj:
         lector.error(_ruta(ruta, "config"), MotivoCampo.REQUERIDO)
+    parciales = (
+        leer_opciones_parciales(lector, obj["opciones"], _ruta(ruta, "opciones"))
+        if "opciones" in obj
+        else None
+    )
     if len(lector.errores) > n0 or nombre is None or cfg is None:
         return None
-    return FilaLote(nombre=nombre, cfg=cfg, vmid=vmid, nodo=nodo, origen=origen)
+    return FilaLote(nombre=nombre, cfg=cfg, vmid=vmid, nodo=nodo, origen=origen, opciones=parciales)
 
 
 def _leer_por_filas(lector: LectorEsquema, valor: object, ruta: str) -> DefinicionLote | None:
-    obj = lector.objeto(valor, ruta, frozenset({"filas", "destino", "vmid_inicial", "etiquetar"}))
+    obj = lector.objeto(
+        valor, ruta, frozenset({"filas", "destino", "vmid_inicial", "etiquetar", "opciones"})
+    )
     if obj is None:
         return None
     crudas = obj.get("filas")
@@ -323,6 +385,11 @@ def _leer_por_filas(lector: LectorEsquema, valor: object, ruta: str) -> Definici
         else Destino()
     )
     vmid_inicial, etiquetar = _leer_comunes(lector, obj, ruta)
+    opciones = (
+        leer_opciones_lote(lector, obj["opciones"], _ruta(ruta, "opciones"))
+        if "opciones" in obj
+        else None
+    )
     if len(lector.errores) > n0 or not filas or destino is None or etiquetar is None:
         return None
     return DefinicionLote(
@@ -333,6 +400,7 @@ def _leer_por_filas(lector: LectorEsquema, valor: object, ruta: str) -> Definici
         vmid_inicial=vmid_inicial,
         etiquetar=etiquetar,
         filas=tuple(filas),
+        opciones=opciones,
     )
 
 
@@ -399,4 +467,16 @@ def leer_archivo_lote(ruta: Path) -> ArchivoLote:
 
 def guardar_lote(ruta: Path, lote: LoteGuardado, *, app_version: str) -> None:
     """Escribe el lote de forma atómica en la ruta elegida por el usuario (E/S)."""
-    escribir_atomico(ruta, lote_a_bytes(lote, app_version=app_version))
+    datos = lote_a_bytes(lote, app_version=app_version)
+    if len(datos) > MAX_BYTES_LOTE:
+        # Mismo error que al leer: no se escribe un lote que luego no se podría abrir.
+        _log.info("Lote rechazado al guardar archivo=%s motivo=demasiado_grande", Path(ruta).name)
+        raise ErrorProxLaunch(
+            CodigoError.ARCHIVO_NO_PERMITIDO,
+            {
+                "motivo": "demasiado_grande",
+                "limite": str(MAX_BYTES_LOTE),
+                "tamano": str(len(datos)),
+            },
+        )
+    escribir_atomico(ruta, datos)

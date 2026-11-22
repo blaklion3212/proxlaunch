@@ -231,6 +231,7 @@ def test_ca20_2_etapas_en_orden():
         "creando",
         "comprobando",
         "ajustando",
+        "encendiendo",  # fase A: status/start tras los ajustes
         "listo",
     ]
 

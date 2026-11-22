@@ -1,0 +1,5 @@
+﻿"nombre";"perfil";"cpu";"memoria";"disco";"almacenamiento";"red";"encender";"arranque_auto";"notas";"etiquetas";"pool";"proteger";"mtu";"limite_red"
+"web-01";"fabrica.servidor-mediano";"";"";"";"local-lvm";"vmbr0";"si";"si";"Servidor web de la oficina";"web,produccion";"produccion";"si";"1500";"100"
+"web-02";"fabrica.servidor-mediano";"";"";"";"local-lvm";"vmbr0";"";"";"";"";"";"";"";""
+"bd-01";"fabrica.base-de-datos";"";"";"";"local-lvm";"vmbr0";"no";"si";"Base de datos principal";"bd;produccion";"ninguno";"si";"igual";""
+"lab-01";"fabrica.minimo";"";"";"";"local-lvm";"vmbr0";"no";"no";"";"laboratorio";"";"no";"heredar";"12.5"

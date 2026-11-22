@@ -143,12 +143,15 @@ def cfg_ficticia(config: ConfigPerfil) -> ConfiguracionVM:
             for d in config.discos
         ],
         controlador_scsi=config.controlador_scsi,
-        redes=[InterfazRed(_PISTA_FICTICIA, r.modelo, r.vlan) for r in config.redes],
+        redes=[
+            InterfazRed(_PISTA_FICTICIA, r.modelo, r.vlan, r.mtu, r.limite_mb) for r in config.redes
+        ],
         origen=config.origen,
         tipo_so=tipo_so,
         tpm=config.tpm,
         agente_qemu=config.agente_qemu,
         detalle_origen=_detalle_ficticio(config),
+        arranque_auto=config.arranque_auto,
     )
 
 

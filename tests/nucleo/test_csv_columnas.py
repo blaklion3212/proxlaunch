@@ -39,6 +39,15 @@ ALIAS = {
     "so": ["sistema"],
     "virtio": ["drivers"],
     "modo_clon": ["clon"],
+    # Fase A (RF-A7.3)
+    "encender": ["start"],
+    "arranque_auto": ["onboot"],
+    "notas": ["notes"],
+    "etiquetas": ["tags"],
+    "pool": [],
+    "proteger": ["protection"],
+    "mtu": [],
+    "limite_red": ["rate"],
     **{f"disco{n}": [] for n in range(2, 9)},
     **{f"almacenamiento{n}": [f"storage{n}"] for n in range(2, 9)},
 }
@@ -62,16 +71,19 @@ def test_la_tabla_de_columnas_es_la_de_los_requisitos():
         "modelo_red",
         "tipo_cpu",
         "modo_clon",  # RF-O28: «No (avanzado)»
+        "mtu",  # fase A (RF-A5.3)
+        "limite_red",
     }
     assert len(canonicas) == len(COLUMNAS)  # sin duplicados
 
 
 def test_el_encabezado_de_la_plantilla_usa_nombres_canonicos():
     assert set(ENCABEZADO_PLANTILLA) <= {c.canonica for c in COLUMNAS}
-    # MVP 4 (RF-O28, CA-O28.9): la plantilla añade las columnas de origen al final.
+    # MVP 4 (RF-O28, CA-O28.9) y fase A (CA-A7.3.10): la plantilla añade columnas al final.
     assert ENCABEZADO_PLANTILLA == (
         "nombre", "perfil", "cpu", "memoria", "disco", "almacenamiento", "red", "vlan", "nodo", "vmid",  # noqa: E501
         "origen", "fuente", "so", "virtio", "modo_clon",
+        "encender", "arranque_auto", "notas", "etiquetas", "pool", "proteger", "mtu", "limite_red",  # noqa: E501
     )  # fmt: skip
 
 

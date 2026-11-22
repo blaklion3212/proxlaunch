@@ -78,7 +78,12 @@ def crear_lote(qtbot, v, *, aceptar_thin: bool = True) -> None:
 
 def esperar_fin(qtbot, v, timeout: int = 8000) -> None:
     qtbot.waitUntil(
-        lambda: v._lote is not None and v._lote.terminado and not v._lote.deshaciendo,
+        lambda: (
+            v._lote is not None
+            and v._lote.terminado
+            and not v._lote.deshaciendo
+            and not v._lote.inspeccionando  # Deshacer: la inspección previa es asíncrona
+        ),
         timeout=timeout,
     )
 

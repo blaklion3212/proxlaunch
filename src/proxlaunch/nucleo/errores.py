@@ -93,6 +93,19 @@ class CodigoError(StrEnum):
     TRANSFERENCIA_EN_CURSO = "transferencia_en_curso"  # E-O23
     AJUSTE_POST_CLON_FALLIDO = "ajuste_post_clon_fallido"  # E-O24
     TRANSFERENCIA_CANCELADA = "transferencia_cancelada"  # interno: sin E-O propio
+    # --- Fase A (0.6): opciones de creación y Deshacer ampliado ---
+    OPCION_SIN_PRIVILEGIO = "opcion_sin_privilegio"  # params: privilegio, ruta, opcion
+    OPCION_SIN_VERSION = "opcion_sin_version"  # params: version, opcion
+    POOLS_SIN_PERMISO = "pools_sin_permiso"  # no hay Pool.Audit: la lista llega vacía
+    POOLS_DESCONOCIDO = "pools_desconocido"  # no se sabe si se tiene Pool.Audit
+    POOLS_ERROR = "pools_error"  # falló la lectura de GET /pools
+    POOL_INEXISTENTE = "pool_inexistente"
+    DESCRIPCION_LARGA = "descripcion_larga"  # el 400 de Proxmox por > 8192 caracteres
+    ROLLBACK_PROTEGIDA = "rollback_protegida"  # protection=1 (salvable con confirmación)
+    ROLLBACK_SIN_POWERMGMT = "rollback_sin_powermgmt"
+    ROLLBACK_SIN_OPCIONES = "rollback_sin_opciones"  # falta VM.Config.Options para desproteger
+    ROLLBACK_APAGADO_FALLIDO = "rollback_apagado_fallido"
+    ROLLBACK_DESPROTECCION_FALLIDA = "rollback_desproteccion_fallida"
 
 
 class ErrorProxLaunch(Exception):

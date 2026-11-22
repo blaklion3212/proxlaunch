@@ -25,6 +25,15 @@ ENCABEZADO_PLANTILLA: tuple[str, ...] = (
     "so",
     "virtio",
     "modo_clon",
+    # Fase A (CA-A7.3.10): opciones de la MV; una celda vacía hereda las del formulario.
+    "encender",
+    "arranque_auto",
+    "notas",
+    "etiquetas",
+    "pool",
+    "proteger",
+    "mtu",
+    "limite_red",
 )
 SEPARADORES_PLANTILLA = (";", ",")  # «;» Excel en español (por defecto), «,» Excel en inglés
 
@@ -35,6 +44,10 @@ def filas_plantilla() -> list[list[str | int]]:
     ``ejemplo-03`` instala un ISO, ``ejemplo-04`` importa un disco (``disco`` = ampliar a) y
     ``ejemplo-05`` clona una plantilla (``cpu``, ``memoria`` y ``disco`` = ajustes). Las fuentes
     son nombres ficticios que el usuario sustituye; nunca URL ni rutas.
+
+    Las columnas de la fase A van vacías (= las del formulario) salvo dos filas de muestra. El
+    ejemplo de MTU es ``heredar`` y no un número: un perfil base con tarjeta no VirtIO lo
+    rechazaría (V-A05) y la plantilla debe pasar su propia validación con cualquier perfil.
     """
     filas: list[list[str | int]] = [
         ["ejemplo-01", "fabrica.servidor-mediano", "", "8", 100, "local-lvm", "vmbr0", "", "", ""],
@@ -52,7 +65,14 @@ def filas_plantilla() -> list[list[str | int]]:
         ["importar", "ejemplo-disco.qcow2", "", "", ""],
         ["clonar", "ejemplo-plantilla", "", "", "auto"],
     ]
-    return [fila + extra for fila, extra in zip(filas, origenes, strict=True)]
+    opciones: list[list[str | int]] = [
+        ["", "si", "Servidor de ejemplo", "web,prod", "", "", "", ""],
+        ["no", "", "", "", "ninguno", "no", "heredar", 50],
+        ["", "", "", "", "", "", "", ""],
+        ["", "", "", "", "", "", "", ""],
+        ["", "", "", "", "", "", "", ""],
+    ]
+    return [fila + extra + ops for fila, extra, ops in zip(filas, origenes, opciones, strict=True)]
 
 
 def escribir_plantilla(ruta: Path, *, separador: str = ";") -> None:

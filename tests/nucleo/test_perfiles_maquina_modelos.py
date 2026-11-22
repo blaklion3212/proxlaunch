@@ -4,7 +4,7 @@ CA-P02.*; V-M01..V-M05; INV-M7; §8 y §13 casos 1 y 2 de los requisitos)."""
 import dataclasses
 import json
 import unicodedata
-from dataclasses import fields
+from dataclasses import fields, replace
 
 import pytest
 
@@ -456,7 +456,10 @@ def test_cada_perfil_de_fabrica_pasa_validar_vm_en_8_0_8_x_y_9_x(clave, texto, m
 def test_el_perfil_predeterminado_equivale_a_configuracion_por_defecto_de_m1():
     """CA-P02.4 / RF-P12: 2 núcleos, 2 GiB, un disco de 32 GiB, virtio-scsi-single, una red virtio."""  # noqa: E501
     inv = inventario((nodo("pve1", 64),), es_cluster=False)
-    por_defecto = configuracion_por_defecto(120, "web", "pve1", "datos", "vmbr0")
+    # Fase A: el formulario parte con las notas de origen marcadas; el perfil no las guarda.
+    por_defecto = replace(
+        configuracion_por_defecto(120, "web", "pve1", "datos", "vmbr0"), notas_origen=False
+    )
     perfil = {p.id: p for p in perfiles_fabrica()}[ID_PREDETERMINADO]
     aplicada = aplicar_perfil(perfil, ConfiguracionVM(vmid=120, nombre="web", nodo="pve1"), inv).cfg
     assert aplicada == por_defecto  # igualdad completa de la configuración

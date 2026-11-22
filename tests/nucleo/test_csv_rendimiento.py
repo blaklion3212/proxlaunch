@@ -24,7 +24,7 @@ UMBRAL_MEMORIA = 5
 
 
 def _csv_de_1_mib(filas: int = 100, *, con_errores: bool = False) -> bytes:
-    """100 filas de datos con 40 columnas (30 desconocidas de 250 caracteres) y, hasta llegar a
+    """100 filas de datos con 60 columnas (50 desconocidas de 150 caracteres) y, hasta llegar a
     ~1 MiB, filas vacías de solo separadores (se ignoran y no cuentan para el límite, CA-C02.8)."""
     conocidas = [
         "nombre",
@@ -40,7 +40,7 @@ def _csv_de_1_mib(filas: int = 100, *, con_errores: bool = False) -> bytes:
     ]
     extras = [f"columna-extra-{i:02d}" for i in range(MAX_COLUMNAS_CSV - len(conocidas))]
     lineas = [";".join(conocidas + extras)]
-    ancho = min(MAX_LONG_CELDA, 250)
+    ancho = min(MAX_LONG_CELDA, 150)  # con 60 columnas (fase A) 250 superaría el MiB
     for i in range(filas):
         nombre = f"mal nombre {i}" if con_errores else f"maquina-{i:03d}"
         cpu = "0" if con_errores else str(1 + i % 4)
@@ -97,7 +97,7 @@ def _mejor_cpu(funcion, intentos: int = 3) -> float:
 def test_el_csv_de_prueba_ocupa_casi_1_mib_y_tiene_100_filas_validas(inv):
     datos = _csv_de_1_mib()
     tabla, resultado = _analizar(datos, inv)
-    assert len(tabla.filas) == 100 and len(tabla.encabezado) == 40
+    assert len(tabla.filas) == 100 and len(tabla.encabezado) == MAX_COLUMNAS_CSV
     assert len(resultado.numeros_validos) == 100, [
         f.problemas for f in resultado.filas if f.problemas
     ][:2]

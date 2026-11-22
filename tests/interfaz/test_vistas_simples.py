@@ -589,7 +589,7 @@ def test_fila_campo_no_muestra_error_hasta_tocar(qtbot):
     fila.marcar_tocado()
     fila.mostrar_error("mal")
     assert fila.hay_error and campo.property("invalido") is True
-    assert campo.toolTip() == "mal"
+    assert campo.toolTip() == "<qt>mal</qt>"  # SEG-A-05: el tooltip va escapado
     fila.mostrar_error(None)
     assert not fila.hay_error and campo.toolTip() == ""
     fila.mostrar_aviso("ojo")

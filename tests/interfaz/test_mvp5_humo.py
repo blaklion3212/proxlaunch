@@ -50,7 +50,7 @@ RAIZ = Path(__file__).resolve().parents[2]
 PAQUETE = Path(proxlaunch.__file__).resolve().parent
 QM = PAQUETE / "recursos" / "traducciones" / "proxlaunch_es.qm"
 TS = PAQUETE / "recursos" / "traducciones" / "proxlaunch_es.ts"
-VERSION_ESPERADA = "0.5.1"
+VERSION_ESPERADA = "0.6.0"
 SALIDA = humo.VARIABLE_SALIDA
 
 

@@ -33,7 +33,9 @@ def es_formato_invisible(c: str) -> bool:
 
 
 # Patrón de API Token (V-18 de M1) buscado dentro de un texto libre, y cabecera PVEAPIToken.
-_RE_TOKEN_EN_TEXTO = re.compile(r"[^@!=\s]+@[^@!=\s]+![A-Za-z0-9._-]+=\S+")
+# Cuantificadores acotados (SEG-A-03): sin retroceso cuadrático en textos largos. El secreto
+# basta con un carácter: no hace falta recorrerlo entero para saber que hay un token.
+_RE_TOKEN_EN_TEXTO = re.compile(r"[^@!=\s]{1,128}@[^@!=\s]{1,128}![A-Za-z0-9._-]{1,128}=\S")
 _RE_CABECERA_TOKEN = re.compile(r"PVEAPIToken\s*=", re.IGNORECASE)
 
 # Nombres reservados de Windows (sin extensión, sin distinguir mayúsculas).
@@ -50,18 +52,23 @@ MOTIVO_LONGITUD = "longitud"
 MOTIVO_CARACTERES = "caracteres"
 
 
-def _caracter_no_permitido(c: str, multilinea: bool) -> bool:
-    """Control (salvo ``\\n`` en multilínea), dirección de texto o sustituto suelto."""
+def _caracter_no_permitido(c: str, multilinea: bool, tabulador: bool) -> bool:
+    """Control (salvo ``\\n`` en multilínea y ``\\t`` si se permite), dirección de texto o
+    sustituto suelto."""
     if c in CARACTERES_BIDI:
         return True
     categoria = unicodedata.category(c)
     if categoria == "Cc":
-        return not (multilinea and c == "\n")
+        return not ((multilinea and c == "\n") or (tabulador and c == "\t"))
     return categoria == "Cs"  # sustitutos sueltos (``\ud800``): no se pueden codificar
 
 
-def analizar_texto(valor: str, *, maximo: int, multilinea: bool = False) -> tuple[str, str | None]:
+def analizar_texto(
+    valor: str, *, maximo: int, multilinea: bool = False, tabulador: bool = False
+) -> tuple[str, str | None]:
     """Normaliza a NFC y devuelve ``(texto, motivo)``; ``motivo`` es ``None`` si es seguro.
+
+    ``tabulador`` admite además ``\\t`` (notas de la MV, fase A).
 
     Motivos: ``"longitud"`` (supera ``maximo``) y ``"caracteres"`` (control, dirección de
     texto o sustituto suelto). Si el texto es desmesurado no se normaliza (ahorra trabajo).
@@ -71,7 +78,7 @@ def analizar_texto(valor: str, *, maximo: int, multilinea: bool = False) -> tupl
     texto = unicodedata.normalize("NFC", valor)
     if len(texto) > maximo:
         return texto, MOTIVO_LONGITUD
-    if any(_caracter_no_permitido(c, multilinea) for c in texto):
+    if any(_caracter_no_permitido(c, multilinea, tabulador) for c in texto):
         return texto, MOTIVO_CARACTERES
     return texto, None
 
@@ -88,11 +95,32 @@ def texto_seguro(valor: str, *, maximo: int, multilinea: bool = False) -> str | 
     return texto if motivo is None else None
 
 
+def _sin_invisibles(texto: str) -> str:
+    """Quita los caracteres de control (Cc, salvo saltos y tabulador), de formato (Cf) y de
+    dirección de texto: con ellos se podría partir un token sin que se vea (SEG-A-02)."""
+    if texto.isascii() and texto.isprintable():
+        return texto  # camino rápido: nada que quitar
+    return "".join(
+        c
+        for c in texto
+        if c in "\t\n\r"
+        or (c not in CARACTERES_BIDI and unicodedata.category(c) not in ("Cc", "Cf"))
+    )
+
+
 def contiene_token(texto: str) -> bool:
-    """Indica si el texto trae un API Token (``usuario@realm!id=secreto``) o ``PVEAPIToken=``."""
-    if not isinstance(texto, str):
+    """Indica si el texto trae un API Token (``usuario@realm!id=secreto``) o ``PVEAPIToken=``.
+
+    Se normaliza antes de buscar (sin Cc, Cf ni bidi): un carácter invisible dentro del id o
+    del realm no debe esquivar la detección.
+    """
+    if not isinstance(texto, str) or "=" not in texto:  # ambos patrones exigen un «=»
         return False
-    return bool(_RE_CABECERA_TOKEN.search(texto) or _RE_TOKEN_EN_TEXTO.search(texto))
+    texto = _sin_invisibles(texto)
+    if _RE_CABECERA_TOKEN.search(texto):
+        return True
+    # El patrón del token exige «@» y «!»: evita el costo de la expresión en notas largas (8192).
+    return "@" in texto and "!" in texto and bool(_RE_TOKEN_EN_TEXTO.search(texto))
 
 
 def exigir_sin_credencial(texto: str, campo: str) -> None:

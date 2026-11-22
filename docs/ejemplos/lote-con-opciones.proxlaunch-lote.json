@@ -1,0 +1,80 @@
+{
+  "app_version": "0.6.0",
+  "formato": "proxlaunch.lote",
+  "homogeneo": {
+    "cantidad": 3,
+    "config": {
+      "arranque_auto": true,
+      "arranque_espera": 30,
+      "arranque_orden": 2,
+      "ballooning": null,
+      "con_disco": true,
+      "controlador_scsi": "virtio-scsi-single",
+      "cores": 2,
+      "discos": [
+        {
+          "bus": "scsi",
+          "discard": true,
+          "formato": "auto",
+          "iothread": true,
+          "ssd": true,
+          "storage": "local-lvm",
+          "tamano_gib": 32
+        }
+      ],
+      "encender": true,
+      "etiquetas_usuario": [
+        "web",
+        "produccion"
+      ],
+      "firmware": "seabios",
+      "memoria_mib": 2048,
+      "notas": "Servidor web de la oficina",
+      "notas_origen": true,
+      "origen": "disco_vacio",
+      "pool": "produccion",
+      "proteger": true,
+      "redes": [
+        {
+          "bridge": "vmbr0",
+          "limite_mb": 100.0,
+          "modelo": "virtio",
+          "mtu": 1500,
+          "vlan": null
+        }
+      ],
+      "sockets": 1,
+      "storage_efi": null,
+      "tipo_cpu": "x86-64-v2-AES"
+    },
+    "destino": {
+      "algoritmo": "equilibrado",
+      "modo": "automatico",
+      "nodos": []
+    },
+    "etiquetar": true,
+    "opciones": {
+      "arranque_auto": true,
+      "encender": true,
+      "etiquetas_usuario": [
+        "web",
+        "produccion"
+      ],
+      "notas": "Servidor web de la oficina",
+      "notas_origen": true,
+      "pool": "produccion",
+      "proteger": true
+    },
+    "patron": {
+      "inicio": 1,
+      "prefijo": "srv-web",
+      "relleno": 2,
+      "separador": "-"
+    },
+    "vmid_inicial": null
+  },
+  "nombre": "Servidores web con opciones",
+  "tipo": "homogeneo",
+  "version_formato": 3,
+  "version_proxmox": "9.2"
+}

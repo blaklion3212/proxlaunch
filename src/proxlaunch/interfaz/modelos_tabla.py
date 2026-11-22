@@ -28,6 +28,7 @@ from proxlaunch.interfaz.textos import (
     simbolo_estado_mv,
     simbolo_estado_rollback,
     texto_aviso_origen,
+    texto_detalle_rollback,
     texto_error,
     texto_estado_mv,
     texto_estado_rollback,
@@ -596,9 +597,7 @@ class FiltroProblemas(QSortFilterProxyModel):
 
 
 def detalle_rollback(r: ResultadoRollback) -> str:
-    if r.error is not None:
-        return texto_error(r.error)
-    return ""
+    return texto_detalle_rollback(r.acciones, r.error)
 
 
 class ModeloRollback(_ModeloBase):

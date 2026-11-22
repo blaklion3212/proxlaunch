@@ -12,6 +12,7 @@ from PySide6.QtWidgets import (
 )
 
 from proxlaunch.interfaz.ayuda import ayuda
+from proxlaunch.interfaz.textos import tooltip_plano
 
 
 def poner_propiedad(widget: QWidget, nombre: str, valor: bool) -> None:
@@ -166,11 +167,13 @@ class FilaCampo(QWidget):
         visible = bool(texto) and self.tocado
         poner_mensaje(self._error, texto if visible else None)
         poner_propiedad(self.campo, "invalido", visible)
-        self.campo.setToolTip((texto or "") if visible else self._tooltip_original)
+        self.campo.setToolTip(tooltip_plano(texto or "") if visible else self._tooltip_original)
 
     def mostrar_aviso(self, texto: str | None) -> None:
         """Muestra un aviso no bloqueante junto al campo."""
         poner_mensaje(self._aviso_extra, texto, aviso=True)
+        # SEG-A-05: el texto puede traer datos del servidor; el tooltip se escapa.
+        self._aviso_extra.setToolTip(tooltip_plano(texto) if texto else "")
 
     @property
     def hay_error(self) -> bool:

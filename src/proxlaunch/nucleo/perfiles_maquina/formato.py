@@ -17,6 +17,7 @@ from proxlaunch.nucleo.archivos.constantes import (
     MAX_PERFILES_ARCHIVO,
     VERSION_FORMATO,
     VERSION_FORMATO_BASE,
+    VERSION_FORMATO_MVP4,
 )
 from proxlaunch.nucleo.archivos.envoltura import (
     FORMATO_PERFILES,
@@ -36,6 +37,7 @@ from proxlaunch.nucleo.archivos.esquema_config import (
     config_perfil_a_dict,
     leer_config_perfil,
     requiere_version_2,
+    requiere_version_3,
 )
 from proxlaunch.nucleo.archivos.json_estricto import cargar_json_estricto
 from proxlaunch.nucleo.archivos.lector import leer_archivo_limitado
@@ -90,9 +92,12 @@ def perfil_a_dict(
 
 
 def version_para(perfiles: Sequence[PerfilMaquina]) -> int:
-    """2 solo si algún perfil usa algo del MVP 4 (DT-O15); 1 en otro caso."""
+    """3 si algún perfil usa algo de la fase A (arranque o MTU/límite, CA-A7.2.3); si no, 2 si usa
+    algo del MVP 4 (DT-O15) y 1 en otro caso."""
+    if any(requiere_version_3(p.config) for p in perfiles):
+        return VERSION_FORMATO
     usa = any(requiere_version_2(p.config) for p in perfiles)
-    return VERSION_FORMATO if usa else VERSION_FORMATO_BASE
+    return VERSION_FORMATO_MVP4 if usa else VERSION_FORMATO_BASE
 
 
 def perfiles_a_bytes(

@@ -12,7 +12,7 @@ import dataclasses
 import logging
 from collections.abc import Callable, Collection, Iterable
 from concurrent.futures import ThreadPoolExecutor
-from typing import TYPE_CHECKING, TypeVar
+from typing import TYPE_CHECKING, Any, TypeVar
 
 from proxlaunch.nucleo.api.cliente import ClienteProxmox
 from proxlaunch.nucleo.api.traductor_errores import CODIGOS_DE_RED
@@ -23,16 +23,19 @@ from proxlaunch.nucleo.modelos.catalogo import (
     Contenido,
     DetallePlantilla,
     ListadoStorage,
+    PermisosEfectivos,
     Plantilla,
     Volumen,
 )
 from proxlaunch.nucleo.modelos.inventario import Inventario, Storage
 from proxlaunch.nucleo.modelos.origen import DetalleImportacion, DetalleIso
 from proxlaunch.nucleo.modelos.vm import ConfiguracionVM, OrigenSO
+from proxlaunch.nucleo.opciones.modelos import EstadoPools, PoliticaEtiquetas, PoolsServidor
 from proxlaunch.nucleo.origen.asistente import TABLA_SO
 from proxlaunch.nucleo.origen.clon import detalle_de_config
 from proxlaunch.nucleo.origen.constantes import MAX_CATALOGO
 from proxlaunch.nucleo.origen.nombres import partes_volid
+from proxlaunch.nucleo.origen.permisos import estado_privilegio
 from proxlaunch.nucleo.reloj import Reloj
 from proxlaunch.nucleo.servicios.conexion import Sesion
 
@@ -53,6 +56,52 @@ _CODIGOS_FATALES = frozenset(
         CodigoError.HUELLA_NO_CONFIADA,
     }
 )
+
+
+def leer_pools(cliente: ClienteProxmox, permisos: PermisosEfectivos | None) -> PoolsServidor:
+    """Pools visibles (``GET /pools``) y por qué, si no hay ninguno (fase A, arq. §3.5).
+
+    Lista no vacía → OK. Vacía: sin ``Pool.Audit`` en ``/pool`` Proxmox la devuelve vacía en
+    silencio (SIN_PERMISO); con permisos desconocidos, DESCONOCIDO; con el privilegio, OK sin
+    pools. Un fallo de lectura es ERROR (nunca bloquea); los errores de sesión se propagan.
+    """
+    try:
+        filas = cliente.pools()
+    except ErrorProxLaunch as e:
+        if e.codigo in _CODIGOS_FATALES:
+            raise
+        _log.info("Pools no disponibles: %s", e.codigo)
+        return PoolsServidor(EstadoPools.ERROR)
+    except Exception:
+        _log.exception("Fallo inesperado al leer los pools")
+        return PoolsServidor(EstadoPools.ERROR)
+    ids = tuple(dict.fromkeys(str(f["poolid"]) for f in filas if isinstance(f.get("poolid"), str)))
+    if ids:
+        return PoolsServidor(EstadoPools.OK, ids)
+    audit = estado_privilegio(permisos, "Pool.Audit", "/pool")
+    if audit is None:
+        return PoolsServidor(EstadoPools.DESCONOCIDO)
+    return PoolsServidor(EstadoPools.OK if audit else EstadoPools.SIN_PERMISO)
+
+
+def leer_politica_etiquetas(cliente: ClienteProxmox) -> tuple[PoliticaEtiquetas | None, bool]:
+    """``(política, fallida)`` desde ``GET /cluster/options`` (fase A, arq. §3.5).
+
+    Un fallo de lectura o un cuerpo inesperado da ``(None, True)``: la validación avisa (V-A09)
+    pero no bloquea. Los errores de sesión se propagan.
+    """
+    try:
+        return PoliticaEtiquetas.desde_opciones(cliente.opciones_cluster()), False
+    except ErrorProxLaunch as e:
+        if e.codigo in _CODIGOS_FATALES:
+            raise
+        _log.info("Opciones del cluster no disponibles: %s", e.codigo)
+    except ValueError:
+        _log.info("Opciones del cluster con un cuerpo inesperado")
+    except Exception:
+        _log.exception("Fallo inesperado al leer las opciones del cluster")
+    return None, True
+
 
 TIPO_FUENTE_ISO = "iso"
 TIPO_FUENTE_DRIVERS = "drivers"
@@ -159,12 +208,19 @@ class ServicioCatalogo:
     # --- Lectura completa para un plan ----------------------------------------------------
 
     def leer_para(
-        self, inv: Inventario, necesidades: NecesidadesCatalogo, nodos: Collection[str]
+        self,
+        inv: Inventario,
+        necesidades: NecesidadesCatalogo,
+        nodos: Collection[str],
+        *,
+        opciones: bool = False,
     ) -> CatalogoServidor:
         """Lee SOLO lo que piden ``necesidades`` y lo devuelve como ``CatalogoServidor``.
 
-        Con ``necesidades.vacias`` no hace ninguna petición. Los permisos se reutilizan de
-        ``inv.catalogo`` (sin GET nuevo).
+        Con ``necesidades.vacias`` y sin ``opciones`` no hace ninguna petición. Los permisos se
+        reutilizan de ``inv.catalogo`` (sin GET nuevo). Con ``opciones=True`` (fase A) lee además
+        ``GET /pools`` y ``GET /cluster/options`` (dos GET por lectura, no por MV); sin ello se
+        conservan los pools y la política que ya traía ``inv.catalogo``.
         """
         permisos = inv.catalogo.permisos if inv.catalogo is not None else None
         listados: list[ListadoStorage] = []
@@ -179,12 +235,28 @@ class ServicioCatalogo:
                 plantillas = self._plantillas_usadas(necesidades.plantillas)
             if necesidades.formatos:
                 formatos = self.formatos(inv, nodos_ord)
+        previo = inv.catalogo
+        extra: dict[str, Any] = {}
+        if opciones:
+            politica, fallida = leer_politica_etiquetas(self._cliente)
+            extra = {
+                "pools": leer_pools(self._cliente, permisos),
+                "politica_etiquetas": politica,
+                "politica_etiquetas_fallida": fallida,
+            }
+        elif previo is not None:
+            extra = {
+                "pools": previo.pools,
+                "politica_etiquetas": previo.politica_etiquetas,
+                "politica_etiquetas_fallida": previo.politica_etiquetas_fallida,
+            }
         return CatalogoServidor(
             permisos=permisos,
             listados=tuple(listados),
             plantillas=plantillas,
             formatos=formatos,
             leido_en=self._reloj.ahora(),
+            **extra,
         )
 
     def _plantillas_usadas(self, nombres: Collection[str]) -> tuple[Plantilla, ...]:

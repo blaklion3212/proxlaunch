@@ -59,3 +59,6 @@ Thumbs.db
 # Decisiones y bitácora: solo local (retiradas del repositorio el 2026-11-21)
 /docs/decisiones.md
 /docs/bitacora.md
+
+# Borradores de notas de versión: su texto va en la release, no en el repositorio
+/docs/notas-version-*.md

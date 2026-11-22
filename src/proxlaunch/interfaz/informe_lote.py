@@ -20,7 +20,7 @@ from proxlaunch.interfaz.modelos_tabla import detalle_entrada
 from proxlaunch.interfaz.textos import (
     simbolo_estado_mv,
     texto_ajustes_clon,
-    texto_error,
+    texto_detalle_rollback,
     texto_estado_mv,
     texto_estado_rollback,
     texto_estado_transferencia,
@@ -137,7 +137,7 @@ def _lineas_deshacer(resultados: tuple[ResultadoRollback, ...]) -> list[str]:
     lineas = ["", QCoreApplication.translate("InformeLote", "Deshacer"), "--------"]
     filas: list[tuple[str, ...]] = []
     for r in resultados:
-        detalle = texto_error(r.error) if r.error is not None else ""
+        detalle = texto_detalle_rollback(r.acciones, r.error)
         filas.append((r.nombre, str(r.vmid), r.nodo, texto_estado_rollback(r.estado), detalle))
     cab = (
         QCoreApplication.translate("InformeLote", "Nombre"),

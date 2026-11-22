@@ -15,13 +15,20 @@ from collections.abc import Collection, Mapping, Sequence
 from dataclasses import dataclass, field
 
 from proxlaunch.nucleo.archivos.constantes import (
+    MAX_LONG_NOTAS,
     MAX_LONG_TEXTO,
     MAX_PROBLEMAS_FILA,
     MEMORIA_AVISO_GIB,
 )
 from proxlaunch.nucleo.archivos.csv_seguro import DISPARADORES
 from proxlaunch.nucleo.archivos.esquema import AvisoArchivo, CodigoAvisoArchivo
-from proxlaunch.nucleo.archivos.texto import clave_comparacion, texto_seguro
+from proxlaunch.nucleo.archivos.texto import (
+    MOTIVO_LONGITUD,
+    analizar_texto,
+    clave_comparacion,
+    contiene_token,
+    texto_seguro,
+)
 from proxlaunch.nucleo.capacidades import capacidades_para
 from proxlaunch.nucleo.csv_importacion import unidades
 from proxlaunch.nucleo.csv_importacion.columnas import (
@@ -59,6 +66,9 @@ from proxlaunch.nucleo.modelos.vm import (
     ModeloRed,
     OrigenSO,
 )
+from proxlaunch.nucleo.opciones.etiquetas import normalizar_etiquetas
+from proxlaunch.nucleo.opciones.modelos import OpcionesParciales
+from proxlaunch.nucleo.opciones.notas import limpiar_texto_libre
 from proxlaunch.nucleo.origen.asistente import aplicar_asistente
 from proxlaunch.nucleo.origen.nombres import (
     es_ruta_absoluta,
@@ -107,6 +117,7 @@ class _Borrador:
     problemas: list[tuple[int, ProblemaCelda]] = field(default_factory=list)
     originales: dict[str, str] = field(default_factory=dict)
     sin_cfg: bool = False  # un error de la fila impide construir la configuración
+    opciones: OpcionesParciales | None = None  # fase A: celdas fijadas (None = hereda todo)
 
 
 # --- Utilidades ---------------------------------------------------------------------------
@@ -134,9 +145,20 @@ def _columna_de_campo(campo: str) -> str | None:
         "firmware": "firmware",
         "discos": "disco",
         "storage_efi": "almacenamiento",
+        # Fase A: campos de ``ConfiguracionVM`` y de ``OpcionA`` (V-A12) que tienen columna.
+        "notas": "notas",
+        "etiquetas": "etiquetas",
+        "pool": "pool",
+        "encender": "encender",
+        "arranque_auto": "arranque_auto",
+        "proteger": "proteger",
+        "mtu": "mtu",
+        "limite_red": "limite_red",
     }
     if campo in fijos:
         return fijos[campo]
+    if campo.startswith("etiquetas_usuario["):
+        return "etiquetas"
     # MVP 4: campos del origen del SO.
     if campo == "detalle_origen":
         return "origen"
@@ -168,7 +190,13 @@ def _columna_de_campo(campo: str) -> str | None:
                 return _nombre_columna_almacenamiento(k)
             return _nombre_columna_disco(k)
     if campo.startswith("redes[0]."):
-        return {"vlan": "vlan", "bridge": "red", "modelo": "modelo_red"}.get(campo[9:])
+        return {
+            "vlan": "vlan",
+            "bridge": "red",
+            "modelo": "modelo_red",
+            "mtu": "mtu",
+            "limite_mb": "limite_red",
+        }.get(campo[9:])
     return None
 
 
@@ -298,6 +326,12 @@ class _Fila:
             valor = self.celda(canonica)
         if canonica == "fuente" and parece_url_o_credenciales(valor):
             valor = url_saneada(valor)  # INV-O6: la URL con credenciales no se conserva
+        if canonica == "pool" and contiene_token(valor):
+            valor = ""  # un token en el pool tampoco se conserva
+        if canonica == "notas" and (regla == _REGLA_NO_ADMITIDO or contiene_token(valor)):
+            # RNF-A2: un token en las notas no se conserva en el resultado; y una celda de
+            # notas con error tampoco muestra su valor (pudo traer un token disfrazado).
+            valor = ""
         self.b.problemas.append(
             (
                 _orden(mapa, canonica),
@@ -326,6 +360,17 @@ class _Fila:
             self.b.sin_cfg = True
             self.problema(canonica, _REGLA_NO_ADMITIDO, Severidad.ERROR, {"motivo": "texto"})
         return seguro
+
+    def booleano(self, canonica: str) -> bool | None:
+        """Casilla de la celda (``si``/``no``...). ``None`` si está vacía (hereda) o es inválida."""
+        crudo = self.celda(canonica)
+        if not crudo:
+            return None
+        try:
+            return unidades.si_no(crudo)
+        except unidades.ValorInvalido as e:
+            self.error_valor(canonica, e)
+            return None
 
     def entero(self, canonica: str) -> int | None:
         crudo = self.celda(canonica)
@@ -378,6 +423,7 @@ class _Fila:
             self._discos(cfg, nodo_ef)
             self._red(cfg, nodo_ef)
         self._detalle_origen(cfg)
+        b.opciones = self._opciones(cfg, perfil)
         self._pistas(resultado.avisos, perfil)
 
         # Capa 1 (V-01 solo con nombre; V-02 con el VMID explícito o uno válido de relleno).
@@ -394,10 +440,13 @@ class _Fila:
         b.cfg = None if b.sin_cfg else cfg
         for canonica, pos in ctx.mapa.posiciones.items():
             if pos < len(b.fila.celdas):
-                original = sin_control(b.fila.celdas[pos]).strip()
+                bruta = b.fila.celdas[pos]
+                original = sin_control(bruta).strip()
                 if original:
                     if canonica == "fuente" and parece_url_o_credenciales(original):
                         original = url_saneada(original)  # INV-O6
+                    if canonica in ("notas", "pool") and contiene_token(bruta):
+                        continue  # RNF-A2: un token en las notas o el pool no se conserva
                     b.originales[canonica] = original
         return b
 
@@ -683,7 +732,23 @@ class _Fila:
                 modelo = unidades.modelo_red(crudo_modelo)
             except unidades.ValorInvalido as e:
                 self.error_valor("modelo_red", e)
-        if bridge is None and vlan is None and modelo is None:
+        mtu_fijado = False
+        mtu: int | None = None
+        crudo_mtu = self.celda("mtu")
+        if crudo_mtu:
+            try:
+                mtu = unidades.mtu(crudo_mtu)
+                mtu_fijado = True  # «heredar» también es una elección explícita (None)
+            except unidades.ValorInvalido as e:
+                self.error_valor("mtu", e)
+        limite: float | None = None
+        crudo_limite = self.celda("limite_red")
+        if crudo_limite:
+            try:
+                limite = unidades.limite_mb(crudo_limite)
+            except unidades.ValorInvalido as e:
+                self.error_valor("limite_red", e)
+        if bridge is None and vlan is None and modelo is None and not mtu_fijado and limite is None:
             return
         if not cfg.redes:
             inv = self.ctx.inv
@@ -698,6 +763,88 @@ class _Fila:
             red.modelo = modelo
         if vlan is not None:
             red.vlan = vlan
+        # Fase A: MTU y límite van a la tarjeta 1 (hardware, como ``modelo_red``; P-19).
+        if mtu_fijado:
+            red.mtu = mtu
+        if limite is not None:
+            red.limite_mb = limite
+
+    # -- opciones de la fase A (RF-A7.3) --
+
+    def _notas(self) -> str | None:
+        """Texto libre de ``notas``: saltos normalizados y sin control (aviso V-A14); hasta
+        ``MAX_LONG_NOTAS``. Un token o caracteres no admitidos es un error de la celda."""
+        crudo = self.celda("notas")
+        if not crudo:
+            return None
+        limpio, cambios = limpiar_texto_libre(crudo)
+        seguro, motivo = analizar_texto(
+            limpio, maximo=MAX_LONG_NOTAS, multilinea=True, tabulador=True
+        )
+        if motivo is not None or contiene_token(seguro):
+            self.b.sin_cfg = True
+            detalle = "longitud" if motivo == MOTIVO_LONGITUD else "texto"
+            if motivo is None:
+                detalle = "token"  # parece un API Token: no se guardaría en ningún lote (INV-M2)
+            self.problema("notas", _REGLA_NO_ADMITIDO, Severidad.ERROR, {"motivo": detalle})
+            return None
+        if cambios:
+            self.problema("notas", "V-A14", Severidad.AVISO)
+        return seguro
+
+    def _etiquetas(self) -> tuple[str, ...] | None:
+        """``etiquetas`` separadas por ``,`` o ``;``. Su validez la comprueba V-A02."""
+        crudo = self.celda("etiquetas")
+        return (normalizar_etiquetas(crudo) or None) if crudo else None
+
+    def _pool(self) -> str | None:
+        """``pool``: vacío = hereda (``None``); ``ninguno`` = sin pool aunque el lote lo fije."""
+        crudo = self.celda("pool")
+        if not crudo:
+            return None
+        if unidades.es_ninguno(crudo):
+            return ""
+        pool = self.texto("pool")
+        if pool is not None and contiene_token(pool):
+            # SEG-A-04: un token pegado en el pool no se conserva ni se guarda (INV-M2).
+            self.b.sin_cfg = True
+            self.problema("pool", _REGLA_NO_ADMITIDO, Severidad.ERROR, {"motivo": "token"})
+            return None
+        return pool
+
+    def _opciones(self, cfg: ConfiguracionVM, perfil: PerfilMaquina) -> OpcionesParciales | None:
+        """Lee las columnas de la fase A. Las celdas vacías heredan las del formulario (``None``).
+
+        Un perfil elegido en la columna ``perfil`` que marca «Arrancar con el servidor» lo fija en
+        la fila (``aplicar_opciones_lote`` ignoraría el de ``cfg``); el perfil base ya lo aplicó
+        el formulario y no se repite aquí.
+
+        Los valores fijados también se copian a ``cfg`` para que las reglas V-A de capa 1 los
+        vean; el planificador los reescribe con ``aplicar_opciones_lote``."""
+        arranque_auto = self.booleano("arranque_auto")
+        if arranque_auto is None and self.celda("perfil") and perfil.config.arranque_auto:
+            arranque_auto = True
+        op = OpcionesParciales(
+            encender=self.booleano("encender"),
+            arranque_auto=arranque_auto,
+            notas=self._notas(),
+            etiquetas_usuario=self._etiquetas(),
+            pool=self._pool(),
+            proteger=self.booleano("proteger"),
+        )
+        if op.encender is not None:
+            cfg.encender = op.encender
+        if op.arranque_auto is not None:
+            cfg.arranque_auto = op.arranque_auto
+        if op.notas is not None:
+            cfg.notas = op.notas
+        if op.etiquetas_usuario is not None:
+            cfg.etiquetas_usuario = op.etiquetas_usuario
+        if op.pool is not None:
+            cfg.pool = op.pool or None
+        if op.proteger is not None:
+            cfg.proteger = op.proteger
+        return op if op != OpcionesParciales() else None
 
     def _pistas(self, avisos: Sequence[AvisoPista], perfil: PerfilMaquina) -> None:
         """Avisos de pistas no resueltas (una vez por fila), salvo los que el CSV ya reemplazó."""
@@ -847,6 +994,7 @@ def _congelar(b: _Borrador) -> FilaInterpretada:
         problemas=tuple(b.problemas[i][1] for i in visibles),
         problemas_omitidos=len(ordenados) - len(visibles),
         originales=b.originales,
+        opciones=b.opciones,
     )
 
 
@@ -898,5 +1046,5 @@ def filas_lote(resultado: ResultadoImportacion, numeros: Collection[int]) -> tup
             raise ValueError(f"la fila {f.numero} tiene errores")
         cfg = copy.deepcopy(f.cfg)
         cfg.nombre, cfg.vmid, cfg.nodo, cfg.etiquetas = f.nombre, f.vmid or 0, f.nodo or "", ()
-        salida.append(FilaLote(f.nombre, cfg, f.vmid, f.nodo, f.numero))
+        salida.append(FilaLote(f.nombre, cfg, f.vmid, f.nodo, f.numero, f.opciones, f.perfil))
     return tuple(salida)

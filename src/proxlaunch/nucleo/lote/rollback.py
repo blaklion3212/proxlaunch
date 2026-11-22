@@ -4,6 +4,12 @@ Acción manual con confirmación. Solo actúa sobre MVs del libro (INV-L4) y ant
 ``DELETE`` vuelve a comprobar propiedad, protección, bloqueo y encendido. Nunca reintenta
 un ``DELETE`` a ciegas: ante la duda lee la configuración y, si sigue existiendo, informa
 ``INCIERTA``.
+
+Fase A (RF-A1.5, RF-A6.3, RF-A6.4): con ``forzar_apagado`` y ``forzar_desproteccion`` (los
+VMIDs que el usuario confirmó expresamente tras ``inspeccionar``) también apaga a la fuerza esas
+MVs propias encendidas y les quita la protección antes del ``DELETE``. Una MV encendida o
+protegida que no esté en su conjunto se omite como sin forzar (SEG-A-01). Un ``lock`` nunca se
+fuerza y una MV no propia nunca se toca.
 """
 
 from __future__ import annotations
@@ -12,6 +18,7 @@ import logging
 import threading
 from collections.abc import Callable, Collection, Mapping
 from concurrent.futures import ThreadPoolExecutor
+from dataclasses import dataclass, field
 from typing import Any
 
 from proxlaunch.nucleo.api.traductor_errores import CODIGOS_DE_RED
@@ -32,8 +39,10 @@ from proxlaunch.nucleo.lote.reconciliacion import (
     AVISO_CREADA_TRAS_COMPROBAR,
     tiene_etiqueta_del_lote,
 )
+from proxlaunch.nucleo.modelos.catalogo import PermisosEfectivos
 from proxlaunch.nucleo.modelos.origen import DetalleClon
 from proxlaunch.nucleo.modelos.vm import OrigenSO
+from proxlaunch.nucleo.origen.permisos import estado_privilegio
 from proxlaunch.nucleo.registro import enmascarar
 from proxlaunch.nucleo.reloj import Reloj
 from proxlaunch.nucleo.servicios.conexion import Sesion
@@ -50,11 +59,54 @@ ESTADOS_INCOMPLETOS = frozenset({EstadoMV.CON_AVISOS, EstadoMV.PARCIAL})
 MOTIVO_PROPIEDAD_NO_DEMOSTRADA = "propiedad_no_demostrada"
 _MAX_DETALLE_LOG = 300
 
+# Acciones realizadas sobre una MV (``ResultadoRollback.acciones``).
+ACCION_APAGADA = "apagada"
+ACCION_DESPROTEGIDA = "desprotegida"
+ACCION_BORRADA = "borrada"
+PRIVILEGIO_ENCENDIDO = "VM.PowerMgmt"
+PRIVILEGIO_OPCIONES = "VM.Config.Options"
+
 ObservadorRollback = Callable[[ResultadoRollback], None]
+
+
+@dataclass(frozen=True)
+class InspeccionRollback:
+    """Resultado de solo lectura de ``inspeccionar`` (alimenta la confirmación expresa)."""
+
+    # Forzables: VMIDs propios encendidos / protegidos cuyo privilegio es conocido o se desconoce.
+    encendidas: tuple[int, ...] = ()  # en ``running``
+    protegidas: tuple[int, ...] = ()  # con ``protection=1``
+    # Encendidas / protegidas que se omitirán porque se sabe que falta el privilegio.
+    encendidas_sin_privilegio: tuple[int, ...] = ()
+    protegidas_sin_privilegio: tuple[int, ...] = ()
+    # Candidatos cuyo estado no se pudo leer (ya no se descartan en silencio, QA-A-01).
+    ilegibles: tuple[int, ...] = ()
+    # Nombre del plan de cada VMID mencionado arriba, para listarlas en la confirmación.
+    nombres: Mapping[int, str] = field(default_factory=dict)
+
+    @property
+    def hay_forzables(self) -> bool:
+        return bool(self.encendidas or self.protegidas)
+
+    @property
+    def hay_algo_que_avisar(self) -> bool:
+        """Hay algo que mostrar al usuario antes de borrar (forzables, omisiones o ilegibles)."""
+        return bool(
+            self.encendidas
+            or self.protegidas
+            or self.encendidas_sin_privilegio
+            or self.protegidas_sin_privilegio
+            or self.ilegibles
+        )
 
 
 def _verdadero(valor: Any) -> bool:
     return str(valor).strip().lower() in ("1", "true", "yes", "on")
+
+
+def _ya_parada(texto: str) -> bool:
+    """El ``stop`` respondió que la MV no estaba en marcha (cuenta como éxito)."""
+    return "not running" in texto.lower()
 
 
 def _vmid_de_plantilla(entrada: EntradaLibro) -> int | None:
@@ -149,6 +201,66 @@ class ServicioRollback:
             candidatos.append(CandidatoRollback(entrada, elegible, motivo, incompleta))
         return candidatos
 
+    def inspeccionar(
+        self,
+        candidatos: list[CandidatoRollback],
+        *,
+        id_lote: str,
+        etiquetado: bool,
+        permisos: PermisosEfectivos | None = None,
+    ) -> InspeccionRollback:
+        """Cuenta las MVs propias encendidas y protegidas entre los candidatos elegibles.
+
+        Solo hace ``GET`` (config y estado actual). Se ignoran las que no son propias, las que
+        tienen ``lock`` (nunca se fuerzan) y las que ya no existen. Las que no se pueden leer
+        van en ``ilegibles``. Con ``permisos``, las encendidas (``VM.PowerMgmt``) o protegidas
+        (``VM.Config.Options``) cuyo privilegio es ``False`` van aparte, como «sin privilegio»;
+        con ``None`` (o privilegio desconocido) son forzables. Pensada para un trabajador:
+        bloqueante y sin efectos.
+        """
+        encendidas: list[int] = []
+        protegidas: list[int] = []
+        encendidas_sin: list[int] = []
+        protegidas_sin: list[int] = []
+        ilegibles: list[int] = []
+        nombres: dict[int, str] = {}
+        cliente = self._sesion.cliente
+        for c in candidatos:
+            if not (c.elegible and c.entrada.estado in ESTADOS_ELEGIBLES):
+                continue
+            el = c.entrada.elemento
+            try:
+                config = cliente.config_vm(el.nodo, el.vmid)
+                if config is None or not es_propia(config, c.entrada, id_lote, etiquetado):
+                    continue
+                if config.get("lock"):
+                    continue
+                estado_vm = cliente.estado_actual_vm(el.nodo, el.vmid)
+            except Exception:
+                _log.warning("Inspección del rollback: no se pudo leer vmid=%s", el.vmid)
+                ilegibles.append(el.vmid)
+                nombres[el.vmid] = el.nombre
+                continue
+            if estado_vm.get("lock"):
+                continue
+            ruta = f"/vms/{el.vmid}"
+            if _verdadero(config.get("protection", 0)):
+                sin = estado_privilegio(permisos, PRIVILEGIO_OPCIONES, ruta) is False
+                (protegidas_sin if sin else protegidas).append(el.vmid)
+                nombres[el.vmid] = el.nombre
+            if str(estado_vm.get("status", "")).lower() == "running":
+                sin = estado_privilegio(permisos, PRIVILEGIO_ENCENDIDO, ruta) is False
+                (encendidas_sin if sin else encendidas).append(el.vmid)
+                nombres[el.vmid] = el.nombre
+        return InspeccionRollback(
+            tuple(encendidas),
+            tuple(protegidas),
+            tuple(encendidas_sin),
+            tuple(protegidas_sin),
+            tuple(ilegibles),
+            nombres,
+        )
+
     # --- Ejecución --------------------------------------------------------------------
 
     def deshacer(
@@ -159,8 +271,24 @@ class ServicioRollback:
         *,
         id_lote: str,
         etiquetado: bool,
+        forzar_apagado: frozenset[int] = frozenset(),
+        forzar_desproteccion: frozenset[int] = frozenset(),
+        permisos: PermisosEfectivos | None = None,
     ) -> list[ResultadoRollback]:
         """Elimina las MVs elegibles (las no elegibles se ignoran). Bloqueante.
+
+        ``forzar_apagado`` y ``forzar_desproteccion`` (VMIDs confirmados expresamente tras
+        ``inspeccionar``, RF-A6.4): una MV propia encendida que esté en el primero se apaga a
+        la fuerza (``stop``, se espera la tarea) y una protegida que esté en el segundo pierde
+        ``protection`` con un ``PUT``; después ``DELETE``. ``ResultadoRollback.acciones`` lo
+        registra. Una MV encendida o protegida que NO esté en su conjunto (p. ej. se encendió
+        mientras el usuario leía la confirmación) se omite con ``ROLLBACK_ENCENDIDA`` o
+        ``ROLLBACK_PROTEGIDA``, igual que sin forzar. ``permisos`` decide los saltos: un
+        privilegio en ``False`` omite la MV con ``ROLLBACK_SIN_POWERMGMT`` o
+        ``ROLLBACK_SIN_OPCIONES`` (faltan ambos: el segundo va en ``params['tambien']``); con
+        ``None`` (desconocido) se intenta. Tras el ``stop`` y tras el ``PUT`` se relee la
+        configuración y se vuelve a comprobar propiedad y ``lock`` antes del paso siguiente
+        (QA-A-07). El ``lock`` nunca se fuerza.
 
         Como máximo un ``DELETE`` a la vez por nodo y ``max_nodos`` nodos en paralelo.
         Devuelve un resultado por candidato elegible, en el orden recibido. Usa un
@@ -193,7 +321,17 @@ class ServicioRollback:
                         emitir(self._resultado(resto.entrada, EstadoRollback.NO_ENVIADA))
                     return
                 emitir(
-                    self._procesar(candidato.entrada, id_lote, etiquetado, control, detener, emitir)
+                    self._procesar(
+                        candidato.entrada,
+                        id_lote,
+                        etiquetado,
+                        control,
+                        detener,
+                        emitir,
+                        forzar_apagado,
+                        forzar_desproteccion,
+                        permisos,
+                    )
                 )
 
         trabajadores = max(1, min(self._max_nodos, len(colas)))
@@ -218,9 +356,10 @@ class ServicioRollback:
         *,
         upid: str | None = None,
         error: ErrorProxLaunch | None = None,
+        acciones: tuple[str, ...] = (),
     ) -> ResultadoRollback:
         el = entrada.elemento
-        return ResultadoRollback(el.vmid, el.nodo, el.nombre, estado, upid, error)
+        return ResultadoRollback(el.vmid, el.nodo, el.nombre, estado, upid, error, acciones)
 
     @staticmethod
     def _error(
@@ -236,11 +375,12 @@ class ServicioRollback:
         entrada: EntradaLibro,
         control: ControlLote,
         detener: threading.Event,
+        acciones: tuple[str, ...] = (),
     ) -> ResultadoRollback:
         """Un error definitivo al comprobar o eliminar: FALLO (y parada si es global)."""
         el = entrada.elemento
         if e.codigo == CodigoError.RECURSO_INEXISTENTE:
-            return self._resultado(entrada, EstadoRollback.YA_NO_EXISTIA)
+            return self._resultado(entrada, EstadoRollback.YA_NO_EXISTIA, acciones=acciones)
         if e.codigo == CodigoError.PERMISO_INSUFICIENTE and not e.params.get("privilegio"):
             e.params["privilegio"] = "VM.Allocate"
             e.params["ruta"] = f"/vms/{el.vmid}"
@@ -248,11 +388,11 @@ class ServicioRollback:
         if e.codigo == CodigoError.PERMISO_INSUFICIENTE or es_error_global(e):
             detener.set()
             control.pausar(MotivoPausa.ERROR_GLOBAL, e)
-            return self._resultado(entrada, EstadoRollback.FALLO, error=e)
+            return self._resultado(entrada, EstadoRollback.FALLO, error=e, acciones=acciones)
         error = self._error(
             CodigoError.ROLLBACK_FALLO, entrada, e.detalle_tecnico, causa=str(e.codigo)
         )
-        return self._resultado(entrada, EstadoRollback.FALLO, error=error)
+        return self._resultado(entrada, EstadoRollback.FALLO, error=error, acciones=acciones)
 
     def _procesar(
         self,
@@ -262,20 +402,35 @@ class ServicioRollback:
         control: ControlLote,
         detener: threading.Event,
         emitir: ObservadorRollback,
+        forzar_apagado: frozenset[int] = frozenset(),
+        forzar_desproteccion: frozenset[int] = frozenset(),
+        permisos: PermisosEfectivos | None = None,
     ) -> ResultadoRollback:
         el = entrada.elemento
         cliente = self._sesion.cliente
         emitir(self._resultado(entrada, EstadoRollback.COMPROBANDO))
 
-        # 1. Comprobaciones previas: existe, es propia, no está protegida, bloqueada ni encendida.
+        # 1. Previas: existe, es propia, sin lock; protección y encendido según forzar
         try:
             config = cliente.config_vm(el.nodo, el.vmid)
             if config is None:
                 return self._resultado(entrada, EstadoRollback.YA_NO_EXISTIA)
             omision = self._motivo_omision(config, entrada, id_lote, etiquetado)
+            encendida = False
             if omision is None:
                 estado_vm = cliente.estado_actual_vm(el.nodo, el.vmid)
-                omision = self._motivo_omision_estado(estado_vm, entrada)
+                omision = self._motivo_omision_lock(estado_vm, entrada)
+                encendida = str(estado_vm.get("status", "")).lower() == "running"
+            protegida = _verdadero(config.get("protection", 0))
+            if omision is None:
+                omision = self._motivo_omision_forzado(
+                    entrada,
+                    encendida,
+                    protegida,
+                    el.vmid in forzar_apagado,
+                    el.vmid in forzar_desproteccion,
+                    permisos,
+                )
         except ErrorProxLaunch as e:
             return self._fallo_de(e, entrada, control, detener)
         except Exception as exc:
@@ -287,45 +442,262 @@ class ServicioRollback:
         if self._detenido(control, detener):
             return self._resultado(entrada, EstadoRollback.NO_ENVIADA)
 
-        # 2. DELETE. Una sola vez: un fallo incierto se resuelve leyendo, no reenviando.
+        acciones: list[str] = []
+        # 2. Apagado forzado (solo confirmado y si estaba encendida).
+        if encendida:
+            fallo = self._apagar(entrada, control, detener, acciones)
+            if fallo is not None:
+                return fallo
+            # QA-A-07: pasó tiempo; se vuelve a comprobar propiedad y lock antes de seguir.
+            fallo, protegida = self._revalidar(
+                entrada, id_lote, etiquetado, control, detener, acciones,
+                el.vmid in forzar_desproteccion,
+            )  # fmt: skip
+            if fallo is not None:
+                return fallo
+        # 3. Quitar la protección (solo confirmada y si estaba protegida).
+        if protegida:
+            fallo = self._desproteger(entrada, control, detener, acciones)
+            if fallo is not None:
+                return fallo
+            fallo, _ = self._revalidar(
+                entrada, id_lote, etiquetado, control, detener, acciones, True
+            )
+            if fallo is not None:
+                return fallo
+
+        # 4. DELETE. Una sola vez: un fallo incierto se resuelve leyendo, no reenviando.
         _log.info("Rollback: eliminando vmid=%s nodo=%s lote=%s", el.vmid, el.nodo, id_lote)
+        previas = tuple(acciones)
         try:
             upid = cliente.eliminar_vm(el.nodo, el.vmid)
         except ErrorProxLaunch as e:
             if e.codigo in CODIGOS_DE_RED:
-                return self._resolver_incierta(entrada, None)
-            return self._fallo_de(e, entrada, control, detener)
+                return self._resolver_incierta(entrada, None, previas)
+            return self._fallo_de(e, entrada, control, detener, previas)
         except Exception:
             _log.exception("Fallo inesperado al enviar el DELETE (vmid=%s)", el.vmid)
-            return self._resolver_incierta(entrada, None)
-        emitir(self._resultado(entrada, EstadoRollback.ELIMINANDO, upid=upid))
+            return self._resolver_incierta(entrada, None, previas)
+        emitir(self._resultado(entrada, EstadoRollback.ELIMINANDO, upid=upid, acciones=previas))
 
-        # 3. Sondeo de la tarea de borrado.
+        # 5. Sondeo de la tarea de borrado.
         exitstatus = self._sondear(el.nodo, upid, control.evento_abandono)
         if exitstatus is None:
-            return self._resolver_incierta(entrada, upid)
+            return self._resolver_incierta(entrada, upid, previas)
         if exitstatus == "OK" or exitstatus.upper().startswith("WARNINGS"):
-            return self._resultado(entrada, EstadoRollback.ELIMINADA, upid=upid)
+            return self._resultado(
+                entrada,
+                EstadoRollback.ELIMINADA,
+                upid=upid,
+                acciones=(*previas, ACCION_BORRADA),
+            )
         detalle = enmascarar(exitstatus)[:_MAX_DETALLE_LOG]
         error = self._error(CodigoError.ROLLBACK_FALLO, entrada, detalle, causa="tarea")
-        return self._resultado(entrada, EstadoRollback.FALLO, upid=upid, error=error)
+        return self._resultado(
+            entrada, EstadoRollback.FALLO, upid=upid, error=error, acciones=previas
+        )
+
+    def _apagar(
+        self,
+        entrada: EntradaLibro,
+        control: ControlLote,
+        detener: threading.Event,
+        acciones: list[str],
+    ) -> ResultadoRollback | None:
+        """``stop`` + espera de la tarea. ``None`` si quedó apagada; si no, el resultado del fallo.
+
+        Un «not running» (la MV ya estaba parada) cuenta como éxito (CA-A1.5.8).
+        """
+        el = entrada.elemento
+        if self._detenido(control, detener):
+            return self._resultado(entrada, EstadoRollback.NO_ENVIADA, acciones=tuple(acciones))
+        _log.info("Rollback: apagando a la fuerza vmid=%s nodo=%s", el.vmid, el.nodo)
+        try:
+            upid = self._sesion.cliente.detener_vm(el.nodo, el.vmid)
+        except ErrorProxLaunch as e:
+            if _ya_parada(e.detalle_tecnico):
+                acciones.append(ACCION_APAGADA)
+                return None
+            return self._fallo_paso(
+                e, entrada, control, detener, acciones, CodigoError.ROLLBACK_APAGADO_FALLIDO,
+                PRIVILEGIO_ENCENDIDO,
+            )  # fmt: skip
+        except Exception as exc:
+            _log.exception("Fallo inesperado al apagar la MV (vmid=%s)", el.vmid)
+            error = self._error(
+                CodigoError.ROLLBACK_APAGADO_FALLIDO,
+                entrada,
+                type(exc).__name__,
+                causa="inesperado",
+            )
+            return self._resultado(
+                entrada, EstadoRollback.FALLO, error=error, acciones=tuple(acciones)
+            )
+        exitstatus = self._sondear(el.nodo, upid, control.evento_abandono)
+        if exitstatus is not None and (
+            exitstatus == "OK"
+            or exitstatus.upper().startswith("WARNINGS")
+            or _ya_parada(exitstatus)
+        ):
+            acciones.append(ACCION_APAGADA)
+            return None
+        detalle = enmascarar(exitstatus or "sin_resultado")[:_MAX_DETALLE_LOG]
+        error = self._error(CodigoError.ROLLBACK_APAGADO_FALLIDO, entrada, detalle, causa="tarea")
+        return self._resultado(
+            entrada, EstadoRollback.FALLO, upid=upid, error=error, acciones=tuple(acciones)
+        )
+
+    def _desproteger(
+        self,
+        entrada: EntradaLibro,
+        control: ControlLote,
+        detener: threading.Event,
+        acciones: list[str],
+    ) -> ResultadoRollback | None:
+        """``PUT protection=0``. ``None`` si se quitó; si no, el resultado del fallo."""
+        el = entrada.elemento
+        if self._detenido(control, detener):
+            return self._resultado(entrada, EstadoRollback.NO_ENVIADA, acciones=tuple(acciones))
+        _log.info("Rollback: quitando la protección de vmid=%s nodo=%s", el.vmid, el.nodo)
+        try:
+            self._sesion.cliente.configurar_vm(el.nodo, el.vmid, {"protection": "0"})
+        except ErrorProxLaunch as e:
+            return self._fallo_paso(
+                e, entrada, control, detener, acciones, CodigoError.ROLLBACK_DESPROTECCION_FALLIDA,
+                PRIVILEGIO_OPCIONES,
+            )  # fmt: skip
+        except Exception as exc:
+            _log.exception("Fallo inesperado al desproteger la MV (vmid=%s)", el.vmid)
+            error = self._error(
+                CodigoError.ROLLBACK_DESPROTECCION_FALLIDA,
+                entrada,
+                type(exc).__name__,
+                causa="inesperado",
+            )
+            return self._resultado(
+                entrada, EstadoRollback.FALLO, error=error, acciones=tuple(acciones)
+            )
+        acciones.append(ACCION_DESPROTEGIDA)
+        return None
+
+    def _fallo_paso(
+        self,
+        e: ErrorProxLaunch,
+        entrada: EntradaLibro,
+        control: ControlLote,
+        detener: threading.Event,
+        acciones: list[str],
+        codigo: CodigoError,
+        privilegio: str,
+    ) -> ResultadoRollback:
+        """Falla un paso previo al ``DELETE``: no se borra. Un 403 solo omite la MV."""
+        hechas = tuple(acciones)
+        if e.codigo == CodigoError.RECURSO_INEXISTENTE:
+            return self._resultado(entrada, EstadoRollback.YA_NO_EXISTIA, acciones=hechas)
+        if e.codigo == CodigoError.PERMISO_INSUFICIENTE:
+            # Falta de privilegio en este paso: solo se omite esta MV (CA-A1.5.3, CA-A6.3.3).
+            omision = (
+                CodigoError.ROLLBACK_SIN_POWERMGMT
+                if privilegio == PRIVILEGIO_ENCENDIDO
+                else CodigoError.ROLLBACK_SIN_OPCIONES
+            )
+            error = self._error(omision, entrada, e.detalle_tecnico, privilegio=privilegio)
+            return self._resultado(entrada, EstadoRollback.OMITIDA, error=error, acciones=hechas)
+        if es_error_global(e):
+            detener.set()
+            control.pausar(MotivoPausa.ERROR_GLOBAL, e)
+            return self._resultado(entrada, EstadoRollback.FALLO, error=e, acciones=hechas)
+        error = self._error(codigo, entrada, e.detalle_tecnico, causa=str(e.codigo))
+        return self._resultado(entrada, EstadoRollback.FALLO, error=error, acciones=hechas)
+
+    def _revalidar(
+        self,
+        entrada: EntradaLibro,
+        id_lote: str,
+        etiquetado: bool,
+        control: ControlLote,
+        detener: threading.Event,
+        acciones: list[str],
+        desproteccion_confirmada: bool,
+    ) -> tuple[ResultadoRollback | None, bool]:
+        """Relee la configuración tras un paso destructivo y revalida la MV (QA-A-07).
+
+        Devuelve ``(resultado, protegida)``: con ``resultado`` no nulo se detiene el borrado
+        (omitida, ya inexistente o fallo); ``protegida`` es el estado actual de la protección.
+        Una protección nueva sin confirmar omite la MV (``ROLLBACK_PROTEGIDA``).
+        """
+        el = entrada.elemento
+        hechas = tuple(acciones)
+        try:
+            config = self._sesion.cliente.config_vm(el.nodo, el.vmid)
+            if config is None:
+                return self._resultado(
+                    entrada, EstadoRollback.YA_NO_EXISTIA, acciones=hechas
+                ), False
+            omision = self._motivo_omision(config, entrada, id_lote, etiquetado)
+            protegida = _verdadero(config.get("protection", 0))
+            if omision is None and protegida and not desproteccion_confirmada:
+                omision = self._error(CodigoError.ROLLBACK_PROTEGIDA, entrada)
+        except ErrorProxLaunch as e:
+            return self._fallo_de(e, entrada, control, detener, hechas), False
+        except Exception as exc:
+            _log.exception("Fallo inesperado al revalidar la MV (vmid=%s)", el.vmid)
+            error = self._error(CodigoError.ROLLBACK_FALLO, entrada, type(exc).__name__)
+            return self._resultado(
+                entrada, EstadoRollback.FALLO, error=error, acciones=hechas
+            ), False
+        if omision is not None:
+            return self._resultado(
+                entrada, EstadoRollback.OMITIDA, error=omision, acciones=hechas
+            ), protegida
+        if self._detenido(control, detener):
+            return self._resultado(entrada, EstadoRollback.NO_ENVIADA, acciones=hechas), protegida
+        return None, protegida
 
     def _motivo_omision(
         self, config: dict[str, Any], entrada: EntradaLibro, id_lote: str, etiquetado: bool
     ) -> ErrorProxLaunch | None:
+        """Propiedad y ``lock`` (este último nunca se fuerza)."""
         if not es_propia(config, entrada, id_lote, etiquetado):
             return self._error(CodigoError.ROLLBACK_NO_PROPIA, entrada)
-        if _verdadero(config.get("protection", 0)) or config.get("lock"):
+        if config.get("lock"):
             return self._error(CodigoError.ROLLBACK_BLOQUEADA, entrada)
         return None
 
-    def _motivo_omision_estado(
+    def _motivo_omision_lock(
         self, estado_vm: dict[str, Any], entrada: EntradaLibro
     ) -> ErrorProxLaunch | None:
-        if str(estado_vm.get("status", "")).lower() == "running":
-            return self._error(CodigoError.ROLLBACK_ENCENDIDA, entrada)
         if estado_vm.get("lock"):
             return self._error(CodigoError.ROLLBACK_BLOQUEADA, entrada)
+        return None
+
+    def _motivo_omision_forzado(
+        self,
+        entrada: EntradaLibro,
+        encendida: bool,
+        protegida: bool,
+        apagar: bool,
+        desproteger: bool,
+        permisos: PermisosEfectivos | None,
+    ) -> ErrorProxLaunch | None:
+        """Protección y encendido: lo no confirmado omite; lo confirmado, según los privilegios."""
+        if protegida and not desproteger:
+            return self._error(CodigoError.ROLLBACK_PROTEGIDA, entrada)
+        if encendida and not apagar:
+            return self._error(CodigoError.ROLLBACK_ENCENDIDA, entrada)
+        ruta = f"/vms/{entrada.elemento.vmid}"
+        sin_encendido = (
+            encendida and estado_privilegio(permisos, PRIVILEGIO_ENCENDIDO, ruta) is False
+        )
+        sin_opciones = protegida and estado_privilegio(permisos, PRIVILEGIO_OPCIONES, ruta) is False
+        if sin_encendido and sin_opciones:
+            error = self._error(CodigoError.ROLLBACK_SIN_POWERMGMT, entrada)
+            error.params["tambien"] = str(CodigoError.ROLLBACK_SIN_OPCIONES)
+            return error
+        if sin_encendido:
+            return self._error(CodigoError.ROLLBACK_SIN_POWERMGMT, entrada)
+        if sin_opciones:
+            return self._error(CodigoError.ROLLBACK_SIN_OPCIONES, entrada)
         return None
 
     def _sondear(self, nodo: str, upid: str, abandono: threading.Event) -> str | None:
@@ -358,7 +730,9 @@ class ServicioRollback:
                 return None
             self._reloj.dormir(self._intervalo)
 
-    def _resolver_incierta(self, entrada: EntradaLibro, upid: str | None) -> ResultadoRollback:
+    def _resolver_incierta(
+        self, entrada: EntradaLibro, upid: str | None, acciones: tuple[str, ...] = ()
+    ) -> ResultadoRollback:
         """No se sabe cómo terminó el DELETE: ``config_vm`` decide (sin reintento, E-L22)."""
         el = entrada.elemento
         try:
@@ -366,6 +740,10 @@ class ServicioRollback:
         except Exception:
             config = {}
         if config is None:
-            return self._resultado(entrada, EstadoRollback.ELIMINADA, upid=upid)
+            return self._resultado(
+                entrada, EstadoRollback.ELIMINADA, upid=upid, acciones=(*acciones, ACCION_BORRADA)
+            )
         error = self._error(CodigoError.ROLLBACK_INCIERTO, entrada)
-        return self._resultado(entrada, EstadoRollback.INCIERTA, upid=upid, error=error)
+        return self._resultado(
+            entrada, EstadoRollback.INCIERTA, upid=upid, error=error, acciones=acciones
+        )

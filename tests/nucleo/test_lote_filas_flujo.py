@@ -361,7 +361,12 @@ def test_el_perfil_predeterminado_produce_el_mismo_post_que_la_configuracion_por
     banco_a = crear_banco(("pve1",))
     perfil = {p.id: p for p in perfiles_fabrica()}[ID_PREDETERMINADO]
     del_perfil = aplicar_perfil(
-        perfil, ConfiguracionVM(vmid=0, nombre="plantilla", nodo="pve1"), banco_a.inv
+        perfil,
+        # Fase A: un perfil no toca las notas; el formulario parte con «notas de origen» marcada.
+        ConfiguracionVM(
+            vmid=0, nombre="plantilla", nodo="pve1", notas_origen=por_defecto.notas_origen
+        ),
+        banco_a.inv,
     ).cfg
     cuerpos = []
     for banco, plantilla in ((banco_a, del_perfil), (crear_banco(("pve1",)), por_defecto)):

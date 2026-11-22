@@ -23,6 +23,7 @@ from proxlaunch.nucleo.modelos.inventario import Inventario
 from proxlaunch.nucleo.modelos.origen import DetalleImportacion
 from proxlaunch.nucleo.modelos.tarea import Desenlace, EstadoTarea, Etapa, ResultadoCreacion
 from proxlaunch.nucleo.modelos.vm import ConfiguracionVM, Firmware, OrigenSO
+from proxlaunch.nucleo.opciones.etiquetas import etiquetas_finales
 from proxlaunch.nucleo.origen.clon import (
     AjustesTrasClon,
     PeticionClon,
@@ -50,11 +51,17 @@ PRIVILEGIO_CLONAR = "VM.Clone"
 # Códigos de aviso del MVP 4 (los textos los pone la interfaz).
 AVISO_AJUSTE_PENDIENTE = "ajuste_pendiente"  # «ajuste_pendiente:etiquetas|cpu_memoria|disco»
 AVISO_AJUSTE_OMITIDO = "ajuste_omitido"  # «ajuste_omitido:disco» (permiso no comprobado)
+AVISO_ENCENDIDO_FALLIDO = "encendido_fallido"  # la MV existe pero no se pudo encender (DT-A5)
+AVISO_ENCENDIDO_OMITIDO = "encendido_omitido"  # no se enciende porque quedan ajustes pendientes
+PRIVILEGIO_ENERGIA = "VM.PowerMgmt"
 AJUSTE_ETIQUETAS = "etiquetas"
+AJUSTE_ARRANQUE = "arranque"  # onboot y startup
+AJUSTE_PROTECCION = "proteccion"  # protection
 AJUSTE_CPU_MEMORIA = "cpu_memoria"
 AJUSTE_DISCO = "disco"
 _CLAVES_CPU = ("sockets", "cores", "cpu", "vcpus")
 _CLAVES_MEMORIA = ("memory", "balloon")
+_CLAVES_OPCIONES = ("tags", "onboot", "startup", "protection")  # exigen VM.Config.Options
 
 
 class _Cancelado(Exception):
@@ -141,17 +148,21 @@ def ajustes_de_clon(
     ``resize`` solo se conserva si ``disco_seguro`` (INV-O10); el segundo valor indica que se
     descartó por eso.
     """
-    ajustes = construir_ajustes_clon(cfg, base, cfg.etiquetas)
+    ajustes = construir_ajustes_clon(cfg, base, etiquetas_finales(cfg))
     if ajustes.disco is not None and not disco_seguro(cfg, inv):
         return AjustesTrasClon(config=ajustes.config, disco=None), True
     return ajustes, False
 
 
 def _nombres_ajuste(config: dict[str, str]) -> list[str]:
-    """Ajustes (``etiquetas``, ``cpu_memoria``) que lleva un ``PUT …/config``."""
+    """Ajustes (etiquetas, arranque, proteccion, cpu_memoria) que lleva un ``PUT …/config``."""
     nombres: list[str] = []
     if "tags" in config:
         nombres.append(AJUSTE_ETIQUETAS)
+    if "onboot" in config or "startup" in config:
+        nombres.append(AJUSTE_ARRANQUE)
+    if "protection" in config:
+        nombres.append(AJUSTE_PROTECCION)
     if any(k in config for k in (*_CLAVES_CPU, *_CLAVES_MEMORIA)):
         nombres.append(AJUSTE_CPU_MEMORIA)
     return nombres
@@ -160,7 +171,7 @@ def _nombres_ajuste(config: dict[str, str]) -> list[str]:
 def _privilegio_de_config(config: dict[str, str]) -> str:
     """Privilegio que exige el ``PUT config`` si es inequívoco; vacío si hay varios."""
     privilegios: set[str] = set()
-    if "tags" in config:
+    if any(k in config for k in _CLAVES_OPCIONES):
         privilegios.add("VM.Config.Options")
     if any(k in config for k in _CLAVES_CPU):
         privilegios.add("VM.Config.CPU")
@@ -173,6 +184,11 @@ def _separar_etiquetas(valor: object) -> frozenset[str]:
     return frozenset(t for t in str(valor).replace(",", ";").replace(" ", ";").split(";") if t)
 
 
+def _separar_startup(valor: object) -> frozenset[str]:
+    """``order=1,up=30`` como conjunto de pares (Proxmox puede reordenar las partes)."""
+    return frozenset(t.strip() for t in str(valor).split(",") if t.strip())
+
+
 def _filtrar_ajustes(ajustes: AjustesTrasClon, config: dict[str, Any] | None) -> AjustesTrasClon:
     """Deja solo los ajustes que la MV aún no tiene (los ``PUT`` son idempotentes, CA-O22.6)."""
     if config is None:
@@ -182,6 +198,8 @@ def _filtrar_ajustes(ajustes: AjustesTrasClon, config: dict[str, Any] | None) ->
         actual = config.get(clave)
         if clave == "tags":
             igual = actual is not None and _separar_etiquetas(actual) == _separar_etiquetas(valor)
+        elif clave == "startup":
+            igual = actual is not None and _separar_startup(actual) == _separar_startup(valor)
         else:
             igual = actual is not None and str(actual) == valor
         if not igual:
@@ -380,7 +398,7 @@ class ServicioCreacion:
         if sin_vmid is not None:
             return sin_vmid
         try:
-            parametros = construir_parametros(cfg, inv)
+            parametros = construir_parametros(cfg, inv, self._sesion.capacidades.version)
         except ErrorProxLaunch as e:
             return self._resultado(Desenlace.ERROR, cfg, error=e)
         if cancelado.is_set():
@@ -550,6 +568,7 @@ class ServicioCreacion:
             resultado = self._comprobar(ctx, cfg, upid, final.exitstatus)
             if resultado.desenlace in (Desenlace.OK, Desenlace.CON_AVISOS):
                 resultado = self._ajustar(ctx, cfg, resultado, etapa)
+                resultado = self._encender_si_procede(ctx, cfg, resultado, etapa)
             if resultado.desenlace in (Desenlace.OK, Desenlace.CON_AVISOS):
                 etapa(Etapa.LISTO)
             return resultado
@@ -622,6 +641,13 @@ class ServicioCreacion:
             resultado = self._comprobar(ctx, cfg, upid, estado.exitstatus)
             if resultado.desenlace in (Desenlace.OK, Desenlace.CON_AVISOS):
                 resultado = self._ajustar(ctx, cfg, resultado, None, solo_lectura=True)
+            if (
+                cfg.encender
+                and resultado.desenlace in (Desenlace.OK, Desenlace.CON_AVISOS)
+                and AVISO_ENCENDIDO_OMITIDO not in resultado.avisos
+            ):
+                # QA-A-02: esta ronda solo lee, nunca enciende la máquina.
+                resultado.avisos = (*resultado.avisos, AVISO_ENCENDIDO_OMITIDO)
             return resultado
         except _ConexionPerdida as p:
             return self._resultado(Desenlace.CONEXION_PERDIDA, cfg, upid, p.error)
@@ -692,7 +718,8 @@ class ServicioCreacion:
             base = ResultadoCreacion(Desenlace.OK, cfg.vmid, cfg.nodo, None, None)
             if cfg.origen not in (OrigenSO.CLONAR_PLANTILLA, OrigenSO.IMPORTAR_DISCO):
                 return base
-            return self._ajustar(ctx, cfg, base, None)
+            ajustado = self._ajustar(ctx, cfg, base, None)
+            return self._encender_si_procede(ctx, cfg, ajustado, None)
         except _Cancelado:
             return self._cancelado(cfg, None)
         except _ConexionPerdida as p:
@@ -740,7 +767,7 @@ class ServicioCreacion:
             try:
                 if solo_lectura and ctx.inv is None:
                     # Sin inventario no se conocen los permisos: se informa lo que falta.
-                    ajustes = construir_ajustes_clon(cfg, base, cfg.etiquetas)
+                    ajustes = construir_ajustes_clon(cfg, base, etiquetas_finales(cfg))
                 else:
                     ajustes, omitido = ajustes_de_clon(cfg, ctx.inv, base)
             except ErrorProxLaunch as e:
@@ -783,6 +810,55 @@ class ServicioCreacion:
         elif ajustes.config or ajustes.disco is not None:
             pendientes, error = self._enviar_ajustes(ctx, cfg, ajustes)
         return self._con_ajustes(resultado, avisos, pendientes, error, omitido)
+
+    def _encender_si_procede(
+        self,
+        ctx: _Contexto,
+        cfg: ConfiguracionVM,
+        resultado: ResultadoCreacion,
+        etapa: Callable[[Etapa], None] | None,
+    ) -> ResultadoCreacion:
+        """Etapa ENCENDIENDO (DT-A5): solo si el plan lo pide y los ajustes quedaron completos.
+
+        Con ajustes pendientes (``PARCIAL``) no se enciende y se avisa ``encendido_omitido``.
+        Un fallo al encender (también un 403) nunca es un error: la MV existe y queda
+        ``CON_AVISOS`` con ``encendido_fallido``, de modo que no pausa el lote.
+        """
+        if not cfg.encender:
+            return resultado
+        if resultado.desenlace == Desenlace.PARCIAL:
+            resultado.avisos = (*resultado.avisos, AVISO_ENCENDIDO_OMITIDO)
+            return resultado
+        if resultado.desenlace not in (Desenlace.OK, Desenlace.CON_AVISOS):
+            return resultado
+        if etapa is not None:
+            etapa(Etapa.ENCENDIENDO)
+        error: ErrorProxLaunch | None = None
+        try:
+            # Un solo POST (sin reintentos de red): repetirlo podría chocar con «ya en marcha».
+            upid = self._sesion.cliente.iniciar_vm(cfg.nodo, cfg.vmid)
+            self._esperar_ajuste(ctx, cfg, upid)
+        except _Cancelado:
+            raise
+        except _ConexionPerdida as p:
+            error = p.error
+        except ErrorProxLaunch as e:
+            error = self._completar_permiso(e, cfg, PRIVILEGIO_ENERGIA)
+        except Exception as e:
+            _log.exception("Fallo inesperado al encender la máquina")
+            error = _error_inesperado(e)
+        if error is None:
+            return resultado
+        _log.info("No se pudo encender la MV %s: %s", cfg.vmid, error.codigo)
+        return ResultadoCreacion(
+            Desenlace.CON_AVISOS,
+            resultado.vmid,
+            resultado.nodo,
+            resultado.upid,
+            resultado.error or error,
+            resultado.log_tarea,
+            (*resultado.avisos, AVISO_ENCENDIDO_FALLIDO),
+        )
 
     @staticmethod
     def _pide_ampliar(cfg: ConfiguracionVM) -> bool:

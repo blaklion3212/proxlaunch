@@ -47,6 +47,13 @@ GUION = textwrap.dedent(
 
     GIB = 1024 ** 3
     NUEVOS_M4 = {"tipo_so": None, "tpm": False, "agente_qemu": False, "detalle_origen": None}
+    # Campos nuevos de la fase A (0.6): en M2 no existían; se descartan solo con su valor defecto.
+    NUEVOS_M4.update({
+        "encender": False, "arranque_auto": False, "arranque_orden": None,
+        "arranque_espera": None, "notas_origen": False, "notas_usuario": False, "notas": "",
+        "etiquetas_usuario": [], "pool": None, "proteger": False, "descripcion": None,
+        "mtu": None, "limite_mb": None,
+    })
 
     def norm(o):
         if isinstance(o, Enum):

@@ -10,6 +10,7 @@ from enum import StrEnum
 from proxlaunch.nucleo.errores import ErrorProxLaunch
 from proxlaunch.nucleo.modelos.catalogo import CatalogoServidor
 from proxlaunch.nucleo.modelos.vm import ConfiguracionVM
+from proxlaunch.nucleo.opciones.modelos import OpcionesLote, OpcionesParciales
 from proxlaunch.nucleo.transferencias.modelos import RegistroTransferencia
 
 
@@ -68,6 +69,10 @@ class FilaLote:
     vmid: int | None = None  # explícito (CA-C08.3); None = siguiente libre
     nodo: str | None = None  # explícito (CA-C08.4); None = reparto automático
     origen: int | None = None  # nº de fila del CSV (Excel) o posición en el archivo; solo mostrar
+    opciones: OpcionesParciales | None = None  # fase A: sobrescrituras de la fila (None = hereda)
+    # Fase A (QA-A-09): nombre del perfil de la fila para la línea «Perfil:» de las notas de
+    # origen (None = el del contexto del lote). No se serializa en los lotes guardados.
+    perfil: str | None = None
 
 
 @dataclass(frozen=True)
@@ -88,6 +93,7 @@ class DefinicionLote:
     etiquetar: bool = True  # D-20 (3)
     politica_thin: PoliticaThin = PoliticaThin.CONFIRMAR_CON_TOPE
     filas: tuple[FilaLote, ...] = ()  # vacío = homogéneo; no vacío = por filas (D-22)
+    opciones: OpcionesLote | None = None  # fase A: opciones de lote (None = las de la plantilla)
 
     @property
     def es_por_filas(self) -> bool:
@@ -261,6 +267,8 @@ class ResultadoRollback:
     estado: EstadoRollback
     upid: str | None = None
     error: ErrorProxLaunch | None = None
+    # Fase A: acciones hechas sobre la MV (``apagada``, ``desprotegida``, ``borrada``)
+    acciones: tuple[str, ...] = ()
 
 
 class AccionPeticion(StrEnum):
@@ -270,6 +278,7 @@ class AccionPeticion(StrEnum):
     CLONAR = "clonar"
     CONFIGURAR = "configurar"
     AMPLIAR = "ampliar"
+    ENCENDER = "encender"  # fase A: POST …/status/start
 
 
 @dataclass(frozen=True)

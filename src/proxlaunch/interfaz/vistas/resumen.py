@@ -9,9 +9,12 @@ from PySide6.QtCore import QCoreApplication, Qt, Signal
 from PySide6.QtWidgets import QGroupBox, QLabel, QPushButton, QVBoxLayout, QWidget
 
 from proxlaunch.interfaz.textos import (
+    lineas_opciones_fase_a,
+    opciones_avanzadas_fase_a,
     texto_ajustes_clon,
     texto_cambio_asistente,
     texto_campo,
+    texto_detalle_red_fase_a,
     texto_modo_clon,
     texto_problema,
     texto_resumen_origen,
@@ -109,6 +112,8 @@ def opciones_avanzadas_no_predeterminadas(cfg: ConfiguracionVM) -> list[str]:
                     n=i + 1, valor=r.modelo
                 )
             )
+    # Fase A: orden, espera, protección, MTU y límite (avanzados que el modo básico oculta).
+    lineas.extend(opciones_avanzadas_fase_a(cfg, con_red=cfg.origen != OrigenSO.CLONAR_PLANTILLA))
     return lineas
 
 
@@ -240,12 +245,22 @@ class ResumenVM(QGroupBox):
             partes = []
             for i, r in enumerate(cfg.redes):
                 vlan = f", VLAN {r.vlan}" if r.vlan is not None else ""
+                if avanzado:  # en modo básico MTU y límite salen en las opciones ocultas
+                    vlan += texto_detalle_red_fase_a(
+                        r.mtu, r.limite_mb, virtio=r.modelo == ModeloRed.VIRTIO
+                    )
                 partes.append(f"• net{i}: {e(r.bridge or '—')}{e(vlan)}")
             lineas.append(f"<b>{e(et_redes)}:</b><br>" + "<br>".join(partes))
         else:
             lineas.append(f"<b>{e(et_redes)}:</b> {e(sin_red)}")
-        if not avanzado and not clon:
-            ocultas = opciones_avanzadas_no_predeterminadas(cfg)
+        for nombre, valor in lineas_opciones_fase_a(cfg, avanzado=avanzado):
+            lineas.append(f"<b>{e(nombre)}:</b> {e(valor)}")
+        if not avanzado:
+            ocultas = (
+                opciones_avanzadas_fase_a(cfg, con_red=False)
+                if clon
+                else opciones_avanzadas_no_predeterminadas(cfg)
+            )
             if ocultas:
                 titulo = QCoreApplication.translate(
                     "ResumenVM", "Opciones avanzadas que se aplicarán (ocultas en modo básico)"
@@ -305,15 +320,19 @@ class ResumenVM(QGroupBox):
         lineas = [f"<b>{e(et_origen)}:</b> {e(texto_resumen_origen(cfg))}"]
         det = cfg.detalle_origen
         if isinstance(det, DetalleIso):
-            lineas.append(
-                e(
-                    QCoreApplication.translate(
-                        "ResumenVM",
-                        "Montará el ISO «{iso}» como CD. ProxLaunch no enciende la máquina: "
-                        "arráncala tú en Proxmox para instalar el sistema.",
-                    ).format(iso=det.iso.nombre or det.iso.volid)
+            if cfg.encender:  # fase A: «Encender al terminar» arranca ya el instalador
+                aviso_iso = QCoreApplication.translate(
+                    "ResumenVM",
+                    "Montará el ISO «{iso}» como CD y encenderá la máquina al terminar para "
+                    "que empiece la instalación del sistema.",
                 )
-            )
+            else:
+                aviso_iso = QCoreApplication.translate(
+                    "ResumenVM",
+                    "Montará el ISO «{iso}» como CD. ProxLaunch no enciende la máquina: "
+                    "arráncala tú en Proxmox para instalar el sistema.",
+                )
+            lineas.append(e(aviso_iso.format(iso=det.iso.nombre or det.iso.volid)))
             if estado_privilegio(permisos, "VM.Config.Disk", "/vms") is True:
                 nombres = {
                     "disco": QCoreApplication.translate("ResumenVM", "disco"),

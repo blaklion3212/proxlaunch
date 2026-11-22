@@ -485,6 +485,46 @@ class ClienteProxmox:
             raise ErrorProxLaunch(CodigoError.UPID_INVALIDO, {}, f"respuesta: {data!r}")
         return data
 
+    def iniciar_vm(self, nodo: str, vmid: int) -> str:
+        """``POST /nodes/{n}/qemu/{vmid}/status/start`` (``VM.PowerMgmt``). Devuelve el UPID.
+
+        Raises:
+            ErrorProxLaunch: ``UPID_INVALIDO`` si la respuesta no trae un UPID válido.
+        """
+        data = self._llamar("POST", f"/nodes/{_seg(nodo)}/qemu/{_seg(vmid)}/status/start")
+        if not isinstance(data, str) or not _RE_UPID.match(data):
+            raise ErrorProxLaunch(CodigoError.UPID_INVALIDO, {}, f"respuesta: {data!r}")
+        return data
+
+    def detener_vm(self, nodo: str, vmid: int) -> str:
+        """``POST /nodes/{n}/qemu/{vmid}/status/stop`` (apagado inmediato; lo usa Deshacer).
+
+        Devuelve el UPID de la tarea.
+
+        Raises:
+            ErrorProxLaunch: ``UPID_INVALIDO`` si la respuesta no trae un UPID válido.
+        """
+        data = self._llamar("POST", f"/nodes/{_seg(nodo)}/qemu/{_seg(vmid)}/status/stop")
+        if not isinstance(data, str) or not _RE_UPID.match(data):
+            raise ErrorProxLaunch(CodigoError.UPID_INVALIDO, {}, f"respuesta: {data!r}")
+        return data
+
+    def pools(self) -> list[dict[str, Any]]:
+        """``GET /pools``: pools visibles para el usuario (``[{"poolid": …}]``)."""
+        data = self._llamar("GET", "/pools")
+        return [e for e in data if isinstance(e, dict)] if isinstance(data, list) else []
+
+    def opciones_cluster(self) -> dict[str, Any]:
+        """``GET /cluster/options``: opciones del centro de datos (política de etiquetas).
+
+        Lanza ``ValueError`` si el cuerpo no es un diccionario: ``leer_politica_etiquetas`` lo
+        trata como lectura fallida (V-A09) en vez de suponer la política por defecto.
+        """
+        data = self._llamar("GET", "/cluster/options")
+        if not isinstance(data, dict):
+            raise ValueError("cuerpo inesperado de /cluster/options")
+        return data
+
     def configurar_vm(self, nodo: str, vmid: int, parametros: dict[str, str]) -> None:
         """``PUT /nodes/{n}/qemu/{vmid}/config`` (ajustes tras un clon)."""
         self._llamar("PUT", f"/nodes/{_seg(nodo)}/qemu/{_seg(vmid)}/config", datos=parametros)

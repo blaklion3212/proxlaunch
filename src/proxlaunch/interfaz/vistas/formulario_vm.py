@@ -9,7 +9,8 @@ campo sin que el formulario tenga que duplicar reglas.
 from __future__ import annotations
 
 import math
-from collections.abc import Callable, Sequence
+from collections.abc import Callable, Mapping, Sequence
+from dataclasses import dataclass
 from typing import cast
 
 from PySide6.QtCore import Signal
@@ -21,13 +22,20 @@ from PySide6.QtWidgets import (
     QGroupBox,
     QHBoxLayout,
     QLineEdit,
+    QPlainTextEdit,
     QRadioButton,
     QVBoxLayout,
     QWidget,
 )
 
 from proxlaunch.interfaz.ayuda import ayuda, ayuda_cpu_host
-from proxlaunch.interfaz.textos import texto_error, texto_motivo_nodo, texto_problema
+from proxlaunch.interfaz.textos import (
+    texto_error,
+    texto_estado_opcion,
+    texto_motivo_nodo,
+    texto_opcion_restablecida,
+    texto_problema,
+)
 from proxlaunch.interfaz.vistas.campos import (
     FilaCampo,
     etiqueta,
@@ -47,7 +55,16 @@ from proxlaunch.nucleo.modelos.vm import (
     Firmware,
     OrigenSO,
 )
+from proxlaunch.nucleo.opciones.etiquetas import normalizar_etiquetas
+from proxlaunch.nucleo.opciones.modelos import (
+    EstadoOpcion,
+    EstadoPools,
+    OpcionA,
+    OpcionesLote,
+    PoolsServidor,
+)
 from proxlaunch.nucleo.origen.asistente import aplicar_asistente
+from proxlaunch.nucleo.origen.capacidades_origen import Disponibilidad
 from proxlaunch.nucleo.seleccion_nodo import MotivoNodo, elegir_nodo
 from proxlaunch.nucleo.validacion import Problema, Severidad
 from proxlaunch.nucleo.valores_defecto import (
@@ -75,8 +92,31 @@ def mib_a_texto_gib(mib: int) -> str:
     return f"{mib / 1024:g}"
 
 
+def entero_opcional(texto: str) -> int | None:
+    """Entero escrito en un campo opcional: vacío = ``None``; un texto que no es un entero se
+    convierte en -1, un valor que la regla V-A01 rechaza (así el error sale junto al campo)."""
+    t = texto.strip()
+    if not t:
+        return None
+    try:
+        return int(t)
+    except ValueError:
+        return -1
+
+
 class _Transparente(QWidget):
     """Contenedor que no pinta el fondo del QSS: se ve el del grupo, como las demás filas."""
+
+
+@dataclass
+class _GrupoOpcion:
+    """Controles de una opción de la fase A que se habilitan o no juntos (RF-A0.3, RF-A0.4)."""
+
+    opcion: OpcionA
+    fila: FilaCampo  # donde se escribe la explicación
+    controles: list[QWidget]
+    no_predeterminado: Callable[[], bool]  # ¿hay un valor que el estado no permite?
+    restablecer: Callable[[], None]
 
 
 class FormularioVM(QWidget):
@@ -107,6 +147,14 @@ class FormularioVM(QWidget):
         self._base_asistente: ConfiguracionVM | None = None
         # Storage de discos recordado para este servidor (RF-O05); None = el de más espacio.
         self._recordado_mv: str | None = None
+        # Fase A: disponibilidad de cada opción (privilegio, versión, pools) y avisos por fila.
+        self._estados_opciones: dict[OpcionA, EstadoOpcion] = {}
+        self._pools = PoolsServidor(EstadoPools.NO_LEIDO)
+        self._pool_restablecido: str | None = None  # pool que volvió a «Ninguno» (aviso CL-A15)
+        self._notas_forzadas_off = False
+        self._texto_estado: dict[int, str] = {}  # id(fila) -> explicación de disponibilidad
+        self._texto_validacion: dict[int, str] = {}  # id(fila) -> avisos de validación
+        self._grupos_opciones: list[_GrupoOpcion] = []
 
         capa = QVBoxLayout(self)
         capa.setContentsMargins(0, 0, 0, 0)
@@ -193,6 +241,7 @@ class FormularioVM(QWidget):
         self.fila_nodo.hide()
         for f in (self.fila_vmid, self.fila_nombre, self.fila_nodo):
             g.addWidget(f)
+        self._construir_opciones(g)
         # Conexiones.
         self.vmid.textEdited.connect(self._al_editar_vmid)
         self.vmid.editingFinished.connect(self._al_terminar_vmid)
@@ -200,6 +249,199 @@ class FormularioVM(QWidget):
         self.nombre.editingFinished.connect(lambda: self._tocar(self.fila_nombre))
         self._radio_auto.toggled.connect(self._al_cambiar_modo_nodo)
         self.combo_nodo.currentIndexChanged.connect(self._al_elegir_nodo)
+
+    def _casilla(self, nombre: str, ayuda_texto: str, texto: str = "") -> QCheckBox:
+        """Casilla con nombre accesible y sugerencia (el texto va en la etiqueta de la fila)."""
+        chk = QCheckBox(texto)
+        chk.setAccessibleName(nombre)
+        chk.setToolTip(ayuda_texto)
+        return chk
+
+    def _construir_opciones(self, g: QVBoxLayout) -> None:
+        """Opciones de la fase A del paso General: encendido, arranque, notas, etiquetas, pool y
+        protección (RF-A1 a RF-A6). Las de arranque (orden, espera) y protección son avanzadas."""
+        self.chk_encender = self._casilla(
+            self.tr("Encender al terminar"),
+            self.tr("Enciende la máquina cuando termina de crearse y de ajustarse."),
+        )
+        self.fila_encender = FilaCampo(self.tr("Encender al terminar"), self.chk_encender)
+        self.chk_arranque_auto = self._casilla(
+            self.tr("Arrancar con el servidor"),
+            self.tr("La máquina se enciende sola cuando arranca el servidor Proxmox."),
+        )
+        self.fila_arranque_auto = FilaCampo(
+            self.tr("Arrancar con el servidor"), self.chk_arranque_auto
+        )
+        self.chk_notas_origen = self._casilla(
+            self.tr("Añadir notas de origen"),
+            self.tr(
+                "Escribe en las notas de la máquina que la creó ProxLaunch: versión, fecha, "
+                "lote y perfil."
+            ),
+        )
+        self.chk_notas_origen.setChecked(True)
+        self.fila_notas_origen = FilaCampo(self.tr("Añadir notas de origen"), self.chk_notas_origen)
+        self.chk_notas_usuario = self._casilla(
+            self.tr("Incluir mi usuario en las notas"),
+            self.tr("Escribe tu usuario de Proxmox en las notas de origen."),
+            self.tr("Incluir mi usuario en las notas"),
+        )
+        self.chk_notas_usuario.setAccessibleDescription(
+            self.tr("Cualquiera con acceso a la máquina en Proxmox podrá ver tu usuario.")
+        )
+        self._aviso_usuario = etiqueta(
+            self.tr("Cualquiera con acceso a la máquina en Proxmox podrá ver tu usuario."),
+            secundario=True,
+        )
+        cont_usuario = _Transparente()
+        cu = QVBoxLayout(cont_usuario)
+        cu.setContentsMargins(0, 0, 0, 0)
+        cu.setSpacing(1)
+        cu.addWidget(self.chk_notas_usuario)
+        cu.addWidget(self._aviso_usuario)
+        self.fila_notas_usuario = FilaCampo("", cont_usuario)
+        self.txt_notas = QPlainTextEdit()
+        self.txt_notas.setAccessibleName(self.tr("Notas"))
+        self.txt_notas.setPlaceholderText(
+            self.tr("Texto libre para la descripción de la máquina (opcional)")
+        )
+        self.txt_notas.setTabChangesFocus(True)  # la tecla Tab pasa al campo siguiente
+        self.txt_notas.setFixedHeight(84)
+        self.fila_notas = FilaCampo(self.tr("Notas"), self.txt_notas)
+        self.txt_etiquetas = QLineEdit()
+        self.txt_etiquetas.setAccessibleName(self.tr("Etiquetas"))
+        self.txt_etiquetas.setPlaceholderText(self.tr("por ejemplo web, produccion"))
+        self.txt_etiquetas.setToolTip(
+            self.tr(
+                "Separadas por comas. Se suman a las etiquetas que ProxLaunch pone siempre. "
+                "Solo minúsculas, números, «_», «-», «+» y «.»."
+            )
+        )
+        self.fila_etiquetas = FilaCampo(self.tr("Etiquetas"), self.txt_etiquetas)
+        self.combo_pool = QComboBox()
+        self.combo_pool.setAccessibleName(self.tr("Pool"))
+        self.combo_pool.setToolTip(self.tr("Pool de recursos donde se crea la máquina."))
+        self._poblar_pool(None)
+        self.fila_pool = FilaCampo(self.tr("Pool"), self.combo_pool)
+        # Avanzado: orden y espera del arranque, y protección contra borrado.
+        self.txt_orden = QLineEdit()
+        self.txt_orden.setMaximumWidth(100)
+        self.txt_orden.setAccessibleName(self.tr("Orden de arranque"))
+        self.txt_orden.setToolTip(
+            self.tr("Número de orden con que arranca respecto a otras máquinas. Vacío = sin orden.")
+        )
+        self.fila_orden = FilaCampo(self.tr("Orden de arranque"), self.txt_orden)
+        self.txt_espera = QLineEdit()
+        self.txt_espera.setMaximumWidth(100)
+        self.txt_espera.setAccessibleName(self.tr("Espera (s)"))
+        self.txt_espera.setToolTip(
+            self.tr("Segundos que se espera tras arrancar esta máquina. Vacío = sin espera.")
+        )
+        self.fila_espera = FilaCampo(self.tr("Espera (s)"), self.txt_espera)
+        self.chk_proteger = self._casilla(
+            self.tr("Proteger contra borrado"),
+            self.tr("Proxmox no dejará eliminar la máquina hasta que quites la protección."),
+        )
+        self.fila_proteger = FilaCampo(self.tr("Proteger contra borrado"), self.chk_proteger)
+        for f in (
+            self.fila_encender,
+            self.fila_arranque_auto,
+            self.fila_notas_origen,
+            self.fila_notas_usuario,
+            self.fila_notas,
+            self.fila_etiquetas,
+            self.fila_pool,
+            self.fila_orden,
+            self.fila_espera,
+            self.fila_proteger,
+        ):
+            g.addWidget(f)
+        for f in (self.fila_orden, self.fila_espera, self.fila_proteger):
+            self._registrar_avanzado(f)
+        self._grupos_opciones = [
+            _GrupoOpcion(
+                OpcionA.ENCENDER,
+                self.fila_encender,
+                [self.chk_encender],
+                self.chk_encender.isChecked,
+                lambda: self.chk_encender.setChecked(False),
+            ),
+            _GrupoOpcion(
+                OpcionA.ARRANQUE_AUTO,
+                self.fila_arranque_auto,
+                [self.chk_arranque_auto],
+                self.chk_arranque_auto.isChecked,
+                lambda: self.chk_arranque_auto.setChecked(False),
+            ),
+            _GrupoOpcion(
+                OpcionA.ARRANQUE_ORDEN,
+                self.fila_orden,
+                [self.txt_orden, self.txt_espera],
+                lambda: bool(self.txt_orden.text().strip() or self.txt_espera.text().strip()),
+                self._vaciar_arranque,
+            ),
+            _GrupoOpcion(
+                OpcionA.NOTAS,
+                self.fila_notas_origen,
+                [self.chk_notas_origen, self.txt_notas],
+                lambda: self.chk_notas_origen.isChecked() or bool(self.txt_notas.toPlainText()),
+                self._vaciar_notas,
+            ),
+            _GrupoOpcion(
+                OpcionA.ETIQUETAS,
+                self.fila_etiquetas,
+                [self.txt_etiquetas],
+                lambda: bool(self.txt_etiquetas.text().strip()),
+                self.txt_etiquetas.clear,
+            ),
+            _GrupoOpcion(
+                OpcionA.POOL,
+                self.fila_pool,
+                [self.combo_pool],
+                lambda: self.combo_pool.currentData() is not None,
+                lambda: self.combo_pool.setCurrentIndex(0),
+            ),
+            _GrupoOpcion(
+                OpcionA.PROTEGER,
+                self.fila_proteger,
+                [self.chk_proteger],
+                self.chk_proteger.isChecked,
+                lambda: self.chk_proteger.setChecked(False),
+            ),
+        ]
+        # Orden de tabulación coherente: tras el nodo, las opciones en el orden en que se ven.
+        orden = [
+            self.combo_nodo,
+            self.chk_encender,
+            self.chk_arranque_auto,
+            self.chk_notas_origen,
+            self.chk_notas_usuario,
+            self.txt_notas,
+            self.txt_etiquetas,
+            self.combo_pool,
+            self.txt_orden,
+            self.txt_espera,
+            self.chk_proteger,
+        ]
+        for anterior, siguiente in zip(orden, orden[1:], strict=False):
+            QWidget.setTabOrder(anterior, siguiente)
+        for chk in (
+            self.chk_encender,
+            self.chk_arranque_auto,
+            self.chk_notas_usuario,
+            self.chk_proteger,
+        ):
+            chk.toggled.connect(lambda _m: self._al_editar())
+        self.chk_notas_origen.toggled.connect(self._al_cambiar_notas_origen)
+        self.txt_notas.textChanged.connect(lambda: self._al_editar(self.fila_notas))
+        self.txt_etiquetas.textEdited.connect(lambda _t: self._al_editar(self.fila_etiquetas))
+        self.txt_etiquetas.editingFinished.connect(lambda: self._tocar(self.fila_etiquetas))
+        self.combo_pool.currentIndexChanged.connect(lambda _i: self._al_editar(self.fila_pool))
+        self.txt_orden.textEdited.connect(lambda _t: self._al_editar(self.fila_orden))
+        self.txt_orden.editingFinished.connect(lambda: self._tocar(self.fila_orden))
+        self.txt_espera.textEdited.connect(lambda _t: self._al_editar(self.fila_espera))
+        self.txt_espera.editingFinished.connect(lambda: self._tocar(self.fila_espera))
+        self._actualizar_notas_usuario()
 
     def _construir_firmware(self, capa: QVBoxLayout) -> None:
         g = self._grupo(self.tr("Firmware"), capa)
@@ -404,8 +646,11 @@ class FormularioVM(QWidget):
     def aplicar_hardware(
         self, cfg: ConfiguracionVM, *, origen: bool = True, asistente: bool = False
     ) -> None:
-        """Aplica SOLO el hardware de ``cfg`` (perfil de máquina o lote guardado).
+        """Aplica SOLO el hardware de ``cfg`` (perfil de máquina o lote guardado) y sus opciones.
 
+        Las opciones de la fase A (encender, notas, etiquetas, pool, arranque, protección) se
+        vuelcan con el resto: un perfil trae las de la configuración actual con «Encender» en su
+        valor por defecto y «Arrancar con el servidor» del perfil; un lote guardado, las suyas.
         No toca el nombre, el VMID, el nodo ni sus marcas de «tocado». Un almacenamiento o una
         red que el nodo no tiene se muestran como «x (no existe)» con error, nunca se sustituyen
         en silencio (CA-G04.3); el usuario debe elegir otro. Con ``origen`` también carga el
@@ -440,6 +685,7 @@ class FormularioVM(QWidget):
             self.tabla_discos.establecer_controlador(cfg.controlador_scsi)
             self.tabla_discos.establecer_discos(cfg.discos, conservar_ausentes=True)
             self.tabla_redes.establecer_redes(cfg.redes, conservar_ausentes=True)
+            self._escribir_opciones(cfg)
             self._efi_ausente = None
             self._poblar_efi(cfg.storage_efi, conservar_ausente=True)
             self._actualizar_total_cpu()
@@ -518,6 +764,7 @@ class FormularioVM(QWidget):
         self._cargar_recursos_nodo(cfg.nodo)
         self.tabla_discos.establecer_discos(cfg.discos)
         self.tabla_redes.establecer_redes(cfg.redes)
+        self._escribir_opciones(cfg)
         self._poblar_efi(cfg.storage_efi)
         self._refrescar_etiqueta_nodo()
         self._actualizar_total_cpu()
@@ -561,7 +808,188 @@ class FormularioVM(QWidget):
             discos=self.tabla_discos.discos(),
             controlador_scsi=ControladorScsi(self.combo_ctrl.currentData()),
             redes=self.tabla_redes.redes(),
+            encender=self.chk_encender.isChecked(),
+            arranque_auto=self.chk_arranque_auto.isChecked(),
+            arranque_orden=entero_opcional(self.txt_orden.text()),
+            arranque_espera=entero_opcional(self.txt_espera.text()),
+            notas_origen=self.chk_notas_origen.isChecked(),
+            notas_usuario=self.chk_notas_usuario.isChecked(),
+            notas=self.txt_notas.toPlainText(),
+            etiquetas_usuario=normalizar_etiquetas(self.txt_etiquetas.text()),
+            pool=cast("str | None", self.combo_pool.currentData()),
+            proteger=self.chk_proteger.isChecked(),
         )
+
+    # --- Opciones de la fase A -------------------------------------------------------------
+
+    def _escribir_opciones(self, cfg: ConfiguracionVM) -> None:
+        """Vuelca en los widgets las opciones de la fase A de ``cfg`` y aplica la disponibilidad."""
+        previo, self._ocupado = self._ocupado, True
+        try:
+            self.txt_orden.setText("" if cfg.arranque_orden is None else str(cfg.arranque_orden))
+            self.txt_espera.setText("" if cfg.arranque_espera is None else str(cfg.arranque_espera))
+            self._escribir_opciones_lote(
+                OpcionesLote(
+                    encender=cfg.encender,
+                    arranque_auto=cfg.arranque_auto,
+                    notas=cfg.notas,
+                    etiquetas_usuario=tuple(cfg.etiquetas_usuario),
+                    pool=cfg.pool,
+                    proteger=cfg.proteger,
+                    notas_origen=cfg.notas_origen,
+                    notas_usuario=cfg.notas_usuario,
+                )
+            )
+        finally:
+            self._ocupado = previo
+
+    def _escribir_opciones_lote(self, o: OpcionesLote) -> None:
+        self.chk_encender.setChecked(o.encender)
+        self.chk_arranque_auto.setChecked(o.arranque_auto)
+        self.chk_notas_origen.setChecked(o.notas_origen)
+        self.chk_notas_usuario.setChecked(o.notas_usuario)
+        self.txt_notas.setPlainText(o.notas)
+        self.txt_etiquetas.setText(", ".join(o.etiquetas_usuario))
+        self._poblar_pool(o.pool)
+        self.chk_proteger.setChecked(o.proteger)
+        self._notas_forzadas_off = False
+        self._actualizar_notas_usuario()
+        self._reaplicar_disponibilidad()
+
+    def aplicar_opciones_lote(self, opciones: OpcionesLote) -> None:
+        """Rellena las opciones de lote (un lote por filas guardado trae las suyas)."""
+        self._ocupado = True
+        try:
+            self._escribir_opciones_lote(opciones)
+        finally:
+            self._ocupado = False
+        self.cambiado.emit()
+
+    def _vaciar_arranque(self) -> None:
+        self.txt_orden.clear()
+        self.txt_espera.clear()
+
+    def _vaciar_notas(self) -> None:
+        self.chk_notas_origen.setChecked(False)
+        self.chk_notas_usuario.setChecked(False)
+        self.txt_notas.clear()
+        self._notas_forzadas_off = True
+
+    def _poblar_pool(self, seleccion: str | None) -> None:
+        """«Ninguno» y los pools del servidor; un pool que ya no está (de un lote guardado) se
+        conserva como «x (no existe)» para que la validación lo marque (V-A10)."""
+        self.combo_pool.blockSignals(True)
+        try:
+            self.combo_pool.clear()
+            self.combo_pool.addItem(self.tr("Ninguno"), None)
+            for pid in self._pools.ids:
+                self.combo_pool.addItem(pid, pid)
+            if seleccion and self.combo_pool.findData(seleccion) < 0:
+                texto = (
+                    texto_ausente(seleccion) if self._pools.estado == EstadoPools.OK else seleccion
+                )
+                self.combo_pool.addItem(texto, seleccion)
+            idx = self.combo_pool.findData(seleccion) if seleccion else 0
+            self.combo_pool.setCurrentIndex(max(idx, 0))
+        finally:
+            self.combo_pool.blockSignals(False)
+
+    def _al_cambiar_notas_origen(self, _marcado: bool) -> None:
+        self._actualizar_notas_usuario()
+        self._al_editar()
+
+    def _actualizar_notas_usuario(self) -> None:
+        """«Incluir mi usuario» solo vale con las notas de origen marcadas (CA-A2.3.3)."""
+        notas = self._estado_efectivo(OpcionA.NOTAS)
+        libre = notas is None or notas.disponibilidad != Disponibilidad.NO
+        self.chk_notas_usuario.setEnabled(libre and self.chk_notas_origen.isChecked())
+
+    def _estado_efectivo(self, opcion: OpcionA) -> EstadoOpcion | None:
+        """Estado de una opción. En un clon las notas viajan en el POST de clone, que no pide
+        ``VM.Config.Options`` (CA-A2.1.5): no se deshabilitan por ese privilegio."""
+        estado = self._estados_opciones.get(opcion)
+        if (
+            estado is not None
+            and opcion == OpcionA.NOTAS
+            and self.selector_origen.origen == OrigenSO.CLONAR_PLANTILLA
+        ):
+            return None
+        return estado
+
+    def establecer_disponibilidad(
+        self, estados: Mapping[OpcionA, EstadoOpcion], pools: PoolsServidor | None = None
+    ) -> None:
+        """Habilita o deshabilita cada opción según privilegios, versión y pools (RF-A0.3/0.4).
+
+        Una opción no disponible queda deshabilitada (no oculta) con el texto que nombra el
+        privilegio y la ruta o la versión; si traía un valor, vuelve a su valor por defecto con
+        un aviso (CL-A15). ``pools`` trae la lista que llena el selector de pool.
+        """
+        self._estados_opciones = dict(estados)
+        if pools is not None:
+            elegido = cast("str | None", self.combo_pool.currentData())
+            # CL-A15: un pool que era válido en el servidor anterior y el nuevo no tiene vuelve
+            # a «Ninguno» con aviso. Uno cargado de un archivo (ya «no existe») se conserva
+            # para que «Comprobar» lo bloquee con V-A10.
+            if (
+                elegido
+                and elegido in self._pools.ids
+                and pools.estado == EstadoPools.OK
+                and elegido not in pools.ids
+            ):
+                self._pool_restablecido = elegido
+                elegido = None
+            self._pools = pools
+            self._poblar_pool(elegido)
+        self.tabla_redes.establecer_disponibilidad(estados)
+        self._reaplicar_disponibilidad()
+
+    def _reaplicar_disponibilidad(self) -> None:
+        previo, self._ocupado = self._ocupado, True
+        cambios = False
+        try:
+            for grupo in self._grupos_opciones:
+                estado = self._estado_efectivo(grupo.opcion)
+                bloqueada = estado is not None and estado.disponibilidad == Disponibilidad.NO
+                texto = texto_estado_opcion(estado) if estado is not None else ""
+                for w in grupo.controles:
+                    w.setEnabled(not bloqueada)
+                    w.setAccessibleDescription(texto)
+                if grupo.opcion == OpcionA.POOL and self._pool_restablecido is not None:
+                    texto = texto_opcion_restablecida(
+                        grupo.opcion.value,
+                        self.tr("El servidor no tiene el pool «{pool}».").format(
+                            pool=self._pool_restablecido
+                        ),
+                    )
+                    self._pool_restablecido = None
+                    cambios = True
+                elif bloqueada and grupo.no_predeterminado():
+                    grupo.restablecer()
+                    texto = texto_opcion_restablecida(grupo.opcion.value, texto)
+                    cambios = True
+                elif not bloqueada and grupo.opcion == OpcionA.NOTAS and self._notas_forzadas_off:
+                    # Vuelve el privilegio: las notas de origen recuperan su valor por defecto.
+                    self.chk_notas_origen.setChecked(True)
+                    self._notas_forzadas_off = False
+                self._texto_estado[id(grupo.fila)] = texto
+                self._refrescar_aviso(grupo.fila)
+            self._actualizar_notas_usuario()
+        finally:
+            self._ocupado = previo
+        if cambios and not previo:
+            self.cambiado.emit()
+
+    def _refrescar_aviso(self, fila: FilaCampo) -> None:
+        textos = [
+            t
+            for t in (
+                self._texto_estado.get(id(fila), ""),
+                self._texto_validacion.get(id(fila), ""),
+            )
+            if t
+        ]
+        fila.mostrar_aviso("\n".join(textos) or None)
 
     def campos_no_numericos(self) -> list[str]:
         """Campos numéricos cuyo texto no es un número: el lote no se puede guardar así.
@@ -593,6 +1021,16 @@ class FormularioVM(QWidget):
             )
         malos.extend(
             self.tr("VLAN de {n}").format(n=n) for n in self.tabla_redes.vlan_no_numericas()
+        )
+        for texto, nombre in (
+            (self.txt_orden.text(), self.tr("Orden de arranque")),
+            (self.txt_espera.text(), self.tr("Espera (s)")),
+        ):
+            if texto.strip():
+                revisar(texto, nombre)
+        malos.extend(self.tr("MTU de {n}").format(n=n) for n in self.tabla_redes.mtu_no_numericas())
+        malos.extend(
+            self.tr("Límite de {n}").format(n=n) for n in self.tabla_redes.limites_no_numericos()
         )
         return malos
 
@@ -888,6 +1326,7 @@ class FormularioVM(QWidget):
             self.chk_sin_disco.setChecked(False)
         self.chk_sin_disco.setEnabled(not importar)
         self.tabla_discos.establecer_primero_importado(importar)
+        self._reaplicar_disponibilidad()  # las notas de un clon no piden VM.Config.Options
 
     def _al_cambiar_sin_disco(self, _marcado: bool) -> None:
         if self._ocupado:
@@ -1003,10 +1442,39 @@ class FormularioVM(QWidget):
         self.fila_memoria.mostrar_error(texto("memoria_mib"))
         self.fila_balloon_min.mostrar_error(texto("ballooning.minimo_mib"))
         self.fila_ctrl.mostrar_error(texto("controlador_scsi"))
+        self._aplicar_problemas_opciones(problemas)
         self.fila_efi.marcar_tocado()
         self.fila_efi.mostrar_error(texto("storage_efi"))
         self.tabla_discos.aplicar_problemas(problemas)
         self.tabla_redes.aplicar_problemas(problemas)
+
+    def _aplicar_problemas_opciones(self, problemas: Sequence[Problema]) -> None:
+        """Errores y avisos de las reglas V-A junto a su opción (siempre visibles: un valor que
+        viene de un lote guardado no lo escribió el usuario en esta sesión)."""
+        filas = {
+            "encender": self.fila_encender,
+            "arranque_auto": self.fila_arranque_auto,
+            "arranque_orden": self.fila_orden,
+            "arranque_espera": self.fila_espera,
+            "notas": self.fila_notas,
+            "etiquetas": self.fila_etiquetas,
+            "etiquetas_usuario": self.fila_etiquetas,
+            "pool": self.fila_pool,
+            "proteger": self.fila_proteger,
+        }
+        errores: dict[int, list[str]] = {}
+        avisos: dict[int, list[str]] = {}
+        for p in problemas:
+            fila = filas.get(p.campo.split("[")[0])
+            if fila is None:
+                continue
+            destino = errores if p.severidad == Severidad.ERROR else avisos
+            destino.setdefault(id(fila), []).append(texto_problema(p))
+        for fila in dict.fromkeys(filas.values()):
+            fila.marcar_tocado()
+            fila.mostrar_error("\n".join(dict.fromkeys(errores.get(id(fila), []))) or None)
+            self._texto_validacion[id(fila)] = "\n".join(dict.fromkeys(avisos.get(id(fila), [])))
+            self._refrescar_aviso(fila)
 
     def bloquear(self, bloqueado: bool) -> None:
         """Bloquea los campos mientras se crea la máquina (CA-19.4); con ellos, el origen."""
@@ -1018,8 +1486,8 @@ class FormularioVM(QWidget):
     def establecer_lote(self, activo: bool) -> None:
         """Con más de una máquina el nombre, el VMID y el nodo salen del bloque «Lote»."""
         self._modo_lote = activo
-        if self._caja_general is not None:
-            self._caja_general.setVisible(not activo)
+        # El grupo «General» sigue visible en un lote: las opciones de la fase A (encender, notas,
+        # etiquetas, pool…) valen para todo el lote; solo se ocultan nombre, VMID y nodo.
         self.fila_nombre.setVisible(not activo)
         self.fila_vmid.setVisible(not activo)
         es_cluster = self._inv is not None and self._inv.topologia.es_cluster

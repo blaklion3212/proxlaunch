@@ -20,13 +20,17 @@ from proxlaunch.interfaz.ayuda import (
     NOMBRE_ROL,
     PRIVILEGIOS_ROL,
     alternativa_simple_permisos,
+    intro_privilegios_opcionales,
     notas_guia_token,
+    notas_opcionales_guia,
     notas_privilegios_nuevos,
     pasos_guia_token,
     permisos_acotados,
     privilegios_guia_token,
+    privilegios_opcionales_guia,
     texto_pedir_al_administrador,
     titulo_guia_token,
+    titulo_privilegios_opcionales,
 )
 from proxlaunch.interfaz.desplazable import limitar_a_pantalla
 
@@ -78,6 +82,17 @@ class DialogoGuiaToken(QDialog):
         self.aviso_alternativa.setProperty("aviso", True)
         self.aviso_alternativa.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse)
         capa.addWidget(self.aviso_alternativa)
+        # Fase A: privilegios que no forman parte del rol (RF-A8.1, RF-A8.2).
+        self.titulo_opcionales = QLabel(titulo_privilegios_opcionales())
+        capa.addWidget(self.titulo_opcionales)
+        lbl_intro = QLabel(intro_privilegios_opcionales())
+        lbl_intro.setWordWrap(True)
+        capa.addWidget(lbl_intro)
+        for linea in [*privilegios_opcionales_guia(), *notas_opcionales_guia()]:
+            lbl_opc = QLabel(f"• {linea}")
+            lbl_opc.setWordWrap(True)
+            lbl_opc.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse)
+            capa.addWidget(lbl_opc)
         for nota in notas_guia_token():
             lbl = QLabel(nota)
             lbl.setWordWrap(True)

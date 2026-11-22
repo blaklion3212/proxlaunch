@@ -307,7 +307,7 @@ def test_ca_l18_4_una_maquina_con_proteccion_no_se_elimina(banco, proteccion):
     banco.cluster.vms[100]["config"]["protection"] = proteccion
     resultados, _ = _deshacer(banco, libro)
     assert resultados[0].estado == EstadoRollback.OMITIDA
-    assert resultados[0].error.codigo == CodigoError.ROLLBACK_BLOQUEADA
+    assert resultados[0].error.codigo == CodigoError.ROLLBACK_PROTEGIDA  # fase A: código propio
     assert sorted(banco.cluster.deletes) == [101]  # las demás siguen
 
 

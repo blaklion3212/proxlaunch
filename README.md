@@ -9,12 +9,28 @@ Solutions GmbH. La aplicación solo se presenta como «Compatible con Proxmox VE
 
 ## Estado del proyecto
 
-**Versión `0.5.1` (MVP 5).** Hay instaladores para Ubuntu (`.deb`) y Windows
-(`-setup.exe`), además de poder ejecutarse desde el código fuente. Sobre el MVP 4 (origen del
+**Versión `0.6.0`.** Hay instaladores para Ubuntu (`.deb`) y Windows
+(`-setup.exe`), además de poder ejecutarse desde el código fuente. Se apoya en el MVP 5 (instaladores), el MVP 4 (origen del
 sistema operativo), el MVP 3 (perfiles de máquina, lotes guardados e importación CSV), el MVP 2
 (creación por lotes) y el MVP 1. Las secciones «Qué hace/añade» de más abajo describen cada
 etapa; la del MVP 4 está en la [guía de usuario](docs/guia-usuario.md#elegir-el-origen-del-sistema-operativo).
 Las novedades de cada versión están en las [releases](https://github.com/blaklion3212/proxlaunch/releases).
+
+Novedades de la versión 0.6.0 (**opciones de la máquina**, todas explicadas en la
+[guía de usuario](docs/guia-usuario.md#opciones-de-la-máquina)):
+
+- **Encender al terminar** (con `VM.PowerMgmt`, opcional) y **Arrancar con el servidor**, con orden y espera de arranque
+  en modo avanzado.
+- **Notas de origen** automáticas (fecha, versión, perfil, lote y, si lo marcas, tu usuario) y **notas propias**, con aviso
+  a partir de 7500 caracteres y bloqueo por encima de 8192.
+- **Etiquetas propias**, comprobadas contra la **política de etiquetas** del centro de datos antes de crear.
+- **Pool** de recursos (incluidos los anidados `padre/hijo`), **Proteger contra borrado**, y **MTU** y **límite de
+  velocidad** por tarjeta de red (modo avanzado).
+- **Deshacer** puede apagar a la fuerza y desproteger las máquinas del lote que elijas, con una confirmación expresa que
+  lista cada máquina por nombre y número.
+- Columnas nuevas en el CSV (`encender`, `arranque_auto`, `notas`, `etiquetas`, `pool`, `proteger`, `mtu`, `limite_red`) y
+  **formato de archivo 3** para lotes y perfiles que usan las opciones nuevas. 0.6.0 lee los formatos 1 y 2; 0.5.1 no abre
+  los de formato 3 (ver [compatibilidad](docs/guia-usuario.md#compatibilidad-con-versiones-anteriores)).
 
 Qué hace el MVP 1:
 
@@ -28,7 +44,7 @@ Qué hace el MVP 1:
 - Crea **una** MV con disco vacío (sin instalar sistema operativo), con seguimiento de la
   tarea por etapas.
 - Modo básico y avanzado. Tema claro y oscuro, según el sistema o a elección.
-- La MV se crea **detenida**: ProxLaunch no la enciende.
+- La MV se crea **detenida** (desde la versión 0.6.0 puedes pedir **Encender al terminar**).
 
 Qué añade el MVP 2 (**creación por lotes**):
 
@@ -47,7 +63,8 @@ Qué añade el MVP 2 (**creación por lotes**):
 - **Etiquetas** `proxlaunch` y `lote-<id>` en las MV creadas (activadas por defecto y
   desactivables en modo avanzado) para demostrar de quién es cada MV.
 - **Deshacer** (manual, con confirmación): elimina solo las MV que creó el lote, nunca MV
-  ajenas, protegidas, encendidas o bloqueadas, ni discos sueltos.
+  ajenas o bloqueadas, ni discos sueltos. Las protegidas o encendidas solo se tocan con la
+  confirmación expresa de la versión 0.6.0 (ver más abajo).
 - **Informe** del lote en texto plano (copiar o guardar `.txt`), sin host, IP, usuario ni
   secretos, e informe parcial si se cierra la aplicación con un lote en curso.
 
@@ -85,17 +102,31 @@ editar o borrar MV que no creó un lote, instaladores (MVP 5), interfaz en otros
 
 ### Permisos de Proxmox
 
-El **rol mínimo no cambia**: son los mismos 10 privilegios del MVP 1 (`VM.Allocate`, `VM.Audit`,
+El **rol mínimo no cambia** en la versión 0.6.0: son los mismos 10 privilegios del MVP 1 (`VM.Allocate`, `VM.Audit`,
 `VM.Config.Options`, `VM.Config.HWType`, `VM.Config.CPU`, `VM.Config.Memory`,
-`VM.Config.Network`, `Datastore.AllocateSpace`, `SDN.Use` y `Sys.Audit`; lista y pasos en la
-[guía de usuario](docs/guia-usuario.md#permisos-que-hacen-falta)). Crear lotes, etiquetar y
+`VM.Config.Network`, `Datastore.AllocateSpace`, `SDN.Use` y `Sys.Audit`) más los 4 de orígenes del MVP 4 (`VM.Config.Disk`,
+`VM.Clone`, `Datastore.AllocateTemplate` y `Sys.AccessNetwork`); lista y pasos en la
+[guía de usuario](docs/guia-usuario.md#permisos-que-hacen-falta). Crear lotes, etiquetar y
 deshacer no piden ninguno más:
 
 - Borrar una MV (`DELETE /nodes/{n}/qemu/{vmid}`) solo exige `VM.Allocate` (verificado en PVE 9.2).
-- Las etiquetas al crear usan `VM.Config.Options`, que ya está en el rol.
-- Excepción: si el administrador restringió la política `user-tag-access` del datacenter,
-  Proxmox acepta la orden pero la tarea falla por falta de `Sys.Modify`. ProxLaunch pausa
-  el lote y ofrece «Seguir sin etiquetas».
+- Las etiquetas (las fijas y las propias) usan `VM.Config.Options`; la protección, el arranque con el servidor, las notas
+  y quitar la protección en Deshacer también. El MTU y el límite de red usan `VM.Config.Network`. Todos ya están en el rol.
+- Crear en un **pool** no necesita ningún privilegio nuevo: basta `VM.Allocate` en la máquina o en el pool.
+- Si el administrador restringió la política de etiquetas del centro de datos (`user-tag-access`,
+  `registered-tags`), ProxLaunch la lee antes de crear (con `Sys.Audit` en `/`) y **bloquea** si alguna etiqueta no
+  está permitida, nombrándola. Si no pudo comprobarla y Proxmox falla dentro de la tarea, pausa el lote y ofrece
+  «Seguir sin etiquetas».
+
+**Privilegios opcionales (no forman parte del rol).** Sin ellos ProxLaunch funciona igual y solo desactiva la
+opción afectada, explicando qué falta:
+
+| Privilegio | Ruta | Habilita |
+|---|---|---|
+| `VM.PowerMgmt` | `/vms` | **Encender al terminar**, y que **Deshacer** apague a la fuerza las máquinas encendidas del lote. |
+| `Pool.Audit` | `/pool` | Ver la lista de pools para elegir uno. |
+
+`Sys.Modify` y `Pool.Allocate` nunca se piden.
 
 ## Requisitos
 
@@ -128,8 +159,8 @@ Los artefactos están en `dist/` (se generan con los scripts de [`empaquetado/`]
 
 | Sistema | Archivo |
 |---|---|
-| Ubuntu 22.04 / 24.04 (64 bits) | `proxlaunch_0.5.1_amd64.deb` |
-| Windows 10 / 11 (64 bits) | `proxlaunch-0.5.1-windows-x64-setup.exe` |
+| Ubuntu 22.04 / 24.04 (64 bits) | `proxlaunch_0.6.0_amd64.deb` |
+| Windows 10 / 11 (64 bits) | `proxlaunch-0.6.0-windows-x64-setup.exe` |
 | Comprobación | `SHA256SUMS` (suma SHA-256 de cada instalador) |
 
 Comprueba la descarga y luego instala:
@@ -137,12 +168,12 @@ Comprueba la descarga y luego instala:
 ```bash
 # Ubuntu
 sha256sum -c SHA256SUMS --ignore-missing
-sudo apt install ./proxlaunch_0.5.1_amd64.deb
+sudo apt install ./proxlaunch_0.6.0_amd64.deb
 ```
 
 ```powershell
 # Windows (PowerShell): compara el Hash con la línea de SHA256SUMS y ejecuta el instalador
-Get-FileHash -Algorithm SHA256 .\proxlaunch-0.5.1-windows-x64-setup.exe
+Get-FileHash -Algorithm SHA256 .\proxlaunch-0.6.0-windows-x64-setup.exe
 ```
 
 Los instaladores incluyen su propio Python: no hace falta instalar nada más (en Ubuntu, `apt` instala las
@@ -249,7 +280,7 @@ src/proxlaunch/
   interfaz/      PySide6: ventana principal, diálogos, vistas, tema y textos
   recursos/      Logos (SVG), fuentes con sus licencias y traducciones
 tests/           nucleo/, interfaz/, integracion/ y datos/respuestas/
-docs/            Decisiones, requisitos, arquitectura, investigación y guía de usuario
+docs/            Guía de usuario, archivos de ejemplo, capturas y empaquetado
 recursos/marca/  Logos originales y el generador (generador/generar_logo.py)
 ```
 
@@ -259,8 +290,11 @@ recursos/marca/  Logos originales y el generador (generador/generar_logo.py)
   [lotes](docs/guia-usuario.md#crear-varias-máquinas-de-una-vez-lotes), los
   [perfiles de máquina](docs/guia-usuario.md#perfiles-de-máquina), los
   [lotes guardados](docs/guia-usuario.md#guardar-y-abrir-lotes), la
-  [importación CSV](docs/guia-usuario.md#importar-máquinas-desde-un-csv) y el
-  [lote por filas](docs/guia-usuario.md#lote-por-filas)).
+  [importación CSV](docs/guia-usuario.md#importar-máquinas-desde-un-csv), el
+  [lote por filas](docs/guia-usuario.md#lote-por-filas) y las
+  [opciones de la máquina](docs/guia-usuario.md#opciones-de-la-máquina)).
+- [Archivos de ejemplo](docs/ejemplos/LEEME.md): CSV, lotes y perfiles listos para abrir (incluidos `mvs-opciones.csv` y
+  `lote-con-opciones.proxlaunch-lote.json`, con las opciones de la versión 0.6.0).
 - [Instalar y desinstalar](docs/guia-usuario.md#instalar-y-desinstalar-proxlaunch): `.deb` y
   `-setup.exe`, SmartScreen, datos y verificación de `SHA256SUMS`.
 - [Empaquetado](docs/empaquetado.md): construcción y verificación de los instaladores

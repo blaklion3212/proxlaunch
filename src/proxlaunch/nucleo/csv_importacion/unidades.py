@@ -14,7 +14,7 @@ from typing import TypeVar
 
 from proxlaunch.nucleo.archivos.esquema import CodigoAvisoArchivo
 from proxlaunch.nucleo.modelos.origen import ModoClon, TipoSO
-from proxlaunch.nucleo.modelos.vm import Firmware, ModeloRed, OrigenSO
+from proxlaunch.nucleo.modelos.vm import MAX_LIMITE_MB, Firmware, ModeloRed, OrigenSO
 
 _T = TypeVar("_T")
 
@@ -254,6 +254,46 @@ def tipo_so(texto: str) -> TipoSO:
 def si_no(texto: str) -> bool:
     """``si``/``no`` (también ``yes``/``no``, ``true``/``false``, ``1``/``0``)."""
     return _enumeracion(_clave_enum(texto), _SI_NO, "si, no", "si")
+
+
+# --- Fase A: red (MTU y límite de velocidad) y booleanos de las opciones ---
+
+_MTU_HEREDAR = frozenset({"heredar", "inherit"})
+_MTU_IGUAL = frozenset({"igual", "same", "igual al bridge", "igual bridge", "bridge"})
+
+
+def mtu(texto: str) -> int | None:
+    """MTU de la tarjeta: ``heredar`` → ``None``; ``igual`` o ``1`` → ``1`` (el del bridge);
+    un número → ese valor (el rango lo valida V-A04 después)."""
+    clave = _clave_enum(texto)
+    if clave in _MTU_HEREDAR:
+        return None
+    if clave in _MTU_IGUAL:
+        return 1
+    valor, unidad, _ = _separar(texto, "1500")
+    if unidad:
+        raise ValorInvalido("E-M11.no_numero", {"ejemplo": "1500"})
+    if valor.denominator != 1:
+        raise ValorInvalido("E-M11.no_entero", {"ejemplo": "1500"})
+    return int(valor)
+
+
+def limite_mb(texto: str) -> float:
+    """Límite de velocidad de la tarjeta en MB/s (``50``, ``12,5``). Sin signo; el 0 lo rechaza
+    V-A06 después, igual que lo que pasa de ``MAX_LIMITE_MB``: el valor se acota a un poco más
+    del tope para que V-A06 lo rechace sin desbordar ``float`` con cifras absurdas."""
+    valor, unidad, _ = _separar(texto, "50")
+    if unidad:
+        raise ValorInvalido("E-M11.no_numero", {"ejemplo": "50"})
+    return float(valor) if valor <= MAX_LIMITE_MB else float(MAX_LIMITE_MB + 1)
+
+
+_NINGUNO = frozenset({"ninguno", "ninguna", "sin pool", "none"})
+
+
+def es_ninguno(texto: str) -> bool:
+    """``ninguno``/``ninguna``/``sin pool``: el «sin nada» explícito de ``pool`` (CA-A4.6.2)."""
+    return _clave_enum(texto) in _NINGUNO
 
 
 def modo_clon(texto: str) -> ModoClon:

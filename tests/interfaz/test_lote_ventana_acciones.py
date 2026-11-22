@@ -10,6 +10,7 @@ import pytest
 from PySide6.QtWidgets import QApplication, QPushButton
 
 from proxlaunch.interfaz import ventana_principal as vp
+from proxlaunch.interfaz.dialogos.confirmar_deshacer import DialogoConfirmarDeshacerForzado
 from proxlaunch.interfaz.dialogos.deshacer import DialogoDeshacer
 from proxlaunch.interfaz.dialogos.informe import DialogoInforme
 from proxlaunch.interfaz.tema import ModoTema
@@ -271,12 +272,16 @@ def test_ca_l18_4_una_maquina_encendida_o_protegida_no_se_borra_y_se_explica(qtb
     cliente.configs[103]["protection"] = 1
     v.progreso_lote.boton_deshacer.click()
     dialogo(v, DialogoDeshacer).boton_eliminar.click()
+    # Fase A: hay una encendida y una protegida propias: pide confirmación expresa. Aquí el
+    # usuario elige seguir sin forzar, que omite ambas como en 0.5.1.
+    qtbot.waitUntil(lambda: bool(v.findChildren(DialogoConfirmarDeshacerForzado)), timeout=4000)
+    dialogo(v, DialogoConfirmarDeshacerForzado).boton_sin_forzar.click()
     esperar_fin(qtbot, v)
     assert cliente.eliminados == [101]
     p = v.progreso_lote
     detalles = " ".join(" ".join(str(c) for c in fila_rollback(p, i)) for i in range(3))
     assert "«web-02» está encendida" in detalles
-    assert "«web-03» está protegida o bloqueada" in detalles
+    assert "«web-03» está protegida contra borrado" in detalles
 
 
 def test_ca_l18_4_una_maquina_con_etiqueta_ajena_no_se_borra(qtbot, entorno):

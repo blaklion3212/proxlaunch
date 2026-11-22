@@ -8,8 +8,9 @@ genérico de CA-21.2 (los detalles técnicos los muestra la vista aparte).
 from __future__ import annotations
 
 import html
+import math
 import re
-from collections.abc import Callable, Mapping
+from collections.abc import Callable, Iterable, Mapping
 
 from PySide6.QtCore import QCoreApplication, QLocale
 
@@ -25,6 +26,7 @@ from proxlaunch.nucleo.archivos.esquema import (
     ErrorCampo,
     MotivoCampo,
 )
+from proxlaunch.nucleo.constructor_peticion import formato_limite
 from proxlaunch.nucleo.csv_importacion.modelos import EstadoFila, MapaColumnas, ProblemaCelda
 from proxlaunch.nucleo.errores import CodigoError, ErrorProxLaunch
 from proxlaunch.nucleo.lote.constantes import (
@@ -44,6 +46,7 @@ from proxlaunch.nucleo.lote.modelos import (
 )
 from proxlaunch.nucleo.lote.modelos import Problema as ProblemaLote
 from proxlaunch.nucleo.lote.modelos import Severidad as SeveridadLote
+from proxlaunch.nucleo.lote.rollback import InspeccionRollback
 from proxlaunch.nucleo.lotes_guardados.revalidacion import Desajuste, TipoDesajuste
 from proxlaunch.nucleo.modelos.catalogo import Contenido
 from proxlaunch.nucleo.modelos.origen import (
@@ -55,6 +58,7 @@ from proxlaunch.nucleo.modelos.origen import (
 )
 from proxlaunch.nucleo.modelos.tarea import Desenlace, Etapa, ResultadoCreacion
 from proxlaunch.nucleo.modelos.vm import ConfiguracionVM, OrigenSO
+from proxlaunch.nucleo.opciones.modelos import EstadoOpcion
 from proxlaunch.nucleo.origen.asistente import CambioAsistente, CampoAsistente
 from proxlaunch.nucleo.origen.capacidades_origen import Disponibilidad, EstadoVia, Via
 from proxlaunch.nucleo.origen.storages import DecisionStorage, TipoDecision
@@ -521,6 +525,9 @@ def texto_problema(p: Problema) -> str:
     texto_mvp4 = _texto_problema_origen(p)
     if texto_mvp4 is not None:
         return texto_mvp4
+    texto_fase_a = _texto_problema_fase_a(p)
+    if texto_fase_a is not None:
+        return texto_fase_a
     return texto_generico()
 
 
@@ -659,6 +666,8 @@ def texto_etapa(etapa: Etapa) -> str:
         return QCoreApplication.translate("Textos", "Comprobando el resultado")
     if etapa == Etapa.AJUSTANDO:
         return QCoreApplication.translate("Textos", "Ajustando la máquina")
+    if etapa == Etapa.ENCENDIENDO:
+        return QCoreApplication.translate("Textos", "Encendiendo la máquina")
     if etapa == Etapa.LISTO:
         return QCoreApplication.translate("Textos", "Listo")
     return str(etapa)
@@ -879,7 +888,7 @@ def _texto_error_lote(error: ErrorProxLaunch) -> str | None:
         return _fmt(
             QCoreApplication.translate(
                 "Textos",
-                "«{nombre}» está protegida o bloqueada. Quita la protección en Proxmox.",
+                "«{nombre}» está bloqueada por una tarea de Proxmox. Espera a que termine.",
             ),
             p,
         )
@@ -903,7 +912,7 @@ def _texto_error_lote(error: ErrorProxLaunch) -> str | None:
         return QCoreApplication.translate(
             "Textos", "Error interno: se intentó escribir en modo simulación. No se creó nada."
         )
-    return None
+    return _texto_error_fase_a(error)
 
 
 def texto_existe_sin_confirmar() -> str:
@@ -1357,6 +1366,11 @@ def texto_problema_lote(p: ProblemaLote, *, fila: str | None = None) -> str:
         )
     if regla.startswith("V-") and not regla.startswith("V-L"):
         base = texto_problema(_a_problema_m1(p))
+        if regla == "V-A03" and prm.get("elementos") and base != texto_generico():
+            # V-A03 agrupado por etiqueta en un lote por filas: se indica cuántas filas afecta.
+            base = QCoreApplication.translate("Textos", "{texto} (afecta a {n} filas)").format(
+                texto=base, n=prm["elementos"]
+            )
         if p.indice is not None and base != texto_generico():
             if fila is not None:
                 return _con_fila(p, base, fila)
@@ -1875,6 +1889,14 @@ def alias_columnas_csv() -> dict[str, str]:
         QCoreApplication.translate("ColumnasCsv", "so"): "so",
         QCoreApplication.translate("ColumnasCsv", "virtio"): "virtio",
         QCoreApplication.translate("ColumnasCsv", "modo_clon"): "modo_clon",
+        QCoreApplication.translate("ColumnasCsv", "encender"): "encender",
+        QCoreApplication.translate("ColumnasCsv", "arranque_auto"): "arranque_auto",
+        QCoreApplication.translate("ColumnasCsv", "notas"): "notas",
+        QCoreApplication.translate("ColumnasCsv", "etiquetas"): "etiquetas",
+        QCoreApplication.translate("ColumnasCsv", "pool"): "pool",
+        QCoreApplication.translate("ColumnasCsv", "proteger"): "proteger",
+        QCoreApplication.translate("ColumnasCsv", "mtu"): "mtu",
+        QCoreApplication.translate("ColumnasCsv", "limite_red"): "limite_red",
     }
 
 
@@ -2751,6 +2773,10 @@ def _ajuste_verbo(ajuste: str) -> str:
         return QCoreApplication.translate("Textos", "cambiar los procesadores o la memoria")
     if ajuste == "disco":
         return QCoreApplication.translate("Textos", "ampliar el disco")
+    if ajuste == "arranque":
+        return QCoreApplication.translate("Textos", "configurar el arranque con el servidor")
+    if ajuste == "proteccion":
+        return QCoreApplication.translate("Textos", "activar la protección contra borrado")
     return QCoreApplication.translate("Textos", "aplicar los ajustes")
 
 
@@ -2762,6 +2788,10 @@ def _ajuste_sustantivo(ajuste: str) -> str:
         return QCoreApplication.translate("Textos", "los procesadores o la memoria")
     if ajuste == "disco":
         return QCoreApplication.translate("Textos", "el tamaño del disco")
+    if ajuste == "arranque":
+        return QCoreApplication.translate("Textos", "el arranque con el servidor")
+    if ajuste == "proteccion":
+        return QCoreApplication.translate("Textos", "la protección contra borrado")
     return QCoreApplication.translate("Textos", "los ajustes")
 
 
@@ -2772,6 +2802,9 @@ def texto_aviso_origen(codigo: str) -> str:
     y ``discos_sueltos_posibles``.
     """
     base, _, detalle = codigo.partition(":")
+    texto_fase_a = _texto_aviso_fase_a(codigo)
+    if texto_fase_a:
+        return texto_fase_a
     if base == "ajuste_pendiente":
         return QCoreApplication.translate(
             "Textos", "Se creó, pero falta aplicar {ajuste}. Puedes reintentar los ajustes."
@@ -3633,3 +3666,649 @@ def _texto_v_l11_plantilla(prm: Mapping[str, str]) -> str:
         QCoreApplication.translate("Textos", "«{nodo}» no tiene la plantilla «{plantilla}»."),
         prm,
     )
+
+
+# --- Fase A: Deshacer, CSV y guía (I5b) -------------------------------------------------------
+
+
+def texto_nombre_opcion_fase_a(opcion: str) -> str:
+    """Nombre llano de una opción de la fase A (valor de ``OpcionA``) para los avisos."""
+    nombres: dict[str, Callable[[], str]] = {
+        "encender": lambda: QCoreApplication.translate("Textos", "Encender al terminar"),
+        "arranque_auto": lambda: QCoreApplication.translate("Textos", "Arrancar con el servidor"),
+        "arranque_orden": lambda: QCoreApplication.translate(
+            "Textos", "Orden y espera de arranque"
+        ),
+        "notas": lambda: QCoreApplication.translate("Textos", "Notas"),
+        "etiquetas": lambda: QCoreApplication.translate("Textos", "Etiquetas"),
+        "pool": lambda: QCoreApplication.translate("Textos", "Pool"),
+        "mtu": lambda: QCoreApplication.translate("Textos", "MTU de la red"),
+        "limite_red": lambda: QCoreApplication.translate("Textos", "Límite de velocidad de red"),
+        "proteger": lambda: QCoreApplication.translate("Textos", "Proteger contra borrado"),
+    }
+    fabrica = nombres.get(opcion)
+    return fabrica() if fabrica is not None else opcion
+
+
+def _texto_error_fase_a(error: ErrorProxLaunch) -> str | None:
+    """Textos de los errores nuevos de la fase A (opciones, pools y Deshacer forzado)."""
+    p = error.params
+    c = error.codigo
+    if c == CodigoError.OPCION_SIN_PRIVILEGIO:
+        return _fmt(
+            QCoreApplication.translate(
+                "Textos",
+                "«{opcion}» no está disponible: tu usuario no tiene el privilegio {privilegio} "
+                "en «{ruta}». Pídeselo a tu administrador.",
+            ),
+            p,
+            opcion=texto_nombre_opcion_fase_a(p.get("opcion", "")),
+        )
+    if c == CodigoError.OPCION_SIN_VERSION:
+        return _fmt(
+            QCoreApplication.translate(
+                "Textos", "«{opcion}» necesita Proxmox {version} o una versión posterior."
+            ),
+            p,
+            opcion=texto_nombre_opcion_fase_a(p.get("opcion", "")),
+        )
+    if c == CodigoError.POOLS_SIN_PERMISO:
+        return QCoreApplication.translate(
+            "Textos",
+            "No puedes ver la lista de pools: falta el privilegio Pool.Audit en «/pool». "
+            "Eso no significa que no existan pools; pídeselo a tu administrador.",
+        )
+    if c == CodigoError.POOLS_DESCONOCIDO:
+        return QCoreApplication.translate(
+            "Textos",
+            "No sabemos si puedes ver la lista de pools (privilegio Pool.Audit en «/pool»). "
+            "Si el pool no existe o no tienes acceso, Proxmox lo rechazará al crear.",
+        )
+    if c == CodigoError.POOLS_ERROR:
+        return QCoreApplication.translate(
+            "Textos", "No se pudo leer la lista de pools del servidor. Inténtalo de nuevo."
+        )
+    if c == CodigoError.POOL_INEXISTENTE:
+        return _fmt(
+            QCoreApplication.translate(
+                "Textos", "El pool «{pool}» no existe en Proxmox. No se creó la máquina."
+            ),
+            p,
+        )
+    if c == CodigoError.DESCRIPCION_LARGA:
+        return QCoreApplication.translate(
+            "Textos",
+            "Las notas superan los 8192 caracteres que admite Proxmox. Acórtalas y vuelve a "
+            "intentarlo.",
+        )
+    if c == CodigoError.ROLLBACK_PROTEGIDA:
+        return _fmt(
+            QCoreApplication.translate(
+                "Textos",
+                "«{nombre}» está protegida contra borrado. Deshacer puede quitarle la "
+                "protección si lo confirmas expresamente.",
+            ),
+            p,
+        )
+    if c == CodigoError.ROLLBACK_SIN_POWERMGMT:
+        texto = _fmt(
+            QCoreApplication.translate(
+                "Textos",
+                "«{nombre}» está encendida y no se pudo apagar: falta el privilegio "
+                "VM.PowerMgmt. Apágala en Proxmox y vuelve a intentarlo.",
+            ),
+            p,
+        )
+        if p.get("tambien") == str(CodigoError.ROLLBACK_SIN_OPCIONES):
+            texto += " " + QCoreApplication.translate(
+                "Textos",
+                "También está protegida y falta VM.Config.Options para quitarle la protección.",
+            )
+        return texto
+    if c == CodigoError.ROLLBACK_SIN_OPCIONES:
+        return _fmt(
+            QCoreApplication.translate(
+                "Textos",
+                "«{nombre}» está protegida y no se pudo desproteger: falta el privilegio "
+                "VM.Config.Options. Quita la protección en Proxmox y vuelve a intentarlo.",
+            ),
+            p,
+        )
+    if c == CodigoError.ROLLBACK_APAGADO_FALLIDO:
+        return _fmt(
+            QCoreApplication.translate(
+                "Textos",
+                "No se pudo apagar «{nombre}», así que no se eliminó. Apágala desde Proxmox "
+                "y vuelve a intentarlo.",
+            ),
+            p,
+        )
+    if c == CodigoError.ROLLBACK_DESPROTECCION_FALLIDA:
+        return _fmt(
+            QCoreApplication.translate(
+                "Textos",
+                "No se pudo quitar la protección de «{nombre}», así que no se eliminó. "
+                "Quítala desde Proxmox y vuelve a intentarlo.",
+            ),
+            p,
+        )
+    return None
+
+
+def texto_acciones_rollback(acciones: tuple[str, ...]) -> str:
+    """Acciones hechas sobre una máquina al deshacer: «Apagada a la fuerza, desprotegida…»."""
+    nombres = {
+        "apagada": lambda: QCoreApplication.translate("Textos", "apagada a la fuerza"),
+        "desprotegida": lambda: QCoreApplication.translate("Textos", "desprotegida"),
+        "borrada": lambda: QCoreApplication.translate("Textos", "eliminada"),
+    }
+    partes = [nombres[a]() if a in nombres else a for a in acciones]
+    if not partes:
+        return ""
+    texto = ", ".join(partes)
+    return texto[:1].upper() + texto[1:]
+
+
+def titulo_confirmacion_forzada() -> str:
+    """Título del diálogo de confirmación expresa de Deshacer (RF-A6.4)."""
+    return QCoreApplication.translate("Textos", "Confirmar Deshacer con apagado o desprotección")
+
+
+def _lista_maquinas(vmids: Iterable[int], nombres: Mapping[int, str]) -> str:
+    """Una línea «  • nombre (VMID n)» por máquina."""
+    plantilla = QCoreApplication.translate("Textos", "  • {nombre} (VMID {vmid})")
+    return "\n".join(plantilla.format(nombre=nombres.get(v, "?"), vmid=v) for v in vmids)
+
+
+def texto_confirmacion_forzada(inspeccion: InspeccionRollback) -> str:
+    """Confirmación expresa: lista cada máquina que se apagará o desprotegerá (RF-A6.4).
+
+    Indica aparte las que se omitirán por falta de privilegio y las que no se pudieron leer.
+    """
+    n = inspeccion.nombres
+    bloques: list[str] = []
+    if inspeccion.encendidas:
+        bloques.append(
+            QCoreApplication.translate(
+                "Textos",
+                "Se apagarán a la fuerza estas máquinas encendidas. Se perderán los datos que "
+                "no estén guardados:",
+            )
+            + "\n"
+            + _lista_maquinas(inspeccion.encendidas, n)
+        )
+    if inspeccion.protegidas:
+        bloques.append(
+            QCoreApplication.translate(
+                "Textos", "Se quitará la protección contra borrado a estas máquinas:"
+            )
+            + "\n"
+            + _lista_maquinas(inspeccion.protegidas, n)
+        )
+        bloques.append(
+            QCoreApplication.translate(
+                "Textos",
+                "Si no se puede quitar la protección de una máquina, no se eliminará y, si "
+                "estaba encendida, quedará apagada.",
+            )
+        )
+    if inspeccion.encendidas_sin_privilegio:
+        bloques.append(
+            QCoreApplication.translate(
+                "Textos",
+                "Se omitirán porque están encendidas y tu usuario no tiene el privilegio "
+                "VM.PowerMgmt para apagarlas:",
+            )
+            + "\n"
+            + _lista_maquinas(inspeccion.encendidas_sin_privilegio, n)
+        )
+    if inspeccion.protegidas_sin_privilegio:
+        bloques.append(
+            QCoreApplication.translate(
+                "Textos",
+                "Se omitirán porque están protegidas y tu usuario no tiene el privilegio "
+                "VM.Config.Options para quitarles la protección:",
+            )
+            + "\n"
+            + _lista_maquinas(inspeccion.protegidas_sin_privilegio, n)
+        )
+    if inspeccion.ilegibles:
+        bloques.append(
+            QCoreApplication.translate(
+                "Textos",
+                "No se pudo comprobar el estado de estas máquinas. Si están encendidas o "
+                "protegidas se omitirán; si no, se eliminarán:",
+            )
+            + "\n"
+            + _lista_maquinas(inspeccion.ilegibles, n)
+        )
+    bloques.append(
+        QCoreApplication.translate(
+            "Textos",
+            "Después se eliminarán junto con las demás máquinas que elegiste. Solo se tocan "
+            "máquinas creadas por este lote; esto no se puede deshacer.",
+        )
+        if inspeccion.hay_forzables
+        else QCoreApplication.translate(
+            "Textos",
+            "El resto de las máquinas que elegiste se eliminará como siempre. Solo se tocan "
+            "máquinas creadas por este lote; esto no se puede deshacer.",
+        )
+    )
+    return "\n\n".join(bloques)
+
+
+def texto_casilla_confirmar_forzado() -> str:
+    return QCoreApplication.translate(
+        "Textos", "Entiendo que se apagarán o desprotegerán máquinas y que puedo perder datos"
+    )
+
+
+def texto_boton_deshacer_forzado() -> str:
+    return QCoreApplication.translate("Textos", "Apagar, desproteger y eliminar")
+
+
+def texto_boton_deshacer_sin_forzar() -> str:
+    return QCoreApplication.translate("Textos", "Eliminar sin apagar ni desproteger")
+
+
+def texto_explicacion_sin_forzar() -> str:
+    return QCoreApplication.translate(
+        "Textos",
+        "Si eliges «Eliminar sin apagar ni desproteger», esas máquinas se omiten y se quedan "
+        "en Proxmox; el resto se elimina como siempre.",
+    )
+
+
+def texto_boton_cancelar_deshacer() -> str:
+    return QCoreApplication.translate("Textos", "Cancelar")
+
+
+def texto_inspeccion_fallida() -> str:
+    """No se pudo comprobar el estado de las máquinas antes de deshacer."""
+    return QCoreApplication.translate(
+        "Textos",
+        "No se pudo comprobar el estado de las máquinas antes de deshacer. No se eliminó "
+        "nada; inténtalo de nuevo.",
+    )
+
+
+def texto_comprobando_antes_de_deshacer() -> str:
+    return QCoreApplication.translate("Textos", "Comprobando las máquinas antes de deshacer…")
+
+
+def texto_detalle_rollback(acciones: tuple[str, ...], error: ErrorProxLaunch | None) -> str:
+    """Detalle de una máquina al deshacer: lo hecho (si no es solo borrar) y el motivo si falló.
+
+    CA-A6.4.3: el informe lista por máquina las acciones realizadas y las omitidas con motivo.
+    """
+    partes: list[str] = []
+    if acciones and acciones != ("borrada",):
+        partes.append(
+            QCoreApplication.translate("Textos", "Hecho: {acciones}.").format(
+                acciones=texto_acciones_rollback(acciones).lower()
+            )
+        )
+    if error is not None:
+        partes.append(texto_error(error))
+    return " ".join(partes)
+
+
+# --- Fase A: formulario y resúmenes (I5a) ---
+
+
+def _texto_aviso_fase_a(codigo: str) -> str:
+    """Avisos de máquina de la fase A (encendido y ajustes de arranque o protección)."""
+    if codigo == "encendido_fallido":
+        return QCoreApplication.translate(
+            "Textos",
+            "Se creó, pero no se pudo encender. Enciéndela desde Proxmox si la necesitas.",
+        )
+    if codigo == "encendido_omitido":
+        return QCoreApplication.translate(
+            "Textos",
+            "No se encendió: quedaron ajustes por aplicar o su creación se confirmó después "
+            "(al comprobarla). Revisa la máquina y, si hace falta, enciéndela desde Proxmox.",
+        )
+    if codigo == "notas_plantilla_ilegible":
+        return QCoreApplication.translate(
+            "Textos",
+            "No se añadieron las notas de origen: no se pudo leer la descripción de la "
+            "plantilla y así no se pisan sus notas.",
+        )
+    if codigo == "ajuste_pendiente:arranque":
+        return QCoreApplication.translate(
+            "Textos",
+            "Se creó, pero falta aplicar el arranque con el servidor. Puedes reintentar los "
+            "ajustes.",
+        )
+    if codigo == "ajuste_pendiente:proteccion":
+        return QCoreApplication.translate(
+            "Textos",
+            "Se creó, pero falta aplicar la protección contra borrado. Puedes reintentar los "
+            "ajustes.",
+        )
+    return ""
+
+
+def _texto_v_a03(prm: Mapping[str, str]) -> str:
+    """Mensaje de V-A03 (etiqueta rechazada por la política del centro de datos)."""
+    motivo = prm.get("motivo", "")
+    if motivo == "registrada":
+        return _fmt(
+            QCoreApplication.translate(
+                "Textos",
+                "La etiqueta «{etiqueta}» está registrada en el centro de datos y tu "
+                "usuario no puede aplicarla (hace falta Sys.Modify en «/»). Pídele a tu "
+                "administrador que la aplique o que la quite del registro.",
+            ),
+            prm,
+        )
+    if motivo == "ninguna_permitida":
+        return _fmt(
+            QCoreApplication.translate(
+                "Textos",
+                "El centro de datos no deja a tu usuario poner etiquetas (política «none») "
+                "y esta máquina llevaría «{etiqueta}». Pídele a tu administrador que la "
+                "autorice.",
+            ),
+            prm,
+        )
+    return _fmt(
+        QCoreApplication.translate(
+            "Textos",
+            "Tu administrador no ha autorizado la etiqueta «{etiqueta}». Pídele que la "
+            "añada a las etiquetas permitidas del centro de datos.",
+        ),
+        prm,
+    )
+
+
+def _texto_problema_fase_a(p: Problema) -> str | None:
+    """Mensaje de las reglas V-A01..V-A16 (opciones de la fase A); ``None`` si no es una."""
+    cod = p.codigo
+    prm = p.params
+    if cod == "V-A01":
+        campo = (
+            QCoreApplication.translate("Textos", "La espera de arranque")
+            if p.campo == "arranque_espera"
+            else QCoreApplication.translate("Textos", "El orden de arranque")
+        )
+        return _fmt(
+            QCoreApplication.translate("Textos", "{campo} debe ser un número entero de 0 o más."),
+            prm,
+            campo=campo,
+        )
+    if cod == "V-A02":
+        return _fmt(
+            QCoreApplication.translate(
+                "Textos",
+                "La etiqueta «{etiqueta}» no es válida: usa minúsculas, números, «_», «-», «+» "
+                "y «.», sin espacios, y empieza por una letra, un número o «_» (máximo 128 "
+                "caracteres).",
+            ),
+            prm,
+        )
+    if cod == "V-A03":
+        base = _texto_v_a03(prm)
+        if prm.get("incierto"):
+            # QA-A-10: sin saber si el usuario tiene Sys.Modify, la política es solo un aviso.
+            base += " " + QCoreApplication.translate(
+                "Textos",
+                "No se pudieron leer tus permisos, así que quizá Proxmox sí la acepte.",
+            )
+        return base
+    if cod == "V-A04":
+        return _fmt(
+            QCoreApplication.translate(
+                "Textos",
+                "El MTU de la tarjeta {tarjeta} debe ser «Igual al bridge» o un número entre "
+                "576 y 65520.",
+            ),
+            prm,
+        )
+    if cod == "V-A05":
+        return _fmt(
+            QCoreApplication.translate(
+                "Textos",
+                "El MTU de la tarjeta {tarjeta} solo se aplica a tarjetas VirtIO. Elige "
+                "VirtIO o deja el MTU en «Heredar del bridge».",
+            ),
+            prm,
+        )
+    if cod == "V-A06":
+        return _fmt(
+            QCoreApplication.translate(
+                "Textos",
+                "El límite de velocidad de la tarjeta {tarjeta} debe ser un número mayor que "
+                "0 y no superior a 1 000 000 000 (en MB/s).",
+            ),
+            prm,
+        )
+    if cod == "V-A07":
+        return _fmt(
+            QCoreApplication.translate(
+                "Textos",
+                "Las notas ocupan {total} caracteres y Proxmox admite {limite}: sobran "
+                "{sobran}. Acórtalas.",
+            ),
+            prm,
+        )
+    if cod == "V-A08":
+        return _fmt(
+            QCoreApplication.translate(
+                "Textos",
+                "Las notas ocupan {total} de los {limite} caracteres que admite Proxmox: "
+                "queda poco espacio.",
+            ),
+            prm,
+        )
+    if cod == "V-A09":
+        return QCoreApplication.translate(
+            "Textos",
+            "No se pudo leer la política de etiquetas del centro de datos, así que no se pudo "
+            "comprobar si tus etiquetas están permitidas. Si Proxmox las rechaza, la máquina "
+            "no se creará.",
+        )
+    if cod == "V-A10":
+        return _fmt(
+            QCoreApplication.translate("Textos", "El pool «{pool}» no existe en este servidor."),
+            prm,
+        )
+    if cod == "V-A11":
+        return _fmt(
+            QCoreApplication.translate(
+                "Textos",
+                "No se pudo comprobar que el pool «{pool}» exista (no se puede leer la lista "
+                "de pools). Proxmox lo verificará al crear.",
+            ),
+            prm,
+        )
+    if cod == "V-A12":
+        sin_version = prm.get("motivo") == str(CodigoError.OPCION_SIN_VERSION)
+        error = ErrorProxLaunch(
+            CodigoError.OPCION_SIN_VERSION if sin_version else CodigoError.OPCION_SIN_PRIVILEGIO,
+            dict(prm),
+        )
+        return texto_error(error)
+    if cod == "V-A13":
+        return QCoreApplication.translate(
+            "Textos",
+            "No se pudo leer la descripción de la plantilla: no se añadirán las notas para no "
+            "pisar las suyas.",
+        )
+    if cod == "V-A14":
+        return QCoreApplication.translate(
+            "Textos",
+            "Las notas tienen caracteres de control (no imprimibles): se eliminarán al crear.",
+        )
+    if cod == "V-A16":
+        return QCoreApplication.translate(
+            "Textos",
+            "El nombre del pool no es válido: usa letras, números, «_» y «-», y «/» para "
+            "separar pools anidados (hasta 3 niveles).",
+        )
+    if cod == "V-A15":
+        return _fmt(
+            QCoreApplication.translate(
+                "Textos",
+                "Para crear la máquina en el pool «{pool}» falta el privilegio VM.Allocate en "
+                "«{ruta}» o en «{ruta_pool}».",
+            ),
+            prm,
+        )
+    return None
+
+
+def texto_estado_opcion(estado: EstadoOpcion) -> str:
+    """Por qué una opción de la fase A está deshabilitada o con reservas (vacío si está libre).
+
+    Nombra el privilegio y la ruta (o la versión de Proxmox) que faltan.
+    """
+    if estado.disponibilidad == Disponibilidad.SI:
+        return ""
+    if estado.codigo is not None:
+        return texto_error(ErrorProxLaunch(estado.codigo, dict(estado.params)))
+    motivo = estado.params.get("motivo")
+    if motivo == "sin_pools":
+        return QCoreApplication.translate("Textos", "No hay pools en este servidor.")
+    if motivo == "no_leido":
+        return QCoreApplication.translate(
+            "Textos", "Todavía no se leyó la lista de pools del servidor."
+        )
+    return QCoreApplication.translate("Textos", "No disponible.")
+
+
+def texto_opcion_restablecida(opcion: str, motivo: str) -> str:
+    """Aviso de que una opción volvió a su valor por defecto (CL-A15): «motivo» explica por qué."""
+    texto = QCoreApplication.translate(
+        "Textos", "Se restableció «{opcion}» a su valor por defecto."
+    ).format(opcion=texto_nombre_opcion_fase_a(opcion))
+    return f"{texto} {motivo}".strip()
+
+
+def texto_mtu_solo_virtio() -> str:
+    return QCoreApplication.translate(
+        "Textos", "El MTU solo se aplica a tarjetas VirtIO: con otra tarjeta queda en «Heredar»."
+    )
+
+
+def texto_si_no(valor: bool) -> str:
+    return (
+        QCoreApplication.translate("Textos", "sí")
+        if valor
+        else QCoreApplication.translate("Textos", "no")
+    )
+
+
+def texto_mtu(mtu: int | None) -> str:
+    """MTU de una tarjeta como lo ve el usuario («Heredar del bridge», «Igual al bridge», 1500)."""
+    if mtu is None:
+        return QCoreApplication.translate("Textos", "Heredar del bridge")
+    if mtu == 1:
+        return QCoreApplication.translate("Textos", "Igual al bridge")
+    return str(mtu)
+
+
+def texto_limite_mb(limite: float) -> str:
+    """Límite de velocidad en MB/s sin ceros sobrantes (100 → «100 MB/s», 12.5 → «12.5 MB/s»)."""
+    return QCoreApplication.translate("Textos", "{valor} MB/s").format(
+        valor=formato_limite(limite) if math.isfinite(limite) else f"{limite:g}"
+    )
+
+
+def _recorte(texto: str, maximo: int = 60) -> str:
+    una_linea = " ".join(texto.split())
+    return una_linea if len(una_linea) <= maximo else una_linea[: maximo - 1] + "…"
+
+
+def lineas_opciones_fase_a(cfg: ConfiguracionVM, *, avanzado: bool) -> list[tuple[str, str]]:
+    """Líneas «etiqueta, valor» de las opciones de la fase A para el Resumen (RF-A0.1).
+
+    Solo salen las que difieren del valor por defecto de 0.5.1, salvo «Notas de origen», que
+    sale siempre. Las avanzadas (orden, espera, protección) solo si ``avanzado``: en modo
+    básico las lista ``opciones_avanzadas_fase_a`` como ocultas.
+    """
+    lineas: list[tuple[str, str]] = []
+    origen = texto_si_no(cfg.notas_origen)
+    if cfg.notas_origen and cfg.notas_usuario:
+        origen = QCoreApplication.translate("Textos", "sí, con tu usuario")
+    lineas.append((QCoreApplication.translate("Textos", "Notas de origen"), origen))
+    if cfg.notas.strip():
+        lineas.append((QCoreApplication.translate("Textos", "Notas"), _recorte(cfg.notas)))
+    if cfg.encender:
+        lineas.append(
+            (QCoreApplication.translate("Textos", "Encender al terminar"), texto_si_no(True))
+        )
+    if cfg.arranque_auto:
+        lineas.append(
+            (QCoreApplication.translate("Textos", "Arrancar con el servidor"), texto_si_no(True))
+        )
+    if cfg.etiquetas_usuario:
+        lineas.append(
+            (QCoreApplication.translate("Textos", "Etiquetas"), ", ".join(cfg.etiquetas_usuario))
+        )
+    if cfg.pool is not None:
+        lineas.append((QCoreApplication.translate("Textos", "Pool"), cfg.pool))
+    if avanzado:
+        lineas.extend(_lineas_avanzadas_fase_a(cfg))
+    return lineas
+
+
+def _lineas_avanzadas_fase_a(cfg: ConfiguracionVM) -> list[tuple[str, str]]:
+    lineas: list[tuple[str, str]] = []
+    if cfg.arranque_orden is not None:
+        lineas.append(
+            (QCoreApplication.translate("Textos", "Orden de arranque"), str(cfg.arranque_orden))
+        )
+    if cfg.arranque_espera is not None:
+        lineas.append(
+            (
+                QCoreApplication.translate("Textos", "Espera de arranque"),
+                QCoreApplication.translate("Textos", "{n} s").format(n=cfg.arranque_espera),
+            )
+        )
+    if cfg.proteger:
+        lineas.append(
+            (QCoreApplication.translate("Textos", "Proteger contra borrado"), texto_si_no(True))
+        )
+    return lineas
+
+
+def opciones_avanzadas_fase_a(cfg: ConfiguracionVM, *, con_red: bool = True) -> list[str]:
+    """Opciones avanzadas de la fase A que se aplicarán aunque el modo básico las oculte.
+
+    ``con_red=False`` omite MTU y límite (un clon hereda la red de la plantilla).
+    """
+    lineas = [f"{nombre}: {valor}" for nombre, valor in _lineas_avanzadas_fase_a(cfg)]
+    for i, r in enumerate(cfg.redes if con_red else ()):
+        if r.mtu is not None:
+            lineas.append(
+                QCoreApplication.translate("Textos", "Red {n}: MTU {valor}").format(
+                    n=i + 1, valor=texto_mtu(r.mtu)
+                )
+            )
+        if r.limite_mb is not None:
+            lineas.append(
+                QCoreApplication.translate("Textos", "Red {n}: límite {valor}").format(
+                    n=i + 1, valor=texto_limite_mb(r.limite_mb)
+                )
+            )
+    return lineas
+
+
+def texto_detalle_red_fase_a(mtu: int | None, limite_mb: float | None, *, virtio: bool) -> str:
+    """Sufijo de la línea de una tarjeta en el Resumen: «, MTU 1500, límite 100 MB/s»."""
+    partes: list[str] = []
+    if mtu is not None:
+        parte = QCoreApplication.translate("Textos", "MTU {valor}").format(valor=texto_mtu(mtu))
+        if not virtio:
+            parte += QCoreApplication.translate("Textos", " (se ignora: no es VirtIO)")
+        partes.append(parte)
+    if limite_mb is not None:
+        partes.append(
+            QCoreApplication.translate("Textos", "límite {valor}").format(
+                valor=texto_limite_mb(limite_mb)
+            )
+        )
+    return "".join(f", {x}" for x in partes)

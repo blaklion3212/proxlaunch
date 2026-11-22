@@ -198,8 +198,13 @@ def definicion_para_reintento(
             for t in cfg.etiquetas
             if t != ETIQUETA_APP and not t.startswith(PREFIJO_ETIQUETA_LOTE)
         )
-        origen = (
-            definicion.filas[e.indice].origen if 0 <= e.indice < len(definicion.filas) else None
+        fila_original = (
+            definicion.filas[e.indice] if 0 <= e.indice < len(definicion.filas) else None
         )
-        filas.append(FilaLote(e.nombre, cfg, vmid=e.vmid, nodo=e.nodo, origen=origen))
+        origen = fila_original.origen if fila_original is not None else None
+        # QA-A-09: el reintento conserva el perfil de la fila para la línea «Perfil:» de las notas.
+        perfil = fila_original.perfil if fila_original is not None else None
+        filas.append(
+            FilaLote(e.nombre, cfg, vmid=e.vmid, nodo=e.nodo, origen=origen, perfil=perfil)
+        )
     return replace(definicion, filas=tuple(filas), cantidad=len(filas), vmid_inicial=None)

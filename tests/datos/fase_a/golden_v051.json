@@ -1,0 +1,271 @@
+{
+  "version_codigo": "0.5.1",
+  "escenarios": {
+    "vacio_basico": {
+      "version": [
+        9,
+        2
+      ],
+      "parametros": {
+        "vmid": "100",
+        "name": "srv-web-01",
+        "sockets": "1",
+        "cores": "2",
+        "cpu": "x86-64-v2-AES",
+        "memory": "2048",
+        "scsihw": "virtio-scsi-single",
+        "scsi0": "local-lvm:32,discard=on,ssd=1,iothread=1",
+        "net0": "virtio,bridge=vmbr0"
+      }
+    },
+    "vacio_basico_sin_version": {
+      "version": null,
+      "parametros": {
+        "vmid": "100",
+        "name": "srv-web-01",
+        "sockets": "1",
+        "cores": "2",
+        "cpu": "x86-64-v2-AES",
+        "memory": "2048",
+        "scsihw": "virtio-scsi-single",
+        "scsi0": "local-lvm:32,discard=on,ssd=1,iothread=1",
+        "net0": "virtio,bridge=vmbr0"
+      }
+    },
+    "vacio_etiquetado_9_2": {
+      "version": [
+        9,
+        2
+      ],
+      "parametros": {
+        "vmid": "100",
+        "name": "srv-web-01",
+        "sockets": "1",
+        "cores": "2",
+        "cpu": "x86-64-v2-AES",
+        "memory": "2048",
+        "scsihw": "virtio-scsi-single",
+        "scsi0": "local-lvm:32,discard=on,ssd=1,iothread=1",
+        "net0": "virtio,bridge=vmbr0",
+        "tags": "proxlaunch;lote-ab12cd34"
+      }
+    },
+    "vacio_etiquetado_8_0": {
+      "version": [
+        8,
+        0
+      ],
+      "parametros": {
+        "vmid": "100",
+        "name": "srv-web-01",
+        "sockets": "1",
+        "cores": "2",
+        "cpu": "x86-64-v2-AES",
+        "memory": "2048",
+        "scsihw": "virtio-scsi-single",
+        "scsi0": "local-lvm:32,discard=on,ssd=1,iothread=1",
+        "net0": "virtio,bridge=vmbr0",
+        "tags": "proxlaunch;lote-ab12cd34"
+      }
+    },
+    "vacio_avanzado": {
+      "version": [
+        9,
+        2
+      ],
+      "parametros": {
+        "vmid": "100",
+        "name": "srv-web-01",
+        "bios": "ovmf",
+        "machine": "q35",
+        "efidisk0": "dirimg:1,efitype=4m,pre-enrolled-keys=1,format=qcow2",
+        "sockets": "2",
+        "cores": "4",
+        "cpu": "x86-64-v2-AES",
+        "memory": "8192",
+        "balloon": "2048",
+        "scsihw": "virtio-scsi-single",
+        "scsi0": "dirimg:40,discard=on,ssd=1,iothread=1,format=qcow2",
+        "virtio0": "zfs1:100,iothread=1",
+        "sata0": "local-lvm:8,discard=on,ssd=1",
+        "net0": "virtio,bridge=vmbr0,tag=25",
+        "net1": "e1000,bridge=vmbr0",
+        "tags": "proxlaunch;lote-ab12cd34"
+      }
+    },
+    "vacio_sin_disco_sin_red": {
+      "version": [
+        9,
+        2
+      ],
+      "parametros": {
+        "vmid": "100",
+        "name": "srv-web-01",
+        "sockets": "1",
+        "cores": "2",
+        "cpu": "x86-64-v2-AES",
+        "memory": "2048"
+      }
+    },
+    "iso_linux": {
+      "version": [
+        9,
+        2
+      ],
+      "parametros": {
+        "vmid": "100",
+        "name": "srv-web-01",
+        "sockets": "1",
+        "cores": "2",
+        "cpu": "x86-64-v2-AES",
+        "memory": "2048",
+        "scsihw": "virtio-scsi-single",
+        "ostype": "l26",
+        "scsi0": "local-lvm:32,discard=on,ssd=1,iothread=1",
+        "ide2": "local:iso/alpine.iso,media=cdrom",
+        "boot": "order=scsi0;ide2;net0",
+        "net0": "virtio,bridge=vmbr0",
+        "tags": "proxlaunch;lote-ab12cd34"
+      }
+    },
+    "iso_windows_con_drivers": {
+      "version": [
+        9,
+        2
+      ],
+      "parametros": {
+        "vmid": "100",
+        "name": "srv-web-01",
+        "bios": "ovmf",
+        "machine": "q35",
+        "efidisk0": "local-lvm:1,efitype=4m,pre-enrolled-keys=1",
+        "sockets": "1",
+        "cores": "2",
+        "cpu": "x86-64-v2-AES",
+        "memory": "2048",
+        "scsihw": "virtio-scsi-single",
+        "ostype": "win11",
+        "scsi0": "local-lvm:32,discard=on,ssd=1,iothread=1",
+        "tpmstate0": "local-lvm:1,version=v2.0",
+        "ide2": "local:iso/alpine.iso,media=cdrom",
+        "ide0": "local:iso/virtio-win-0.1.271.iso,media=cdrom",
+        "boot": "order=scsi0;ide2;net0",
+        "net0": "virtio,bridge=vmbr0",
+        "agent": "1"
+      }
+    },
+    "iso_otro": {
+      "version": [
+        8,
+        4
+      ],
+      "parametros": {
+        "vmid": "100",
+        "name": "srv-web-01",
+        "sockets": "1",
+        "cores": "2",
+        "cpu": "x86-64-v2-AES",
+        "memory": "2048",
+        "scsihw": "virtio-scsi-single",
+        "ostype": "other",
+        "scsi0": "local-lvm:32,discard=on,ssd=1,iothread=1",
+        "ide2": "local:iso/alpine.iso,media=cdrom",
+        "boot": "order=scsi0;ide2;net0",
+        "net0": "virtio,bridge=vmbr0"
+      }
+    },
+    "importar_basico": {
+      "version": [
+        9,
+        2
+      ],
+      "parametros": {
+        "vmid": "100",
+        "name": "srv-web-01",
+        "sockets": "1",
+        "cores": "2",
+        "cpu": "x86-64-v2-AES",
+        "memory": "2048",
+        "scsihw": "virtio-scsi-single",
+        "scsi0": "local-lvm:0,import-from=local:import/cirros.qcow2,discard=on,ssd=1,iothread=1",
+        "net0": "virtio,bridge=vmbr0"
+      }
+    },
+    "importar_ampliado_etiquetado": {
+      "version": [
+        9,
+        2
+      ],
+      "parametros": {
+        "vmid": "100",
+        "name": "srv-web-01",
+        "bios": "ovmf",
+        "machine": "q35",
+        "efidisk0": "local-lvm:1,efitype=4m,pre-enrolled-keys=1",
+        "sockets": "1",
+        "cores": "2",
+        "cpu": "x86-64-v2-AES",
+        "memory": "2048",
+        "scsihw": "virtio-scsi-single",
+        "scsi0": "local-lvm:0,import-from=local:import/cirros.qcow2,discard=on,ssd=1,iothread=1",
+        "net0": "virtio,bridge=vmbr0",
+        "agent": "1",
+        "tags": "proxlaunch;lote-ab12cd34"
+      }
+    },
+    "clon_enlazado": {
+      "nodo_plantilla": "pve1",
+      "vmid_plantilla": 9000,
+      "parametros": {
+        "newid": "100",
+        "name": "srv-web-01"
+      },
+      "ajustes_config": {},
+      "ajustes_disco": null
+    },
+    "clon_enlazado_etiquetado": {
+      "nodo_plantilla": "pve1",
+      "vmid_plantilla": 9000,
+      "parametros": {
+        "newid": "100",
+        "name": "srv-web-01"
+      },
+      "ajustes_config": {
+        "tags": "lote-ab12cd34;plantilla;proxlaunch"
+      },
+      "ajustes_disco": null
+    },
+    "clon_completo_storage_otro_nodo": {
+      "nodo_plantilla": "pve1",
+      "vmid_plantilla": 9000,
+      "parametros": {
+        "newid": "100",
+        "name": "srv-web-01",
+        "full": "1",
+        "storage": "local-lvm",
+        "target": "pve2"
+      },
+      "ajustes_config": {
+        "tags": "lote-ab12cd34;plantilla;proxlaunch"
+      },
+      "ajustes_disco": null
+    },
+    "clon_con_ajustes": {
+      "nodo_plantilla": "pve1",
+      "vmid_plantilla": 9000,
+      "parametros": {
+        "newid": "100",
+        "name": "srv-web-01"
+      },
+      "ajustes_config": {
+        "cores": "4",
+        "memory": "4096",
+        "tags": "lote-ab12cd34;plantilla;proxlaunch"
+      },
+      "ajustes_disco": [
+        "scsi0",
+        64
+      ]
+    }
+  }
+}

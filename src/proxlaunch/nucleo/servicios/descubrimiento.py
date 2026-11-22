@@ -9,6 +9,7 @@ from concurrent.futures import ThreadPoolExecutor
 from proxlaunch.nucleo.errores import CodigoError, ErrorProxLaunch
 from proxlaunch.nucleo.modelos.catalogo import CatalogoServidor
 from proxlaunch.nucleo.modelos.inventario import Bridge, Inventario, Nodo, Storage, Topologia
+from proxlaunch.nucleo.servicios.catalogo import leer_politica_etiquetas, leer_pools
 from proxlaunch.nucleo.servicios.conexion import Aviso, CodigoAviso, Sesion, leer_permisos
 from proxlaunch.nucleo.validacion import TIPOS_BRIDGE
 
@@ -123,6 +124,9 @@ def descubrir(sesion: Sesion) -> Inventario:
     # Los permisos efectivos se leen UNA vez aquí (antes los pedía RF-12 por su cuenta). El
     # resto del catálogo (listados, plantillas, formatos) se lee bajo demanda con
     # ``ServicioCatalogo``. Si la consulta falla quedan como desconocidos (``None``).
+    # Fase A: pools y política de etiquetas (dos GET por conexión, nunca por MV).
+    permisos = leer_permisos(sesion)
+    politica, politica_fallida = leer_politica_etiquetas(sesion.cliente)
     return Inventario(
         version=sesion.version,
         topologia=topologia,
@@ -131,5 +135,10 @@ def descubrir(sesion: Sesion) -> Inventario:
         bridges=bridges,
         errores_por_nodo=errores,
         storages_todos=storages_todos,
-        catalogo=CatalogoServidor(permisos=leer_permisos(sesion)),
+        catalogo=CatalogoServidor(
+            permisos=permisos,
+            pools=leer_pools(sesion.cliente, permisos),
+            politica_etiquetas=politica,
+            politica_etiquetas_fallida=politica_fallida,
+        ),
     )

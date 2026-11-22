@@ -287,7 +287,8 @@ class DialogoGuardarPerfil(_DialogoBaseNombre):
             QCoreApplication.translate(
                 "DialogoGuardarPerfil",
                 "Se guardará el hardware actual del formulario: procesador, memoria, discos y "
-                "redes. No se guarda el nombre de la máquina, su número ni el nodo.",
+                "redes (con su MTU y límite de velocidad), y si arranca con el servidor. No se "
+                "guarda el nombre de la máquina, su número ni el nodo.",
             ),
             secundario=True,
         )

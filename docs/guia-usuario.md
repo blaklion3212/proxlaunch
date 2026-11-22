@@ -14,16 +14,21 @@ Con ProxLaunch puedes:
   (qcow2, vmdk, raw) o la copia de una plantilla de Proxmox;
 - crear **hasta 100 máquinas iguales** de una vez (un **lote**), simular antes de crear y deshacer después;
 - **reutilizar configuraciones** (perfiles de máquina) y **guardar y abrir lotes** como archivos;
-- **importar una hoja de cálculo (CSV)** en la que cada fila es una máquina distinta.
+- **importar una hoja de cálculo (CSV)** en la que cada fila es una máquina distinta;
+- **dejar la máquina lista para trabajar**: encenderla al terminar, hacer que arranque con el servidor, añadirle
+  notas, etiquetas propias, ponerla en un pool, protegerla contra borrado y ajustar el MTU y el límite de velocidad
+  de su red (ver [Opciones de la máquina](#opciones-de-la-máquina)).
 
-Todas las máquinas se crean **detenidas**: ProxLaunch nunca las enciende ni instala el sistema operativo
-por ti (con un ISO, la instalación la terminas tú desde la consola de Proxmox).
+Por defecto todas las máquinas se crean **detenidas**: solo se encienden si marcas **Encender al terminar**. ProxLaunch
+nunca instala el sistema operativo por ti (con un ISO, la instalación la terminas tú desde la consola de Proxmox).
 
 > **Qué se ha verificado.** ProxLaunch se probó contra un Proxmox VE 9.2 real con un servidor
 > individual. Los clústeres de varios nodos (incluido el reparto de un lote entre nodos), Proxmox 8.x
 > (incluida la importación de discos en 8.4 o superior) solo se verificaron con respuestas simuladas, y la
-> instalación de Windows no se probó con un ISO de Windows real (las pruebas usaron Linux). Si usas esos casos, revisa
-> siempre el resumen y simula antes de crear.
+> instalación de Windows no se probó con un ISO de Windows real (las pruebas usaron Linux). Las opciones de la máquina de
+> la versión 0.6 (encender, notas, etiquetas, pool, protección, MTU y límite, y el Deshacer con apagado y desprotección) se
+> verificaron con respuestas simuladas de Proxmox, no contra un servidor real. Si usas esos casos, revisa siempre el
+> resumen y simula antes de crear.
 
 ## Cómo leer este manual
 
@@ -48,7 +53,9 @@ por ti (con un ISO, la instalación la terminas tú desde la consola de Proxmox)
    «Recordar credenciales», huella del certificado (TOFU) y segundo factor
 4. [Crear una máquina en modo básico](#crear-una-máquina-en-modo-básico): recorrido de la ventana y cada
    sección del formulario
-5. [Modo avanzado](#modo-avanzado) y [tema](#cambiar-el-tema)
+5. [Modo avanzado](#modo-avanzado) y [tema](#cambiar-el-tema), con las
+   [opciones de la máquina](#opciones-de-la-máquina): encender, arrancar con el servidor, notas, etiquetas, pool,
+   protección, MTU y límite de red
 6. [Elegir el origen del sistema operativo](#elegir-el-origen-del-sistema-operativo): vacía, ISO, disco
    existente y plantilla
 7. [Transferencias: subir y descargar archivos](#transferencias-subir-y-descargar-archivos)
@@ -62,7 +69,8 @@ por ti (con un ISO, la instalación la terminas tú desde la consola de Proxmox)
 14. [Cambios sin guardar](#cambios-sin-guardar)
 15. [Menús y ajustes](#menús-y-ajustes)
 16. [Referencia de ventanas y menús](#referencia-de-ventanas-y-menús)
-17. [Formatos de archivo](#formatos-de-archivo)
+17. [Formatos de archivo](#formatos-de-archivo): CSV, lotes y perfiles, versiones del formato y
+    [compatibilidad con 0.5.1](#compatibilidad-con-versiones-anteriores)
 18. [Solución de problemas](#solución-de-problemas): mensajes de error y preguntas frecuentes
 19. [Privacidad y seguridad](#privacidad-y-seguridad)
 20. [Glosario](#glosario)
@@ -84,6 +92,7 @@ el formulario ([lotes](#crear-varias-máquinas-de-una-vez-lotes)), cómo se guar
 | Repetir ese lote otro día o en otro servidor | Un lote guardado | [Guardar y abrir lotes](#guardar-y-abrir-lotes) |
 | Máquinas **distintas** entre sí (hardware, origen, nodo por fila) | Un CSV | [Importar desde CSV](#importar-máquinas-desde-un-csv) |
 | Partir siempre del mismo hardware (por ejemplo «servidor web de la oficina») | Un perfil de máquina | [Perfiles](#perfiles-de-máquina) |
+| Que las máquinas salgan encendidas, con notas, etiquetas, pool o protección | Las opciones de la máquina | [Opciones de la máquina](#opciones-de-la-máquina) |
 
 ---
 
@@ -96,8 +105,8 @@ todo lo que necesitan. Quien desarrolla o prefiere ejecutar desde el código fue
 
 Los archivos se llaman:
 
-- `proxlaunch_0.5.1_amd64.deb` (Ubuntu 22.04 y 24.04)
-- `proxlaunch-0.5.1-windows-x64-setup.exe` (Windows 10 y 11)
+- `proxlaunch_0.6.0_amd64.deb` (Ubuntu 22.04 y 24.04)
+- `proxlaunch-0.6.0-windows-x64-setup.exe` (Windows 10 y 11)
 - `SHA256SUMS` (las sumas de control de los dos, para comprobar que no están dañados ni alterados)
 
 ### Comprobar la descarga (recomendado)
@@ -111,12 +120,12 @@ En **Ubuntu**, desde la carpeta donde dejaste los archivos (`--ignore-missing` e
 sha256sum -c SHA256SUMS --ignore-missing
 ```
 
-Debe responder `proxlaunch_0.5.1_amd64.deb: OK`.
+Debe responder `proxlaunch_0.6.0_amd64.deb: OK`.
 
 En **Windows**, en PowerShell, desde esa carpeta:
 
 ```powershell
-Get-FileHash -Algorithm SHA256 .\proxlaunch-0.5.1-windows-x64-setup.exe
+Get-FileHash -Algorithm SHA256 .\proxlaunch-0.6.0-windows-x64-setup.exe
 ```
 
 Compara el valor de `Hash` con el de la línea del instalador en `SHA256SUMS` (puedes abrirlo con el Bloc de notas;
@@ -130,7 +139,7 @@ mayúsculas y minúsculas no importan).
 **Instalar.** Desde la carpeta del `.deb`:
 
 ```bash
-sudo apt install ./proxlaunch_0.5.1_amd64.deb
+sudo apt install ./proxlaunch_0.6.0_amd64.deb
 ```
 
 Escribe `./` al principio: sin ella, `apt` buscaría un paquete en los repositorios. `apt` instala también las
@@ -173,7 +182,7 @@ y elimina a mano las entradas del servicio `ProxLaunch`.
 
 ### Windows
 
-**Instalar.** Haz doble clic en `proxlaunch-0.5.1-windows-x64-setup.exe`. El asistente está en español.
+**Instalar.** Haz doble clic en `proxlaunch-0.6.0-windows-x64-setup.exe`. El asistente está en español.
 
 - **¿Para quién?** Al inicio eliges entre instalar **solo para ti** (opción predeterminada, no pide permisos de
   administrador) o **para todos los usuarios** del equipo (pide permisos de administrador). Si dudas, deja la
@@ -271,16 +280,47 @@ opciones, indicando qué permiso falta. Donde asignar estos permisos (en todo el
 donde hacen falta) se explica en
 [Permisos para el administrador: alcance acotado](#permisos-para-el-administrador-alcance-acotado).
 
-**Crear lotes, etiquetar las máquinas y deshacer un lote no piden ningún permiso más**: borrar una máquina
-solo exige `VM.Allocate`, que ya está en la lista. Hay una excepción, que depende de cómo
-configuró tu administrador Proxmox (ver [Etiquetas](#etiquetas-qué-son-y-para-qué-sirven)).
+**El rol no cambia en la versión 0.6**: sigue siendo la misma lista de 14 privilegios. Crear lotes, etiquetar las
+máquinas, deshacer un lote y casi todas las [opciones de la máquina](#opciones-de-la-máquina) usan privilegios que ya
+están en la lista (borrar una máquina solo exige `VM.Allocate`). Hay dos privilegios **opcionales** que no forman parte
+del rol y habilitan funciones concretas (ver [Privilegios opcionales](#privilegios-opcionales-no-forman-parte-del-rol)).
+Tu administrador, además, puede restringir qué etiquetas se pueden poner (ver
+[Etiquetas](#etiquetas-propias-y-política-del-centro-de-datos)).
 
 - Sin `VM.Audit`, la máquina se crea, pero ProxLaunch no puede confirmar cómo quedó y lo
   verás como «creada con avisos».
 - Sin `Sys.Audit`, la máquina se crea, pero no verás la memoria y los procesadores libres de
-  cada nodo ni el estado del clúster.
+  cada nodo ni el estado del clúster. Tampoco se puede leer la política de etiquetas del centro de datos (ProxLaunch
+  avisa, pero no bloquea).
 - Sin cualquiera de los demás, Proxmox rechaza la creación. ProxLaunch te avisa al conectar
   de los permisos que faltan.
+
+### Privilegios opcionales (no forman parte del rol)
+
+Son dos y **no hacen falta para crear máquinas**. Sin ellos ProxLaunch **no avisa al conectar**: solo deja
+**desactivada** (no oculta) la opción afectada y escribe debajo qué privilegio falta y dónde. Si ProxLaunch no puede
+leer tus permisos, no desactiva nada y es Proxmox quien decide al crear.
+
+| Privilegio | Ruta | Qué habilita | Sin él |
+|---|---|---|---|
+| `VM.PowerMgmt` | `/vms` | La casilla **Encender al terminar**, y que **Deshacer** pueda apagar a la fuerza las máquinas encendidas del lote. | La casilla sale desactivada; Deshacer **omite** las máquinas encendidas (no las toca). |
+| `Pool.Audit` | `/pool` | Ver la lista de pools para elegir uno en **Pool**. | La lista de pools sale desactivada con el motivo; no se puede elegir pool desde el formulario. |
+
+- **`VM.PowerMgmt` debe concederse en `/vms`** (con propagar), no solo en una máquina concreta: al rellenar el formulario
+  todavía no existe el número de la máquina, así que ProxLaunch solo mira `/vms` para habilitar **Encender al terminar**.
+  Si usas la [asignación acotada](#permisos-para-el-administrador-alcance-acotado), añádelo al rol que asignas en `/vms`.
+- **`Pool.Audit` en `/pool`.** Sin él, Proxmox devuelve la lista de pools **vacía** sin avisar, así que ProxLaunch no puede
+  distinguir «no hay pools» de «no puedes verlos»: usa los permisos para decirlo (ver [Pool](#pool)).
+- **Crear una máquina en un pool no necesita ningún privilegio nuevo**: basta `VM.Allocate` sobre la máquina (`/vms/<vmid>`)
+  o sobre el pool (`/pool/<id>`).
+- **`Sys.Modify` y `Pool.Allocate` nunca se piden.** `Sys.Modify` solo lo tiene el rol Administrator; las etiquetas
+  que dependen de él las autoriza el administrador desde el centro de datos (ver
+  [Etiquetas](#etiquetas-propias-y-política-del-centro-de-datos)).
+
+![Final de la ventana «¿Cómo creo un API Token?» con el apartado «Privilegios opcionales»: el texto «No forman parte del rol «ProxLaunchCreador» y no hacen falta para crear máquinas: sin ellos ProxLaunch solo desactiva la opción afectada y te explica por qué.», las líneas de VM.PowerMgmt en «/vms» y Pool.Audit en «/pool», las notas sobre Sys.Modify y sobre las etiquetas autorizadas por el administrador, y los botones «Copiar texto para mi administrador» y «Cerrar».](img/67-guia-privilegios-opcionales.png)
+
+*La guía del token (**Ayuda > ¿Cómo creo un API Token?**) incluye este apartado, y «Copiar texto para mi administrador»
+lo añade al mensaje (punto 6, «Opcional»).*
 
 ### Cómo se prepara (pasos para el administrador)
 
@@ -522,6 +562,11 @@ capturas de este manual lo muestran entero).
 | **Nombre** | Nombre de la máquina. | Letras sin acentos, números y guiones; sin guion al principio ni al final; sin guion bajo (`_`). Admite puntos entre partes (nombre DNS). | Vacío (marcador «por ejemplo srv-web-01»). | Hasta 253 caracteres; cada parte entre puntos, hasta 63. |
 | **Nodo destino** | Dónde se crea. **Solo aparece en un clúster.** | **Automático** o **Manual** (más una lista de nodos). | Automático. | En Automático ProxLaunch elige el nodo con más memoria y espacio libres y lo dice: «Nodo elegido: pve1 (más memoria y espacio libres)». Los nodos apagados salen como «Sin conexión» y no se pueden elegir. |
 
+Debajo de esos campos, el grupo **General** trae las **opciones de la máquina** (encender al terminar, arrancar con el
+servidor, notas, etiquetas y pool; en avanzado, también el orden de arranque y la protección contra borrado). Todas
+vienen en su valor por defecto, que equivale al comportamiento de siempre, salvo **Añadir notas de origen**. Se explican
+una por una en [Opciones de la máquina](#opciones-de-la-máquina).
+
 ![Ventana de trabajo conectada al clúster «demo» con tres nodos: en el grupo General aparece la fila «Nodo destino» con las opciones «Automático» (marcada) y «Manual», y debajo «Nodo elegido: pve1 (más memoria y espacio libres)».](img/14-trabajo-cluster-nodo.png)
 
 #### Un nodo que no responde
@@ -580,12 +625,16 @@ disco se crea **vacío**: ProxLaunch **no instala ningún sistema operativo**.
 | **Red (bridge)** | Básico | El «conmutador virtual» al que se conecta (lo habitual es `vmbr0`). | Los bridges del nodo. | `vmbr0` si existe; si no, el primero. Marcador «Elige una red». | Obligatorio. Los que ya no existen salen como «x (no existe)». Sin redes: «El nodo no tiene redes (bridges) disponibles» y no puedes crear. |
 | **Tarjeta** | Avanzado | El tipo de tarjeta de red. | **VirtIO** (la más rápida) o **Intel E1000** (más compatible con sistemas antiguos). | VirtIO | |
 | **VLAN** | Básico | Etiqueta de VLAN, si tu red la usa. | Entero o vacío. | Vacío («Sin VLAN»). | 1 a 4094. |
+| **MTU** | Avanzado | Tamaño máximo de paquete de la tarjeta. Ver [MTU y límite de velocidad](#mtu-y-límite-de-velocidad-de-la-red). | **Heredar del bridge**, **Igual al bridge** o un número. | Heredar del bridge. | Número de 576 a 65520. Solo con tarjeta **VirtIO**. |
+| **Límite (MB/s)** | Avanzado | Velocidad máxima de la tarjeta. | Número (admite decimales) o vacío («Sin límite»). | Vacío (sin límite). | Mayor que 0 y hasta 1 000 000 000. Vale con cualquier tarjeta. |
 | **Quitar** / **Agregar interfaz** | Básico | Quita o añade una interfaz. | Botones. | | |
 
 ### Resumen y crear
 
 A la derecha, el panel **Resumen** muestra lo que se va a crear: nombre, número, nodo, arranque, procesadores,
-memoria, discos y redes.
+memoria, discos y redes, y debajo las [opciones de la máquina](#opciones-de-la-máquina): la línea **Notas de origen**
+sale siempre, y el resto (**Notas**, **Encender al terminar**, **Arrancar con el servidor**, **Etiquetas**, **Pool**,
+**Orden de arranque**, **Espera de arranque**, **Proteger contra borrado**) solo cuando difieren de su valor por defecto.
 
 - Si algo está mal, el panel lo lista bajo «Para crear la máquina hay que corregir:», el botón **Crear máquina** queda
   desactivado y cada error aparece también junto a su campo:
@@ -596,7 +645,8 @@ memoria, discos y redes.
   aplicarán (ocultas en modo básico)». Nada se aplica a escondidas.
 - Pueden aparecer avisos que **no** bloquean: por ejemplo, si pides más núcleos o memoria de los que tiene el nodo.
 - Con la **Cantidad de máquinas** en 2 o más, el botón pasa a llamarse **Ver resumen** (ver [Lotes](#crear-varias-máquinas-de-una-vez-lotes)).
-- Cuando todo esté bien, pulsa **Crear máquina**. La máquina se crea **detenida**.
+- Cuando todo esté bien, pulsa **Crear máquina**. La máquina se crea **detenida**, salvo que hayas marcado **Encender al
+  terminar**.
 
 ---
 
@@ -610,6 +660,9 @@ escribiste, y ProxLaunch recuerda tu elección. Al volver a **Básico**, las opc
 
 Lo que añade el modo avanzado está en las tablas de la sección anterior (columna **Modo** = Avanzado). Además:
 
+- **Opciones de la máquina:** **Orden de arranque**, **Espera (s)** y **Proteger contra borrado** en el grupo
+  **General**, y las columnas **MTU** y **Límite (MB/s)** en la tabla de red
+  ([Opciones de la máquina](#opciones-de-la-máquina)).
 - **Perfil de máquina:** el botón **Administrar perfiles...** y el menú **Perfiles > Administrar perfiles…**
   ([Perfiles](#perfiles-de-máquina)).
 - **Lote:** separador, número inicial, relleno, VMID inicial, nodos elegidos, reparto y **Etiquetar las máquinas**
@@ -647,6 +700,283 @@ El tema se recuerda entre sesiones.
 ![La misma ventana de trabajo del servidor individual en tema oscuro: fondo gris muy oscuro, textos claros y el mismo formulario y panel Resumen de la captura del modo básico.](img/24-tema-oscuro.png)
 
 ---
+
+## Opciones de la máquina
+
+Desde la versión 0.6, además del hardware, puedes decidir **cómo queda la máquina** al terminar de crearse: si se
+enciende, si arranca con el servidor, qué notas y etiquetas lleva, en qué pool está, si está protegida contra borrado y
+cómo se comporta su red (MTU y límite de velocidad). Estas opciones aparecen en el grupo **General** (y las de red, en la
+tabla **Red**) y funcionan igual en una máquina suelta, en un [lote](#opciones-de-la-máquina-en-un-lote), en un
+[CSV](#columnas-del-csv) y en un [lote guardado](#guardar-y-abrir-lotes).
+
+Todas vienen con un valor por defecto que **reproduce el comportamiento de siempre** (la máquina se crea detenida, sin
+notas propias, sin etiquetas extra, sin pool y sin protección), con una excepción: **Añadir notas de origen** viene
+marcada.
+
+En modo básico ves las que cambian lo que más se usa; el modo avanzado añade el orden de arranque, la protección y las
+columnas de red. Con el modo básico, lo que hayas fijado en avanzado se sigue aplicando y el resumen lo lista bajo
+«Opciones avanzadas que se aplicarán (ocultas en modo básico)».
+
+![Ventana de trabajo en modo básico con todas las opciones de la máquina fijadas: en General, «Encender al terminar», «Arrancar con el servidor», «Añadir notas de origen» e «Incluir mi usuario en las notas» marcadas (con el aviso «Cualquiera con acceso a la máquina en Proxmox podrá ver tu usuario.»), el campo «Notas» con «Servidor web del equipo de ejemplo», «Etiquetas» con «web, produccion» y «Pool» con «produccion». En Red solo se ven la interfaz, el bridge y la VLAN. A la derecha, el panel Resumen con las líneas «Notas de origen: sí, con tu usuario», «Notas», «Encender al terminar», «Arrancar con el servidor», «Etiquetas», «Pool» y, bajo «Opciones avanzadas que se aplicarán (ocultas en modo básico)», el orden y la espera de arranque, la protección y el MTU y el límite de las dos redes.](img/61-opciones-general.png)
+
+*Modo básico. Lo que se fijó en modo avanzado sigue aplicándose y el resumen lo muestra.*
+
+![La misma ventana en modo avanzado: bajo «Pool» aparecen «Orden de arranque» (2), «Espera (s)» (30) y «Proteger contra borrado» (marcada), y la tabla de red añade las columnas «MTU» y «Límite (MB/s)»: net0 con MTU 1500 y límite 100, net1 con MTU «Igual al bridge» y límite 12.5. El grupo Lote muestra «Etiquetar las máquinas».](img/62-opciones-avanzadas.png)
+
+*Modo avanzado: todas las opciones visibles.*
+
+### Resumen de las opciones
+
+| Opción | Modo | Defecto | Qué hace en Proxmox | Privilegio | ¿La guarda un perfil? | Columna CSV |
+|---|---|---|---|---|---|---|
+| **Encender al terminar** | Básico | Desmarcada | Enciende la máquina al final, con una orden aparte. | `VM.PowerMgmt` en `/vms` (**opcional**) | No | `encender` |
+| **Arrancar con el servidor** | Básico | Desmarcada | `onboot=1`: se enciende sola cuando arranca el servidor. | `VM.Config.Options` | **Sí** | `arranque_auto` |
+| **Orden de arranque** | Avanzado | Vacío | Parte `order` de `startup`. | `VM.Config.Options` | No | — |
+| **Espera (s)** | Avanzado | Vacío | Parte `up` de `startup`. | `VM.Config.Options` | No | — |
+| **Añadir notas de origen** | Básico | **Marcada** | Escribe un bloque con la versión, la fecha, el lote y el perfil en las notas (`description`). | `VM.Config.Options` (no en clones) | No | — (usa el formulario) |
+| **Incluir mi usuario en las notas** | Básico | Desmarcada | Añade tu usuario al bloque anterior. | Igual que las notas | No | — (usa el formulario) |
+| **Notas** | Básico | Vacío | Tu texto, en las notas de la máquina. | Igual que las notas | No | `notas` |
+| **Etiquetas** | Básico | Vacío | Tus etiquetas, además de `proxlaunch` y `lote-…`. | `VM.Config.Options` | No | `etiquetas` |
+| **Pool** | Básico | Ninguno | Crea la máquina dentro de un pool existente. | `VM.Allocate` (rol); `Pool.Audit` (**opcional**) para ver la lista | No | `pool` |
+| **Proteger contra borrado** | Avanzado | Desmarcada | `protection=1`: Proxmox no deja eliminarla. | `VM.Config.Options` | No | `proteger` |
+| **MTU** (por tarjeta) | Avanzado | Heredar del bridge | `mtu` en la tarjeta. Solo VirtIO. | `VM.Config.Network` | **Sí** | `mtu` (tarjeta 1) |
+| **Límite (MB/s)** (por tarjeta) | Avanzado | Sin límite | `rate` en la tarjeta. | `VM.Config.Network` | **Sí** | `limite_red` (tarjeta 1) |
+
+«Un perfil» guarda solo el hardware (y, de las opciones, las dos marcadas con **Sí**); ver
+[Perfiles de máquina](#perfiles-de-máquina). Ninguna de las opciones nuevas depende de la versión de Proxmox: funcionan
+de la 8.0 a la 9.2.
+
+### Cuando una opción está desactivada
+
+Si a tu usuario le falta el privilegio que una opción necesita, esa opción **no se oculta: queda desactivada** y debajo
+se explica qué privilegio falta y en qué ruta. Si ya tenía un valor (por ejemplo, de un lote guardado), vuelve a su valor
+por defecto y ProxLaunch lo dice: «Se restableció «Encender al terminar» a su valor por defecto.»
+
+![Ventana de trabajo en modo básico con un usuario sin los privilegios opcionales: «Encender al terminar» desmarcada y desactivada, con el aviso ««Encender al terminar» no está disponible: tu usuario no tiene el privilegio VM.PowerMgmt en «/vms». Pídeselo a tu administrador.»; «Arrancar con el servidor» y «Añadir notas de origen» disponibles, y «Pool» desactivado en «Ninguno» con el aviso «No puedes ver la lista de pools: falta el privilegio Pool.Audit en «/pool». Eso no significa que no existan pools; pídeselo a tu administrador.» El Resumen solo muestra «Notas de origen: sí».](img/63-opciones-deshabilitadas.png)
+
+Si ProxLaunch no consigue leer tus permisos, no desactiva nada: Proxmox decide al crear. Un privilegio concedido solo en
+una máquina concreta (`/vms/<número>`) no basta para habilitar **Encender al terminar**, porque el número todavía no existe
+al rellenar el formulario (ver [Privilegios opcionales](#privilegios-opcionales-no-forman-parte-del-rol)).
+
+### Encender al terminar y arrancar con el servidor
+
+**Encender al terminar** (defecto: desmarcada). Cuando la máquina termina de crearse **y de ajustarse** (por ejemplo,
+cuando ya se ampliaron los discos), ProxLaunch envía una orden de encendido. Es siempre lo **último** que hace con la
+máquina; la petición de creación nunca lleva el encendido. Necesita el privilegio opcional `VM.PowerMgmt` en `/vms`.
+
+- Si la orden de encendido **falla**, la máquina queda **creada y apagada**, se marca como «Lista, con avisos» con el
+  texto «Se creó, pero no se pudo encender. Enciéndela desde Proxmox si la necesitas.» y el lote **sigue** con las demás
+  máquinas. Un fallo al encender nunca pausa el lote ni deshace nada.
+- Si a la máquina le quedan **ajustes por aplicar**, o si se confirmó su creación después (con **Comprobar ahora**), **no se
+  enciende** y el aviso dice: «No se encendió: quedaron ajustes por aplicar o su creación se confirmó después (al
+  comprobarla). Revisa la máquina y, si hace falta, enciéndela desde Proxmox.»
+- Mientras se enciende, la tabla del lote muestra «Ajustando la máquina».
+- Los perfiles **no** guardan esta casilla: cada vez decides tú.
+
+Ejemplo: para dejar listos 10 servidores web ya encendidos, marca **Encender al terminar** antes de **Ver resumen**; en la
+[simulación](#simulación) verás al final de cada máquina la orden `POST …/status/start`.
+
+**Arrancar con el servidor** (defecto: desmarcada). Hace que la máquina se encienda sola cada vez que arranca el servidor
+Proxmox (`onboot=1`). Necesita `VM.Config.Options` (ya está en el rol). Con la casilla desmarcada no se envía nada. Un
+perfil de máquina sí guarda esta casilla. En un clon se aplica en el ajuste posterior a la copia; si ese ajuste falla,
+la máquina existe y ves «Se creó, pero falta aplicar el arranque con el servidor. Puedes reintentar los ajustes.»
+(botón **Reintentar ajustes**).
+
+**Orden de arranque** y **Espera (s)** (modo avanzado, defecto: vacíos). Fijan el orden y el retraso con que Proxmox
+arranca las máquinas cuando arranca el servidor (`startup=order=N,up=S`). Son números enteros de 0 en adelante; un campo
+vacío omite su parte y, con los dos vacíos, no se envía nada. Ejemplo: bases de datos con orden `1` y espera `60`, y
+servidores de aplicación con orden `2`: primero arrancan las bases y, tras 60 segundos, las aplicaciones. Se pueden fijar
+aunque **Arrancar con el servidor** esté desmarcada (ProxLaunch las envía igualmente y el resumen las muestra). Un valor
+no válido da «El orden de arranque debe ser un número entero de 0 o más.» (o «La espera de arranque…»). Necesitan
+`VM.Config.Options`.
+
+### Notas de la máquina
+
+Las notas son el texto que Proxmox muestra en la ficha de la máquina (su «descripción»). Hay tres controles:
+
+| Control | Defecto | Qué hace |
+|---|---|---|
+| **Añadir notas de origen** | **Marcada** | Escribe un bloque automático que dice que la máquina la creó ProxLaunch. |
+| **Incluir mi usuario en las notas** | Desmarcada | Añade tu usuario al bloque. Solo se puede marcar si **Añadir notas de origen** lo está. Aviso: «Cualquiera con acceso a la máquina en Proxmox podrá ver tu usuario.» |
+| **Notas** | Vacío (marcador «Texto libre para la descripción de la máquina (opcional)») | Tu propio texto, de varias líneas. |
+
+El bloque automático tiene este aspecto (las líneas sin dato se omiten; el perfil sale si usaste uno y el usuario solo si
+marcaste la casilla):
+
+```text
+Creada con ProxLaunch 0.6.0
+
+- Fecha: 2026-11-21T21:49:20+00:00
+- Lote: a1b2c3d4
+- Perfil: Servidor pequeño
+- Usuario: ana@pve
+```
+
+La fecha va en formato ISO 8601, con segundos y zona horaria. El usuario es solo `usuario@realm`: nunca el secreto del
+token ni el nombre del token. Los valores del bloque se escriben «escapados» para que un nombre de perfil con signos de
+Markdown no se interprete como formato. Tu texto libre va **debajo** del bloque, separado por una línea en blanco; si
+desmarcas **Añadir notas de origen**, solo va tu texto, y si además dejas **Notas** vacío no se envía nada.
+
+Cosas que conviene saber:
+
+- **Markdown.** Proxmox muestra las notas con formato Markdown. Tu texto libre se envía **tal cual**, sin escapar: si
+  incluye enlaces o código HTML, el resumen del lote avisa: «Aviso: las notas contienen enlaces o código HTML. Revisa
+  que sean de confianza antes de crear.»
+- **Saltos de línea y caracteres.** Se envían solo saltos de línea simples. Los caracteres de control (salvo el salto de
+  línea y el tabulador) y los de dirección de texto se **eliminan** con un aviso: «Las notas tienen caracteres de control
+  (no imprimibles): se eliminarán al crear.» Los espacios y líneas en blanco **del final** no se conservan.
+- **Un `%` seguido de dos cifras** (por ejemplo `%41`) se altera con un carácter invisible en servidores Proxmox
+  anteriores a 8.3 (y cuando no se conoce la versión), porque esas versiones lo leen como un código de dirección web y
+  corrompen el texto.
+- **Límite.** Proxmox admite **8192 caracteres**. ProxLaunch cuenta el total (el bloque automático, tu texto y, en un
+  clon, las notas de la plantilla): desde **7500** avisa («Las notas ocupan N de los 8192 caracteres que admite Proxmox:
+  queda poco espacio.») y por encima de **8192** **bloquea** («Las notas ocupan N caracteres y Proxmox admite 8192:
+  sobran M. Acórtalas.»). ProxLaunch cuenta **caracteres**; *no verificado:* si Proxmox 8.x cuenta caracteres o bytes. Con
+  textos con acentos, `ñ` o emoji en esa versión podría rechazar notas que ProxLaunch da por buenas; en ese caso verás «Las
+  notas superan los 8192 caracteres que admite Proxmox. Acórtalas y vuelve a intentarlo.»
+- **Si el texto parece una credencial** (por ejemplo `usuario@realm!nombre=secreto`), ProxLaunch no lo guarda en lotes ni
+  acepta esa celda en un CSV (ver [Seguridad de los archivos](#seguridad-de-los-archivos-csv)).
+- **Clones.** Al copiar una plantilla, tus notas se añaden **debajo** de las notas de la plantilla, separadas por una
+  línea en blanco; nunca las reemplazan. Si ProxLaunch no puede leer las notas de la plantilla, **no añade las suyas**
+  para no pisarlas y avisa: «No se añadieron las notas de origen: no se pudo leer la descripción de la plantilla y así no
+  se pisan sus notas.» Con **Añadir notas de origen** desmarcada y **Notas** vacío no se envía nada y Proxmox conserva las de
+  la plantilla. En un clon las notas no necesitan `VM.Config.Options`.
+- **Perfiles.** Un perfil no guarda las notas ni las casillas. Un lote guardado sí guarda las tres cosas.
+
+Ejemplo: con **Notas** = `Servidor web del equipo de ejemplo` y las dos casillas marcadas, la descripción que recibe
+Proxmox es el bloque anterior, una línea en blanco y esa frase. Es lo que enseña la [simulación](#simulación)
+(captura 65).
+
+### Etiquetas propias y política del centro de datos
+
+El campo **Etiquetas** (defecto: vacío; marcador «por ejemplo web, produccion») te deja añadir tus propias
+[etiquetas](#etiquetas-qué-son-y-para-qué-sirven). Se **suman** a las que ProxLaunch ya pone (`proxlaunch` y
+`lote-<código>`): `tags` queda, por ejemplo, `proxlaunch;lote-a1b2c3d4;web;produccion` (primero las de ProxLaunch, después las
+tuyas, sin repetir). Si desmarcas **Etiquetar las máquinas** (modo avanzado), solo se quitan las de ProxLaunch; las tuyas se
+mantienen. Necesitan `VM.Config.Options`.
+
+- **Cómo escribirlas.** Separadas por comas (también se acepta `;`); los espacios alrededor y las repetidas se quitan.
+  Solo minúsculas, números, `_`, `-`, `+` y `.`, hasta 128 caracteres, empezando por una letra minúscula, un número o `_`.
+  Una mayúscula **no se corrige sola**: se rechaza con «La etiqueta «Web» no es válida: usa minúsculas, números, «_», «-»,
+  «+» y «.», sin espacios, y empieza por una letra, un número o «_» (máximo 128 caracteres).»
+- **Perfiles.** Un perfil no guarda las etiquetas.
+- **Clones.** Las etiquetas se aplican después de copiar la plantilla.
+
+**La política del centro de datos.** En Proxmox, el administrador puede limitar qué etiquetas pueden poner los usuarios
+(**Datacenter → Opciones → Etiquetas**). ProxLaunch lee esa configuración antes de crear (necesita `Sys.Audit` en `/`) y
+comprueba **todas** las etiquetas que va a enviar: `proxlaunch`, `lote-…` y las tuyas. Esto también vale cuando no
+escribes etiquetas propias. Un usuario con `Sys.Modify` en `/` (el rol Administrator) no tiene restricciones.
+
+| Política del centro de datos | Qué se rechaza |
+|---|---|
+| Libre (la predeterminada, o sin configurar) | Solo las etiquetas **registradas** (`registered-tags`). |
+| Ninguna (`none`) | Todas. |
+| Lista (`list`) | Las que no estén en la lista de etiquetas permitidas a usuarios (`user-allow-list`) ni entre las ya existentes. |
+| Existentes (`existing`) | Las que no existan ya en el centro de datos. |
+
+Si alguna etiqueta no está permitida, la validación previa **bloquea** la creación (aparece como error en el resumen, el
+botón **Crear** queda desactivado y **no se envía nada a Proxmox**) y el mensaje dice cuál autorizar:
+
+- «La etiqueta «x» está registrada en el centro de datos y tu usuario no puede aplicarla (hace falta Sys.Modify en «/»).
+  Pídele a tu administrador que la aplique o que la quite del registro.»
+- «El centro de datos no deja a tu usuario poner etiquetas (política «none») y esta máquina llevaría «x». Pídele a tu
+  administrador que la autorice.»
+- «Tu administrador no ha autorizado la etiqueta «x». Pídele que la añada a las etiquetas permitidas del centro de datos.»
+
+Detalles de la comprobación:
+
+- **Comparación exacta.** ProxLaunch compara con las listas del centro de datos de forma exacta, **distinguiendo
+  mayúsculas y minúsculas**: no se puede verificar cómo compara Proxmox, y así nunca deja pasar algo que Proxmox
+  rechazaría.
+- **En un clon** solo se evalúan las etiquetas **que añades** respecto a las que ya tiene la plantilla.
+- **Con permisos desconocidos.** Si ProxLaunch no puede saber si tienes `Sys.Modify`, el rechazo pasa a ser solo un
+  **aviso** (se añade «No se pudieron leer tus permisos, así que quizá Proxmox sí la acepte.») y no bloquea.
+- **Si no se puede leer la política** (por ejemplo, falta `Sys.Audit`), solo avisa: «No se pudo leer la política de etiquetas
+  del centro de datos, así que no se pudo comprobar si tus etiquetas están permitidas. Si Proxmox las rechaza, la máquina
+  no se creará.»
+- **En un lote por filas**, una etiqueta no permitida sale **una sola vez**, con la lista de filas afectadas.
+- Si, aun así, Proxmox acepta la orden pero la tarea falla por una etiqueta, el lote se **pausa** como siempre
+  («Seguir sin etiquetas»; ver [Pausas](#pausas-el-lote-se-detiene-y-te-pregunta)).
+
+Qué hace el administrador: en **Datacenter → Opciones → Etiquetas** añade las etiquetas necesarias a la lista de etiquetas
+permitidas a usuarios (`user-allow-list`) o, si estaban registradas (`registered-tags`), las aplica él o las quita del
+registro. No hace falta darle `Sys.Modify` a ProxLaunch.
+
+### Pool
+
+Un **pool** de Proxmox agrupa máquinas, almacenamientos y otros recursos (por ejemplo, para repartir permisos por
+departamento). La lista **Pool** (defecto: **Ninguno**, que no envía nada) te deja crear la máquina directamente dentro de
+uno.
+
+- Solo muestra los pools que **ya existen**: ProxLaunch no crea pools. Se admiten pools **anidados** (`padre/hijo`, hasta
+  tres niveles). El nombre admite letras, números, `_`, `-` y `/`; si no, ves «El nombre del pool no es válido: usa letras,
+  números, «_» y «-», y «/» para separar pools anidados (hasta 3 niveles).»
+- **Qué privilegio hace falta.** Para **ver** la lista, `Pool.Audit` en `/pool` (opcional). Para **crear** en un pool no hace
+  falta nada nuevo: basta `VM.Allocate` en la máquina (`/vms/<número>`) **o** en el pool (`/pool/<id>`). Si no lo tienes en
+  ninguna de las dos rutas, la validación lo bloquea: «Para crear la máquina en el pool «x» falta el privilegio VM.Allocate en
+  «/vms» o en «/pool/x».» `Pool.Allocate` no se pide nunca.
+- **Estados de la lista:** con `Pool.Audit` y pools, aparecen **Ninguno** y los pools; con `Pool.Audit` pero sin pools,
+  solo **Ninguno** y «No hay pools en este servidor.»; sin `Pool.Audit`, la lista está **desactivada** con «No puedes ver la
+  lista de pools: falta el privilegio Pool.Audit en «/pool». Eso no significa que no existan pools; pídeselo a tu
+  administrador.» (captura 63) —sin ese permiso Proxmox devuelve la lista vacía sin avisar, y por eso ProxLaunch usa tus
+  permisos para distinguir ambos casos—; si no sabe si tienes el permiso, avisa «No sabemos si puedes ver la lista de
+  pools…» pero deja elegir; y si falla la lectura, la lista queda desactivada con «No se pudo leer la lista de pools del
+  servidor. Inténtalo de nuevo.»
+- **Un pool que no existe.** Si un lote guardado o un CSV nombra un pool que este servidor no tiene, el formulario lo
+  muestra como «x (no existe)» y la validación **bloquea**: «El pool «x» no existe en este servidor.» Si no se puede
+  comprobar (no puedes ver la lista), solo avisa («No se pudo comprobar que el pool «x» exista…») y Proxmox decide al crear
+  («El pool «x» no existe en Proxmox. No se creó la máquina.»). Al **cambiar de servidor**, un pool que el nuevo servidor no
+  tiene vuelve a **Ninguno** con el aviso «Se restableció «Pool» a su valor por defecto. El servidor no tiene el pool «x».»
+- **Clones y Deshacer.** En un clon, el pool va en la propia orden de copia. Al deshacer, la máquina sale sola del pool al
+  borrarse.
+- Un perfil no guarda el pool.
+
+Ejemplo: elige `produccion` para que las 10 máquinas del lote queden en ese pool y hereden sus permisos.
+
+### Proteger contra borrado
+
+**Proteger contra borrado** (modo avanzado, defecto: desmarcada) crea la máquina con la protección activada
+(`protection=1`): Proxmox **no deja eliminarla** hasta que alguien quite la protección. Útil para servidores de producción.
+Necesita `VM.Config.Options`. En un clon se aplica en el ajuste posterior a la copia. Un perfil no la guarda.
+
+**Efecto en Deshacer.** Una máquina protegida no se puede deshacer sin más: ver
+[Deshacer](#deshacer) (con confirmación expresa se le quita la protección y se elimina).
+
+### MTU y límite de velocidad de la red
+
+En modo avanzado, cada tarjeta de la tabla **Red** tiene dos campos más (ver la captura 62). Necesitan `VM.Config.Network`
+(ya está en el rol).
+
+| Campo | Defecto | Valores | Efecto |
+|---|---|---|---|
+| **MTU** | **Heredar del bridge** | **Heredar del bridge** (no se envía), **Igual al bridge** (`mtu=1`) o un número de **576 a 65520** (se puede escribir) | Fija el tamaño máximo de paquete de la tarjeta. |
+| **Límite (MB/s)** | Vacío («Sin límite») | Número mayor que 0 y hasta 1 000 000 000; admite decimales (`12.5`) | Limita la velocidad de la tarjeta (`rate`). |
+
+- **El MTU solo vale con una tarjeta VirtIO.** Con otro modelo (por ejemplo Intel E1000) el campo queda desactivado y, si
+  cambias de VirtIO a otro modelo, vuelve a **Heredar del bridge**: «El MTU solo se aplica a tarjetas VirtIO: con otra
+  tarjeta queda en «Heredar».» Un valor fuera de rango da «El MTU de la tarjeta 1 debe ser «Igual al bridge» o un número entre
+  576 y 65520.» El límite sí se admite con cualquier tarjeta; uno no válido da «El límite de velocidad de la tarjeta 1 debe
+  ser un número mayor que 0 y no superior a 1 000 000 000 (en MB/s).»
+- **Resultado.** Con MTU 1500 y límite 100 en la primera tarjeta, la tarjeta se envía como
+  `virtio,bridge=vmbr0,mtu=1500,rate=100`. El resumen lo lista como «Red 1: MTU 1500» y «Red 1: límite 100 MB/s».
+- **Clones.** La red se copia de la plantilla: estas dos opciones no se aplican.
+- **Perfiles y CSV.** Un perfil **sí** guarda MTU y límite de cada tarjeta. En un CSV, `mtu` y `limite_red` se aplican a la
+  **primera** tarjeta.
+
+### Opciones de la máquina en un lote
+
+En un [lote](#crear-varias-máquinas-de-una-vez-lotes) todas las máquinas reciben **las mismas opciones**, las del
+formulario. En un [CSV](#columnas-del-csv) cada fila puede fijar las suyas con las columnas `encender`, `arranque_auto`,
+`notas`, `etiquetas`, `pool`, `proteger`, `mtu` y `limite_red`; una celda vacía usa lo que tenga marcado el formulario al
+importar. Las casillas de **Añadir notas de origen** y **Incluir mi usuario en las notas** valen para todo el lote: no
+tienen columna.
+
+![Resumen del lote «Vas a crear 5 máquinas»: tabla de srv-web-01 a srv-web-05, los totales y el espacio, y debajo las líneas «Notas de origen: sí, con tu usuario», «Notas: Servidor web del equipo de ejemplo (34 caracteres)», «Encender al terminar: sí», «Arrancar con el servidor: sí», «Etiquetas: web, produccion», «Pool: produccion», «Orden de arranque: 2», «Espera de arranque: 30 s» y «Proteger contra borrado: sí», seguidas del reparto y los botones «Volver al formulario», «Copiar resumen», «Simular» y «Crear 5 máquinas».](img/64-lote-resumen-opciones.png)
+
+El resumen del lote lista las opciones que no están en su valor por defecto (**Notas de origen** sale siempre), con la
+longitud de las notas entre paréntesis. En un [lote por filas](#lote-por-filas), si las filas no coinciden, la línea dice
+«varía según la fila» (por ejemplo, «Etiquetas: varía según la fila») o «sí en N de M máquinas» (por ejemplo, «Encender al
+terminar: sí en 2 de 5 máquinas»).
 
 ## Elegir el origen del sistema operativo
 
@@ -892,6 +1222,12 @@ asignaciones, en **Datacenter → Permisos**:
 
 En las filas con «—», la guía de ProxLaunch no indica nada especial sobre **Propagar**.
 
+**Privilegios opcionales (versión 0.6).** Si quieres que los usuarios puedan **Encender al terminar** y que
+**Deshacer** apague máquinas, añade `VM.PowerMgmt` al rol que asignas en `/vms` (en este esquema, `ProxLaunchMaquinas`).
+Si quieres que puedan elegir un pool, asigna `Pool.Audit` en la ruta `/pool` (ver
+[Privilegios opcionales](#privilegios-opcionales-no-forman-parte-del-rol)). Ninguno de los dos cambia el alcance del resto
+de permisos.
+
 Pasos:
 
 1. En **Datacenter → Permisos → Pools** crea el pool `plantillas-proxlaunch` y añade **solo las plantillas que
@@ -1105,8 +1441,8 @@ tiempo, la tarea **sigue en marcha en Proxmox**: no es un fallo.
 | Botón | Cuándo aparece | Qué hace |
 |---|---|---|
 | **Crear sin etiquetas** | Con una sola máquina, si el servidor no permitió poner etiquetas (la tarea falló por eso). | Vuelve a crear la máquina **sin** las etiquetas `proxlaunch` y `lote-…`. Después, **Deshacer…** solo podrá eliminarla si el nombre coincide. Ver [Etiquetas](#etiquetas-qué-son-y-para-qué-sirven). |
-| **Reintentar ajustes** | Al clonar, si la copia se creó pero falló un ajuste posterior (etiquetas, procesadores, memoria o disco). | Reaplica **solo** esos ajustes; no crea máquinas nuevas. |
-| **Deshacer…** | Tras OK, Con avisos o Parcial. | Elimina la máquina que acabas de crear, con confirmación (ver [Deshacer](#deshacer)). |
+| **Reintentar ajustes** | Al clonar, si la copia se creó pero falló un ajuste posterior (etiquetas, arranque con el servidor, protección contra borrado, procesadores, memoria o disco). | Reaplica **solo** esos ajustes; no crea máquinas nuevas. |
+| **Deshacer…** | Tras **OK**, **Con avisos** o **Parcial**. | Elimina la máquina que acabas de crear, con confirmación (ver [Deshacer](#deshacer)). |
 
 #### El botón «Comprobar»
 
@@ -1134,8 +1470,10 @@ máquina existe.
 
 Un **lote** crea de 1 a 100 máquinas iguales con un solo clic. Todas comparten la configuración del formulario
 (procesadores, memoria, discos, red...) y solo cambian el **nombre**, el **número** y, si tienes un clúster, el **nodo**.
-Como en el resto de ProxLaunch, las máquinas se crean **detenidas**, y con el disco **vacío** salvo que elijas otro
-[origen del sistema operativo](#elegir-el-origen-del-sistema-operativo) (en un lote normal, todas usan el mismo).
+Como en el resto de ProxLaunch, las máquinas se crean **detenidas** (salvo que marques **Encender al terminar**), y con el
+disco **vacío** salvo que elijas otro [origen del sistema operativo](#elegir-el-origen-del-sistema-operativo) (en un lote
+normal, todas usan el mismo). Las [opciones de la máquina](#opciones-de-la-máquina-en-un-lote) (encender, notas, etiquetas,
+pool, protección…) valen para todas las del lote.
 
 Si necesitas máquinas **distintas** entre sí, mira [Importar máquinas desde un CSV](#importar-máquinas-desde-un-csv) y
 [Lote por filas](#lote-por-filas). Para repetir un lote otro día, [Guardar y abrir lotes](#guardar-y-abrir-lotes).
@@ -1239,10 +1577,16 @@ que apareció tras un corte (la deja como «Existe, sin confirmar de quién es»
 solo borra las que confirmó que creó él mismo, con el nombre y el número del lote; y te costará más encontrar el lote en
 Proxmox.
 
-**Cuándo conviene desactivarlas.** Si tu administrador restringió quién puede crear etiquetas nuevas, Proxmox acepta la
-orden pero la tarea falla con un error de permiso. ProxLaunch lo detecta, **pausa el lote** y te ofrece **Seguir sin
-etiquetas** (ver [Pausas](#pausas-el-lote-se-detiene-y-te-pregunta)); con una sola máquina ofrece **Crear sin etiquetas**.
-Esta restricción es poco habitual.
+**Cuándo conviene desactivarlas.** Si tu administrador restringió qué etiquetas pueden poner los usuarios, ProxLaunch
+lo detecta **antes de crear** (si puede leer esa política) y la validación **bloquea** el lote diciendo qué etiqueta debe
+autorizar el administrador (ver
+[Etiquetas propias y política del centro de datos](#etiquetas-propias-y-política-del-centro-de-datos)). Si no pudo
+comprobarlo y Proxmox acepta la orden pero la tarea falla con un error de permiso, ProxLaunch **pausa el lote** y te
+ofrece **Seguir sin etiquetas** (ver [Pausas](#pausas-el-lote-se-detiene-y-te-pregunta)); con una sola máquina ofrece
+**Crear sin etiquetas**. Esta restricción es poco habitual.
+
+Además de estas dos, puedes añadir **tus propias etiquetas** en el campo **Etiquetas** (ver
+[Etiquetas propias](#etiquetas-propias-y-política-del-centro-de-datos)).
 
 ### El resumen y la confirmación
 
@@ -1306,6 +1650,16 @@ todo (espacio, nombres, nodos, memoria, permisos...).
   **más nueva** que la del servidor, solo puedes simular.
 - Con **una sola máquina** no hay resumen ni simulación: **Crear máquina** funciona como en el modo básico.
 
+**Con las opciones de la máquina.** La simulación enseña también lo que cambian las [opciones](#opciones-de-la-máquina):
+`tags` con tus etiquetas, `onboot`, `startup`, `description` (con las notas ya compuestas, el bloque automático y tu
+texto), `pool` y `protection`, además de `mtu` y `rate` dentro de `net0`. Si marcaste **Encender al terminar**, la
+última petición de cada máquina es `POST /nodes/<nodo>/qemu/<número>/status/start`, siempre después de todos los demás
+ajustes:
+
+![Resultado de «Simular» para 5 máquinas con las opciones fijadas: «SIMULACIÓN — no se creó nada», las líneas de opciones del resumen y, en los detalles técnicos desplegados, la petición de creación con net0, tags «proxlaunch;lote-a1b2c3d4;web;produccion», onboot 1, startup «order=2,up=30», description con el bloque «Creada con ProxLaunch 0.6.0», la fecha, el lote, el perfil y el usuario seguido de la nota, pool «produccion» y protection 1, y al final «POST /nodes/pve1/qemu/101/status/start». Botones «Volver al formulario», «Copiar resumen», «Informe de la simulación...», «Simular» y «Crear de verdad estas 5 máquinas».](img/65-simulacion-encender.png)
+
+La simulación solo **lee** del servidor, también con estas opciones: no enciende ni protege nada.
+
 ### Mientras se crea: el progreso del lote
 
 Al confirmar, el formulario se bloquea y aparece el progreso, con el título «Creando N máquinas»:
@@ -1330,7 +1684,7 @@ ProxLaunch crea **una máquina a la vez por nodo** y hasta **4 nodos en paralelo
 | ○ **Pendiente** | Está en la cola. | Esperar. |
 | ● **Validando datos**, **Enviando a Proxmox**, **Creando la máquina**, **Comprobando el resultado**, **Ajustando la máquina** | Las etapas de una máquina. | Esperar. |
 | ✓ **Lista** | Se creó y ProxLaunch lo comprobó. | Nada. Si dice «Se creó aunque Proxmox tardó en responder.», hubo un corte pero existe. |
-| ⚠ **Lista, con avisos** | Se creó, pero Proxmox dejó algún aviso. | Lee los detalles técnicos. |
+| ⚠ **Lista, con avisos** | Se creó, pero Proxmox dejó algún aviso, o no se pudo **encender** («Se creó, pero no se pudo encender. Enciéndela desde Proxmox si la necesitas.») o falta un ajuste. | Lee los detalles técnicos o el aviso de la máquina. La máquina existe. Más avisos de encendido en [Encender al terminar](#encender-al-terminar-y-arrancar-con-el-servidor). |
 | ✕ **Con error** | No se creó (el detalle dice por qué). | Corrige la causa y usa **Reintentar pendientes**. |
 | ◐ **Quedó a medias** | Falló, pero quedó algo creado. | **Deshacer…** o bórrala en Proxmox. |
 | ? **Sin confirmar (sigue en Proxmox)** | ProxLaunch esperó el tiempo máximo (10 minutos, o más si copiaba discos grandes) y la tarea sigue. No es un fallo. | **Comprobar ahora** más tarde. |
@@ -1385,7 +1739,7 @@ Cuando todas tienen resultado, el título pasa a «Lote terminado (N máquinas)�
 | **Comprobar la dudosa** / **Comprobar las N dudosas**, **Comprobar ahora** | Hay máquinas «No sabemos si se creó» o «Sin confirmar». |
 | **Deshacer…** | Siempre; se activa si hay algo que ProxLaunch pueda borrar. |
 | **Reintentar pendientes** | Hay máquinas «No enviada», «No se creó» o «Con error». |
-| **Reintentar ajustes** | Hay clones creados a los que les falta algún ajuste (etiquetas, procesadores, memoria o disco). Solo reenvía esos ajustes; no crea máquinas. (No sale en la captura porque no hay clones.) |
+| **Reintentar ajustes** | Hay clones creados a los que les falta algún ajuste (etiquetas, arranque con el servidor, protección contra borrado, procesadores, memoria o disco). Solo reenvía esos ajustes; no crea máquinas. (No sale en la captura porque no hay clones.) |
 | **Informe** | Siempre. |
 | **Volver al formulario** | Siempre. Si hay máquinas sin confirmar avisa: «No sabemos si algunas máquinas se crearon. Si vuelves y repites el lote, podrías duplicarlas.» |
 
@@ -1418,9 +1772,56 @@ Mientras borra ves «Deshaciendo el lote» y una tabla con el estado de cada má
 **No se procesó**). **Detener lo que falta** interrumpe el resto.
 
 **Qué borra:** la máquina y los discos que tiene asignados (incluido el de UEFI). **Qué NO borra nunca:** máquinas ajenas
-(solo las del lote, con su nombre y número y, si usaste etiquetas, con la etiqueta); máquinas protegidas o bloqueadas;
-máquinas **encendidas** («Apágala en Proxmox y vuelve a intentarlo»); discos sueltos; archivos subidos ni plantillas; ni lo
-que no está en el lote. **Hasta cuándo:** solo mientras ProxLaunch siga abierto y conectado al **mismo servidor**.
+(solo las del lote, con su nombre y número y, si usaste etiquetas, con la etiqueta); máquinas bloqueadas por una tarea de
+Proxmox; discos sueltos; archivos subidos ni plantillas; ni lo que no está en el lote. Las máquinas **encendidas** o
+**protegidas contra borrado** del lote solo se tocan con tu confirmación expresa (ver
+[Deshacer con máquinas encendidas o protegidas](#deshacer-con-máquinas-encendidas-o-protegidas)); si no la das, se omiten
+(«Apágala en Proxmox y vuelve a intentarlo»). **Hasta cuándo:** solo mientras ProxLaunch siga abierto y conectado al
+**mismo servidor**.
+
+### Deshacer con máquinas encendidas o protegidas
+
+Desde la versión 0.6, una máquina del lote que está **encendida** (por ejemplo, porque usaste **Encender al terminar**) o
+**protegida contra borrado** ya no bloquea el Deshacer: puedes pedirle a ProxLaunch que la **apague a la fuerza**, le
+**quite la protección** y la elimine. Como esto puede hacer perder datos no guardados, **siempre hay una confirmación
+expresa**:
+
+1. Eliges qué deshacer en **Deshacer lo creado por el lote** y pulsas **Eliminar N máquinas**.
+2. ProxLaunch **lee** el estado de las máquinas elegidas («Comprobando las máquinas antes de deshacer…»; solo consulta, no
+   cambia nada). Si ninguna está encendida o protegida (ni hay omisiones ni máquinas ilegibles), sigue sin preguntar más,
+   como antes. Si no puede hacer la comprobación, no elimina nada: «No se pudo comprobar el estado de las máquinas antes de
+   deshacer. No se eliminó nada; inténtalo de nuevo.»
+3. Si hay máquinas encendidas o protegidas, se abre **Confirmar Deshacer con apagado o desprotección**:
+
+![Ventana «Confirmar Deshacer con apagado o desprotección»: «Se apagarán a la fuerza estas máquinas encendidas. Se perderán los datos que no estén guardados:» con srv-web-01 (VMID 101) y srv-web-02 (VMID 102); «Se quitará la protección contra borrado a estas máquinas:» con srv-web-02 (VMID 102) y srv-web-03 (VMID 103); el aviso «Si no se puede quitar la protección de una máquina, no se eliminará y, si estaba encendida, quedará apagada.»; «Se omitirán porque están encendidas y tu usuario no tiene el privilegio VM.PowerMgmt para apagarlas:» con srv-web-04 (VMID 104); el cierre «Después se eliminarán junto con las demás máquinas que elegiste. Solo se tocan máquinas creadas por este lote; esto no se puede deshacer.»; la casilla desmarcada «Entiendo que se apagarán o desprotegerán máquinas y que puedo perder datos»; la nota sobre «Eliminar sin apagar ni desproteger» y los botones «Apagar, desproteger y eliminar» (desactivado), «Eliminar sin apagar ni desproteger» y «Cancelar».](img/66-deshacer-confirmacion-forzada.png)
+
+| Elemento | Qué hace |
+|---|---|
+| Listas «Se apagarán…» y «Se quitará la protección…» | Cada máquina por **nombre y número (VMID)**. Es la lista exacta de lo que se tocará: solo esas, y ninguna más. |
+| «Se omitirán porque…» | Las que no se tocarán porque falta `VM.PowerMgmt` (para apagar) o `VM.Config.Options` (para quitar la protección). |
+| «No se pudo comprobar el estado de estas máquinas…» | Las que ProxLaunch no pudo leer. Si están encendidas o protegidas se omitirán; si no, se eliminarán. |
+| Casilla **Entiendo que se apagarán o desprotegerán máquinas y que puedo perder datos** | Viene **desmarcada**. Sin marcarla no se puede forzar. |
+| **Apagar, desproteger y eliminar** | Apaga y desprotege **solo las máquinas confirmadas** (las de las listas) y elimina todo lo que elegiste. Desactivado hasta marcar la casilla. No aparece si no hay ninguna que forzar. |
+| **Eliminar sin apagar ni desproteger** | Las encendidas y protegidas **se omiten** y se quedan en Proxmox; el resto se elimina como siempre. |
+| **Cancelar** | Es el botón predeterminado (y el de **Esc**): no se hace nada. |
+
+Qué pasa con cada máquina confirmada, en este orden: **se apaga a la fuerza** (equivale a quitarle la corriente), **se le
+quita la protección** y **se elimina**. Antes de cada paso ProxLaunch vuelve a comprobar que sigue siendo una máquina del
+lote y que no está bloqueada.
+
+- **Solo las confirmadas.** Si una máquina cambió después de que la vieras en el diálogo (por ejemplo, alguien la encendió
+  mientras leías), **no está en la lista confirmada** y se omite como sin confirmar.
+- **Si algo falla, no se elimina.** Si no se puede apagar o quitar la protección, la máquina **no se elimina**, queda con su
+  motivo («No se pudo apagar «x», así que no se eliminó. Apágala desde Proxmox y vuelve a intentarlo.» o «No se pudo quitar
+  la protección de «x», así que no se eliminó. Quítala desde Proxmox y vuelve a intentarlo.») y Deshacer sigue con las demás. Si
+  no se puede quitar la protección de una máquina que estaba encendida, queda **apagada** (se apaga antes).
+- **Sin privilegio.** Sin `VM.PowerMgmt` una máquina encendida se omite: «“x” está encendida y no se pudo apagar: falta el
+  privilegio VM.PowerMgmt. Apágala en Proxmox y vuelve a intentarlo.» Sin `VM.Config.Options` una protegida se omite: «“x”
+  está protegida y no se pudo desproteger: falta el privilegio VM.Config.Options. Quita la protección en Proxmox y vuelve a
+  intentarlo.»
+- **Nunca se fuerza** una máquina que no es del lote (ajena) ni una **bloqueada** por una tarea de Proxmox.
+- **Informe.** El informe del lote anota por máquina lo que se hizo («Hecho: apagada a la fuerza, desprotegida, eliminada.») o
+  por qué se omitió.
 
 ### Informe
 
@@ -1457,9 +1858,11 @@ discos y red. Al elegirlo, ProxLaunch rellena el formulario. Sirve para no volve
 una plantilla de Proxmox ni un perfil de conexión.**
 
 - **Lo que un perfil aplica:** el tipo de arranque, los sockets y núcleos, el tipo de CPU, la memoria, el ballooning, los
-  discos (tamaño, conexión, formato y opciones) y las redes.
+  discos (tamaño, conexión, formato y opciones) y las redes (con el **MTU** y el **límite de velocidad** de cada
+  tarjeta), y, de las [opciones de la máquina](#opciones-de-la-máquina), solo **Arrancar con el servidor**.
 - **Lo que nunca toca:** el **nombre** de la máquina, su **número (VMID)**, el **nodo** y el bloque **Lote**. Un perfil
-  tampoco elige el archivo ISO ni instala nada por sí solo.
+  tampoco elige el archivo ISO ni instala nada por sí solo, y **no guarda** **Encender al terminar**, las notas, las
+  etiquetas, el pool, la protección contra borrado ni el orden y la espera de arranque: esas las decides cada vez.
 
 El grupo **Perfil de máquina** está arriba del formulario, en modo básico y avanzado. Con un lote en marcha queda
 desactivado.
@@ -1504,6 +1907,12 @@ origen «Instalar desde un archivo ISO» **sin archivo**: tú lo eliges.
    número y nodo siguen como estaban.
 3. Sigue como siempre: **Crear máquina**, o **Ver resumen** si es un lote.
 
+**Qué pasa con las opciones de la máquina.** Al aplicar un perfil, **Arrancar con el servidor** toma el valor del perfil y
+**Encender al terminar** vuelve a quedar **desmarcada** (el perfil nunca la guarda). Las notas, las etiquetas, el pool, el
+orden y la espera de arranque y la protección contra borrado **se quedan como las tenías** en el formulario. El **MTU** y
+el **límite de velocidad** de cada tarjeta sí vienen del perfil. Un perfil guardado con 0.5.1 se aplica con MTU «Heredar
+del bridge», sin límite y con **Arrancar con el servidor** desmarcada.
+
 **«(modificado)» y «Personalizado».** Si cambias cualquier dato de hardware después de elegir un perfil, la lista dice, por
 ejemplo, «Servidor mediano — De fábrica (modificado)»: el perfil guardado no cambia. Si abres un lote guardado, o el perfil
 que usabas se elimina, la lista muestra «Personalizado». **Si ya cambiaste cosas y eliges otro perfil**, ProxLaunch
@@ -1521,7 +1930,7 @@ inventa un almacenamiento.
 2. Pulsa **Guardar como perfil…** o abre **Perfiles > Guardar como perfil de máquina…**.
 3. Completa el diálogo y pulsa **Guardar perfil** («Perfil «X» guardado»).
 
-![Ventana «Guardar como perfil de máquina»: «Se guardará el hardware actual del formulario: procesador, memoria, discos y redes. No se guarda el nombre de la máquina, su número ni el nodo.», el resumen «4 núcleos · 4 GiB · 2 discos (132 GiB en total)», «Nombre del perfil» con «Servidor web», «Descripción (opcional)», la casilla marcada «Recordar los nombres de almacenamiento y red (solo sirven en servidores que los tengan)» y los botones «Guardar perfil» y «Cancelar».](img/41-guardar-perfil.png)
+![Ventana «Guardar como perfil de máquina»: «Se guardará el hardware actual del formulario: procesador, memoria, discos y redes (con su MTU y límite de velocidad), y si arranca con el servidor. No se guarda el nombre de la máquina, su número ni el nodo.», el resumen «4 núcleos · 4 GiB · 2 discos (132 GiB en total)», «Nombre del perfil» con «Servidor web», «Descripción (opcional)», la casilla marcada «Recordar los nombres de almacenamiento y red (solo sirven en servidores que los tengan)» y los botones «Guardar perfil» y «Cancelar».](img/41-guardar-perfil.png)
 
 | Campo | Modo | Para qué sirve | Valores | Defecto | Límites |
 |---|---|---|---|---|---|
@@ -1606,8 +2015,16 @@ El menú es **Lote**:
 
 El lote es **autocontenido**: lleva la configuración de hardware (con los nombres de almacenamiento y red que usaste), la
 cantidad, el patrón de nombres, el número de máquina inicial **solo si lo escribiste tú**, dónde crearlas, el reparto, si
-etiquetar, el nombre del lote y la versión de Proxmox con la que lo guardaste. En un [lote por filas](#lote-por-filas)
-guarda además cada fila.
+etiquetar, el nombre del lote y la versión de Proxmox con la que lo guardaste. Desde la versión 0.6 guarda también las
+[opciones de la máquina](#opciones-de-la-máquina): **Encender al terminar**, **Arrancar con el servidor**, orden y espera de
+arranque, las casillas y el texto de las notas, las etiquetas propias, el pool, **Proteger contra borrado** y, por tarjeta,
+el MTU y el límite de velocidad. En un [lote por filas](#lote-por-filas) guarda además cada fila (con lo que sobrescribe
+de esas opciones).
+
+> **Compatibilidad.** Si el lote usa alguna de esas opciones, se guarda en el **formato 3** y **ProxLaunch 0.5.1 no lo
+> abre** (dice que lo creó una versión más nueva). Un lote que no usa ninguna se sigue guardando en el formato 1 o 2, que
+> 0.5.1 sí abre. Ver [Compatibilidad con versiones anteriores](#compatibilidad-con-versiones-anteriores). Ejemplo listo para
+> abrir: [`lote-con-opciones.proxlaunch-lote.json`](ejemplos/lote-con-opciones.proxlaunch-lote.json).
 
 **No se guarda nunca:** datos de conexión (servidor, usuario, token, contraseña), el resumen, los números ya reservados,
 el código del lote ni la casilla de sobreasignar espacio. Si algún texto que escribiste parece una credencial
@@ -1644,6 +2061,14 @@ cambias con otro programa, ábrelo de nuevo.
 parecen una credencial («El archivo traía datos que parecen una credencial. No se usaron. Si eran reales, cámbialas.») o
 que el lote se guardó con una versión de Proxmox más nueva.
 
+**Lotes guardados con versiones anteriores.** ProxLaunch 0.6 abre los lotes de las versiones 1 y 2 del formato. Los abre con
+las opciones nuevas en su valor por defecto (sin encender, sin notas propias, sin etiquetas extra, sin pool, sin protección,
+MTU «Heredar» y sin límite), de modo que se crean **igual que antes**. En particular, **Añadir notas de origen** queda
+**desmarcada** al abrir un lote antiguo, aunque en un formulario nuevo venga marcada.
+
+**Un pool que ya no existe.** Si el lote nombra un pool que este servidor no tiene, el pool se muestra como «x (no existe)» y
+la validación lo bloquea hasta que elijas otro o «Ninguno» (ver [Pool](#pool)).
+
 ### Si el lote «no encaja» en este servidor
 
 Un lote guardado en otro servidor puede nombrar un almacenamiento, una red o un nodo que **este** servidor no tiene.
@@ -1671,7 +2096,7 @@ después hay un resumen que debes confirmar, como en cualquier lote.
 > **Archivos de ejemplo** (carpeta [`ejemplos/`](ejemplos/LEEME.md)):
 > [`mvs-minimo.csv`](ejemplos/mvs-minimo.csv) · [`mvs-mixtas.csv`](ejemplos/mvs-mixtas.csv) ·
 > [`mvs-multidisco-cluster.csv`](ejemplos/mvs-multidisco-cluster.csv) · [`mvs-con-errores.csv`](ejemplos/mvs-con-errores.csv) ·
-> [`mvs-escrito-a-mano.csv`](ejemplos/mvs-escrito-a-mano.csv)
+> [`mvs-escrito-a-mano.csv`](ejemplos/mvs-escrito-a-mano.csv) · [`mvs-opciones.csv`](ejemplos/mvs-opciones.csv)
 
 ### Paso a paso
 
@@ -1725,8 +2150,9 @@ lab-03;4;8;80;vmbr0
 - **Qué manda cuando hay varios valores** (de menor a mayor): los valores normales de ProxLaunch, luego el **perfil**
   (el de la columna `perfil`, o el **Perfil base** si la celda está vacía) y por último las **columnas del archivo**. Si una
   fila dice `memoria` = 8 y su perfil trae 4 GiB, se crea con 8 GiB.
-- **Límites:** hasta **100 filas** (sin contar el encabezado ni las vacías), **40 columnas**, **256 caracteres por celda** y
-  **1 MiB** por archivo. Si te pasas, ProxLaunch no recorta: te pide dividir el archivo.
+- **Límites:** hasta **100 filas** (sin contar el encabezado ni las vacías), **60 columnas**, **256 caracteres por celda**
+  (la columna `notas` admite hasta **8192**) y **1 MiB** por archivo. Si te pasas, ProxLaunch no recorta: te pide dividir el
+  archivo.
 - **Numeración de filas:** como en Excel; el encabezado es la fila 1, así que tu primera máquina es la **fila 2**.
 - **Credenciales:** una columna cuyo nombre parece una credencial (`token`, `password`, `contraseña`, `secreto`, `ticket`,
   `csrf`, `apikey`, `credencial`) se ignora **sin leer sus celdas**.
@@ -1759,6 +2185,14 @@ Solo **`nombre`** es obligatoria. Las demás son opcionales.
 | `so` (`sistema`) | No | `linux`, `windows 10`, `windows 11`, `windows server 2016/2019`, `windows server 2022/2025`, `otro`. | — | `windows 11` | Solo con `iso` o `importar`. Aplica el asistente (UEFI, TPM, agente de QEMU, drivers). Con `iso` es necesaria si el perfil no define el sistema. |
 | `virtio` (`drivers`) | No | `si` o `no` (también `yes`, `true`, `1`, `false`, `0`). | — | `si` | Solo Windows con `iso`. Vacío = detectar el ISO de virtio-win. |
 | `modo_clon` (`clon`) | No | `auto`, `enlazado` o `completo`. | — | `enlazado` | Solo con `clonar`. Vacío = `auto`. |
+| `encender` (`start`) | No | `si` o `no` (también `yes`, `true`, `1`, `false`, `0`). | — | `si` | Enciende la máquina al terminar. Vacío = lo que marque el formulario. Ver [abajo](#columnas-de-opciones-de-la-máquina). |
+| `arranque_auto` (`onboot`) | No | `si` o `no`. | — | `si` | La máquina arranca con el servidor. Vacío = el formulario. |
+| `notas` (`notes`) | No | Texto libre, hasta 8192 caracteres. | — | `Servidor web de la oficina` | Notas de la máquina. Una celda entre comillas puede llevar saltos de línea. Vacío = el formulario. |
+| `etiquetas` (`tags`) | No | Etiquetas separadas por `,` o `;`. | — | `web,produccion` | Se suman a `proxlaunch` y `lote-…`. Vacío = las del formulario. |
+| `pool` | No | Nombre de un pool existente (admite `padre/hijo`); `ninguno`, `ninguna`, `sin pool` o `none` = sin pool. | — | `produccion` | Vacío = el pool del formulario. |
+| `proteger` (`protection`) | No | `si` o `no`. | — | `si` | Protege contra borrado. Vacío = el formulario. |
+| `mtu` | No | `heredar` (`inherit`), `igual` (`same`, `bridge`) o un entero de 576 a 65520. | — | `1500` | Solo VirtIO; **primera tarjeta**. Uso avanzado. |
+| `limite_red` (`rate`) | No | Número mayor que 0 (admite decimales). | **MB/s** (sin unidad escrita) | `100`, `12.5` | **Primera tarjeta**. Uso avanzado. |
 
 **Equivalencias que enseñan los ejemplos:**
 
@@ -1766,6 +2200,60 @@ Solo **`nombre`** es obligatoria. Las demás son opcionales.
 - `origen=clonar`: `cpu` y `memoria` son ajustes sobre la plantilla; si los dejas vacíos, la copia queda igual que la
   plantilla.
 - `origen=iso` con `so=windows 11` y `virtio=si`: instala Windows 11 con el ISO de drivers virtio-win detectado.
+
+#### Columnas de opciones de la máquina
+
+Las ocho columnas nuevas (`encender`, `arranque_auto`, `notas`, `etiquetas`, `pool`, `proteger`, `mtu` y `limite_red`)
+sirven para fijar, **fila por fila**, las [opciones de la máquina](#opciones-de-la-máquina). Cómo se comportan:
+
+- **Celda vacía = lo del formulario.** Si dejas la celda vacía (o no pones la columna), la fila usa lo que tengas marcado en
+  el formulario al importar. Una celda vacía **no** significa «no»: para anular algo del formulario escribe `no` (o
+  `ninguno` en `pool`, o `heredar` en `mtu`).
+- **Sí y no.** En `encender`, `arranque_auto` y `proteger` valen `si`, `yes`, `true` y `1` (sí) y `no`, `false` y `0` (no),
+  con o sin acento y sin distinguir mayúsculas. Otro valor (`quizá`) da error en esa celda, con el nombre de la columna y el
+  valor.
+- **Etiquetas.** Separadas por `,` o `;` (pon la celda entre comillas si el separador del archivo es la coma). Con la celda
+  vacía, la fila lleva las etiquetas del formulario; si la fila escribe etiquetas, **sustituyen** a las del formulario (las
+  de ProxLaunch, `proxlaunch` y `lote-…`, se mantienen siempre).
+- **Notas.** Hasta 8192 caracteres por celda. No hay columna para las casillas **Añadir notas de origen** ni **Incluir mi
+  usuario en las notas**: se usa lo que marque el formulario para todo el lote. Si la celda parece contener un API Token o
+  caracteres no admitidos, la fila da error y el valor no se muestra.
+- **Pool.** Un nombre de pool, `ninguno` para no usar pool aunque el formulario tenga uno, o vacío (el del formulario).
+- **MTU y límite de red.** Solo afectan a la **primera tarjeta** de la máquina. `mtu` acepta `heredar`, `igual` (igual al
+  bridge) o un número de 576 a 65520, y solo vale con tarjeta VirtIO (con `modelo_red` = `e1000` da error). `limite_red` va en
+  MB/s, sin escribir la unidad. En un clon, estas dos columnas no se aplican (la red es de la plantilla).
+- **Un perfil con «Arrancar con el servidor».** Si la fila elige un perfil (columna `perfil`) que lo tiene marcado y
+  `arranque_auto` está vacía, la fila arranca con el servidor.
+- **Qué se valida cuándo.** La vista previa comprueba el formato (sí/no, etiquetas, rangos de MTU y límite, pool bien
+  escrito). Lo que depende del servidor (si el pool existe, si tus privilegios alcanzan, si las etiquetas están permitidas)
+  se comprueba al pulsar **Ver resumen**: por ejemplo, una fila con `encender` = `si` sin el privilegio `VM.PowerMgmt` se
+  bloquea y el mensaje nombra el privilegio que falta.
+- **Plantilla y archivos antiguos.** La plantilla CSV de la aplicación ya incluye estas columnas. Un CSV de 0.5.1 (sin
+  ellas) se lee igual que antes.
+
+Ejemplo: [`mvs-opciones.csv`](ejemplos/mvs-opciones.csv), con cuatro máquinas. Como texto:
+
+```text
+"nombre";"perfil";"cpu";"memoria";"disco";"almacenamiento";"red";"encender";"arranque_auto";"notas";"etiquetas";"pool";"proteger";"mtu";"limite_red"
+"web-01";"fabrica.servidor-mediano";"";"";"";"local-lvm";"vmbr0";"si";"si";"Servidor web de la oficina";"web,produccion";"produccion";"si";"1500";"100"
+"web-02";"fabrica.servidor-mediano";"";"";"";"local-lvm";"vmbr0";"";"";"";"";"";"";"";""
+"bd-01";"fabrica.base-de-datos";"";"";"";"local-lvm";"vmbr0";"no";"si";"Base de datos principal";"bd;produccion";"ninguno";"si";"igual";""
+"lab-01";"fabrica.minimo";"";"";"";"local-lvm";"vmbr0";"no";"no";"";"laboratorio";"";"no";"heredar";"12.5"
+```
+
+En una hoja de cálculo (a la derecha del bridge `vmbr0` empiezan las columnas de opciones):
+
+| nombre | perfil | almacenamiento | red | encender | arranque_auto | notas | etiquetas | pool | proteger | mtu | limite_red |
+|---|---|---|---|---|---|---|---|---|---|---|---|
+| web-01 | fabrica.servidor-mediano | local-lvm | vmbr0 | si | si | Servidor web de la oficina | web,produccion | produccion | si | 1500 | 100 |
+| web-02 | fabrica.servidor-mediano | local-lvm | vmbr0 | | | | | | | | |
+| bd-01 | fabrica.base-de-datos | local-lvm | vmbr0 | no | si | Base de datos principal | bd;produccion | ninguno | si | igual | |
+| lab-01 | fabrica.minimo | local-lvm | vmbr0 | no | no | | laboratorio | | no | heredar | 12.5 |
+
+(La hoja omite las columnas vacías `cpu`, `memoria` y `disco` para caber.) Lo que enseña cada fila: `web-01` lo fija todo;
+`web-02` no fija nada y hereda lo del formulario; `bd-01` separa las etiquetas con `;`, no usa pool aunque el formulario
+tenga uno y pone el MTU «igual al bridge»; `lab-01` escribe `no` en lugar de dejar la celda vacía, anula el MTU del perfil
+con `heredar` y limita la tarjeta a 12.5 MB/s.
 
 #### Unidades y números
 
@@ -2028,7 +2516,7 @@ Tema y modo se guardan y se recuerdan en la siguiente sesión (archivo `preferen
 | **¿Cómo creo un API Token?** | Abre la guía del token ([Cómo se prepara](#cómo-se-prepara-pasos-para-el-administrador)). |
 | **Acerca de ProxLaunch** | Abre la ventana de información. |
 
-![Ventana «Acerca de ProxLaunch»: el logotipo, «ProxLaunch 0.5.1», «Compatible con Proxmox VE», la nota «Asistente para crear máquinas virtuales. Proxmox es una marca de Proxmox Server Solutions GmbH; ProxLaunch es un proyecto independiente.», la nota sobre las etiquetas «proxlaunch» y «lote-...», una lista desplegable «Licencia de la fuente Open Sans (SIL Open Font License)», el texto de la licencia y el botón «Cerrar».](img/12-acerca-de.png)
+![Ventana «Acerca de ProxLaunch»: el logotipo, «ProxLaunch 0.6.0», «Compatible con Proxmox VE», la nota «Asistente para crear máquinas virtuales. Proxmox es una marca de Proxmox Server Solutions GmbH; ProxLaunch es un proyecto independiente.», la nota sobre las etiquetas «proxlaunch» y «lote-...», una lista desplegable «Licencia de la fuente Open Sans (SIL Open Font License)», el texto de la licencia y el botón «Cerrar».](img/12-acerca-de.png)
 
 **Acerca de ProxLaunch** muestra la versión, que la aplicación es compatible con Proxmox VE (ProxLaunch es un proyecto
 independiente; Proxmox es una marca de Proxmox Server Solutions GmbH), la nota de que las máquinas que crea llevan la
@@ -2074,6 +2562,12 @@ opciones.
 | **Importar desde CSV** | **Lote > Importar desde CSV…** | [57](img/57-csv-vista-previa-ok.png), [58](img/58-csv-vista-previa-errores.png) | Vista previa y validación | [Vista previa](#la-vista-previa) |
 | Lote por filas | Tras importar | [59](img/59-lote-por-filas.png) | Máquinas con configuración propia | [Lote por filas](#lote-por-filas) |
 | **Cambios sin guardar** | Al cerrar, abrir o importar | [60](img/60-cambios-sin-guardar.png) | Evitar perder un lote | [Cambios sin guardar](#cambios-sin-guardar) |
+| Opciones de la máquina (básico y avanzado) | Ventana de trabajo | [61](img/61-opciones-general.png), [62](img/62-opciones-avanzadas.png) | Encender, arrancar con el servidor, notas, etiquetas, pool, protección, MTU y límite | [Opciones de la máquina](#opciones-de-la-máquina) |
+| Opciones desactivadas por falta de privilegio | Usuario sin `VM.PowerMgmt` o `Pool.Audit` | [63](img/63-opciones-deshabilitadas.png) | Ver qué privilegio falta | [Cuando una opción está desactivada](#cuando-una-opción-está-desactivada) |
+| Resumen de lote con opciones | **Ver resumen** | [64](img/64-lote-resumen-opciones.png) | Revisar las opciones de todo el lote | [Opciones en un lote](#opciones-de-la-máquina-en-un-lote) |
+| Simulación con encendido | **Simular** | [65](img/65-simulacion-encender.png) | Ver `description`, `tags`, `startup` y el encendido final | [Simulación](#simulación) |
+| **Confirmar Deshacer con apagado o desprotección** | **Deshacer…** con máquinas encendidas o protegidas | [66](img/66-deshacer-confirmacion-forzada.png) | Confirmar el apagado a la fuerza y la desprotección | [Deshacer](#deshacer-con-máquinas-encendidas-o-protegidas) |
+| Privilegios opcionales en la guía del token | **Ayuda > ¿Cómo creo un API Token?** | [67](img/67-guia-privilegios-opcionales.png) | `VM.PowerMgmt`, `Pool.Audit` y lo que no se pide | [Privilegios opcionales](#privilegios-opcionales-no-forman-parte-del-rol) |
 
 ### Menús
 
@@ -2095,6 +2589,7 @@ opciones.
 | Confirmar el envío | Lote de más de 10 máquinas | **Crear las máquinas**, **Cancelar** |
 | Cancelar el lote | Cancelas con máquinas ya enviadas | **Cancelar el lote**, **Seguir creando** |
 | Seguir sin etiquetas | Eliges **Seguir sin etiquetas** en una pausa | **Preparar el lote sin etiquetas** y cancelar |
+| Confirmar Deshacer con apagado o desprotección | Al deshacer, hay máquinas del lote encendidas o protegidas | **Apagar, desproteger y eliminar** (desactivado hasta marcar la casilla), **Eliminar sin apagar ni desproteger**, **Cancelar** (predeterminado) |
 | Hay un lote en curso | Cierras con un lote en marcha | **Seguir en ProxLaunch**, **Cerrar de todos modos** |
 | Todavía no sabemos si se creó | **Volver al formulario** con una máquina dudosa | **Sí** / **No** («¿Volver de todos modos?») |
 | Reemplazar la huella guardada, Conexión sin verificar, Eliminar perfil | En la conexión (avanzado) | **Sí** / **No** (por defecto, **No**) |
@@ -2116,27 +2611,30 @@ y no se comparte. Los ejemplos están en la carpeta [`ejemplos/`](ejemplos/LEEME
 > **Los perfiles de conexión no se exportan ni se importan.** Para usar un servidor en otro equipo hay que crear su perfil
 > de nuevo (el token o la contraseña nunca viajan en archivos).
 
-**Límites comunes:** CSV hasta 1 MiB, 40 columnas, 256 caracteres por celda y 100 filas; lote guardado hasta 1 MiB; archivo
-de perfiles hasta 256 KiB y 100 perfiles (también 100 perfiles propios en total); nombre de perfil o de lote hasta 60
-caracteres; descripción hasta 200; versión máxima de formato legible: 2. Las cadenas que parecen credenciales se descartan y
-avisan. Un archivo creado por una versión más nueva de ProxLaunch no se abre: «Este archivo lo creó una versión más nueva
+**Límites comunes:** CSV hasta 1 MiB, 60 columnas, 256 caracteres por celda (8192 en la columna `notas`) y 100 filas; lote
+guardado hasta 1 MiB; archivo de perfiles hasta 256 KiB y 100 perfiles (también 100 perfiles propios en total); nombre de
+perfil o de lote hasta 60 caracteres; descripción hasta 200; versión máxima de formato legible: 3. Las cadenas que parecen
+credenciales se descartan y avisan. Un lote guardado de 100 máquinas con notas muy largas en cada fila puede acercarse al
+límite de 1 MiB: si lo supera, ProxLaunch no lo guarda y lo dice. Un archivo creado por una versión más nueva de ProxLaunch no se abre: «Este archivo lo creó una versión más nueva
 de ProxLaunch. Actualiza la aplicación para abrirlo.»
 
 ### CSV de máquinas
 
 Reglas, [columnas](#columnas-del-csv), unidades y [validación](#validación-un-archivo-con-errores-a-propósito) están en
 [Importar máquinas desde un CSV](#importar-máquinas-desde-un-csv). La plantilla que descarga ProxLaunch tiene las columnas
-más usadas y cinco filas de ejemplo (dos con disco vacío y una por cada origen: ISO, disco existente y plantilla). Sus
-nombres empiezan por `ejemplo-`; si las importas tal cual, ProxLaunch avisa «Parece una fila de ejemplo de la plantilla.»
-El texto del archivo (separador `;`; ProxLaunch escribe **todas las celdas entre comillas**, en UTF-8 con BOM):
+más usadas (en 0.6, también las de [opciones de la máquina](#columnas-de-opciones-de-la-máquina)) y cinco filas de ejemplo
+(dos con disco vacío y una por cada origen: ISO, disco existente y plantilla). Sus nombres empiezan por `ejemplo-`; si las
+importas tal cual, ProxLaunch avisa «Parece una fila de ejemplo de la plantilla.» Las dos primeras filas muestran algunas
+opciones (`arranque_auto`, `notas`, `etiquetas`, `pool`, `mtu`, `limite_red`…); las demás las dejan vacías. El texto del
+archivo (separador `;`; ProxLaunch escribe **todas las celdas entre comillas**, en UTF-8 con BOM):
 
 ```text
-"nombre";"perfil";"cpu";"memoria";"disco";"almacenamiento";"red";"vlan";"nodo";"vmid";"origen";"fuente";"so";"virtio";"modo_clon"
-"ejemplo-01";"fabrica.servidor-mediano";"";"8";"100";"local-lvm";"vmbr0";"";"";"";"vacio";"";"";"";""
-"ejemplo-02";"";"2";"4 GiB";"40";"";"vmbr1";"20";"pve2";"250";"vacio";"";"";"";""
-"ejemplo-03";"";"2";"4";"32";"";"";"";"";"";"iso";"ejemplo-instalador.iso";"linux";"";""
-"ejemplo-04";"";"2";"4";"40";"";"";"";"";"";"importar";"ejemplo-disco.qcow2";"";"";""
-"ejemplo-05";"";"4";"8";"80";"";"";"";"";"";"clonar";"ejemplo-plantilla";"";"";"auto"
+"nombre";"perfil";"cpu";"memoria";"disco";"almacenamiento";"red";"vlan";"nodo";"vmid";"origen";"fuente";"so";"virtio";"modo_clon";"encender";"arranque_auto";"notas";"etiquetas";"pool";"proteger";"mtu";"limite_red"
+"ejemplo-01";"fabrica.servidor-mediano";"";"8";"100";"local-lvm";"vmbr0";"";"";"";"vacio";"";"";"";"";"";"si";"Servidor de ejemplo";"web,prod";"";"";"";""
+"ejemplo-02";"";"2";"4 GiB";"40";"";"vmbr1";"20";"pve2";"250";"vacio";"";"";"";"";"no";"";"";"";"ninguno";"no";"heredar";"50"
+"ejemplo-03";"";"2";"4";"32";"";"";"";"";"";"iso";"ejemplo-instalador.iso";"linux";"";"";"";"";"";"";"";"";"";""
+"ejemplo-04";"";"2";"4";"40";"";"";"";"";"";"importar";"ejemplo-disco.qcow2";"";"";"";"";"";"";"";"";"";"";""
+"ejemplo-05";"";"4";"8";"80";"";"";"";"";"";"clonar";"ejemplo-plantilla";"";"";"auto";"";"";"";"";"";"";"";""
 ```
 
 #### Informe del lote en CSV
@@ -2195,7 +2693,7 @@ completo.)
 
 | Clave | Qué es | Unidad o valores |
 |---|---|---|
-| `formato`, `version_formato`, `app_version` | Tipo de archivo y versión del formato (1 o 2) y de ProxLaunch que lo guardó. | `proxlaunch.lote` |
+| `formato`, `version_formato`, `app_version` | Tipo de archivo y versión del formato (1, 2 o 3) y de ProxLaunch que lo guardó. | `proxlaunch.lote` |
 | `nombre` | Nombre del lote (el de **Guardar lote**). | Hasta 60 caracteres. |
 | `tipo` | `homogeneo` o `por_filas`. | |
 | `version_proxmox` | Versión de Proxmox con la que se guardó. | Texto, por ejemplo `9.2`. |
@@ -2206,6 +2704,13 @@ completo.)
 | `homogeneo.etiquetar` | Si pone las etiquetas del lote. | `true` / `false` |
 | `config` | El hardware: `cores`, `sockets`, `memoria_mib`, `firmware`, `tipo_cpu`, `discos`, `redes`, `origen`… | **Ojo:** la memoria va en **MiB** (`2048`) y los discos en GiB (`tamano_gib`). |
 | `config.origen` | De dónde sale el sistema. | En los ejemplos: `disco_vacio`, `iso`, `clonar_plantilla`. El ISO o la plantilla van en `detalle_origen` (solo el **nombre**, nunca URL ni ruta). |
+| `config.encender`, `config.arranque_auto`, `config.proteger` | Las casillas **Encender al terminar**, **Arrancar con el servidor** y **Proteger contra borrado**. *(Formato 3.)* | `true`. Solo se escriben si valen `true`. |
+| `config.arranque_orden`, `config.arranque_espera` | **Orden de arranque** y **Espera (s)**. *(Formato 3.)* | Enteros de 0 en adelante. |
+| `config.notas_origen`, `config.notas_usuario`, `config.notas` | **Añadir notas de origen**, **Incluir mi usuario en las notas** y el texto de **Notas**. | `true` / `true` / texto de hasta 8192 caracteres. `notas_usuario` y `notas` piden el formato 3; `notas_origen` sola **no** lo sube (se escribe igualmente). |
+| `config.etiquetas_usuario`, `config.pool` | Las etiquetas propias y el pool. *(Formato 3.)* | Lista de textos / nombre del pool (`padre/hijo` admitido). |
+| `config.redes[].mtu`, `config.redes[].limite_mb` | MTU y límite de velocidad de cada tarjeta. *(Formato 3.)* | `1` (igual al bridge) o 576 a 65520 / número de MB/s mayor que 0. |
+| `homogeneo.opciones` (o `por_filas.opciones`) | Las opciones que valen para todo el lote. | Mismas claves que arriba (sin las de arranque ni las de red). |
+| `por_filas.filas[].opciones` | Lo que **una fila** sobrescribe de las opciones del lote. | `encender`, `arranque_auto`, `notas`, `etiquetas_usuario`, `pool` y `proteger`; lo que no aparece, se hereda. |
 
 El lote **por filas** ([`lote-por-filas.proxlaunch-lote.json`](ejemplos/lote-por-filas.proxlaunch-lote.json)) usa la clave
 `por_filas` con `destino.algoritmo`, `etiquetar`, `vmid_inicial` y una lista `filas`; cada fila tiene `nombre`, `vmid`,
@@ -2279,6 +2784,30 @@ importado no crea nada: aporta el hardware que luego eliges en el selector de pe
 Se guardan solo en `perfiles.json` de la carpeta de configuración del usuario, sin secretos. **No hay forma de exportarlos
 ni importarlos**; para llevar un servidor a otro equipo se crea de nuevo su perfil en **Conectar con Proxmox**.
 
+### Compatibilidad con versiones anteriores
+
+Los lotes guardados y los archivos de perfiles llevan un número de versión del formato (`version_formato`). Desde ProxLaunch
+0.6 la versión más alta es la **3**.
+
+| Archivo | ¿Lo abre 0.6.0? | ¿Lo abre 0.5.1? |
+|---|---|---|
+| Lote o perfiles de versión **1** o **2** (de 0.5.x o anteriores) | Sí. Las opciones nuevas toman su valor por defecto y se crea **igual que antes**. | Sí. |
+| Lote o perfiles de versión **3** (usan alguna opción nueva) | Sí. | **No**: «Este archivo lo creó una versión más nueva de ProxLaunch. Actualiza la aplicación para abrirlo.» |
+| CSV de 0.5.1 (sin columnas de opciones) | Sí, se lee igual que antes. | — |
+| CSV con columnas de opciones | Sí. | Las abre, pero **ignora** las columnas que no conoce con un aviso, de modo que las opciones no se aplican. |
+
+- **Cuándo se escribe la versión 3.** ProxLaunch 0.6 escribe un lote o un perfil en versión 3 **solo si usa alguna opción
+  nueva** (por ejemplo, un lote con **Encender al terminar**, notas propias, etiquetas, pool, protección, MTU o límite; o un
+  perfil con **Arrancar con el servidor** o con MTU o límite en alguna tarjeta). Si no usa ninguna, lo escribe en la
+  versión más baja posible (1 o 2), igual que antes, y 0.5.1 lo sigue abriendo. Los perfiles de fábrica no cambian.
+- **La casilla «Añadir notas de origen».** Viene marcada por defecto, pero **por sí sola no sube el formato**: se guarda en el
+  archivo, y un lote que solo la usa sigue siendo de versión 1 o 2. 0.5.1 lo abre y, al no conocer ese dato, lo ignora y
+  muestra el aviso de campos desconocidos («Se ignoró 1 campo que ProxLaunch no conoce.»).
+- **Abrir un archivo antiguo no lo modifica.** Los archivos de terceros solo se leen. Si lo vuelves a guardar con 0.6, se
+  escribe con la versión que le corresponda según lo que use.
+- **Un archivo de una versión futura** (más de 3) se rechaza con el mismo mensaje de «versión más nueva».
+- **Perfiles exportados** con alguna opción nueva (versión 3) tampoco se pueden importar en 0.5.1; los demás sí.
+
 ---
 
 ## Solución de problemas
@@ -2328,7 +2857,7 @@ En todos, **tu archivo original no se modifica** y, si falla al abrir o importar
 | Este archivo no es un archivo de ProxLaunch del tipo que buscas. | Elegiste un archivo de otro tipo (por ejemplo, un lote donde se esperaban perfiles). | Usa la opción que corresponde: perfiles en **Administrar perfiles… > Importar…**, lotes en **Lote > Abrir lote…**, CSV en **Lote > Importar desde CSV…**. |
 | Este archivo lo creó una versión más nueva de ProxLaunch. Actualiza la aplicación para abrirlo. | El formato es más nuevo que esta versión. | Actualiza ProxLaunch. |
 | El archivo está dañado o tiene datos no válidos: … | Falta un dato, tiene un valor que no corresponde o no es JSON válido. Se muestran hasta 10 campos y «y N más». | Corrige esos campos o vuelve a guardar el archivo desde ProxLaunch. |
-| El archivo tiene 130 filas; el máximo por lote es 100. Divide el archivo en partes. | El CSV supera los límites (filas, columnas o celdas). | Divide el CSV en archivos de hasta 100 filas, 40 columnas y 256 caracteres por celda. |
+| El archivo tiene 130 filas; el máximo por lote es 100. Divide el archivo en partes. | El CSV supera los límites (filas, columnas o celdas). | Divide el CSV en archivos de hasta 100 filas, 60 columnas y 256 caracteres por celda (8192 en `notas`). |
 | No pude leer el archivo CSV (fila 12). Guárdalo como «CSV UTF-8» desde Excel. / Hay unas comillas sin cerrar en la fila 12… | Caracteres ilegibles o comillas sin cerrar. | En Excel: **Guardar como > CSV UTF-8**. Revisa la fila indicada. |
 | El archivo no tiene máquinas. | El CSV solo tiene encabezado. | Añade filas. |
 | Falta la columna «nombre». Columnas reconocidas: … / La columna «cpu» aparece dos veces. / Hay datos en columnas que no tienen encabezado (columnas 7). | El encabezado no sirve. | Añade o renombra `nombre`, quita las repetidas o ponle encabezado a la columna con datos. Ver [Columnas](#columnas-del-csv). |
@@ -2347,6 +2876,33 @@ En todos, **tu archivo original no se modifica** y, si falla al abrir o importar
 También verás avisos (⚠) que no impiden seguir: «Se ignoró 1 campo que ProxLaunch no conoce.», «El archivo traía datos que
 parecen una credencial. No se usaron. Si eran reales, cámbialas.», «En la columna «memoria» había números sin unidad: se
 entendieron como GiB.» y «En la columna «disco», «GB» se tomó como GiB (1 GB = 1024 MiB).»
+
+#### Mensajes de las opciones de la máquina
+
+Los textos entre «x» o «N» cambian en cada caso. Los privilegios y las rutas se explican en
+[Privilegios opcionales](#privilegios-opcionales-no-forman-parte-del-rol).
+
+| Mensaje | Qué significa | Qué hacer |
+|---|---|---|
+| «Encender al terminar» no está disponible: tu usuario no tiene el privilegio VM.PowerMgmt en «/vms». Pídeselo a tu administrador. | Falta el privilegio opcional para encender. La casilla queda desactivada. | Pide `VM.PowerMgmt` en `/vms`, o deja la casilla y enciende la máquina desde Proxmox. |
+| Se creó, pero no se pudo encender. Enciéndela desde Proxmox si la necesitas. | La máquina existe, pero falló la orden de encendido. | Enciéndela desde Proxmox. No hay nada que deshacer. |
+| No se encendió: quedaron ajustes por aplicar o su creación se confirmó después (al comprobarla). … | No se encendió por prudencia. | Revisa la máquina y, si hace falta, enciéndela desde Proxmox. |
+| Se creó, pero falta aplicar el arranque con el servidor / la protección contra borrado. Puedes reintentar los ajustes. | En un clon, el ajuste posterior falló. | Pulsa **Reintentar ajustes**. |
+| La etiqueta «x» no es válida: usa minúsculas, números, «_», «-», «+» y «.», sin espacios, y empieza por una letra, un número o «_» (máximo 128 caracteres). | Una etiqueta propia no cumple las reglas. | Corrígela (por ejemplo, `Web` → `web`). |
+| La etiqueta «x» está registrada en el centro de datos y tu usuario no puede aplicarla (hace falta Sys.Modify en «/»). … / El centro de datos no deja a tu usuario poner etiquetas (política «none»)… / Tu administrador no ha autorizado la etiqueta «x». … | La política de etiquetas del centro de datos no permite esa etiqueta a tu usuario. No se envía nada. | Pide al administrador que la autorice (ver [Etiquetas](#etiquetas-propias-y-política-del-centro-de-datos)) o quítala. |
+| No se pudo leer la política de etiquetas del centro de datos, así que no se pudo comprobar si tus etiquetas están permitidas. … | Aviso: ProxLaunch no pudo leer la política (por ejemplo, falta `Sys.Audit`). No bloquea. | Sigue; si Proxmox rechaza las etiquetas, la máquina no se creará. |
+| Las notas ocupan N de los 8192 caracteres que admite Proxmox: queda poco espacio. | Aviso a partir de 7500 caracteres. | Acorta las notas si puedes. |
+| Las notas ocupan N caracteres y Proxmox admite 8192: sobran M. Acórtalas. / Las notas superan los 8192 caracteres que admite Proxmox. … | Las notas son demasiado largas. | Acórtalas. |
+| Las notas tienen caracteres de control (no imprimibles): se eliminarán al crear. | Aviso: el texto trae caracteres invisibles. | Revísalo; no bloquea. |
+| No se añadieron las notas de origen: no se pudo leer la descripción de la plantilla y así no se pisan sus notas. | En un clon, ProxLaunch no pudo leer las notas de la plantilla. | Añade tus notas desde Proxmox si las necesitas. |
+| No puedes ver la lista de pools: falta el privilegio Pool.Audit en «/pool». … | Sin `Pool.Audit`, el desplegable **Pool** está desactivado. | Pide `Pool.Audit` en `/pool`. |
+| No sabemos si puedes ver la lista de pools … / No se pudo leer la lista de pools del servidor. Inténtalo de nuevo. | No se pudieron comprobar los permisos o falló la lectura. | Reintenta con **Actualizar**. |
+| El pool «x» no existe en este servidor. / … no existe en Proxmox. No se creó la máquina. | El pool ya no existe. | Elige otro pool o «Ninguno». |
+| Para crear la máquina en el pool «x» falta el privilegio VM.Allocate en «/vms» o en «/pool/x». | No tienes `VM.Allocate` ni en la máquina ni en el pool. | Pide el privilegio en una de las dos rutas. |
+| El MTU de la tarjeta N debe ser «Igual al bridge» o un número entre 576 y 65520. / El MTU de la tarjeta N solo se aplica a tarjetas VirtIO. … | MTU fuera de rango o con una tarjeta que no es VirtIO. | Corrige el valor o elige VirtIO. |
+| El límite de velocidad de la tarjeta N debe ser un número mayor que 0 y no superior a 1 000 000 000 (en MB/s). | Límite no válido. | Corrígelo o déjalo vacío. |
+| «x» está encendida y no se pudo apagar: falta el privilegio VM.PowerMgmt. … / «x» está protegida y no se pudo desproteger: falta el privilegio VM.Config.Options. … | En Deshacer, falta el privilegio para apagar o desproteger esa máquina; se omite. | Apágala o quítale la protección desde Proxmox, o pide el privilegio. |
+| No se pudo apagar «x», así que no se eliminó. … / No se pudo quitar la protección de «x», así que no se eliminó. … | Falló un paso previo al borrado. | Hazlo desde Proxmox y vuelve a intentarlo. |
 
 #### Mensajes del origen del sistema operativo
 
@@ -2385,12 +2941,26 @@ Los puntos suspensivos (…) son datos que cambian en cada caso.
 ### Preguntas frecuentes
 
 **¿ProxLaunch instala el sistema operativo en la máquina?**
-No lo instala por ti: prepara la máquina y la deja detenida. Con **Instalar desde un archivo ISO** la máquina queda con el
+No lo instala por ti: prepara la máquina y, por defecto, la deja detenida. Con **Instalar desde un archivo ISO** la máquina queda con el
 ISO puesto (y, en Windows, con el CD de drivers virtio-win) y tú terminas la instalación desde la consola de Proxmox. Con
 **Usar un disco existente** o **Copiar una plantilla**, la máquina ya trae su sistema. La instalación desatendida, las OVA
 y la migración desde VMware no están soportadas.
 
-**¿ProxLaunch enciende la máquina?** No. Se crea detenida.
+**¿ProxLaunch enciende la máquina?** Solo si lo pides: por defecto se crea detenida. Si marcas **Encender al terminar** (necesita
+el privilegio opcional `VM.PowerMgmt`), la enciende al final, después de todos los ajustes. Si el encendido falla, la máquina
+queda creada y apagada, con un aviso. Ver [Encender al terminar](#encender-al-terminar-y-arrancar-con-el-servidor).
+
+**La casilla «Encender al terminar» (o la lista «Pool») está desactivada.** Falta un privilegio opcional: `VM.PowerMgmt` en
+`/vms` para encender, `Pool.Audit` en `/pool` para ver los pools. Debajo del campo, ProxLaunch dice cuál. Ver
+[Privilegios opcionales](#privilegios-opcionales-no-forman-parte-del-rol).
+
+**No me deja crear porque una etiqueta «no está autorizada».** Tu administrador limitó las etiquetas que pueden poner los
+usuarios. Pídele que añada esa etiqueta (y `proxlaunch` y `lote-…` si también las bloquea) a las etiquetas permitidas del
+centro de datos, o quita tus etiquetas propias. Ver
+[Etiquetas propias](#etiquetas-propias-y-política-del-centro-de-datos).
+
+**Abrí un lote guardado con 0.6 en 0.5.1 y no se abre.** Los lotes y perfiles que usan opciones nuevas son de formato 3, que
+0.5.1 no entiende. Abre ese archivo con 0.6 (ver [Compatibilidad](#compatibilidad-con-versiones-anteriores)).
 
 **No veo las opciones ISO, disco existente o plantilla (están desactivadas).**
 Cada una dice debajo por qué. Lo más habitual es que falte un permiso (`VM.Config.Disk`, `VM.Clone`,
@@ -2429,7 +2999,8 @@ necesitas máquinas **distintas** en el mismo lote, usa un [lote por filas](#lot
 impórtalo otra vez, o quita esa fila.
 
 **¿Puedo editar o borrar máquinas existentes?** No, salvo una cosa: **Deshacer…** borra las máquinas que **creó el lote que
-acabas de hacer** (y solo mientras ProxLaunch siga abierto). ProxLaunch tampoco gestiona contenedores (LXC) ni alta
+acabas de hacer** (y solo mientras ProxLaunch siga abierto). Si alguna está encendida o protegida, solo la apaga o desprotege
+con tu confirmación expresa ([Deshacer con máquinas encendidas o protegidas](#deshacer-con-máquinas-encendidas-o-protegidas)). ProxLaunch tampoco gestiona contenedores (LXC) ni alta
 disponibilidad.
 
 **¿Qué pasa si se corta la luz o se cierra ProxLaunch en mitad de un lote?** Las tareas ya enviadas siguen en Proxmox y
@@ -2525,7 +3096,7 @@ ProxLaunch guarda sus datos en las carpetas de tu usuario que elige tu sistema o
 | `proxlaunch.log` (carpeta de registro) | Registro de lo que hace la aplicación, incluidos los errores no controlados. Se rota solo (hasta 5 copias de 1 MB). |
 | `fallo-nativo.txt` y `.1` (carpeta de registro) | Traza de un cierre interno (de Qt o del sistema). Se borra al cerrar ProxLaunch con normalidad; si queda, al abrir se guarda como `.1` (máximo 256 KB). Solo lleva nombres de archivos y funciones, pero esas rutas pueden incluir tu nombre de usuario. |
 | `informes/` (carpeta de datos) | Carpeta que **sugiere** ProxLaunch al guardar un informe de lote y donde deja el informe parcial (`parcial-<código>.txt`). Sin host, IP, usuario ni secretos, pero con nombres de máquinas y nodos. |
-| `lotes/` (carpeta de datos) | Carpeta que **sugiere** ProxLaunch al guardar un [lote](#guardar-y-abrir-lotes). Sin servidor, usuario ni secretos. |
+| `lotes/` (carpeta de datos) | Carpeta que **sugiere** ProxLaunch al guardar un [lote](#guardar-y-abrir-lotes). Sin servidor, usuario ni secretos. Sí lleva el texto de tus **Notas** y tus etiquetas, así que no escribas ahí nada que no quieras compartir. |
 
 En Linux y otros sistemas tipo Unix, el registro y todos los archivos que escribe ProxLaunch (perfiles, lotes, CSV e
 informes) se crean con permisos solo para tu usuario (0600), y sus carpetas propias, también (0700). Si compartes un
@@ -2590,7 +3161,14 @@ administrador.
 | **Lote** | Un grupo de máquinas que se crean de una vez (hasta 100). Normalmente iguales; solo cambian nombre, número y nodo. |
 | **Lote por filas** | Un lote en el que cada máquina trae su propia configuración (el caso de un CSV con máquinas distintas). |
 | **Lote guardado** | Un archivo `.proxlaunch-lote.json` con la definición de un lote. No guarda datos de conexión. |
-| **Etiqueta** | Una marca de texto que Proxmox muestra junto a la máquina. ProxLaunch usa `proxlaunch` y `lote-<código>`. |
+| **Etiqueta** | Una marca de texto que Proxmox muestra junto a la máquina. ProxLaunch usa `proxlaunch` y `lote-<código>`, y puedes añadir las tuyas. |
+| **Política de etiquetas** | La configuración del centro de datos de Proxmox que limita qué etiquetas pueden poner los usuarios. ProxLaunch la comprueba antes de crear. |
+| **Notas (descripción)** | El texto libre que Proxmox muestra en la ficha de una máquina. ProxLaunch puede añadir un bloque automático («notas de origen») y tu propio texto. Máximo 8192 caracteres. |
+| **Pool** | Un grupo de recursos de Proxmox (máquinas, almacenamientos) sobre el que se reparten permisos. Pueden ser anidados (`padre/hijo`). |
+| **Protección contra borrado** | Un ajuste de la máquina por el que Proxmox no deja eliminarla hasta que se quite. |
+| **Arranque con el servidor (`onboot`)** | Hace que la máquina se encienda sola cuando arranca el servidor Proxmox. El **orden** y la **espera** (`startup`) indican en qué orden y con qué retraso. |
+| **MTU** | El tamaño máximo de paquete de una tarjeta de red. **Igual al bridge** usa el del bridge. Solo se fija en tarjetas VirtIO. |
+| **Privilegio opcional** | Un privilegio que no forma parte del rol `ProxLaunchCreador` y que solo habilita una función concreta: `VM.PowerMgmt` (encender y apagar) y `Pool.Audit` (ver pools). |
 | **Perfil de máquina** | Una configuración de hardware ya preparada que rellena el formulario. No es una plantilla de Proxmox ni un perfil de conexión. |
 | **Perfil de conexión** | Los datos para llegar a un servidor (sin secretos). No se exporta. |
 | **CSV** | Un archivo de texto con una tabla, que puedes crear y editar con Excel o LibreOffice Calc. Cada fila es una máquina. |

@@ -8,15 +8,17 @@ una línea ``sep=;`` inicial no se cuenta). Los límites nunca recortan en silen
 
 import csv
 import re
-from collections.abc import Iterator
+from collections.abc import Iterator, Mapping
 from pathlib import Path
 
 from proxlaunch.nucleo.archivos.constantes import (
     MAX_BYTES_CSV,
     MAX_COLUMNAS_CSV,
     MAX_LONG_CELDA,
+    MAX_LONG_NOTAS,
 )
 from proxlaunch.nucleo.archivos.lector import leer_archivo_limitado
+from proxlaunch.nucleo.csv_importacion.columnas import posiciones_de_columna
 from proxlaunch.nucleo.csv_importacion.decodificacion import decodificar
 from proxlaunch.nucleo.csv_importacion.modelos import (
     DeteccionSeparador,
@@ -64,13 +66,23 @@ def _lineas(texto: str) -> Iterator[str]:
         yield m.group()
 
 
-def leer_tabla(datos: bytes, opciones: OpcionesCsv = OPCIONES_AUTOMATICAS) -> TablaCsv:
+def leer_tabla(
+    datos: bytes,
+    opciones: OpcionesCsv = OPCIONES_AUTOMATICAS,
+    *,
+    alias_extra: Mapping[str, str] | None = None,
+) -> TablaCsv:
     """Decodifica, detecta el separador y lee la tabla.
 
     Errores (todos ``ErrorProxLaunch``): E-M01 (más de ``MAX_BYTES_CSV``), E-M07 (codificación,
     nulos, comillas sin cerrar), E-M06 (más de ``MAX_COLUMNAS_CSV`` columnas, celda de más de
     ``MAX_LONG_CELDA`` caracteres o más de ``MAX_LOTE`` filas de datos) y E-M09 (sin filas de
     datos). El encabezado es la primera fila no vacía.
+
+    El límite de celda es por columna y se aplica tras mapear el encabezado (DT-A11): ``notas``
+    admite hasta ``MAX_LONG_NOTAS`` caracteres y las demás ``MAX_LONG_CELDA``. ``alias_extra``
+    (alias -> canónica, como en ``resolver_columnas``) permite reconocer ``notas`` con el nombre
+    del idioma activo; el encabezado mismo se comprueba con ``MAX_LONG_CELDA``.
     """
     if len(datos) > MAX_BYTES_CSV:
         raise ErrorProxLaunch(
@@ -97,6 +109,7 @@ def leer_tabla(datos: bytes, opciones: OpcionesCsv = OPCIONES_AUTOMATICAS) -> Ta
 
     lector = csv.reader(_lineas(texto), delimiter=deteccion.separador, strict=True)
     encabezado: tuple[str, ...] | None = None
+    columnas_notas: frozenset[int] = frozenset()  # posiciones con límite ampliado (``notas``)
     filas: list[FilaCsv] = []
     n_filas = 0
     numero = 0
@@ -115,11 +128,14 @@ def leer_tabla(datos: bytes, opciones: OpcionesCsv = OPCIONES_AUTOMATICAS) -> Ta
             continue  # fila vacía: no cuenta (CA-C02.8, CA-C15.3)
         if len(celdas) > MAX_COLUMNAS_CSV:
             raise _demasiado("columnas", len(celdas), MAX_COLUMNAS_CSV, numero)
-        for c in celdas:
-            if len(c) > MAX_LONG_CELDA:
-                raise _demasiado("celda", len(c), MAX_LONG_CELDA, numero)
+        for i, c in enumerate(celdas):
+            # El encabezado (aún sin mapear) y las columnas normales: 256; ``notas``: 8192.
+            tope = MAX_LONG_NOTAS if i in columnas_notas else MAX_LONG_CELDA
+            if len(c) > tope:
+                raise _demasiado("celda", len(c), tope, numero)
         if encabezado is None:
             encabezado = tuple(c.strip().lstrip("﻿").strip() for c in celdas)
+            columnas_notas = posiciones_de_columna(encabezado, "notas", alias_extra)
             continue
         n_filas += 1  # se sigue contando aunque pase el límite, sin guardar las filas
         if n_filas <= MAX_LOTE:
@@ -131,6 +147,11 @@ def leer_tabla(datos: bytes, opciones: OpcionesCsv = OPCIONES_AUTOMATICAS) -> Ta
     return TablaCsv(codificacion, deteccion, encabezado, tuple(filas))
 
 
-def leer_archivo_csv(ruta: Path, opciones: OpcionesCsv = OPCIONES_AUTOMATICAS) -> TablaCsv:
+def leer_archivo_csv(
+    ruta: Path,
+    opciones: OpcionesCsv = OPCIONES_AUTOMATICAS,
+    *,
+    alias_extra: Mapping[str, str] | None = None,
+) -> TablaCsv:
     """Lee el archivo (solo lectura, ≤ ``MAX_BYTES_CSV``) y lo convierte en ``TablaCsv``."""
-    return leer_tabla(leer_archivo_limitado(ruta, MAX_BYTES_CSV), opciones)
+    return leer_tabla(leer_archivo_limitado(ruta, MAX_BYTES_CSV), opciones, alias_extra=alias_extra)

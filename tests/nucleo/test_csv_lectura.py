@@ -315,15 +315,16 @@ def test_el_limite_de_filas_es_max_lote_de_m2(monkeypatch):
     assert _error(csv_bytes(["nombre", "a", "b", "c", "d"])).params["max"] == "3"
 
 
-def test_40_columnas_se_aceptan_y_41_dan_e_m06_con_el_valor_real():
-    assert MAX_COLUMNAS_CSV == 40
-    cabecera = ";".join(f"c{i}" for i in range(40))
-    assert len(tabla_csv([cabecera, ";".join(["x"] * 40)]).encabezado) == 40
-    cabecera41 = ";".join(f"c{i}" for i in range(41))
-    e = _error(csv_bytes([cabecera41, ";".join(["x"] * 41)]))
+def test_60_columnas_se_aceptan_y_61_dan_e_m06_con_el_valor_real():
+    # DT-A11 (fase A): el tope sube de 40 a 60 por las columnas nuevas.
+    assert MAX_COLUMNAS_CSV == 60
+    cabecera = ";".join(f"c{i}" for i in range(60))
+    assert len(tabla_csv([cabecera, ";".join(["x"] * 60)]).encabezado) == 60
+    cabecera61 = ";".join(f"c{i}" for i in range(61))
+    e = _error(csv_bytes([cabecera61, ";".join(["x"] * 61)]))
     assert e.codigo == CodigoError.ARCHIVO_DEMASIADAS_FILAS
     assert (
-        e.params["tipo"] == "columnas" and e.params["columnas"] == "41" and e.params["max"] == "40"
+        e.params["tipo"] == "columnas" and e.params["columnas"] == "61" and e.params["max"] == "60"
     )
 
 

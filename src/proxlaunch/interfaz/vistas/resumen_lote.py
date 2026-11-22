@@ -24,11 +24,14 @@ from proxlaunch.interfaz.informe_lote import texto_permisos_no_verificados, text
 from proxlaunch.interfaz.modelos_tabla import ModeloPlan, TablaCopiable
 from proxlaunch.interfaz.textos import (
     texto_error,
+    texto_limite_mb,
     texto_modo_clon,
     texto_motivo_reparto,
+    texto_mtu,
     texto_origen_corto,
     texto_problema_lote,
     texto_resumen_origen,
+    texto_si_no,
 )
 from proxlaunch.interfaz.vistas.campos import etiqueta, mensaje, poner_mensaje
 from proxlaunch.interfaz.vistas.detalles_tecnicos import DetallesTecnicos
@@ -105,7 +108,149 @@ def _ruta_de_peticion(accion: AccionPeticion, nodo: str, vmid: int, e: ElementoP
         return f"PUT /nodes/{nodo}/qemu/{vmid}/config"
     if accion == AccionPeticion.AMPLIAR:
         return f"PUT /nodes/{nodo}/qemu/{vmid}/resize"
+    if accion == AccionPeticion.ENCENDER:  # fase A: siempre la última petición de la máquina
+        return f"POST /nodes/{nodo}/qemu/{vmid}/status/start"
     return f"POST /nodes/{nodo}/qemu"
+
+
+def _una_linea(valor: str) -> str:
+    """Un valor con saltos de línea (``description``) en una sola línea: ``\\n`` visible."""
+    return valor.replace("\r", "\\r").replace("\n", "\\n")
+
+
+def _valores_o_varia(nombre: str, valores: list[str | None]) -> str | None:
+    """«nombre: valor» si todas las máquinas coinciden; «varía según la fila» si no. Sin línea si
+    ninguna fija la opción."""
+    if all(v is None for v in valores):
+        return None
+    comunes = set(valores)
+    if len(comunes) == 1:
+        return f"{nombre}: {valores[0]}"
+    return QCoreApplication.translate("ResumenLote", "{nombre}: varía según la fila").format(
+        nombre=nombre
+    )
+
+
+_MARCAS_ENLACE_O_HTML = ("http://", "https://", "](", "<")
+
+
+def _notas_con_enlaces_o_html(notas: str) -> bool:
+    """¿Las notas traen enlaces (``http://``, ``https://``, ``](``) o HTML (``<``)? (SEG-A-08)"""
+    minusculas = notas.lower()
+    return any(m in minusculas for m in _MARCAS_ENLACE_O_HTML)
+
+
+def _vista_notas(notas: str) -> str:
+    """Primeros 60 caracteres de las notas en una línea, con su longitud total."""
+    resumen = " ".join(notas.split())[:60]
+    return QCoreApplication.translate("ResumenLote", "{texto} ({n} caracteres)").format(
+        texto=resumen, n=len(notas)
+    )
+
+
+def _cuantas(nombre: str, marcadas: int, total: int) -> str | None:
+    """Casilla de lote: «sí» en todas, «sí en N de M máquinas» en algunas, sin línea en ninguna."""
+    if marcadas == 0:
+        return None
+    if marcadas == total:
+        return f"{nombre}: {texto_si_no(True)}"
+    return QCoreApplication.translate(
+        "ResumenLote", "{nombre}: sí en {n} de {total} máquinas"
+    ).format(nombre=nombre, n=marcadas, total=total)
+
+
+def texto_opciones_del_plan(plan: Plan) -> str:
+    """Opciones de la fase A del lote (RF-A0.1): solo las que difieren del valor por defecto,
+    salvo «Notas de origen», que sale siempre. Vacío si no hay máquinas."""
+    elementos = plan.elementos
+    if not elementos:
+        return ""
+    t = QCoreApplication.translate
+    cfgs = [e.cfg for e in elementos]
+    n = len(cfgs)
+    lineas: list[str | None] = []
+    con_notas = sum(1 for c in cfgs if c.notas_origen)
+    nombre_notas = t("ResumenLote", "Notas de origen")
+    if con_notas == n:
+        con_usuario = sum(1 for c in cfgs if c.notas_usuario)
+        valor = texto_si_no(True)
+        if con_usuario == n:
+            valor = t("ResumenLote", "sí, con tu usuario")
+        elif con_usuario:
+            valor = t("ResumenLote", "sí, con tu usuario en {n} de {total} máquinas").format(
+                n=con_usuario, total=n
+            )
+        lineas.append(f"{nombre_notas}: {valor}")
+    elif con_notas == 0:
+        lineas.append(f"{nombre_notas}: {texto_si_no(False)}")
+    else:
+        lineas.append(
+            t("ResumenLote", "{nombre}: sí en {n} de {total} máquinas").format(
+                nombre=nombre_notas, n=con_notas, total=n
+            )
+        )
+    lineas.append(
+        _valores_o_varia(
+            t("ResumenLote", "Notas"),
+            [_vista_notas(c.notas) if c.notas.strip() else None for c in cfgs],
+        )
+    )
+    if any(_notas_con_enlaces_o_html(c.notas) for c in cfgs):
+        lineas.append(
+            t(
+                "ResumenLote",
+                "Aviso: las notas contienen enlaces o código HTML. Revisa que sean de confianza "
+                "antes de crear.",
+            )
+        )
+    lineas.append(
+        _cuantas(t("ResumenLote", "Encender al terminar"), sum(c.encender for c in cfgs), n)
+    )
+    lineas.append(
+        _cuantas(
+            t("ResumenLote", "Arrancar con el servidor"), sum(c.arranque_auto for c in cfgs), n
+        )
+    )
+    lineas.append(
+        _valores_o_varia(
+            t("ResumenLote", "Etiquetas"),
+            [", ".join(c.etiquetas_usuario) if c.etiquetas_usuario else None for c in cfgs],
+        )
+    )
+    lineas.append(_valores_o_varia(t("ResumenLote", "Pool"), [c.pool for c in cfgs]))
+    lineas.append(
+        _valores_o_varia(
+            t("ResumenLote", "Orden de arranque"),
+            [None if c.arranque_orden is None else str(c.arranque_orden) for c in cfgs],
+        )
+    )
+    lineas.append(
+        _valores_o_varia(
+            t("ResumenLote", "Espera de arranque"),
+            [
+                None
+                if c.arranque_espera is None
+                else t("ResumenLote", "{n} s").format(n=c.arranque_espera)
+                for c in cfgs
+            ],
+        )
+    )
+    lineas.append(
+        _cuantas(t("ResumenLote", "Proteger contra borrado"), sum(c.proteger for c in cfgs), n)
+    )
+    if not all(c.origen == OrigenSO.CLONAR_PLANTILLA for c in cfgs):
+        for i in range(max((len(c.redes) for c in cfgs), default=0)):
+            redes = [c.redes[i] if i < len(c.redes) else None for c in cfgs]
+            mtus = [None if r is None or r.mtu is None else texto_mtu(r.mtu) for r in redes]
+            limites = [
+                None if r is None or r.limite_mb is None else texto_limite_mb(r.limite_mb)
+                for r in redes
+            ]
+            lineas.append(_valores_o_varia(t("ResumenLote", "MTU de net{i}").format(i=i), mtus))
+            lineas.append(
+                _valores_o_varia(t("ResumenLote", "Límite de net{i}").format(i=i), limites)
+            )
+    return "\n".join(x for x in lineas if x)
 
 
 def texto_peticiones(sim: ResultadoSimulacion) -> str:
@@ -123,11 +268,11 @@ def texto_peticiones(sim: ResultadoSimulacion) -> str:
             lineas = [cabecera]
             for pet in detalle:
                 lineas.append(_ruta_de_peticion(pet.accion, pet.nodo, vmid, e))
-                lineas.extend(f"  {k} = {v}" for k, v in pet.parametros.items())
+                lineas.extend(f"  {k} = {_una_linea(v)}" for k, v in pet.parametros.items())
         else:
             nodo = e.nodo if e else "?"
             lineas = [cabecera, f"POST /nodes/{nodo}/qemu"]
-            lineas.extend(f"  {k} = {v}" for k, v in parametros.items())
+            lineas.extend(f"  {k} = {_una_linea(v)}" for k, v in parametros.items())
         bloques.append("\n".join(lineas))
     return "\n\n".join(bloques)
 
@@ -246,6 +391,7 @@ class ResumenLote(QWidget):
 
         self._totales = self._etiqueta_datos()
         self._origen = self._etiqueta_datos()
+        self._opciones = self._etiqueta_datos()
         self._reparto = self._etiqueta_datos()
         self._saltados = self._etiqueta_datos(secundario=True)
         self._errores = mensaje(error=True)
@@ -351,6 +497,7 @@ class ResumenLote(QWidget):
             self.tabla,
             self._totales,
             self._origen,
+            self._opciones,
             self._reparto,
             self._saltados,
             self._errores,
@@ -392,6 +539,7 @@ class ResumenLote(QWidget):
         for w in (
             self._simulacion_etiqueta,
             self._totales,
+            self._opciones,
             self._reparto,
             self._saltados,
             self._nota_nombres,
@@ -544,6 +692,9 @@ class ResumenLote(QWidget):
         texto_origen = texto_origen_del_plan(plan)
         self._origen.setText(texto_origen)
         self._origen.setVisible(bool(texto_origen))
+        texto_opciones = texto_opciones_del_plan(plan)
+        self._opciones.setText(texto_opciones)
+        self._opciones.setVisible(bool(texto_opciones))
         if not elementos:
             self._totales.hide()
             self._reparto.hide()
@@ -768,7 +919,14 @@ class ResumenLote(QWidget):
         if not self._simulacion_etiqueta.isHidden():
             partes.append(self._simulacion_etiqueta.text())
         partes.append(self.tabla.texto(solo_seleccion=False))
-        for w in (self._totales, self._reparto, self._saltados, self._errores, self._avisos):
+        for w in (
+            self._totales,
+            self._opciones,
+            self._reparto,
+            self._saltados,
+            self._errores,
+            self._avisos,
+        ):
             if not w.isHidden() and w.text():
                 partes.append(w.text())
         return "\n\n".join(p for p in partes if p)

@@ -14,6 +14,7 @@ class Etapa(StrEnum):
     CREANDO = "creando"
     COMPROBANDO = "comprobando"
     AJUSTANDO = "ajustando"  # MVP 4: ajustes tras un clon (etiquetas, CPU, disco)
+    ENCENDIENDO = "encendiendo"  # fase A: status/start tras los ajustes
     LISTO = "listo"
 
 
@@ -58,4 +59,5 @@ class ResultadoCreacion:
     error: ErrorProxLaunch | None
     log_tarea: list[str] = field(default_factory=list)
     # MVP 4: códigos de aviso, p. ej. «ajuste_pendiente:etiquetas|cpu_memoria|disco».
+    # Fase A: también "encendido_fallido", "encendido_omitido" y "notas_plantilla_ilegible".
     avisos: tuple[str, ...] = ()

@@ -55,7 +55,8 @@ def _traducir(p) -> str:
 
 @pytest.mark.parametrize("sep", [";", ","])
 def test_la_plantilla_tiene_el_encabezado_canonico_y_cinco_filas_de_ejemplo(tmp_path, sep):
-    """CA-C10.1 ampliado por CA-O28.9: una fila de ejemplo por origen (5 filas, 15 columnas)."""
+    """CA-C10.1 ampliado por CA-O28.9: una fila de ejemplo por origen (5 filas); fase A
+    (CA-A7.3.10): 8 columnas nuevas al final (23 columnas)."""
     ruta = tmp_path / "plantilla.csv"
     escribir_plantilla(ruta, separador=sep)
     filas = _releer(ruta.read_bytes(), sep)
@@ -75,9 +76,17 @@ def test_la_plantilla_tiene_el_encabezado_canonico_y_cinco_filas_de_ejemplo(tmp_
         "so",
         "virtio",
         "modo_clon",
+        "encender",
+        "arranque_auto",
+        "notas",
+        "etiquetas",
+        "pool",
+        "proteger",
+        "mtu",
+        "limite_red",
     ]
     assert [f[0] for f in filas[1:]] == [f"ejemplo-0{n}" for n in range(1, 6)]
-    assert all(len(f) == 15 for f in filas)
+    assert all(len(f) == 23 for f in filas)
     assert tuple(filas[0]) == ENCABEZADO_PLANTILLA
 
 

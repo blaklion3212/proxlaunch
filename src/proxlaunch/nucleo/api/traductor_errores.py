@@ -46,6 +46,9 @@ _RE_INEXISTENTE = re.compile(r"does not exist|no such|not found|does not exists"
 _RE_ETIQUETA_RECHAZADA = re.compile(
     r"Sys\.Modify for modifying tags?\s*:?\s*['\"]?(?P<tag>[^\s'\")]+)?", re.IGNORECASE
 )
+# Fase A (0.6): notas de más de 8192 caracteres (400) y pool que no existe (403).
+_RE_DESCRIPCION_LARGA = re.compile(r"value may only be 8192 characters long", re.IGNORECASE)
+_RE_POOL_INEXISTENTE = re.compile(r"pool\s+'(?P<pool>[^']+)'\s+does not exist", re.IGNORECASE)
 _RE_ENTRE_COMILLAS = re.compile(r"['\"](?P<nombre>[^'\"]+)['\"]")
 _RE_STORAGE = re.compile(
     r"storage\s+'(?P<id>[^']+)'|volume group\s+[\"'](?P<vg>[^\"']+)[\"']", re.IGNORECASE
@@ -167,6 +170,15 @@ def _clasificar_texto(
     nuevo = _clasificar_texto_origen(texto, detalle)
     if nuevo is not None:
         return nuevo
+
+    mp = _RE_POOL_INEXISTENTE.search(texto)
+    if mp:
+        return ErrorProxLaunch(CodigoError.POOL_INEXISTENTE, {"pool": mp.group("pool")}, detalle)
+    if _RE_DESCRIPCION_LARGA.search(texto):
+        campo = next((k for k, v in errores.items() if _RE_DESCRIPCION_LARGA.search(v)), "")
+        return ErrorProxLaunch(
+            CodigoError.DESCRIPCION_LARGA, {"campo": campo or "description"}, detalle
+        )
 
     m = _RE_VMID_EXISTE.search(texto)
     if m:

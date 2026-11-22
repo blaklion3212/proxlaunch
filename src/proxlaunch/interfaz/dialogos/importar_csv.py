@@ -85,7 +85,7 @@ def leer_e_interpretar(
     alias_extra: Mapping[str, str] | None,
 ) -> tuple[TablaCsv, ResultadoImportacion]:
     """Lee el archivo y lo interpreta. Pura salvo la lectura (solo ``O_RDONLY``)."""
-    tabla = leer_archivo_csv(ruta, opciones)
+    tabla = leer_archivo_csv(ruta, opciones, alias_extra=alias_extra)
     resultado = interpretar(
         tabla,
         perfil_base=perfil_base,

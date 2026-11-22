@@ -9,6 +9,7 @@ from dataclasses import dataclass, field
 from enum import StrEnum
 
 from proxlaunch.nucleo.errores import ErrorProxLaunch
+from proxlaunch.nucleo.opciones.modelos import EstadoPools, PoliticaEtiquetas, PoolsServidor
 
 
 class Contenido(StrEnum):
@@ -70,6 +71,10 @@ class DetallePlantilla:
     # conectadas (``vcpus``) de la plantilla; limitan los ajustes de memoria y CPU (QA-M4-07).
     balloon: int | None = None
     vcpus: int | None = None
+    # Fase A: ``description`` de la plantilla (None = no tiene) y si se pudo leer; ilegible =
+    # el GET falló por permiso (no se pisan sus notas, P-10).
+    descripcion: str | None = None
+    descripcion_legible: bool = True
 
 
 @dataclass(frozen=True)
@@ -118,6 +123,12 @@ class CatalogoServidor:
     plantillas: tuple[Plantilla, ...] | None = None  # None = aún no leídas
     formatos: Mapping[str, frozenset[str]] = field(default_factory=dict)  # storage → formatos API
     leido_en: float = 0.0  # reloj inyectado (vigencia V-L14)
+    # Fase A: pools del servidor y política de etiquetas del centro de datos (None = no legible).
+    pools: PoolsServidor = field(default_factory=lambda: PoolsServidor(EstadoPools.NO_LEIDO))
+    politica_etiquetas: PoliticaEtiquetas | None = None
+    # True si se intentó leer ``/cluster/options`` y falló (403/5xx/cuerpo inesperado): con la
+    # política en ``None`` distingue «no se pudo comprobar» (aviso V-A09) de «aún no leída».
+    politica_etiquetas_fallida: bool = False
 
     def volumenes(self, nodo: str, contenido: Contenido) -> tuple[Volumen, ...]:
         """Volúmenes listados del nodo con ese contenido (todos los storages leídos)."""

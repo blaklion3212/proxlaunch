@@ -94,6 +94,13 @@ sale del escenario ficticio de `tests/interfaz/capturas_guia/escenario.py`.
 | `58-csv-vista-previa-errores.png` | Importar desde CSV con errores, en modo avanzado |
 | `59-lote-por-filas.png` | Lote por filas tras importar el CSV |
 | `60-cambios-sin-guardar.png` | Pregunta **Cambios sin guardar** |
+| `61-opciones-general.png` | Opciones de la máquina en modo básico (encender, arranque, notas, etiquetas, pool) y el resumen con las opciones avanzadas ocultas |
+| `62-opciones-avanzadas.png` | Las mismas opciones en modo avanzado: orden y espera de arranque, protección, MTU y límite de red |
+| `63-opciones-deshabilitadas.png` | Opciones desactivadas por falta de `VM.PowerMgmt` y `Pool.Audit`, con su explicación |
+| `64-lote-resumen-opciones.png` | Resumen de un lote de 5 máquinas con las líneas de opciones |
+| `65-simulacion-encender.png` | Simulación con opciones: `tags`, `onboot`, `startup`, `description`, `pool`, `protection` y el encendido final |
+| `66-deshacer-confirmacion-forzada.png` | Confirmación expresa de Deshacer con máquinas encendidas y protegidas |
+| `67-guia-privilegios-opcionales.png` | Final de la guía del token: privilegios opcionales y lo que no se pide |
 
 ## Detalles de contenido
 
