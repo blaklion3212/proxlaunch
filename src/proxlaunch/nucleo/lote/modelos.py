@@ -7,6 +7,7 @@ modelos son inmutables salvo el ``Libro`` (en ``libro.py``), que guarda instant�
 from dataclasses import dataclass, field
 from enum import StrEnum
 
+from proxlaunch.nucleo.agente.modelos import ResultadoIp
 from proxlaunch.nucleo.errores import ErrorProxLaunch
 from proxlaunch.nucleo.modelos.catalogo import CatalogoServidor
 from proxlaunch.nucleo.modelos.vm import ConfiguracionVM
@@ -231,6 +232,7 @@ class EntradaLibro:
     t_fin: float | None = None
     log_tarea: tuple[str, ...] = ()
     avisos: tuple[str, ...] = ()  # códigos de aviso (p. ej. "creada_tras_comprobar")
+    ip: ResultadoIp | None = None  # fase B: resultado de la espera de IP (None = no aplica)
 
 
 class MotivoPausa(StrEnum):
@@ -279,6 +281,9 @@ class AccionPeticion(StrEnum):
     CONFIGURAR = "configurar"
     AMPLIAR = "ampliar"
     ENCENDER = "encender"  # fase A: POST …/status/start
+    CLOUDINIT = "cloudinit"  # fase B: PUT …/config con los parámetros de cloud-init
+    CONTRASENA = "contrasena"  # fase B: PUT …/config con solo cipassword (simulado: enmascarado)
+    SONDEAR_IP = "sondear_ip"  # fase B: espera de IP con el agente (simulado)
 
 
 @dataclass(frozen=True)

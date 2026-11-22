@@ -11,7 +11,7 @@ from pathlib import Path
 
 import pytest
 
-from proxlaunch.nucleo.archivos.constantes import VERSION_FORMATO
+from proxlaunch.nucleo.archivos.constantes import VERSION_FORMATO, VERSION_FORMATO_FASE_A
 from proxlaunch.nucleo.archivos.envoltura import FORMATO_PERFILES, abrir_envoltura
 from proxlaunch.nucleo.archivos.esquema import CodigoAvisoArchivo, ErrorArchivo
 from proxlaunch.nucleo.capacidades import capacidades_para
@@ -343,15 +343,16 @@ def test_ca_a7_2_5_un_archivo_v3_se_rechaza_en_0_5_1_como_version_futura():
             [_perfil(_config(arranque_auto=True))], con_pistas=True, app_version="0.6.0"
         )
     )
-    assert datos["version_formato"] == 3 == VERSION_FORMATO
+    assert datos["version_formato"] == VERSION_FORMATO_FASE_A == 3
     with pytest.raises(ErrorProxLaunch) as exc:
         abrir_envoltura(datos, FORMATO_PERFILES, version_soportada=2)
     assert exc.value.codigo == CodigoError.ARCHIVO_VERSION_FUTURA
 
 
-def test_ca_a7_2_5_una_version_4_se_rechaza_en_0_6():
+def test_ca_a7_2_5_una_version_5_se_rechaza_en_0_7():
+    # Con la fase B la máxima legible es 4 (los perfiles nunca se escriben en v4, RF-B6.2).
     datos = json.loads(archivo_perfiles([perfil_json()]))
-    datos["version_formato"] = 4
+    datos["version_formato"] = VERSION_FORMATO + 1
     with pytest.raises(ErrorProxLaunch) as exc:
         leer_perfiles(json.dumps(datos).encode())
     assert exc.value.codigo == CodigoError.ARCHIVO_VERSION_FUTURA

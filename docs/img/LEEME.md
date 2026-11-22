@@ -101,6 +101,15 @@ sale del escenario ficticio de `tests/interfaz/capturas_guia/escenario.py`.
 | `65-simulacion-encender.png` | Simulación con opciones: `tags`, `onboot`, `startup`, `description`, `pool`, `protection` y el encendido final |
 | `66-deshacer-confirmacion-forzada.png` | Confirmación expresa de Deshacer con máquinas encendidas y protegidas |
 | `67-guia-privilegios-opcionales.png` | Final de la guía del token: privilegios opcionales y lo que no se pide |
+| `68-seccion-cloudinit.png` | Origen **Copiar una plantilla** y, debajo, la sección **Configuración inicial (cloud-init)** rellena: usuario, 1 clave SSH, contraseña vacía, tarjeta de red 1 (net0) con IP fija y puerta de enlace, DNS y dominio |
+| `69-cloudinit-ip-en-serie.png` | Resumen de un lote de 4 máquinas que clonan una plantilla con **IP en serie** (192.0.2.50 sumando 1 a cada una) y la tabla «IP que recibirá cada máquina» |
+| `70-esperar-ip.png` | Paso **General** con **Encender al terminar** y **Esperar la IP de cada máquina** marcadas, su plazo (120 s) y el aviso de que las imágenes de Ubuntu y Debian no traen el agente invitado (V-B64) |
+| `71-progreso-con-ip.png` | Lote terminado con la columna **IP** (una con IP, una «El agente no responde», una «Esperando la IP…») y los botones **Dejar de esperar la IP**, **Copiar lista de IPs** y **Exportar IPs…** |
+| `72-asistente-plantilla-imagen.png` | Asistente **Crear plantilla desde imagen cloud**, parte superior: explicación, origen de la imagen (una ya importada en el servidor), dónde se crea y la máquina modelo |
+| `73-asistente-plantilla-confirmar.png` | Parte inferior del asistente: opciones para imágenes cloud, valores de cloud-init de la plantilla (sin campo de contraseña), la casilla de conversión irreversible marcada y el aviso del agente invitado |
+| `74-asistente-plantilla-fallo.png` | Asistente detenido tras fallar el paso 4 (permiso de cloud-init): los cinco pasos con su estado y las acciones **Reintentar este paso**, **Continuar sin cloud-init** y **Borrar la máquina a medio crear…** |
+| `75-importar-csv-cloudinit.png` | **Importar desde CSV** con columnas de cloud-init: aviso de contraseñas en texto claro y, en el detalle de una fila, `ci_contrasena` enmascarada (`••••••`) |
+| `76-menu-archivo-plantilla.png` | Menú **Archivo** con **Crear plantilla desde imagen cloud…** |
 
 ## Detalles de contenido
 
@@ -112,3 +121,18 @@ sale del escenario ficticio de `tests/interfaz/capturas_guia/escenario.py`.
 - `57` a `59` usan una copia de los CSV de `docs/ejemplos/` (`mvs-mixtas.csv` y
   `mvs-con-errores.csv`) incluida en el escenario. Si esos ejemplos cambian, hay que
   actualizar `CSV_MIXTAS` y `CSV_CON_ERRORES` en `escenario.py` y regenerar.
+- `68` es la ventana completa (2500 px de alto, modo avanzado) para ver juntos el origen, **General**
+  y la sección de cloud-init entera; el panel «Compatibilidad del perfil» no muestra ningún aviso.
+- El escenario concede a la cuenta los privilegios del agente (`VM.GuestAgent.Audit` y `VM.Monitor`),
+  por eso **Esperar la IP** sale disponible; `63` los quita a propósito (junto con `VM.PowerMgmt` y
+  `Pool.Audit`) y enseña también esa opción desactivada con su explicación.
+- `72` a `74`: la barra de desplazamiento del asistente queda a la derecha, sin tapar los campos. Su
+  marcador solo cubre una parte porque el contenido total es más alto que la ventana (se ve la parte
+  alta en `72` y `74`, la baja en `73`). La barra de avance solo aparece mientras hay trabajo en
+  marcha, por eso no sale en `74`.
+- `75` usa una copia del CSV `mvs-cloudinit.csv` con una columna `ci_contrasena` añadida (contraseña
+  inventada, siempre enmascarada en pantalla); el ejemplo de `docs/ejemplos/` no la trae.
+- La clave SSH que aparece (`ssh-ed25519 AAAAC3Nz… ana@portatil`) es falsa: tiene formato válido pero no
+  hay clave privada detrás (`CLAVE_SSH_FALSA` en `escenario.py`).
+- `74` muestra «Reintentar» y «Omitir» (paso fallido); «Comprobar ahora» solo aparece cuando un paso queda
+  dudoso (no se sabe cómo terminó), por eso no coincide con un fallo claro.

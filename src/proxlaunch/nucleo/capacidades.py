@@ -37,6 +37,18 @@ class Funcion(StrEnum):
     TPM_CLON_COMPLETO = "tpm_clon_completo"  # clonar completo con tpmstate0 (8.4)
     CLAVES_MS_2023 = "claves_ms_2023"  # claves Microsoft 2023 en efidisk0 (9.1)
     ETIQUETAS = "etiquetas"  # parámetro ``tags`` al crear (RF-L24)
+    # Fase B (0.7)
+    ASISTENTE_PLANTILLA_IMAGEN = (
+        "asistente_plantilla_imagen"  # B2: exige además import + subir/descargar
+    )
+    CLOUDINIT = "cloudinit"  # B1: parámetros ``ci*`` e ``ipconfigN``
+    SNIPPETS_CICUSTOM = "snippets_cicustom"  # B4: ``cicustom`` con snippets
+    AGENTE_IP = "agente_ip"  # B3: ``agent/network-get-interfaces``
+    # Marcadores de cambio de privilegio (se comparan solo aquí; fáciles de mover, R-B8)
+    PRIVILEGIOS_GUEST_AGENT = "privilegios_guest_agent"  # VM.Monitor -> VM.GuestAgent.* (9.0)
+    CLOUDINIT_PRIVILEGIO_INCIERTO = "cloudinit_privilegio_incierto"  # zona 9.0–9.1 (aviso)
+    CLOUDINIT_PRIVILEGIO_PROPIO = "cloudinit_privilegio_propio"  # solo VM.Config.Cloudinit (9.2)
+    CICUSTOM_CON_ALLOCATESPACE = "cicustom_con_allocatespace"  # Datastore.Allocate -> AllocateSpace
 
 
 # Única tabla: función -> (mayor, menor) desde la que está disponible.
@@ -47,6 +59,14 @@ TABLA: dict[Funcion, tuple[int, int]] = {
     Funcion.TPM_CLON_COMPLETO: (8, 4),
     Funcion.CLAVES_MS_2023: (9, 1),
     Funcion.ETIQUETAS: (7, 3),  # todas las versiones soportadas (>= 8.0) la admiten
+    Funcion.ASISTENTE_PLANTILLA_IMAGEN: (8, 4),
+    Funcion.CLOUDINIT: (8, 0),
+    Funcion.SNIPPETS_CICUSTOM: (8, 0),
+    Funcion.AGENTE_IP: (8, 0),
+    Funcion.PRIVILEGIOS_GUEST_AGENT: (9, 0),
+    Funcion.CLOUDINIT_PRIVILEGIO_INCIERTO: (9, 0),
+    Funcion.CLOUDINIT_PRIVILEGIO_PROPIO: (9, 2),
+    Funcion.CICUSTOM_CON_ALLOCATESPACE: (9, 0),
 }
 
 
@@ -73,6 +93,15 @@ class Capacidades:
 def admite_etiquetas(version: tuple[int, int]) -> bool:
     """Indica si la versión admite ``tags`` al crear una MV (desde 7.3)."""
     return version >= TABLA[Funcion.ETIQUETAS]
+
+
+def asistente_plantilla_disponible(caps: Capacidades) -> bool:
+    """B2 (RF-B0.4): el asistente exige a la vez importar disco y (subir imagen o descargar URL)."""
+    return (
+        caps.tiene(Funcion.ASISTENTE_PLANTILLA_IMAGEN)
+        and caps.tiene(Funcion.IMPORTAR_DISCO)
+        and (caps.tiene(Funcion.SUBIR_IMAGEN_DISCO) or caps.tiene(Funcion.DESCARGAR_URL))
+    )
 
 
 def interpretar_version(texto: str) -> tuple[Version, bool]:

@@ -32,9 +32,17 @@ from proxlaunch.interfaz.modelos_tabla import (
     TablaCopiable,
 )
 from proxlaunch.interfaz.textos import texto_estado_mv, texto_resumen_origen, texto_sin_urls
+from proxlaunch.interfaz.textos_b import (
+    texto_detalle_ip,
+    texto_esperando_ips,
+    texto_resumen_ips,
+    texto_tooltip_reintentar_ajustes,
+)
 from proxlaunch.interfaz.vistas.campos import mensaje, poner_mensaje
 from proxlaunch.interfaz.vistas.detalles_tecnicos import DetallesTecnicos
+from proxlaunch.nucleo.agente.exportacion import lista_ips_texto
 from proxlaunch.nucleo.lote.ajustes import tiene_ajustes_pendientes
+from proxlaunch.nucleo.lote.informe import resumen_ips
 from proxlaunch.nucleo.lote.modelos import (
     ESTADOS_DUDOSOS,
     ESTADOS_EN_CURSO,
@@ -106,6 +114,16 @@ def texto_detalles_entrada(e: EntradaLibro) -> str:
         )
     if e.upid:
         lineas.append(f"UPID: {e.upid}")
+    if e.ip is not None:
+        lineas.append(
+            QCoreApplication.translate("ProgresoLote", "IP: {d}").format(d=texto_detalle_ip(e.ip))
+        )
+        if e.ip.otras:
+            lineas.append(
+                QCoreApplication.translate("ProgresoLote", "Otras direcciones: {o}").format(
+                    o=", ".join(e.ip.otras)
+                )
+            )
     if e.motivo_no_enviada:
         lineas.append(
             QCoreApplication.translate("ProgresoLote", "Motivo: {m}").format(m=e.motivo_no_enviada)
@@ -148,6 +166,8 @@ class ProgresoLote(QWidget):
     copiar_informe_solicitado = Signal()
     decidir_pausa_solicitado = Signal()
     volver_solicitado = Signal()
+    dejar_de_esperar_ip_solicitado = Signal()  # B3: «Dejar de esperar la IP»
+    exportar_ips_solicitado = Signal()  # B3: «Exportar IPs…» (el diálogo de guardado va fuera)
 
     def __init__(self, parent: QWidget | None = None) -> None:
         super().__init__(parent)
@@ -215,6 +235,51 @@ class ProgresoLote(QWidget):
         self._titulo_rollback.hide()
         self.tabla_rollback.hide()
 
+        # B3: resumen de IPs y acciones sobre ellas (solo visibles si el lote espera IPs).
+        self._resumen_ips = QLabel()
+        self._resumen_ips.setTextFormat(Qt.TextFormat.PlainText)
+        self._resumen_ips.setAccessibleName(
+            QCoreApplication.translate("ProgresoLote", "Resumen de las IP de las máquinas")
+        )
+        self._aviso_espera_ip = mensaje(aviso=True)
+        self.boton_dejar_ip = QPushButton(
+            QCoreApplication.translate("ProgresoLote", "Dejar de esperar la IP")
+        )
+        self.boton_dejar_ip.setToolTip(
+            QCoreApplication.translate(
+                "ProgresoLote",
+                "Deja de preguntar a las máquinas por su IP. Las máquinas ya creadas no se tocan.",
+            )
+        )
+        self.boton_copiar_ips = QPushButton(
+            QCoreApplication.translate("ProgresoLote", "Copiar lista de IPs")
+        )
+        self.boton_copiar_ips.setToolTip(
+            QCoreApplication.translate(
+                "ProgresoLote", "Copia «nombre», un tabulador y la IP, una máquina por línea."
+            )
+        )
+        self.boton_exportar_ips = QPushButton(
+            QCoreApplication.translate("ProgresoLote", "Exportar IPs…")
+        )
+        self.boton_exportar_ips.setToolTip(
+            QCoreApplication.translate(
+                "ProgresoLote", "Guarda en un archivo CSV el nombre, el número, el nodo y la IP."
+            )
+        )
+        self.boton_dejar_ip.clicked.connect(self.dejar_de_esperar_ip_solicitado)
+        self.boton_copiar_ips.clicked.connect(self._copiar_ips)
+        self.boton_exportar_ips.clicked.connect(self.exportar_ips_solicitado)
+        self._fila_ips = QWidget()
+        capa_ips = QHBoxLayout(self._fila_ips)
+        capa_ips.setContentsMargins(0, 0, 0, 0)
+        capa_ips.addWidget(self._resumen_ips, 1)
+        for b in (self.boton_dejar_ip, self.boton_copiar_ips, self.boton_exportar_ips):
+            capa_ips.addWidget(b)
+        self._fila_ips.hide()
+        self._esperando_ip = 0
+        self._creacion_terminada = False
+
         self.boton_cancelar = QPushButton(
             QCoreApplication.translate("ProgresoLote", "Cancelar lote")
         )
@@ -235,13 +300,7 @@ class ProgresoLote(QWidget):
         self.boton_reintentar_ajustes = QPushButton(
             QCoreApplication.translate("ProgresoLote", "Reintentar ajustes")
         )
-        self.boton_reintentar_ajustes.setToolTip(
-            QCoreApplication.translate(
-                "ProgresoLote",
-                "Vuelve a aplicar las etiquetas, los procesadores, la memoria o el tamaño del "
-                "disco que no se pudieron cambiar tras clonar. No crea máquinas nuevas.",
-            )
-        )
+        self.boton_reintentar_ajustes.setToolTip(texto_tooltip_reintentar_ajustes())
         self.boton_informe = QPushButton(QCoreApplication.translate("ProgresoLote", "Informe"))
         self.boton_volver = QPushButton(
             QCoreApplication.translate("ProgresoLote", "Volver al formulario")
@@ -284,6 +343,8 @@ class ProgresoLote(QWidget):
             self.barra,
             self.chk_problemas,
             self.tabla,
+            self._fila_ips,
+            self._aviso_espera_ip,
         ):
             capa.addWidget(elemento)
         capa.addWidget(self._upid_titulo)
@@ -308,6 +369,9 @@ class ProgresoLote(QWidget):
             w.hide()
         self.mostrar_aviso(None)
         self.mostrar_error(None)
+        self._esperando_ip = 0
+        self._creacion_terminada = False
+        self.modelo.establecer_espera_activa(False)
         self._total = len(plan.elementos)
         self.actualizar(tuple(EntradaLibro(e) for e in plan.elementos))
         self.establecer_fase(FaseLote.EJECUTANDO)
@@ -324,6 +388,7 @@ class ProgresoLote(QWidget):
         resumen = texto_barra(self._entradas)
         self.barra.setFormat(resumen)
         self.barra.setAccessibleDescription(resumen)
+        self._actualizar_ips()
 
     @property
     def texto_resumen_barra(self) -> str:
@@ -420,6 +485,54 @@ class ProgresoLote(QWidget):
     def hay_enviadas(self) -> bool:
         """``True`` si alguna máquina ya salió hacia Proxmox (pide confirmar la cancelación)."""
         return any(e.post_intentado for e in self._entradas)
+
+    # --- Espera de IP (B3) ---------------------------------------------------------------
+
+    def establecer_espera_ip(self, pendientes: int, *, creacion_terminada: bool = True) -> None:
+        """``pendientes`` = máquinas cuya IP aún se espera (0 = nadie espera).
+
+        El aviso «la creación terminó; se espera la IP de N máquinas» solo sale cuando la creación
+        ya acabó (``creacion_terminada``); «Dejar de esperar la IP» sale con alguna esperando.
+        """
+        self._esperando_ip = max(0, pendientes)
+        self._creacion_terminada = creacion_terminada
+        self.modelo.establecer_espera_activa(self._esperando_ip > 0)
+        self._actualizar_ips()
+
+    @property
+    def esperando_ip(self) -> bool:
+        return self._esperando_ip > 0
+
+    def _actualizar_ips(self) -> None:
+        """Resumen, aviso y botones de la IP según las entradas actuales."""
+        con_ip = self.modelo.con_ip
+        self._fila_ips.setVisible(con_ip)
+        if not con_ip:
+            poner_mensaje(self._aviso_espera_ip, None, aviso=True)
+            return
+        self._resumen_ips.setText(
+            texto_resumen_ips(resumen_ips(self._entradas), self._esperando_ip)
+        )
+        self.boton_dejar_ip.setVisible(self._esperando_ip > 0)
+        self.boton_copiar_ips.setEnabled(bool(lista_ips_texto(self._entradas)))
+        poner_mensaje(
+            self._aviso_espera_ip,
+            texto_esperando_ips(self._esperando_ip)
+            if self._esperando_ip and self._creacion_terminada
+            else None,
+            aviso=True,
+        )
+
+    @property
+    def texto_resumen_de_ips(self) -> str:
+        return self._resumen_ips.text()
+
+    def lista_ips(self) -> str:
+        """Texto de «Copiar lista»: ``nombre<TAB>ip`` por línea (solo máquinas con IP)."""
+        return lista_ips_texto(self._entradas)
+
+    def _copiar_ips(self) -> None:
+        QApplication.clipboard().setText(self.lista_ips())
 
     # --- Filtro y detalles -------------------------------------------------------------
 

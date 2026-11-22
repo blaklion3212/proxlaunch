@@ -1,0 +1,44 @@
+{
+  "app_version": "0.6.0",
+  "formato": "proxlaunch.perfiles",
+  "perfiles": [
+    {
+      "config": {
+        "arranque_auto": true,
+        "ballooning": null,
+        "con_disco": true,
+        "controlador_scsi": "virtio-scsi-single",
+        "cores": 2,
+        "discos": [
+          {
+            "bus": "scsi",
+            "discard": true,
+            "formato": "auto",
+            "iothread": true,
+            "ssd": true,
+            "storage_preferido": "local-lvm",
+            "tamano_gib": 64
+          }
+        ],
+        "firmware": "seabios",
+        "memoria_mib": 4096,
+        "origen": "disco_vacio",
+        "redes": [
+          {
+            "bridge_preferido": "vmbr0",
+            "limite_mb": 50.0,
+            "modelo": "virtio",
+            "mtu": 1500,
+            "vlan": 20
+          }
+        ],
+        "sockets": 1,
+        "storage_efi_preferido": null,
+        "tipo_cpu": "x86-64-v2-AES"
+      },
+      "descripcion": "Hecho con 0.6.0",
+      "nombre": "Perfil 060"
+    }
+  ],
+  "version_formato": 3
+}

@@ -25,8 +25,10 @@ aplicación escribe y acepta.
 | `mvs-con-errores.csv` | Contiene errores a propósito para practicar la vista previa (qué se ve, cómo filtrar, importar solo las filas correctas). | **Lote > Importar desde CSV…** |
 | `mvs-escrito-a-mano.csv` | Lo mismo que un CSV hecho en Excel, LibreOffice o un editor de texto: sin comillas, sin BOM y con saltos de línea simples. Demuestra que no hace falta usar la plantilla de la aplicación. | **Lote > Importar desde CSV…** |
 | `mvs-opciones.csv` | 4 MVs que usan las columnas de opciones de la versión 0.6: `encender`, `arranque_auto`, `notas`, `etiquetas`, `pool`, `proteger`, `mtu` y `limite_red`. Una fila lo fija todo, otra no fija nada (hereda lo del formulario) y las demás mezclan valores. | **Lote > Importar desde CSV…** |
+| `mvs-cloudinit.csv` | 4 MVs que **clonan una plantilla** y la configuran en su primer arranque con las columnas de la versión 0.7: `ci_usuario`, `ci_claves`, `ci_ip` (`dhcp` o una IP fija), `ci_puerta`, `ci_dns` y `esperar_ip`. No lleva la columna `ci_contrasena` a propósito. | **Lote > Importar desde CSV…** |
 | `lote-homogeneo.proxlaunch-lote.json` | Lote guardado de 3 MVs iguales (`srv-web-01`...`srv-web-03`; 2 núcleos, 2 GiB, disco de 32 GiB). | **Lote > Abrir lote…** (`Ctrl+O`) |
 | `lote-con-opciones.proxlaunch-lote.json` | El mismo lote de 3 servidores web, pero con las opciones de la versión 0.6 (encender, arrancar con el servidor con orden y espera, notas, etiquetas, pool, protección, MTU y límite de red). Es un archivo de **formato 3**: ProxLaunch 0.5.1 no lo abre. | **Lote > Abrir lote…** (`Ctrl+O`) |
+| `lote-cloudinit.proxlaunch-lote.json` | Lote guardado de 4 MVs iguales (`srv-web-01`...`srv-web-04`) que clonan `plantilla-debian12` con cloud-init: usuario, una clave SSH, IP fija **en serie** (`192.0.2.50/24` sumando 1 a cada máquina), puerta de enlace, DNS y dominio; se enciende al terminar y espera la IP de cada máquina (plazo de 120 s). Es un archivo de **formato 4**: ProxLaunch 0.6.0 y anteriores no lo abren. | **Lote > Abrir lote…** (`Ctrl+O`) |
 | `lote-por-filas.proxlaunch-lote.json` | Lote guardado de 3 MVs distintas (disco vacío con VMID y nodo fijos, instalación desde ISO y clon de plantilla). Es el resultado de importar filas de `mvs-mixtas.csv`. | **Lote > Abrir lote…** (`Ctrl+O`) |
 | `perfiles-ejemplo.proxlaunch-perfiles.json` | Dos perfiles de máquina: un servidor web sencillo y un escritorio Windows 11 con ISO sugerido y nombres de almacenamiento y red como pistas. | **Perfiles > Administrar perfiles… > Importar…** |
 
@@ -96,6 +98,16 @@ Solo `nombre` es obligatoria. Las demás son opcionales.
 | `proteger` (`protection`) | No | `si` o `no` | `si` | Protege la MV contra borrado. Vacío = lo que marque el formulario. |
 | `mtu` | No | `heredar`, `igual` (igual al bridge) o un número de 576 a 65520 | `1500` | Solo con tarjeta VirtIO. Se aplica a la **primera** tarjeta. Uso avanzado. |
 | `limite_red` (`rate`) | No | Número mayor que 0, en MB/s (admite decimales con punto) | `100` | Se aplica a la **primera** tarjeta. Vacío = sin límite. Uso avanzado. |
+| `ci_usuario` (`ciuser`, `ci_user`) | No | Nombre de usuario de Linux | `ana` | Usuario que crea cloud-init en el primer arranque. Solo con `clonar`. Vacío = el de la plantilla. |
+| `ci_claves` (`sshkeys`, `ssh_keys`, `claves_ssh`) | No | Claves **públicas** SSH separadas por `;` (o salto de línea) | `ssh-ed25519 AAAA… ana@portatil` | Una clave privada se rechaza y no se copia en ningún informe. Vacío = las de la plantilla. |
+| `ci_contrasena` (`cipassword`, `ci_password`) | No | Al menos 8 caracteres | | La única columna con un secreto. **No va en la plantilla CSV ni en estos ejemplos**: si la usas, el CSV queda con contraseñas en texto claro, la vista previa las muestra como `••••••`, ProxLaunch avisa y no las guarda en ningún archivo. Bórrala al terminar. Preferible: claves SSH. |
+| `ci_ip` (`ipconfig0`) | No | `dhcp`, una IP con máscara (`192.0.2.51/24`) o `heredar` | `dhcp` | Tarjeta 1 (`net0`). Cada fila lleva su propia IP: la «IP en serie» solo existe en un lote del formulario. |
+| `ci_puerta` (`puerta_enlace`) | No | Una dirección IPv4 | `192.0.2.1` | Solo con IP fija. |
+| `ci_dns` (`nameserver`) | No | Direcciones separadas por espacio, coma o `;` | `192.0.2.2 192.0.2.3` | Uso avanzado. |
+| `ci_dominio` (`searchdomain`, `dominio_busqueda`) | No | Dominio de búsqueda | `demo.example.com` | Uso avanzado. |
+| `ci_actualizar` (`ciupgrade`) | No | `si` o `no` | `no` | Actualizar paquetes en el primer arranque. Uso avanzado. |
+| `ci_snippet_usuario`, `ci_snippet_vendor`, `ci_snippet_red`, `ci_snippet_meta` | No | Un volid `almacenamiento:snippets/archivo.yaml` o `ninguno` | `local:snippets/agente.yaml` | Scripts de configuración ya guardados en el servidor. Uso avanzado. |
+| `esperar_ip` (`wait_ip`, `wait_for_ip`) | No | `si` o `no` | `si` | Tras encender la MV, espera su IP por el agente invitado. Necesita `encender` en `si` (en la fila o en el formulario); si no, la fila da error. |
 
 ### Equivalencias que enseñan los ejemplos
 
@@ -141,6 +153,46 @@ Es el lote `lote-homogeneo` con las opciones nuevas. Fíjate en tres cosas:
   `limite_mb`). Solo se escriben las que difieren de su valor por defecto.
 - El bloque `opciones` repite las que valen para todo el lote; en un lote por filas, cada fila puede llevar su propio
   bloque `opciones` con lo que sobrescribe.
+
+## `mvs-cloudinit.csv`: cloud-init y espera de la IP
+
+```text
+"nombre";"perfil";"origen";"fuente";"encender";"esperar_ip";"ci_usuario";"ci_claves";"ci_ip";"ci_puerta";"ci_dns"
+"app-01";"fabrica.servidor-mediano";"clonar";"plantilla-debian12";"si";"si";"ana";"ssh-ed25519 AAAA… ana@portatil";"dhcp";"";""
+"app-02";"fabrica.servidor-mediano";"clonar";"plantilla-debian12";"si";"si";"ana";"ssh-ed25519 AAAA… ana@portatil";"192.0.2.51/24";"192.0.2.1";"192.0.2.2"
+"app-03";"fabrica.servidor-mediano";"clonar";"plantilla-debian12";"si";"si";"ana";"ssh-ed25519 AAAA… ana@portatil";"192.0.2.52/24";"192.0.2.1";"192.0.2.2"
+"bd-01";"fabrica.base-de-datos";"clonar";"plantilla-ubuntu";"si";"no";"ana";"ssh-ed25519 AAAA… ana@portatil";"192.0.2.60/24";"192.0.2.1";"192.0.2.2"
+```
+
+(En el archivo la clave va completa; aquí se abrevia.) Qué enseña cada fila:
+
+- `app-01` pide su IP por DHCP (`dhcp`): no necesita puerta de enlace ni DNS.
+- `app-02` y `app-03` llevan IP fija, cada una con la suya, la misma puerta de enlace y los mismos DNS.
+- `bd-01` clona otra plantilla, también con IP fija, y **no** espera su IP (`esperar_ip` en `no`).
+- Todas llevan `encender` en `si`: sin encender la máquina no hay IP que esperar.
+
+La clave SSH es **falsa** (tiene el formato de una clave pública, pero no hay clave privada detrás): sustitúyela
+por la tuya. Los nombres de plantilla, las IPs (rango de documentación `192.0.2.0/24`) y los DNS son inventados.
+Para usar cloud-init, la plantilla debe tener una unidad cloud-init; si no la tiene, ProxLaunch lo avisa en
+la validación (en la vista previa y en el resumen).
+
+El archivo **no** trae la columna `ci_contrasena`: una contraseña en un CSV queda en texto claro. Si la añades,
+ProxLaunch lo avisa y la muestra enmascarada.
+
+## `lote-cloudinit.proxlaunch-lote.json`: un lote guardado de formato 4
+
+Es el lote `lote-homogeneo` con cloud-init y la espera de IP, escrito por el propio ProxLaunch. Fíjate en:
+
+- `"version_formato": 4`: un archivo que usa cloud-init o la espera de IP se escribe en formato 4.
+- `origen` vale `clonar_plantilla` y `detalle_origen.plantilla` nombra la plantilla (`plantilla-debian12`), no su
+  número: así el lote vale en otro servidor que tenga una plantilla con ese nombre.
+- El bloque `cloudinit` guarda usuario, claves públicas, DNS, dominio y las tarjetas. La tarjeta 0 es de IP fija
+  con `"serie": true`: la IP de `ip` es la de la primera máquina y cada una de las demás suma 1.
+- `esperar_ip` (`activo` y `plazo_s`) y `encender` también van en `config`.
+- **Nunca se guarda una contraseña** de cloud-init: si la habías escrito en el formulario, al abrir el lote
+  habrá que volver a escribirla.
+
+Las IPs, la clave y los nombres son inventados; sustitúyelos por los de tu red.
 
 ## `mvs-con-errores.csv`: lo que verás en la vista previa
 

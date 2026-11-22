@@ -31,6 +31,7 @@ from proxlaunch.interfaz.modelos_tabla_origen import (
 )
 from proxlaunch.interfaz.tema.paleta import TOKENS_CLARO, TOKENS_OSCURO
 from proxlaunch.interfaz.textos import texto_disponibilidad, texto_via
+from proxlaunch.nucleo.capacidades import Capacidades
 from proxlaunch.nucleo.origen.capacidades_origen import (
     CapacidadesOrigen,
     Disponibilidad,
@@ -90,11 +91,14 @@ class DialogoCapacidades(QDialog):
         *,
         texto_administrador: str | None = None,
         tema: str = "oscuro",
+        caps: Capacidades | None = None,
     ) -> None:
         super().__init__(parent)
         self._capacidades = capacidades
         self._texto_general = (
-            texto_pedir_al_administrador() if texto_administrador is None else texto_administrador
+            texto_pedir_al_administrador(caps)
+            if texto_administrador is None
+            else texto_administrador
         )
         self._tokens = TOKENS_CLARO if tema == "claro" else TOKENS_OSCURO
         self.setWindowTitle(self.tr("Qué puedo hacer en este servidor"))

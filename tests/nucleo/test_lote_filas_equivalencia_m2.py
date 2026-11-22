@@ -54,6 +54,10 @@ GUION = textwrap.dedent(
         "etiquetas_usuario": [], "pool": None, "proteger": False, "descripcion": None,
         "mtu": None, "limite_mb": None,
     })
+    # Campos nuevos de la fase B (0.7): ídem, solo se descartan con su valor por defecto.
+    NUEVOS_M4.update({
+        "cloudinit": None, "esperar_ip": False, "plazo_ip_s": 120, "info_cloudinit": None,
+    })
 
     def norm(o):
         if isinstance(o, Enum):

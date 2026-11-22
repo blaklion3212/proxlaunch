@@ -9,9 +9,11 @@ from datetime import datetime
 from enum import StrEnum
 from typing import TYPE_CHECKING, Any, Literal
 
+from proxlaunch.nucleo.cloudinit.modelos import CloudInitParcial, ConfigCloudInit
 from proxlaunch.nucleo.errores import CodigoError
 
 if TYPE_CHECKING:  # solo para anotaciones: evita ciclos con ``catalogo`` y ``capacidades_origen``
+    from proxlaunch.nucleo.cloudinit.disponibilidad import OpcionB
     from proxlaunch.nucleo.modelos.vm import ConfiguracionVM
     from proxlaunch.nucleo.origen.capacidades_origen import Disponibilidad
 
@@ -35,7 +37,7 @@ class EstadoOpcion:
     """Estado de una opción. ``codigo``: ``OPCION_SIN_PRIVILEGIO``, ``OPCION_SIN_VERSION`` o
     ``POOLS_*``. ``params``: privilegio, ruta, version, opcion, motivo."""
 
-    opcion: OpcionA
+    opcion: OpcionA | OpcionB
     disponibilidad: Disponibilidad
     codigo: CodigoError | None = None
     params: dict[str, str] = field(default_factory=dict)
@@ -150,6 +152,9 @@ class OpcionesParciales:
     etiquetas_usuario: tuple[str, ...] | None = None
     pool: str | None = None  # "" = sin pool explícito
     proteger: bool | None = None
+    # Fase B: celdas de cloud-init de la fila y «esperar IP» (None = hereda del lote).
+    cloudinit: CloudInitParcial | None = None
+    esperar_ip: bool | None = None
 
 
 @dataclass(frozen=True)
@@ -164,6 +169,10 @@ class OpcionesLote:
     proteger: bool = False
     notas_origen: bool = False
     notas_usuario: bool = False
+    # Fase B: cloud-init y espera de IP del lote (valores por defecto = 0.6.0).
+    cloudinit: ConfigCloudInit | None = None
+    esperar_ip: bool = False
+    plazo_ip_s: int = 120
 
     @classmethod
     def desde_config(cls, cfg: ConfiguracionVM) -> OpcionesLote:
@@ -177,4 +186,7 @@ class OpcionesLote:
             proteger=cfg.proteger,
             notas_origen=cfg.notas_origen,
             notas_usuario=cfg.notas_usuario,
+            cloudinit=cfg.cloudinit,
+            esperar_ip=cfg.esperar_ip,
+            plazo_ip_s=cfg.plazo_ip_s,
         )

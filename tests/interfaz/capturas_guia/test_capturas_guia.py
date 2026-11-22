@@ -17,6 +17,7 @@ from PySide6.QtGui import QPainter, QPixmap, QTextCursor
 from PySide6.QtWidgets import QGroupBox, QMessageBox, QScrollArea
 
 from proxlaunch.interfaz import controlador_origen
+from proxlaunch.interfaz.dialogos import plantilla_imagen as plantilla_imagen_modulo
 from proxlaunch.interfaz.dialogos.acerca_de import DialogoAcercaDe
 from proxlaunch.interfaz.dialogos.capacidades import DialogoCapacidades
 from proxlaunch.interfaz.dialogos.catalogo import DialogoCatalogo, FuenteCatalogo
@@ -34,12 +35,21 @@ from proxlaunch.interfaz.dialogos.importar_perfiles import DialogoImportarPerfil
 from proxlaunch.interfaz.dialogos.informe import DialogoInforme
 from proxlaunch.interfaz.dialogos.pausa_lote import DialogoPausaLote
 from proxlaunch.interfaz.dialogos.perfiles_maquina import DialogoPerfilesMaquina, _DialogoExportar
+from proxlaunch.interfaz.dialogos.plantilla_imagen import DialogoPlantillaImagen
 from proxlaunch.interfaz.dialogos.transferencia import DialogoDescarga, DialogoSubida
 from proxlaunch.interfaz.dialogos.transferencias_sesion import DialogoTransferenciasSesion
 from proxlaunch.interfaz.tema import ModoTema
 from proxlaunch.interfaz.trabajadores import Lanzador
 from proxlaunch.interfaz.ventana_principal import VentanaPrincipal
+from proxlaunch.interfaz.vistas.progreso_lote import FaseLote, ProgresoLote
+from proxlaunch.nucleo.agente.modelos import EstadoIp, ResultadoIp
 from proxlaunch.nucleo.api.cliente import MetadatosUrl
+from proxlaunch.nucleo.cloudinit.modelos import (
+    ConfigCloudInit,
+    InfoCloudInitPlantilla,
+    ModoTarjeta,
+    TarjetaCloudInit,
+)
 from proxlaunch.nucleo.csv_importacion.modelos import OpcionesCsv
 from proxlaunch.nucleo.errores import CodigoError, ErrorProxLaunch
 from proxlaunch.nucleo.lote.modelos import (
@@ -72,6 +82,7 @@ from proxlaunch.nucleo.perfiles_maquina.aplicar import config_desde_configuracio
 from proxlaunch.nucleo.perfiles_maquina.formato import leer_perfiles, perfiles_a_bytes
 from proxlaunch.nucleo.perfiles_maquina.modelos import ID_PREDETERMINADO
 from proxlaunch.nucleo.persistencia.preferencias import Modo
+from proxlaunch.nucleo.reloj import RelojSimulado
 from proxlaunch.nucleo.servicios.conexion import DesafioTFA, EstadoHuella
 from proxlaunch.nucleo.transferencias.archivo_local import DESPLAZAMIENTO_ISO9660
 from proxlaunch.nucleo.transferencias.modelos import (
@@ -93,6 +104,7 @@ from ..apoyo import (
     upid_de,
 )
 from ..apoyo_fase_a import inventario_con, permisos_fase_a
+from ..apoyo_fase_b import entrada_ip
 from ..apoyo_lote import entrada, informe_de, upid_con_usuario
 from ..apoyo_mvp3 import archivos as archivos  # noqa: F401  (fixture)
 from ..apoyo_mvp3 import definicion_homogenea, escribir_lote_guardado, importar_csv_por_menu
@@ -118,12 +130,16 @@ from ..apoyo_ventana_lote import (
     preparar_lote,
     ver_resumen,
 )
+from ..test_fase_b_plantilla_imagen import ClienteB2, FabricaCreacionFalsa
+from ..test_lote_progreso import plan_vacio
 from ..test_mvp3_textos_accesibilidad import almacen_en, perfiles_de_fabrica
 from ..test_mvp4_ventana import preguntas as preguntas  # noqa: F401  (fixture)
 from ..test_ventana_principal import conectar, esperar_validacion, poner_nombre
 from ..test_ventana_principal import entorno as entorno  # noqa: F401  (fixture)
 from .conftest import guardar_imagen
 from .escenario import (
+    CLAVE_SSH_FALSA,
+    CSV_CLOUDINIT,
     CSV_CON_ERRORES,
     CSV_MIXTAS,
     HOST,
@@ -140,6 +156,7 @@ from .escenario import (
     imagenes_import,
     inventario_guia_cluster,
     inventario_guia_individual,
+    plantillas_del_escenario,
     volumenes_iso,
 )
 
@@ -517,6 +534,7 @@ def test_21_avanzado_formulario(qtbot, entorno, guardar):  # noqa: F811
     )
     v.formulario.aplicar_configuracion(cfg)
     poner_nombre(qtbot, v, "srv-web-01")
+    qtbot.wait(300)  # la fila «Esperar la IP» cambia el alto: se espera a que se acomode
     guardar(v, "21-avanzado-formulario")
 
 
@@ -1171,7 +1189,12 @@ def test_60_cambios_sin_guardar(
 POOLS_GUIA = PoolsServidor(EstadoPools.OK, ("produccion", "pruebas"))
 
 
-def _inventario_fase_a(inv, *, opcionales=("VM.PowerMgmt", "Pool.Audit"), pools=POOLS_GUIA):
+def _inventario_fase_a(
+    inv,
+    *,
+    opcionales=("VM.PowerMgmt", "Pool.Audit", "VM.GuestAgent.Audit", "VM.Monitor"),
+    pools=POOLS_GUIA,
+):
     """Inventario con los permisos del rol más los opcionales dados y los pools del servidor."""
     inv2 = inventario_con(inv, permisos_fase_a(anadir=opcionales), pools)
     inv2.catalogo = replace(inv2.catalogo, politica_etiquetas=PoliticaEtiquetas(permiso="free"))
@@ -1237,17 +1260,51 @@ def test_63_opciones_deshabilitadas(qtbot, entorno, guardar):  # noqa: F811
 class _VistaGuiaSoloLectura(_VistaSoloLectura):
     """Vista de solo lectura que deja pasar también las dos lecturas de la fase A."""
 
-    _LECTURAS = _VistaSoloLectura._LECTURAS | {"pools", "opciones_cluster"}
+    _LECTURAS = _VistaSoloLectura._LECTURAS | {
+        "pools",
+        "opciones_cluster",
+        "plantillas_visibles",
+        "storages",
+        "contenido_storage",
+    }
 
 
 class ClienteGuiaFalso(ClienteLoteFalso):
-    """Cliente falso que, además, sirve los pools y la política de etiquetas del servidor."""
+    """Cliente falso que, además, sirve los pools y la política de etiquetas del servidor.
+
+    También las plantillas del escenario con su configuración (unidad cloud-init y agente), que
+    el lote lee al planificar un clon.
+    """
+
+    def __init__(self):
+        super().__init__()
+        for vmid in (9000, 9001):
+            self.configs[vmid] = {
+                "template": 1,
+                "name": "plantilla-debian12" if vmid == 9000 else "plantilla-ubuntu",
+                "ostype": "l26",
+                "cores": 2,
+                "memory": 2048,
+                "agent": "1",
+                "scsi0": f"local-lvm:base-{vmid}-disk-0,size=8G",
+                "ide2": f"local-lvm:vm-{vmid}-cloudinit,media=cdrom",
+                "net0": "virtio=BC:24:11:00:00:01,bridge=vmbr0",
+            }
 
     def pools(self):
         return [{"poolid": p} for p in POOLS_GUIA.ids]
 
     def opciones_cluster(self):
         return {"user-tag-access": {"user-allow": "free"}}
+
+    def plantillas_visibles(self):
+        return list(plantillas_del_escenario("pve1"))
+
+    def storages(self, nodo, con_formatos=False):
+        return []  # los formatos no se sondean en la guía: vale la tabla fija
+
+    def contenido_storage(self, nodo, storage, contenido):
+        return []
 
     def solo_lectura(self):
         self.pidio_solo_lectura += 1
@@ -1322,3 +1379,313 @@ def test_67_guia_privilegios_opcionales(qtbot, guardar):
     barra.setValue(barra.maximum())
     qtbot.wait(100)
     guardar(d, "67-guia-privilegios-opcionales")
+
+
+# --- 10. Fase B (0.7.0): cloud-init, espera de IP y asistente de plantilla -------------------
+
+INFO_PLANTILLA_CI = InfoCloudInitPlantilla(
+    unidad=True, clave_unidad="ide2", ostype="l26", agente=True, tarjetas=(0,)
+)
+
+
+@pytest.fixture
+def plantillas_cloudinit(monkeypatch):
+    """Las plantillas del escenario traen unidad cloud-init, una tarjeta y el agente activo."""
+
+    def con_info(plantillas):
+        return tuple(
+            replace(p, detalle=replace(p.detalle, cloudinit=INFO_PLANTILLA_CI)) for p in plantillas
+        )
+
+    original_catalogo = controlador_origen.leer_catalogo_para
+    original_plantillas = controlador_origen.leer_plantillas
+
+    def catalogo(*args, **kw):
+        cat = original_catalogo(*args, **kw)
+        if cat.plantillas is None:
+            return cat
+        return replace(cat, plantillas=con_info(cat.plantillas))
+
+    def plantillas(*args, **kw):
+        return con_info(original_plantillas(*args, **kw))
+
+    monkeypatch.setattr(controlador_origen, "leer_catalogo_para", catalogo)
+    monkeypatch.setattr(controlador_origen, "leer_plantillas", plantillas)
+
+
+def _ci_guia(**cambios):
+    """Cloud-init de la guía: usuario, una clave falsa, net0 con IP fija y DNS (sin contraseña)."""
+    base = {
+        "usuario": "ana",
+        "claves": (CLAVE_SSH_FALSA,),
+        "tarjetas": (
+            TarjetaCloudInit(
+                0, ModoTarjeta.FIJA, ip="192.0.2.50/24", puerta="192.0.2.1", serie=False
+            ),
+        ),
+        "dns": ("192.0.2.2", "192.0.2.3"),
+        "dominio": "demo.example.com",
+    }
+    base.update(cambios)
+    return ConfigCloudInit(**base)
+
+
+def _inventario_fase_b(inv, *, quitar=()):
+    """Inventario con los privilegios opcionales de la fase B (cloud-init y agente) concedidos."""
+    permisos = permisos_fase_a(
+        anadir=("VM.PowerMgmt", "Pool.Audit", "VM.Config.Cloudinit", "VM.GuestAgent.Audit"),
+        quitar=quitar,
+    )
+    return _inventario_fase_a_con(inv, permisos)
+
+
+def _inventario_fase_a_con(inv, permisos):
+    inv2 = inventario_con(inv, permisos, POOLS_GUIA)
+    inv2.catalogo = replace(inv2.catalogo, politica_etiquetas=PoliticaEtiquetas(permiso="free"))
+    return inv2
+
+
+def _clonando(qtbot, entorno, alto, *, inv=None, **cfg):
+    """Ventana en modo avanzado con «Copiar una plantilla» elegida y cloud-init visible."""
+    v = conectado(qtbot, entorno, inv or _inventario_fase_b(inventario_guia_cluster()), alto)
+    v.establecer_modo(Modo.AVANZADO)
+    poner_nombre(qtbot, v, "srv-web-01")
+    sel = v.formulario.selector_origen
+    _marcar(v, OrigenSO.CLONAR_PLANTILLA)
+    sel.aplicar(cfg_clon("plantilla-debian12", 9000, nodo="pve", **cfg))
+    qtbot.waitUntil(lambda: v.formulario.seccion_cloudinit.isVisibleTo(v.formulario), timeout=4000)
+    esperar_validacion(qtbot, v)
+    return v
+
+
+def _apilar(widgets, separacion=14):
+    """Imagen con las capturas de varios cuadros una debajo de otra (fondo blanco)."""
+    imagenes = [w.grab() for w in widgets]
+    ancho = max(i.width() for i in imagenes)
+    alto = sum(i.height() for i in imagenes) + separacion * (len(imagenes) - 1)
+    lienzo = QPixmap(ancho, alto)
+    lienzo.fill(Qt.GlobalColor.white)
+    pintor = QPainter(lienzo)
+    y = 0
+    for i in imagenes:
+        pintor.drawPixmap(0, y, i)
+        y += i.height() + separacion
+    pintor.end()
+    return lienzo
+
+
+def test_68_seccion_cloudinit(qtbot, entorno, preguntas, plantillas_cloudinit, guardar):  # noqa: F811
+    v = _clonando(qtbot, entorno, 2500)
+    v.formulario.seccion_cloudinit.aplicar(_ci_guia())
+    esperar_validacion(qtbot, v)
+    qtbot.wait(300)  # el formulario se acomoda al aplicar los valores
+    # Ventana completa: origen «Copiar una plantilla» y, debajo, la sección ya rellena.
+    guardar(v, "68-seccion-cloudinit")
+
+
+def _lote_cloudinit(qtbot, entorno, alto=1000, **cfg):
+    """Lote de 4 máquinas que clonan la plantilla, con cloud-init e IP en serie desde .50."""
+    entorno.inv = _inventario_fase_b(inventario_guia_cluster())
+    preparar_lote(
+        qtbot,
+        entorno,
+        cantidad=4,
+        prefijo="srv-web",
+        nodo="pve1",
+        cliente=ClienteGuiaFalso(),
+        perfil_=perfil(*PERFIL),
+    )
+    v = entorno.ventana
+    preparar(qtbot, v, alto, 1900)
+    v.establecer_modo(Modo.AVANZADO)
+    _marcar(v, OrigenSO.CLONAR_PLANTILLA)
+    v.formulario.selector_origen.aplicar(cfg_clon("plantilla-debian12", 9000, nodo="pve1"))
+    qtbot.waitUntil(lambda: v.formulario.seccion_cloudinit.isVisibleTo(v.formulario), timeout=4000)
+    ci = _ci_guia(
+        tarjetas=(
+            TarjetaCloudInit(
+                0, ModoTarjeta.FIJA, ip="192.0.2.50/24", puerta="192.0.2.1", serie=True
+            ),
+        )
+    )
+    v.formulario.seccion_cloudinit.aplicar(ci)
+    for clave, valor in cfg.items():
+        getattr(v.formulario, clave)(valor)
+    esperar_validacion(qtbot, v)
+    return v
+
+
+def test_69_cloudinit_ip_en_serie(qtbot, entorno, plantillas_cloudinit, guardar):  # noqa: F811
+    v = _lote_cloudinit(qtbot, entorno)
+    ver_resumen(qtbot, v)
+    qtbot.wait(100)
+    v.resumen_lote.setMinimumWidth(760)
+    qtbot.wait(100)
+    guardar(v.resumen_lote, "69-cloudinit-ip-en-serie")
+
+
+def test_70_esperar_ip(qtbot, entorno, preguntas, plantillas_cloudinit, guardar):  # noqa: F811
+    v = _clonando(qtbot, entorno, 2000)
+    f = v.formulario
+    f.chk_encender.setChecked(True)
+    f.chk_esperar_ip.setChecked(True)
+    esperar_validacion(qtbot, v)
+    qtbot.wait(100)
+    guardar(_grupo(f.chk_esperar_ip), "70-esperar-ip")
+
+
+def test_71_progreso_con_ip(qtbot, guardar):
+    p = ProgresoLote()
+    qtbot.addWidget(p)
+    entradas = (
+        entrada_ip(
+            0,
+            nombre="srv-web-01",
+            plazo_s=120,
+            ip=ResultadoIp(EstadoIp.OBTENIDA, principal="192.0.2.50"),
+        ),
+        entrada_ip(
+            1,
+            nombre="srv-web-02",
+            ip=ResultadoIp(EstadoIp.AGENTE_NO_RESPONDE),
+        ),
+        entrada_ip(2, nombre="srv-web-03"),
+    )
+    p.resize(1000, 480)
+    p.show()
+    p.iniciar(plan_vacio(3))
+    p.actualizar(entradas)
+    p.establecer_fase(FaseLote.TERMINADO)
+    p.establecer_espera_ip(1)  # una máquina sigue esperando su IP
+    qtbot.waitExposed(p)
+    qtbot.wait(100)
+    guardar(p, "71-progreso-con-ip")
+
+
+# --- Asistente «Crear plantilla desde imagen cloud» ------------------------------------------
+
+NOMBRE_PLANTILLA = "plantilla-ubuntu-cloud"
+VMID_PLANTILLA = 9100
+
+
+class ClienteAsistente(ClienteB2):
+    """Cliente del asistente que ofrece las imágenes del escenario y registra las escrituras."""
+
+    def __init__(self):
+        super().__init__()
+        self.config = {
+            "name": NOMBRE_PLANTILLA,
+            "template": 0,
+            "ide2": f"datos:vm-{VMID_PLANTILLA}-cloudinit,media=cdrom",
+        }
+
+    def contenido_storage(self, nodo, storage, contenido):
+        if contenido == Contenido.IMPORT and storage == "local":
+            return imagenes_import()
+        return []
+
+
+def _asistente(qtbot, cliente, fabrica=None, ancho=760, alto=900):
+    """Asistente (Proxmox 9.2, modo avanzado) con la imagen del servidor y los datos de la guía."""
+    inv = _inventario_fase_b(inventario_guia_individual())
+    d = DialogoPlantillaImagen(
+        sesion=sesion_falsa(cliente=cliente, version=(9, 2)),
+        reloj=RelojSimulado(),
+        lanzador=Lanzador(),
+        transferencias=ServicioTransferenciasFalso(),
+        inv=inv,
+        avanzado=True,
+        nodo="pve",
+        fabrica_creacion=fabrica or FabricaCreacionFalsa(),
+    )
+    qtbot.addWidget(d)
+    d.resize(ancho, alto)
+    d.show()
+    qtbot.waitExposed(d)
+    d.radio_importada.setChecked(True)
+    d.boton_actualizar_importadas.click()
+    qtbot.waitUntil(lambda: d.combo_importadas.count() > 0, timeout=3000)
+    d.combo_importadas.setCurrentIndex(
+        d.combo_importadas.findText("ubuntu-24.04-cloudimg.qcow2", Qt.MatchFlag.MatchContains)
+    )
+    d.campo_nombre.setText(NOMBRE_PLANTILLA)
+    d.spin_vmid.setValue(VMID_PLANTILLA)
+    return d
+
+
+def _desplazar(d, arriba: bool):
+    barra = d.findChild(QScrollArea).verticalScrollBar()
+    barra.setValue(0 if arriba else barra.maximum())
+
+
+def test_72_asistente_plantilla_imagen(qtbot, guardar):
+    d = _asistente(qtbot, ClienteAsistente())
+    _desplazar(d, True)
+    qtbot.wait(150)
+    guardar(d, "72-asistente-plantilla-imagen")
+
+
+def test_73_asistente_plantilla_confirmar(qtbot, guardar):
+    d = _asistente(qtbot, ClienteAsistente())
+    d.grupo_cloudinit.setChecked(True)
+    d.campo_usuario.setText("ana")
+    d.campo_claves.setPlainText(CLAVE_SSH_FALSA)
+    d.campo_dns.setText("192.0.2.2 192.0.2.3")
+    d.casilla_irreversible.setChecked(True)
+    qtbot.waitUntil(lambda: d.boton_crear.isEnabled(), timeout=3000)
+    qtbot.wait(300)  # el aviso final cambia el alto del contenido: se espera a que se acomode
+    _desplazar(d, False)
+    qtbot.wait(150)
+    guardar(d, "73-asistente-plantilla-confirmar")
+
+
+class ClienteAsistenteConFallo(ClienteAsistente):
+    """Proxmox rechaza (403) guardar los valores de cloud-init: el paso 4 falla."""
+
+    def configurar_vm(self, nodo, vmid, parametros):
+        if any(k in parametros for k in ("ciuser", "sshkeys", "ipconfig0", "nameserver")):
+            raise ErrorProxLaunch(
+                CodigoError.PERMISO_INSUFICIENTE, {"ajuste": "cloudinit"}, "403 Forbidden"
+            )
+        super().configurar_vm(nodo, vmid, parametros)
+
+
+def test_74_asistente_plantilla_fallo(qtbot, monkeypatch, guardar):
+    monkeypatch.setattr(plantilla_imagen_modulo, "confirmar", lambda *a, **k: True)
+    d = _asistente(qtbot, ClienteAsistenteConFallo(), alto=1000)
+    d.grupo_cloudinit.setChecked(True)
+    d.campo_usuario.setText("ana")
+    d.campo_claves.setPlainText(CLAVE_SSH_FALSA)
+    d.casilla_irreversible.setChecked(True)
+    qtbot.waitUntil(lambda: d.boton_crear.isEnabled(), timeout=3000)
+    d.boton_crear.click()
+    qtbot.waitUntil(lambda: d.fase == "detenido", timeout=5000)
+    qtbot.waitUntil(lambda: d.boton_borrar.isVisibleTo(d), timeout=3000)
+    qtbot.wait(300)
+    _desplazar(d, True)
+    qtbot.wait(150)
+    guardar(d, "74-asistente-plantilla-fallo")
+
+
+def test_75_importar_csv_cloudinit(qtbot, tmp_path, lanzador, guardar):
+    d = _dialogo_csv(
+        qtbot,
+        tmp_path,
+        lanzador,
+        "mvs-cloudinit.csv",
+        CSV_CLOUDINIT,
+        avanzado=True,
+        inv=_inventario_fase_b(inventario_guia_cluster()),
+    )
+    mostrar(qtbot, d)
+    d.resize(1500, 800)
+    d.detalle.setMaximumHeight(16777215)
+    d.detalle.setMinimumHeight(330)  # el detalle de la fila enseña las columnas de cloud-init
+    d.tabla.selectRow(1)
+    qtbot.wait(100)
+    guardar(d, "75-importar-csv-cloudinit")
+
+
+def test_76_menu_archivo_plantilla(qtbot, qapp, entorno, guardar):  # noqa: F811
+    v = conectado(qtbot, entorno, _inventario_fase_b(inventario_guia_cluster()))
+    captura_menu(qapp, qtbot, v, 0, "76-menu-archivo-plantilla", guardar)

@@ -11,6 +11,7 @@ from __future__ import annotations
 import dataclasses
 import threading
 
+from proxlaunch.nucleo.agente.modelos import SIN_IP_UTIL, EstadoIp, ResultadoIp
 from proxlaunch.nucleo.errores import ErrorProxLaunch
 from proxlaunch.nucleo.lote.constantes import LINEAS_LOG_TAREA
 from proxlaunch.nucleo.lote.modelos import (
@@ -20,6 +21,23 @@ from proxlaunch.nucleo.lote.modelos import (
     MotivoNoEnviada,
     Plan,
 )
+
+# Avisos de la espera de IP (RF-B3.5): nunca hacen fallar la MV ni pausan el lote.
+AVISO_IP_NO_OBTENIDA = "ip_no_obtenida"
+AVISO_IP_PARCIAL = "ip_parcial"
+AVISO_IP_NO_COINCIDE = "ip_no_coincide"
+
+
+def _avisos_de_ip(resultado: ResultadoIp) -> tuple[str, ...]:
+    """Avisos que añade un resultado de la espera de IP (``omitida`` y ``cancelada`` no añaden)."""
+    avisos: list[str] = []
+    if resultado.estado in SIN_IP_UTIL:
+        avisos.append(AVISO_IP_NO_OBTENIDA)
+    elif resultado.estado == EstadoIp.OBTENIDA_PARCIAL:
+        avisos.append(AVISO_IP_PARCIAL)
+    if resultado.no_coincide:
+        avisos.append(AVISO_IP_NO_COINCIDE)
+    return tuple(avisos)
 
 
 class Libro:
@@ -171,6 +189,29 @@ class Libro:
                 log if log else actual.log_tarea,
                 avisos if avisos else actual.avisos,
             )
+
+    def registrar_ip(self, vmid: int, resultado: ResultadoIp) -> EntradaLibro | None:
+        """Anota el resultado de la espera de IP (RF-B3.5, DT-B8).
+
+        Añade el aviso que corresponda (``ip_no_obtenida``, ``ip_parcial`` o ``ip_no_coincide``)
+        y pasa ``OK`` a ``CON_AVISOS``: es un aviso, nunca un fallo, y NO pasa por la política
+        de pausa. No cambia ningún otro estado (una MV con error o ya deshecha conserva el
+        suyo). Devuelve la entrada actualizada o ``None`` si el VMID no es del lote.
+        """
+        with self._cerrojo:
+            actual = self._entradas.get(vmid)
+            if actual is None:
+                return None
+            avisos = actual.avisos
+            for aviso in _avisos_de_ip(resultado):
+                if aviso not in avisos:
+                    avisos = (*avisos, aviso)
+            estado = actual.estado
+            if avisos != actual.avisos and estado == EstadoMV.OK:
+                estado = EstadoMV.CON_AVISOS
+            nueva = dataclasses.replace(actual, ip=resultado, avisos=avisos, estado=estado)
+            self._entradas[vmid] = nueva
+            return nueva
 
     def marcar_no_enviada(
         self, vmid: int, motivo: MotivoNoEnviada, t_fin: float | None = None

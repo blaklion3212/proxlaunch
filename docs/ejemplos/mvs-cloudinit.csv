@@ -1,0 +1,5 @@
+﻿"nombre";"perfil";"origen";"fuente";"encender";"esperar_ip";"ci_usuario";"ci_claves";"ci_ip";"ci_puerta";"ci_dns"
+"app-01";"fabrica.servidor-mediano";"clonar";"plantilla-debian12";"si";"si";"ana";"ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIAMKERgfJi00O0JJUFdeZWxzeoGIj5adpKuyucDHztXc ana@portatil";"dhcp";"";""
+"app-02";"fabrica.servidor-mediano";"clonar";"plantilla-debian12";"si";"si";"ana";"ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIAMKERgfJi00O0JJUFdeZWxzeoGIj5adpKuyucDHztXc ana@portatil";"192.0.2.51/24";"192.0.2.1";"192.0.2.2"
+"app-03";"fabrica.servidor-mediano";"clonar";"plantilla-debian12";"si";"si";"ana";"ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIAMKERgfJi00O0JJUFdeZWxzeoGIj5adpKuyucDHztXc ana@portatil";"192.0.2.52/24";"192.0.2.1";"192.0.2.2"
+"bd-01";"fabrica.base-de-datos";"clonar";"plantilla-ubuntu";"si";"no";"ana";"ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIAMKERgfJi00O0JJUFdeZWxzeoGIj5adpKuyucDHztXc ana@portatil";"192.0.2.60/24";"192.0.2.1";"192.0.2.2"

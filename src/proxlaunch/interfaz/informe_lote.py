@@ -33,10 +33,18 @@ from proxlaunch.interfaz.textos import (
     texto_tipo_so,
     texto_tipo_transferencia,
 )
+from proxlaunch.interfaz.textos_b import (
+    simbolo_estado_ip,
+    texto_detalle_ip,
+    texto_estado_ip,
+    texto_resumen_ips,
+)
+from proxlaunch.nucleo.agente.modelos import EstadoIp
 from proxlaunch.nucleo.archivos.csv_seguro import escribir_csv
 from proxlaunch.nucleo.archivos.escritura import escribir_atomico
 from proxlaunch.nucleo.errores import ErrorProxLaunch
 from proxlaunch.nucleo.lote.constantes import ETIQUETA_APP, PREFIJO_ETIQUETA_LOTE
+from proxlaunch.nucleo.lote.informe import resumen_ips
 from proxlaunch.nucleo.lote.informe import upid_sin_usuario as _upid_sin_usuario
 from proxlaunch.nucleo.lote.modelos import (
     EntradaLibro,
@@ -239,6 +247,48 @@ def _fila_maquina(d: DatosMaquina) -> tuple[str, ...]:
         texto_duracion(d.duracion_s),
         upid_sin_usuario(d.upid),
     )
+
+
+def _lineas_ips(informe: InformeLote) -> list[str]:
+    """Sección «Direcciones IP» (B3, RF-B3.6): resumen, una fila por máquina que esperó su IP y el
+    porqué de las que no la tienen. Solo datos de las máquinas: nunca cloud-init ni servidor."""
+    resumen = resumen_ips(informe.entradas)
+    if not resumen.hay_espera:
+        return []
+    lineas = [
+        "",
+        QCoreApplication.translate("InformeLote", "Direcciones IP"),
+        "-" * 14,
+        texto_resumen_ips(resumen),
+    ]
+    cab = (
+        QCoreApplication.translate("InformeLote", "N.º"),
+        QCoreApplication.translate("InformeLote", "Nombre"),
+        QCoreApplication.translate("InformeLote", "Estado de la IP"),
+        QCoreApplication.translate("InformeLote", "IP"),
+        QCoreApplication.translate("InformeLote", "Otras direcciones"),
+    )
+    filas: list[tuple[str, ...]] = []
+    explicaciones: list[str] = []
+    for e in informe.entradas:
+        ip = e.ip
+        if ip is None and not e.elemento.cfg.esperar_ip:
+            continue
+        estado = EstadoIp.PENDIENTE if ip is None else ip.estado
+        filas.append(
+            (
+                str(e.elemento.indice + 1),
+                e.elemento.nombre,
+                f"{simbolo_estado_ip(estado)} {texto_estado_ip(estado)}",
+                (ip.principal if ip is not None else None) or "—",
+                ", ".join(ip.otras) if ip is not None and ip.otras else "—",
+            )
+        )
+        if ip is not None and ip.estado not in (EstadoIp.OBTENIDA, EstadoIp.OMITIDA):
+            explicaciones.append(f"• {e.elemento.nombre}: {texto_detalle_ip(ip)}")
+    lineas.extend(_tabla(cab, filas))
+    lineas.extend(explicaciones)
+    return lineas
 
 
 def _lineas_por_maquina(informe: InformeLote) -> list[str]:
@@ -505,6 +555,7 @@ def texto_informe(informe: InformeLote) -> str:
         QCoreApplication.translate("InformeLote", "UPID"),
     )
     lineas.extend(_tabla(cab, [_fila_maquina(d) for d in datos_maquinas(informe)]))
+    lineas.extend(_lineas_ips(informe))
 
     con_detalle = [e for e in informe.entradas if detalle_entrada(e)]
     if con_detalle:

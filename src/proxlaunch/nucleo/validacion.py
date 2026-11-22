@@ -12,6 +12,10 @@ from enum import StrEnum
 from typing import Any
 
 from proxlaunch.nucleo.capacidades import VERSION_MINIMA, Capacidades
+from proxlaunch.nucleo.cloudinit.codigos import (
+    CODIGOS_CLOUDINIT_SIN_SERVIDOR,
+    CODIGOS_ESPERA_IP_SIN_SERVIDOR,
+)
 from proxlaunch.nucleo.modelos.conexion import PerfilConexion
 from proxlaunch.nucleo.modelos.inventario import Inventario, Storage, Topologia, Version
 from proxlaunch.nucleo.modelos.vm import (
@@ -198,6 +202,7 @@ def validar_vm(cfg: ConfiguracionVM, inv: Inventario, caps: Capacidades) -> list
         # ignoran (V-O29) y no se validan.
         _validar_origen(cfg, inv, caps, p)
         _validar_opciones(cfg, inv, caps, p)
+        _validar_fase_b(cfg, inv, caps, p)
         return p
     discos = cfg.discos if cfg.con_disco else []
     _validar_discos(cfg, inv, discos, p)
@@ -205,7 +210,20 @@ def validar_vm(cfg: ConfiguracionVM, inv: Inventario, caps: Capacidades) -> list
     _validar_redes(cfg, inv, p)
     _validar_origen(cfg, inv, caps, p)
     _validar_opciones(cfg, inv, caps, p)
+    _validar_fase_b(cfg, inv, caps, p)
     return p
+
+
+def _validar_fase_b(
+    cfg: ConfiguracionVM, inv: Inventario, caps: Capacidades, p: list[Problema]
+) -> None:
+    """Reglas V-B de la fase B: cloud-init y snippets (V-B20..V-B56, V-B63) y espera de IP
+    (V-B60..V-B65). Importación diferida: esos módulos importan este."""
+    from proxlaunch.nucleo.agente.validacion import validar_espera_ip
+    from proxlaunch.nucleo.cloudinit.validacion import validar_cloudinit
+
+    p.extend(validar_cloudinit(cfg, inv, caps))
+    p.extend(validar_espera_ip(cfg, caps))
 
 
 def _validar_opciones(
@@ -290,6 +308,9 @@ CODIGOS_SIN_SERVIDOR = (
         }
     )
     | CODIGOS_ORIGEN_SIN_SERVIDOR
+    # Fase B: reglas de cloud-init y de espera de IP que solo miran el contenido.
+    | frozenset(CODIGOS_CLOUDINIT_SIN_SERVIDOR)
+    | frozenset(CODIGOS_ESPERA_IP_SIN_SERVIDOR)
 )
 
 

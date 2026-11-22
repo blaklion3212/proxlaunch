@@ -1,0 +1,542 @@
+{
+  "version_codigo": "0.6.0",
+  "escenarios": {
+    "vacio": [
+      [
+        "GET",
+        "/cluster/nextid?vmid=100",
+        ""
+      ],
+      [
+        "POST",
+        "/nodes/pve1/qemu",
+        "vmid=100&name=srv-web-01&sockets=1&cores=2&cpu=x86-64-v2-AES&memory=8192&scsihw=virtio-scsi-single&scsi0=datos%3A32%2Cdiscard%3Don%2Cssd%3D1%2Ciothread%3D1%2Cformat%3Dqcow2&net0=virtio%2Cbridge%3Dvmbr0"
+      ],
+      [
+        "GET",
+        "/nodes/pve1/tasks/UPID:pve1:0003A1B2:00F4C1D3:6535AB12:qmcreate:100:root@pam:/status",
+        ""
+      ],
+      [
+        "GET",
+        "/nodes/pve1/qemu/100/config",
+        ""
+      ]
+    ],
+    "vacio_encender": [
+      [
+        "GET",
+        "/cluster/nextid?vmid=100",
+        ""
+      ],
+      [
+        "POST",
+        "/nodes/pve1/qemu",
+        "vmid=100&name=srv-web-01&sockets=1&cores=2&cpu=x86-64-v2-AES&memory=8192&scsihw=virtio-scsi-single&scsi0=datos%3A32%2Cdiscard%3Don%2Cssd%3D1%2Ciothread%3D1%2Cformat%3Dqcow2&net0=virtio%2Cbridge%3Dvmbr0"
+      ],
+      [
+        "GET",
+        "/nodes/pve1/tasks/UPID:pve1:0003A1B2:00F4C1D3:6535AB12:qmcreate:100:root@pam:/status",
+        ""
+      ],
+      [
+        "GET",
+        "/nodes/pve1/qemu/100/config",
+        ""
+      ],
+      [
+        "POST",
+        "/nodes/pve1/qemu/100/status/start",
+        ""
+      ],
+      [
+        "GET",
+        "/nodes/pve1/tasks/UPID:pve1:0003A1B2:00F4C1D3:6535AB12:qmstart:100:root@pam:/status",
+        ""
+      ]
+    ],
+    "iso": [
+      [
+        "GET",
+        "/nodes/pve1/storage/local/content?content=iso",
+        ""
+      ],
+      [
+        "GET",
+        "/cluster/nextid?vmid=100",
+        ""
+      ],
+      [
+        "POST",
+        "/nodes/pve1/qemu",
+        "vmid=100&name=srv-web-01&sockets=1&cores=2&cpu=x86-64-v2-AES&memory=2048&scsihw=virtio-scsi-single&ostype=l26&scsi0=local-lvm%3A32%2Cdiscard%3Don%2Cssd%3D1%2Ciothread%3D1&ide2=local%3Aiso%2Falpine.iso%2Cmedia%3Dcdrom&boot=order%3Dscsi0%3Bide2%3Bnet0&net0=virtio%2Cbridge%3Dvmbr0&tags=proxlaunch%3Blote-ab12cd34"
+      ],
+      [
+        "GET",
+        "/nodes/pve1/tasks/UPID:pve1:0003A1B2:00F4C1D3:6535AB12:qmcreate:100:root@pam:/status",
+        ""
+      ],
+      [
+        "GET",
+        "/nodes/pve1/qemu/100/config",
+        ""
+      ]
+    ],
+    "importar_con_resize": [
+      [
+        "GET",
+        "/nodes/pve1/storage/local/content?content=import",
+        ""
+      ],
+      [
+        "GET",
+        "/cluster/nextid?vmid=100",
+        ""
+      ],
+      [
+        "POST",
+        "/nodes/pve1/qemu",
+        "vmid=100&name=srv-web-01&sockets=1&cores=2&cpu=x86-64-v2-AES&memory=2048&scsihw=virtio-scsi-single&scsi0=local-lvm%3A0%2Cimport-from%3Dlocal%3Aimport%2Fcirros.qcow2%2Cdiscard%3Don%2Cssd%3D1%2Ciothread%3D1&net0=virtio%2Cbridge%3Dvmbr0&tags=proxlaunch%3Blote-ab12cd34"
+      ],
+      [
+        "GET",
+        "/nodes/pve1/tasks/UPID:pve1:0003A1B2:00F4C1D3:6535AB12:qmcreate:100:root@pam:/status",
+        ""
+      ],
+      [
+        "GET",
+        "/nodes/pve1/qemu/100/config",
+        ""
+      ],
+      [
+        "PUT",
+        "/nodes/pve1/qemu/100/resize",
+        "disk=scsi0&size=64G"
+      ]
+    ],
+    "clon_sin_ajustes": [
+      [
+        "GET",
+        "/nodes/pve1/qemu/9000/config",
+        ""
+      ],
+      [
+        "GET",
+        "/cluster/nextid?vmid=100",
+        ""
+      ],
+      [
+        "POST",
+        "/nodes/pve1/qemu/9000/clone",
+        "newid=100&name=srv-web-01"
+      ],
+      [
+        "GET",
+        "/nodes/pve1/tasks/UPID:pve1:0003A1B2:00F4C1D3:6535AB12:qmclone:100:root@pam:/status",
+        ""
+      ],
+      [
+        "GET",
+        "/nodes/pve1/qemu/100/config",
+        ""
+      ],
+      [
+        "PUT",
+        "/nodes/pve1/qemu/100/config",
+        "tags=lote-ab12cd34%3Bplantilla%3Bproxlaunch"
+      ]
+    ],
+    "clon_con_ajustes": [
+      [
+        "GET",
+        "/nodes/pve1/qemu/9000/config",
+        ""
+      ],
+      [
+        "GET",
+        "/cluster/nextid?vmid=100",
+        ""
+      ],
+      [
+        "POST",
+        "/nodes/pve1/qemu/9000/clone",
+        "newid=100&name=srv-web-01"
+      ],
+      [
+        "GET",
+        "/nodes/pve1/tasks/UPID:pve1:0003A1B2:00F4C1D3:6535AB12:qmclone:100:root@pam:/status",
+        ""
+      ],
+      [
+        "GET",
+        "/nodes/pve1/qemu/100/config",
+        ""
+      ],
+      [
+        "PUT",
+        "/nodes/pve1/qemu/100/config",
+        "cores=4&memory=4096&tags=lote-ab12cd34%3Bplantilla%3Bproxlaunch&onboot=1"
+      ],
+      [
+        "PUT",
+        "/nodes/pve1/qemu/100/resize",
+        "disk=scsi0&size=64G"
+      ],
+      [
+        "POST",
+        "/nodes/pve1/qemu/100/status/start",
+        ""
+      ],
+      [
+        "GET",
+        "/nodes/pve1/tasks/UPID:pve1:0003A1B2:00F4C1D3:6535AB12:qmstart:100:root@pam:/status",
+        ""
+      ]
+    ],
+    "lote_3_encender": [
+      [
+        "GET",
+        "/nodes/pve1/status",
+        ""
+      ],
+      [
+        "GET",
+        "/nodes/pve1/tasks/UPID:pve1:0003A1B2:00F4C1D3:6535AB12:qmcreate:100:root@pam:/status",
+        ""
+      ],
+      [
+        "GET",
+        "/nodes/pve1/tasks/UPID:pve1:0003A1B2:00F4C1D3:6535AB12:qmstart:100:root@pam:/status",
+        ""
+      ],
+      [
+        "GET",
+        "/nodes/pve1/tasks/UPID:pve1:0003A1B2:00F4C1D3:6535AB12:qmcreate:101:root@pam:/status",
+        ""
+      ],
+      [
+        "GET",
+        "/nodes/pve1/tasks/UPID:pve1:0003A1B2:00F4C1D3:6535AB12:qmstart:101:root@pam:/status",
+        ""
+      ],
+      [
+        "GET",
+        "/nodes/pve1/tasks/UPID:pve1:0003A1B2:00F4C1D3:6535AB12:qmcreate:102:root@pam:/status",
+        ""
+      ],
+      [
+        "GET",
+        "/nodes/pve1/tasks/UPID:pve1:0003A1B2:00F4C1D3:6535AB12:qmstart:102:root@pam:/status",
+        ""
+      ],
+      [
+        "GET",
+        "/cluster/nextid?vmid=100",
+        ""
+      ],
+      [
+        "POST",
+        "/nodes/pve1/qemu",
+        "vmid=100&name=web-01&sockets=1&cores=2&cpu=x86-64-v2-AES&memory=8192&scsihw=virtio-scsi-single&scsi0=datos%3A32%2Cdiscard%3Don%2Cssd%3D1%2Ciothread%3D1%2Cformat%3Dqcow2&net0=virtio%2Cbridge%3Dvmbr0&tags=proxlaunch%3Blote-abcd1234"
+      ],
+      [
+        "GET",
+        "/nodes/pve1/qemu/100/config",
+        ""
+      ],
+      [
+        "POST",
+        "/nodes/pve1/qemu/100/status/start",
+        ""
+      ],
+      [
+        "GET",
+        "/cluster/nextid?vmid=101",
+        ""
+      ],
+      [
+        "POST",
+        "/nodes/pve1/qemu",
+        "vmid=101&name=web-02&sockets=1&cores=2&cpu=x86-64-v2-AES&memory=8192&scsihw=virtio-scsi-single&scsi0=datos%3A32%2Cdiscard%3Don%2Cssd%3D1%2Ciothread%3D1%2Cformat%3Dqcow2&net0=virtio%2Cbridge%3Dvmbr0&tags=proxlaunch%3Blote-abcd1234"
+      ],
+      [
+        "GET",
+        "/nodes/pve1/qemu/101/config",
+        ""
+      ],
+      [
+        "POST",
+        "/nodes/pve1/qemu/101/status/start",
+        ""
+      ],
+      [
+        "GET",
+        "/cluster/nextid?vmid=102",
+        ""
+      ],
+      [
+        "POST",
+        "/nodes/pve1/qemu",
+        "vmid=102&name=web-03&sockets=1&cores=2&cpu=x86-64-v2-AES&memory=8192&scsihw=virtio-scsi-single&scsi0=datos%3A32%2Cdiscard%3Don%2Cssd%3D1%2Ciothread%3D1%2Cformat%3Dqcow2&net0=virtio%2Cbridge%3Dvmbr0&tags=proxlaunch%3Blote-abcd1234"
+      ],
+      [
+        "GET",
+        "/nodes/pve1/qemu/102/config",
+        ""
+      ],
+      [
+        "POST",
+        "/nodes/pve1/qemu/102/status/start",
+        ""
+      ]
+    ],
+    "reintento_de_ajustes": [
+      [
+        "GET",
+        "/nodes/pve1/qemu/9000/config",
+        ""
+      ],
+      [
+        "GET",
+        "/cluster/nextid?vmid=100",
+        ""
+      ],
+      [
+        "POST",
+        "/nodes/pve1/qemu/9000/clone",
+        "newid=100&name=srv-web-01"
+      ],
+      [
+        "GET",
+        "/nodes/pve1/tasks/UPID:pve1:0003A1B2:00F4C1D3:6535AB12:qmclone:100:root@pam:/status",
+        ""
+      ],
+      [
+        "GET",
+        "/nodes/pve1/qemu/100/config",
+        ""
+      ],
+      [
+        "PUT",
+        "/nodes/pve1/qemu/100/config",
+        "cores=4&memory=4096&tags=lote-ab12cd34%3Bplantilla%3Bproxlaunch"
+      ],
+      [
+        "GET",
+        "/nodes/pve1/qemu/100/config",
+        ""
+      ],
+      [
+        "PUT",
+        "/nodes/pve1/qemu/100/config",
+        "cores=4&memory=4096&tags=lote-ab12cd34%3Bplantilla%3Bproxlaunch"
+      ],
+      [
+        "POST",
+        "/nodes/pve1/qemu/100/status/start",
+        ""
+      ],
+      [
+        "GET",
+        "/nodes/pve1/tasks/UPID:pve1:0003A1B2:00F4C1D3:6535AB12:qmstart:100:root@pam:/status",
+        ""
+      ]
+    ],
+    "deshacer_2": [
+      [
+        "GET",
+        "/nodes/pve1/tasks/UPID:pve1:0003A1B2:00F4C1D3:6535AB12:qmdestroy:100:root@pam:/status",
+        ""
+      ],
+      [
+        "GET",
+        "/nodes/pve1/tasks/UPID:pve1:0003A1B2:00F4C1D3:6535AB12:qmdestroy:101:root@pam:/status",
+        ""
+      ],
+      [
+        "GET",
+        "/nodes/pve1/qemu/100/config",
+        ""
+      ],
+      [
+        "GET",
+        "/nodes/pve1/qemu/100/status/current",
+        ""
+      ],
+      [
+        "DELETE",
+        "/nodes/pve1/qemu/100?destroy-unreferenced-disks=0",
+        ""
+      ],
+      [
+        "GET",
+        "/nodes/pve1/qemu/101/config",
+        ""
+      ],
+      [
+        "GET",
+        "/nodes/pve1/qemu/101/status/current",
+        ""
+      ],
+      [
+        "DELETE",
+        "/nodes/pve1/qemu/101?destroy-unreferenced-disks=0",
+        ""
+      ]
+    ],
+    "simulacion_lote_vacio": [
+      {
+        "100": {
+          "vmid": "100",
+          "name": "web-01",
+          "sockets": "1",
+          "cores": "2",
+          "cpu": "x86-64-v2-AES",
+          "memory": "8192",
+          "scsihw": "virtio-scsi-single",
+          "scsi0": "datos:32,discard=on,ssd=1,iothread=1,format=qcow2",
+          "net0": "virtio,bridge=vmbr0",
+          "tags": "proxlaunch;lote-XXXXXXXX"
+        },
+        "101": {
+          "vmid": "101",
+          "name": "web-02",
+          "sockets": "1",
+          "cores": "2",
+          "cpu": "x86-64-v2-AES",
+          "memory": "8192",
+          "scsihw": "virtio-scsi-single",
+          "scsi0": "datos:32,discard=on,ssd=1,iothread=1,format=qcow2",
+          "net0": "virtio,bridge=vmbr0",
+          "tags": "proxlaunch;lote-XXXXXXXX"
+        }
+      },
+      {
+        "100": [
+          [
+            "crear",
+            "pve1",
+            {
+              "vmid": "100",
+              "name": "web-01",
+              "sockets": "1",
+              "cores": "2",
+              "cpu": "x86-64-v2-AES",
+              "memory": "8192",
+              "scsihw": "virtio-scsi-single",
+              "scsi0": "datos:32,discard=on,ssd=1,iothread=1,format=qcow2",
+              "net0": "virtio,bridge=vmbr0",
+              "tags": "proxlaunch;lote-XXXXXXXX"
+            }
+          ],
+          [
+            "encender",
+            "pve1",
+            {}
+          ]
+        ],
+        "101": [
+          [
+            "crear",
+            "pve1",
+            {
+              "vmid": "101",
+              "name": "web-02",
+              "sockets": "1",
+              "cores": "2",
+              "cpu": "x86-64-v2-AES",
+              "memory": "8192",
+              "scsihw": "virtio-scsi-single",
+              "scsi0": "datos:32,discard=on,ssd=1,iothread=1,format=qcow2",
+              "net0": "virtio,bridge=vmbr0",
+              "tags": "proxlaunch;lote-XXXXXXXX"
+            }
+          ],
+          [
+            "encender",
+            "pve1",
+            {}
+          ]
+        ]
+      }
+    ],
+    "simulacion_lote_clon": [
+      {
+        "100": {
+          "newid": "100",
+          "name": "web-01"
+        },
+        "101": {
+          "newid": "101",
+          "name": "web-02"
+        }
+      },
+      {
+        "100": [
+          [
+            "clonar",
+            "pve1",
+            {
+              "newid": "100",
+              "name": "web-01"
+            }
+          ],
+          [
+            "configurar",
+            "pve1",
+            {
+              "cores": "4",
+              "tags": "lote-XXXXXXXX;plantilla;proxlaunch",
+              "onboot": "1"
+            }
+          ],
+          [
+            "ampliar",
+            "pve1",
+            {
+              "disk": "scsi0",
+              "size": "64G"
+            }
+          ],
+          [
+            "encender",
+            "pve1",
+            {}
+          ]
+        ],
+        "101": [
+          [
+            "clonar",
+            "pve1",
+            {
+              "newid": "101",
+              "name": "web-02"
+            }
+          ],
+          [
+            "configurar",
+            "pve1",
+            {
+              "cores": "4",
+              "tags": "lote-XXXXXXXX;plantilla;proxlaunch",
+              "onboot": "1"
+            }
+          ],
+          [
+            "ampliar",
+            "pve1",
+            {
+              "disk": "scsi0",
+              "size": "64G"
+            }
+          ],
+          [
+            "encender",
+            "pve1",
+            {}
+          ]
+        ]
+      }
+    ]
+  }
+}

@@ -42,6 +42,7 @@ class PanelProgreso(QGroupBox):
     deshacer_solicitado = Signal()
     crear_sin_etiquetas = Signal()
     reintentar_ajustes_solicitado = Signal()  # MVP 4: clon PARCIAL con ajustes pendientes (E-O24)
+    dejar_de_esperar_ip_solicitado = Signal()  # B3: «Dejar de esperar la IP»
 
     def __init__(self, parent: QWidget | None = None) -> None:
         super().__init__(QCoreApplication.translate("PanelProgreso", "Progreso"), parent)
@@ -103,6 +104,16 @@ class PanelProgreso(QGroupBox):
             )
         )
         self.boton_reintentar_ajustes.clicked.connect(self.reintentar_ajustes_solicitado)
+        self.boton_dejar_ip = QPushButton(
+            QCoreApplication.translate("PanelProgreso", "Dejar de esperar la IP")
+        )
+        self.boton_dejar_ip.setToolTip(
+            QCoreApplication.translate(
+                "PanelProgreso",
+                "Deja de preguntar a la máquina por su IP. La máquina no se toca.",
+            )
+        )
+        self.boton_dejar_ip.clicked.connect(self.dejar_de_esperar_ip_solicitado)
         self.boton_crear_otra.clicked.connect(self.crear_otra)
         self.boton_seguir.clicked.connect(self.seguir_esperando)
         self.boton_comprobar.clicked.connect(self.comprobar_ahora)
@@ -119,6 +130,7 @@ class PanelProgreso(QGroupBox):
             self.boton_deshacer,
             self.boton_reintentar_ajustes,
             self.boton_sin_etiquetas,
+            self.boton_dejar_ip,
         ):
             fila_botones.addWidget(b)
         fila_botones.addStretch(1)
@@ -157,6 +169,7 @@ class PanelProgreso(QGroupBox):
         self.boton_deshacer.setVisible(False)
         self.boton_sin_etiquetas.setVisible(False)
         self.boton_reintentar_ajustes.setVisible(False)
+        self.boton_dejar_ip.setVisible(False)
 
     def iniciar(self) -> None:
         """Comienza el seguimiento de una creación."""
@@ -237,6 +250,10 @@ class PanelProgreso(QGroupBox):
     def ofrecer_reintentar_ajustes(self, visible: bool) -> None:
         """Muestra «Reintentar ajustes» (clon creado al que le faltan ajustes, E-O24)."""
         self.boton_reintentar_ajustes.setVisible(visible)
+
+    def ofrecer_dejar_de_esperar_ip(self, visible: bool) -> None:
+        """Muestra «Dejar de esperar la IP» mientras se espera la IP de la máquina (B3)."""
+        self.boton_dejar_ip.setVisible(visible)
 
     def mostrar_progreso_mensaje(self, texto: str) -> None:
         """Mensaje intermedio (por ejemplo, mientras se vuelve a comprobar)."""

@@ -2,6 +2,11 @@
 
 Los nombres de columna no distinguen mayúsculas, acentos ni espacios (espacio y guion = guion
 bajo). Las columnas con aspecto de credencial se descartan sin leer nunca sus celdas.
+
+Excepción de la fase B (DT-B13, RF-B6.5, P-B1): ``ci_contrasena`` y sus alias cerrados
+(``COLUMNAS_SECRETAS``) se reconocen ANTES del filtro de credenciales y en ningún otro sitio: los
+alias traducidos que aporta la interfaz no se aplican a esa columna. Sus celdas son secretas y el
+intérprete las enmascara (ver ``interpretacion``).
 """
 
 import re
@@ -18,6 +23,9 @@ from proxlaunch.nucleo.csv_importacion.saneado import texto_visible
 from proxlaunch.nucleo.errores import CodigoError, ErrorProxLaunch
 
 MAX_DISCOS_CSV = 8  # disco … disco8
+COLUMNA_CONTRASENA = "ci_contrasena"  # fase B: la única columna secreta admitida
+# Lista CERRADA de encabezados (ya normalizados) que se reconocen como la columna secreta.
+COLUMNAS_SECRETAS: frozenset[str] = frozenset({COLUMNA_CONTRASENA, "cipassword", "ci_password"})
 
 
 def _discos_adicionales() -> tuple[DefColumna, ...]:
@@ -59,6 +67,21 @@ COLUMNAS: tuple[DefColumna, ...] = (
     DefColumna("proteger", ("protection",)),
     DefColumna("mtu", avanzada=True),
     DefColumna("limite_red", ("rate",), avanzada=True),
+    # Fase B (RF-B6.3): cloud-init y espera de IP. Alias en inglés = parámetro de Proxmox.
+    # Las columnas de red aplican a la tarjeta 1 (net0). ``ci_contrasena`` es secreta (DT-B13).
+    DefColumna("ci_usuario", ("ciuser", "ci_user")),
+    DefColumna("ci_claves", ("sshkeys", "ssh_keys", "claves_ssh")),
+    DefColumna(COLUMNA_CONTRASENA, ("cipassword", "ci_password")),
+    DefColumna("ci_ip", ("ipconfig0",)),
+    DefColumna("ci_puerta", ("puerta_enlace",)),
+    DefColumna("ci_dns", ("nameserver",), avanzada=True),
+    DefColumna("ci_dominio", ("searchdomain", "dominio_busqueda"), avanzada=True),
+    DefColumna("ci_actualizar", ("ciupgrade",), avanzada=True),
+    DefColumna("ci_snippet_usuario", ("cicustom_user", "snippet_user"), avanzada=True),
+    DefColumna("ci_snippet_vendor", ("cicustom_vendor", "snippet_vendor"), avanzada=True),
+    DefColumna("ci_snippet_red", ("cicustom_network", "snippet_network"), avanzada=True),
+    DefColumna("ci_snippet_meta", ("cicustom_meta", "snippet_meta"), avanzada=True),
+    DefColumna("esperar_ip", ("wait_ip", "wait_for_ip")),
 )
 
 _SEPARADORES = re.compile(r"[\s\-_]+")
@@ -81,11 +104,16 @@ def _tabla_alias(alias_extra: Mapping[str, str] | None) -> dict[str, str]:
         tabla[normalizar_encabezado(col.canonica)] = col.canonica
         for a in col.alias:
             tabla.setdefault(normalizar_encabezado(a), col.canonica)
-    canonicas = {c.canonica for c in COLUMNAS}
+    canonicas = {c.canonica for c in COLUMNAS} - {COLUMNA_CONTRASENA}  # DT-B13: lista cerrada
     for alias, canonica in (alias_extra or {}).items():
         if canonica in canonicas and (clave := normalizar_encabezado(alias)):
             tabla.setdefault(clave, canonica)
     return tabla
+
+
+def es_encabezado_secreto(celda: str) -> bool:
+    """¿El encabezado es uno de los nombres cerrados de la columna de contraseñas?"""
+    return normalizar_encabezado(celda) in COLUMNAS_SECRETAS
 
 
 def _buscar(tabla: Mapping[str, str], clave: str) -> str | None:
@@ -144,7 +172,7 @@ def resolver_columnas(
     for i, celda in enumerate(encabezado):
         if not normalizar_encabezado(celda):
             vacias.append(i)
-        elif es_clave_credencial(celda):
+        elif es_clave_credencial(celda) and not es_encabezado_secreto(celda):
             credenciales.append(i)
         elif (canonica := _buscar(tabla, normalizar_encabezado(celda))) is None:
             ignoradas.append(i)

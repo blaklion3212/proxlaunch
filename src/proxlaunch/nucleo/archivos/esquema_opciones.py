@@ -2,7 +2,8 @@
 
 Cubre ``encender``, ``arranque_auto``, ``arranque_orden``, ``arranque_espera``, ``notas_origen``,
 ``notas_usuario``, ``notas``, ``etiquetas_usuario``, ``pool``, ``proteger`` y, por tarjeta de red,
-``mtu`` y ``limite_mb``. Las claves nuevas se escriben SOLO si difieren de su valor por defecto
+``mtu`` y ``limite_mb``; y, de la fase B (0.7), ``cloudinit`` y ``esperar_ip`` (ver
+``esquema_cloudinit``). Las claves nuevas se escriben SOLO si difieren de su valor por defecto
 (un archivo sin opciones nuevas queda idéntico al de 0.5.1), salvo ``notas_origen`` que se escribe
 cuando es ``True`` aunque el archivo siga siendo v1/v2 (P-4). La lectura valida tipo y rango
 (CA-A7.1.7); los textos libres pasan por ``exigir_sin_credencial`` al escribir (CA-A7.1.9).
@@ -15,6 +16,17 @@ from dataclasses import dataclass
 
 from proxlaunch.nucleo.archivos.constantes import MAX_LONG_NOTAS, MAX_LONG_TEXTO
 from proxlaunch.nucleo.archivos.esquema import LectorEsquema, MotivoCampo
+from proxlaunch.nucleo.archivos.esquema_cloudinit import (
+    cloudinit_a_dict,
+    cloudinit_parcial_a_dict,
+    cloudinit_requiere_v4,
+    espera_ip_a_dict,
+    espera_ip_requiere_v4,
+    leer_cloudinit,
+    leer_cloudinit_parcial,
+    leer_espera_ip,
+    parcial_requiere_v4,
+)
 from proxlaunch.nucleo.archivos.texto import (
     MOTIVO_CARACTERES,
     MOTIVO_LONGITUD,
@@ -22,12 +34,14 @@ from proxlaunch.nucleo.archivos.texto import (
     contiene_token,
     exigir_sin_credencial,
 )
+from proxlaunch.nucleo.cloudinit.modelos import ConfigCloudInit
 from proxlaunch.nucleo.errores import CodigoError, ErrorProxLaunch
 from proxlaunch.nucleo.modelos.vm import (
     MAX_LIMITE_MB,
     MTU_IGUAL_BRIDGE,
     MTU_MAX,
     MTU_MIN,
+    PLAZO_IP_DEFECTO_S,
     ConfiguracionVM,
     pool_valido,
 )
@@ -49,6 +63,8 @@ CLAVES_OPCIONES_CFG = frozenset(
         "etiquetas_usuario",
         "pool",
         "proteger",
+        "cloudinit",
+        "esperar_ip",
     }
 )
 CLAVES_OPCIONES_LOTE = frozenset(
@@ -61,10 +77,21 @@ CLAVES_OPCIONES_LOTE = frozenset(
         "proteger",
         "notas_origen",
         "notas_usuario",
+        "cloudinit",
+        "esperar_ip",
     }
 )
 CLAVES_OPCIONES_FILA = frozenset(
-    {"encender", "arranque_auto", "notas", "etiquetas_usuario", "pool", "proteger"}
+    {
+        "encender",
+        "arranque_auto",
+        "notas",
+        "etiquetas_usuario",
+        "pool",
+        "proteger",
+        "cloudinit",
+        "esperar_ip",
+    }
 )
 
 
@@ -151,6 +178,19 @@ def opciones_cfg_a_dict(cfg: ConfiguracionVM) -> dict[str, object]:
         datos["pool"] = _pool_para_escribir(cfg.pool, "pool")
     if cfg.proteger:
         datos["proteger"] = True
+    datos.update(_fase_b_a_dict(cfg.cloudinit, cfg.esperar_ip, cfg.plazo_ip_s, ""))
+    return datos
+
+
+def _fase_b_a_dict(
+    cloudinit: ConfigCloudInit | None, esperar_ip: bool, plazo_ip_s: int, prefijo: str
+) -> dict[str, object]:
+    """Claves de la fase B (``cloudinit``, ``esperar_ip``), solo si difieren del defecto."""
+    datos: dict[str, object] = {}
+    if cloudinit_requiere_v4(cloudinit) and cloudinit is not None:
+        datos["cloudinit"] = cloudinit_a_dict(cloudinit, f"{prefijo}cloudinit")
+    if espera_ip_requiere_v4(esperar_ip, plazo_ip_s):
+        datos["esperar_ip"] = espera_ip_a_dict(esperar_ip, plazo_ip_s, f"{prefijo}esperar_ip")
     return datos
 
 
@@ -175,6 +215,7 @@ def opciones_lote_a_dict(op: OpcionesLote) -> dict[str, object]:
         datos["notas_origen"] = True
     if op.notas_usuario:
         datos["notas_usuario"] = True
+    datos.update(_fase_b_a_dict(op.cloudinit, op.esperar_ip, op.plazo_ip_s, "opciones."))
     return datos
 
 
@@ -197,6 +238,10 @@ def opciones_parciales_a_dict(op: OpcionesParciales) -> dict[str, object]:
         )  # "" = sin pool explícito (anula el del lote)
     if op.proteger is not None:
         datos["proteger"] = op.proteger
+    if op.cloudinit is not None and not op.cloudinit.vacia:
+        datos["cloudinit"] = cloudinit_parcial_a_dict(op.cloudinit, "fila.opciones.cloudinit")
+    if op.esperar_ip is not None:
+        datos["esperar_ip"] = op.esperar_ip
     return datos
 
 
@@ -214,7 +259,7 @@ def opciones_lote_requieren_v3(op: OpcionesLote) -> bool:
 
 
 def opciones_parciales_requieren_v3(op: OpcionesParciales) -> bool:
-    """Cualquier sobrescritura de fila es de la fase A."""
+    """Cualquier sobrescritura de fila de la fase A (las de la fase B cuentan en ``v4``)."""
     return any(
         v is not None
         for v in (
@@ -226,6 +271,18 @@ def opciones_parciales_requieren_v3(op: OpcionesParciales) -> bool:
             op.proteger,
         )
     )
+
+
+def opciones_lote_requieren_v4(op: OpcionesLote) -> bool:
+    """¿Las opciones de lote usan algo de la fase B (cloud-init o espera de IP)?"""
+    return cloudinit_requiere_v4(op.cloudinit) or espera_ip_requiere_v4(
+        op.esperar_ip, op.plazo_ip_s
+    )
+
+
+def opciones_parciales_requieren_v4(op: OpcionesParciales) -> bool:
+    """¿Alguna sobrescritura de fila es de la fase B?"""
+    return parcial_requiere_v4(op.cloudinit) or op.esperar_ip is not None
 
 
 # --- Lectura ------------------------------------------------------------------------------
@@ -334,6 +391,39 @@ class OpcionesCfgLeidas:
     etiquetas_usuario: tuple[str, ...] = ()
     pool: str | None = None
     proteger: bool = False
+    cloudinit: ConfigCloudInit | None = None
+    esperar_ip: bool = False
+    plazo_ip_s: int = PLAZO_IP_DEFECTO_S
+
+
+@dataclass
+class _FaseBLeida:
+    """``cloudinit`` y ``esperar_ip`` de un objeto de opciones, ya validados."""
+
+    cloudinit: ConfigCloudInit | None = None
+    esperar_ip: bool = False
+    plazo_ip_s: int = PLAZO_IP_DEFECTO_S
+
+
+def _leer_fase_b(lector: LectorEsquema, obj: dict[str, object], ruta: str) -> _FaseBLeida | None:
+    """Lee las claves de la fase B de una configuración o de las opciones de un lote.
+
+    Un ``cloudinit`` sin nada (todo vacío) equivale a no tenerlo (``None``).
+    """
+    n0 = len(lector.errores)
+    cloudinit: ConfigCloudInit | None = None
+    if "cloudinit" in obj:
+        cloudinit = leer_cloudinit(lector, obj["cloudinit"], _ruta(ruta, "cloudinit"))
+        if cloudinit is not None and cloudinit.vacia:
+            cloudinit = None
+    espera = (False, PLAZO_IP_DEFECTO_S)
+    if "esperar_ip" in obj:
+        leida = leer_espera_ip(lector, obj["esperar_ip"], _ruta(ruta, "esperar_ip"))
+        if leida is not None:
+            espera = leida
+    if len(lector.errores) > n0:
+        return None
+    return _FaseBLeida(cloudinit, espera[0], espera[1])
 
 
 def leer_opciones_cfg(
@@ -355,6 +445,7 @@ def leer_opciones_cfg(
     etiquetas = leer_etiquetas(lector, obj, "etiquetas_usuario", ruta)
     pool = leer_pool(lector, obj, ruta, nulo=True)
     proteger = lector.booleano(obj, "proteger", ruta, requerido=False, defecto=False)
+    fase_b = _leer_fase_b(lector, obj, ruta)
     if (
         len(lector.errores) > n0
         or encender is None
@@ -364,6 +455,7 @@ def leer_opciones_cfg(
         or notas is None
         or etiquetas is None
         or proteger is None
+        or fase_b is None
     ):
         return None
     return OpcionesCfgLeidas(
@@ -377,6 +469,9 @@ def leer_opciones_cfg(
         etiquetas_usuario=etiquetas,
         pool=pool,
         proteger=proteger,
+        cloudinit=fase_b.cloudinit,
+        esperar_ip=fase_b.esperar_ip,
+        plazo_ip_s=fase_b.plazo_ip_s,
     )
 
 
@@ -394,6 +489,7 @@ def leer_opciones_lote(lector: LectorEsquema, valor: object, ruta: str) -> Opcio
     proteger = lector.booleano(obj, "proteger", ruta, requerido=False, defecto=False)
     notas_origen = lector.booleano(obj, "notas_origen", ruta, requerido=False, defecto=False)
     notas_usuario = lector.booleano(obj, "notas_usuario", ruta, requerido=False, defecto=False)
+    fase_b = _leer_fase_b(lector, obj, ruta)
     if (
         len(lector.errores) > n0
         or encender is None
@@ -403,6 +499,7 @@ def leer_opciones_lote(lector: LectorEsquema, valor: object, ruta: str) -> Opcio
         or proteger is None
         or notas_origen is None
         or notas_usuario is None
+        or fase_b is None
     ):
         return None
     return OpcionesLote(
@@ -414,6 +511,9 @@ def leer_opciones_lote(lector: LectorEsquema, valor: object, ruta: str) -> Opcio
         proteger=proteger,
         notas_origen=notas_origen,
         notas_usuario=notas_usuario,
+        cloudinit=fase_b.cloudinit,
+        esperar_ip=fase_b.esperar_ip,
+        plazo_ip_s=fase_b.plazo_ip_s,
     )
 
 
@@ -443,8 +543,18 @@ def leer_opciones_parciales(
     proteger = (
         lector.booleano(obj, "proteger", ruta, requerido=False) if "proteger" in obj else None
     )
+    cloudinit = (
+        leer_cloudinit_parcial(lector, obj["cloudinit"], _ruta(ruta, "cloudinit"))
+        if "cloudinit" in obj
+        else None
+    )
+    esperar_ip = (
+        lector.booleano(obj, "esperar_ip", ruta, requerido=False) if "esperar_ip" in obj else None
+    )
     if len(lector.errores) > n0:
         return None
+    if cloudinit is not None and cloudinit.vacia:
+        cloudinit = None
     return OpcionesParciales(
         encender=encender,
         arranque_auto=arranque_auto,
@@ -452,4 +562,6 @@ def leer_opciones_parciales(
         etiquetas_usuario=etiquetas,
         pool=pool,
         proteger=proteger,
+        cloudinit=cloudinit,
+        esperar_ip=esperar_ip,
     )

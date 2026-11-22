@@ -1,0 +1,70 @@
+{
+  "app_version": "0.6.0",
+  "formato": "proxlaunch.lote",
+  "homogeneo": {
+    "cantidad": 4,
+    "config": {
+      "arranque_auto": true,
+      "ballooning": null,
+      "con_disco": true,
+      "controlador_scsi": "virtio-scsi-single",
+      "cores": 2,
+      "discos": [
+        {
+          "bus": "scsi",
+          "discard": true,
+          "formato": "auto",
+          "iothread": true,
+          "ssd": true,
+          "storage": "datos",
+          "tamano_gib": 32
+        }
+      ],
+      "encender": true,
+      "firmware": "seabios",
+      "memoria_mib": 4096,
+      "origen": "disco_vacio",
+      "proteger": true,
+      "redes": [
+        {
+          "bridge": "vmbr0",
+          "limite_mb": 100.0,
+          "modelo": "virtio",
+          "mtu": 1500,
+          "vlan": 20
+        }
+      ],
+      "sockets": 1,
+      "storage_efi": null,
+      "tipo_cpu": "x86-64-v2-AES"
+    },
+    "destino": {
+      "algoritmo": "equilibrado",
+      "modo": "automatico",
+      "nodos": []
+    },
+    "etiquetar": true,
+    "opciones": {
+      "arranque_auto": true,
+      "encender": true,
+      "etiquetas_usuario": [
+        "web",
+        "prod"
+      ],
+      "notas": "Lote de 0.6.0",
+      "pool": "produccion",
+      "proteger": true
+    },
+    "patron": {
+      "inicio": 1,
+      "prefijo": "aula",
+      "relleno": 2,
+      "separador": "-"
+    },
+    "vmid_inicial": null
+  },
+  "nombre": "Aula v3",
+  "tipo": "homogeneo",
+  "version_formato": 3,
+  "version_proxmox": "9.2"
+}

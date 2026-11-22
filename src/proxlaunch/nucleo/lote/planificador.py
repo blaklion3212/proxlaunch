@@ -13,6 +13,9 @@ from dataclasses import replace
 
 from proxlaunch import __version__ as VERSION_APP
 from proxlaunch.nucleo.capacidades import Capacidades
+from proxlaunch.nucleo.cloudinit.modelos import INFO_DESCONOCIDA
+from proxlaunch.nucleo.cloudinit.serie import expandir_serie, problemas_serie_lote
+from proxlaunch.nucleo.cloudinit.snippets import volid_snippet_valido
 from proxlaunch.nucleo.errores import CodigoError, ErrorProxLaunch
 from proxlaunch.nucleo.lote import presupuesto
 from proxlaunch.nucleo.lote.constantes import (
@@ -55,6 +58,9 @@ from proxlaunch.nucleo.validacion import validar_vm
 
 # Reglas de M1 que el espacio acumulado del lote (V-L09/V-L10) ya cubre y supera.
 _REGLAS_M1_SUBSUMIDAS = frozenset({"V-14", "V-14.thin"})
+# Límites de Proxmox para ``cicustom`` (V-B52): 1 MiB por archivo y 3 MiB en total.
+MAX_BYTES_SNIPPET = 1024 * 1024
+MAX_BYTES_SUMA_SNIPPETS = 3 * 1024 * 1024
 # Reglas que solo bloquean la creación real; la simulación sigue disponible (CA-L09.3, CA-L11.7).
 REGLAS_SOLO_CREACION = frozenset({"V-L15", "V-L16"})
 
@@ -224,6 +230,116 @@ def _agrupar_va03(problemas: Sequence[Problema]) -> list[Problema]:
                 pr = replace(pr, params={**pr.params, "elementos": str(cuenta[k])})
         resultado.append(pr)
     return resultado
+
+
+def _agrupar_vb20(problemas: Sequence[Problema]) -> list[Problema]:
+    """Une los V-B20 de una misma plantilla en uno solo (primera fila + ``elementos``, CA-B14.2)."""
+    cuenta: Counter[tuple[str, str, str]] = Counter()
+
+    def clave(pr: Problema) -> tuple[str, str, str]:
+        return (pr.severidad.value, pr.params.get("plantilla", ""), pr.params.get("motivo", ""))
+
+    for pr in problemas:
+        if pr.regla == "V-B20":
+            cuenta[clave(pr)] += 1
+    vistos: set[tuple[str, str, str]] = set()
+    resultado: list[Problema] = []
+    for pr in problemas:
+        if pr.regla == "V-B20":
+            k = clave(pr)
+            if k in vistos:
+                continue
+            vistos.add(k)
+            if cuenta[k] > 1:
+                pr = replace(pr, params={**pr.params, "elementos": str(cuenta[k])})
+        resultado.append(pr)
+    return resultado
+
+
+def _problemas_snippets(elementos: Sequence[ElementoPlan], inv: Inventario) -> list[Problema]:
+    """V-B51 y V-B52 de los snippets elegidos, contra los listados del catálogo (DT-B11).
+
+    V-B51: el snippet debe existir en el listado del nodo **de esa MV** (un storage compartido
+    tiene un único listado). V-B52: cada snippet ≤ 1 MiB y la suma de los elegidos ≤ 3 MiB.
+    Sin listado (no se leyó o falló) no se juzga: la entrada manual avisa en el formulario.
+    """
+    catalogo = inv.catalogo
+    if catalogo is None or not catalogo.snippets:
+        return []
+    p: list[Problema] = []
+    for e in elementos:
+        ci = e.cfg.cloudinit
+        if ci is None:
+            continue
+        suma = 0
+        sumable = True
+        for tipo, volid in ci.snippets.elegidos().items():
+            if not volid_snippet_valido(volid):
+                continue  # V-B54 ya lo señala
+            storage = volid.partition(":")[0]
+            campo = f"cloudinit.snippets.{tipo}"
+            listado = catalogo.snippets_en(e.nodo, storage)
+            if listado is None:
+                tiene_datos = e.nodo in inv.storages_todos
+                en_nodo = any(s.id == storage for s in inv.storages_todos.get(e.nodo, ()))
+                if tiene_datos and not en_nodo:
+                    p.append(
+                        Problema(
+                            "V-B51",
+                            Severidad.ERROR,
+                            campo,
+                            {
+                                "nodo": e.nodo,
+                                "tipo": tipo,
+                                "snippet": volid,
+                                "motivo": "sin_almacen",
+                            },
+                            e.indice,
+                        )
+                    )
+                sumable = False
+                continue
+            if listado.error is not None:
+                sumable = False
+                continue
+            encontrado = next((sn for sn in listado.snippets if sn.volid == volid), None)
+            if encontrado is None:
+                p.append(
+                    Problema(
+                        "V-B51",
+                        Severidad.ERROR,
+                        campo,
+                        {"nodo": e.nodo, "tipo": tipo, "snippet": volid, "motivo": "no_existe"},
+                        e.indice,
+                    )
+                )
+                sumable = False
+                continue
+            if encontrado.tamano is None:
+                sumable = False
+                continue
+            suma += encontrado.tamano
+            if encontrado.tamano > MAX_BYTES_SNIPPET:
+                p.append(
+                    Problema(
+                        "V-B52",
+                        Severidad.ERROR,
+                        campo,
+                        {"motivo": "individual", "tipo": tipo, "snippet": volid},
+                        e.indice,
+                    )
+                )
+        if sumable and suma > MAX_BYTES_SUMA_SNIPPETS:
+            p.append(
+                Problema(
+                    "V-B52",
+                    Severidad.ERROR,
+                    "cloudinit.snippets",
+                    {"motivo": "suma", "tamano": str(suma)},
+                    e.indice,
+                )
+            )
+    return p
 
 
 def _problemas_memoria_y_cpu(elementos: Sequence[ElementoPlan], inv: Inventario) -> list[Problema]:
@@ -413,6 +529,14 @@ def construir_plan(
             cfg = preparar_elemento(
                 cfg, ctx_mv, _detalle_de_plantilla(cfg, inv), version_validacion
             )
+        elif cfg.origen == OrigenSO.CLONAR_PLANTILLA and (cfg.cloudinit or cfg.esperar_ip):
+            # Sin contexto de notas ``preparar_elemento`` no corre: cloud-init se calcula igual.
+            detalle_p = _detalle_de_plantilla(cfg, inv)
+            info = detalle_p.cloudinit if detalle_p is not None else None
+            cfg = replace(cfg, info_cloudinit=INFO_DESCONOCIDA if info is None else info)
+        if cfg.cloudinit is not None:
+            # DT-B3: la IP en serie se expande aquí, con el índice del elemento (el del sufijo).
+            cfg = replace(cfg, cloudinit=expandir_serie(cfg.cloudinit, i))
         elementos.append(ElementoPlan(i, fila.nombre, vmids[i], nodos[i], cfg))
 
     nombres = [fila.nombre for fila in filas]
@@ -447,9 +571,12 @@ def construir_plan(
             if pm.codigo in _REGLAS_M1_SUBSUMIDAS:
                 continue
             de_m1.append(_problema_de_m1(pm, e.indice))
+    de_m1.extend(_problemas_snippets(elementos, inv))  # V-B51 y V-B52 (fase B, B4)
     # Por filas cada problema conserva su fila (``indice``), salvo V-A03: «una por etiqueta y
     # lote» (CA-A3.4.11), que se agrupa con la primera fila afectada.
-    problemas.extend(_agrupar_va03(de_m1) if por_filas else _agrupar_m1(de_m1))
+    problemas.extend(_agrupar_vb20(_agrupar_va03(de_m1)) if por_filas else _agrupar_m1(de_m1))
+    # Fase B (DT-B3): V-B30, V-B31 y V-B38 miran todas las IP del lote ya expandidas.
+    problemas.extend(problemas_serie_lote(elementos))
     # Los problemas de resolución del origen llevan siempre su fila (V-O02, V-O03, V-O04...).
     problemas.extend(de_origen)
 
@@ -595,7 +722,7 @@ class Planificador:
     def _con_catalogo_fresco(self, definicion: DefinicionLote, inv: Inventario) -> Inventario:
         """Lee el catálogo del servidor (solo GET) si hay filas con origen distinto de disco
         vacío; si no, devuelve ``inv`` intacto sin ninguna lectura nueva (CA-O03.1, INV-O8)."""
-        necesidades = necesidades_catalogo(filas_efectivas(definicion))
+        necesidades = necesidades_catalogo(filas_efectivas(definicion), definicion.opciones)
         # Fase A: con pool o etiquetas del usuario se refrescan también pools y política (2 GET).
         opciones = _usa_pool_o_etiquetas(definicion)
         if necesidades.vacias and not opciones:

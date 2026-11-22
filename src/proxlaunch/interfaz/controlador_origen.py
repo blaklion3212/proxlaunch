@@ -38,6 +38,7 @@ from proxlaunch.interfaz.trabajadores import (
     leer_plantillas,
 )
 from proxlaunch.interfaz.vistas.selector_origen import PeticionFuente, SelectorOrigen
+from proxlaunch.nucleo.cloudinit.modelos import InfoCloudInitPlantilla
 from proxlaunch.nucleo.errores import CodigoError, ErrorProxLaunch
 from proxlaunch.nucleo.lote.filas import filas_efectivas
 from proxlaunch.nucleo.lote.modelos import DefinicionLote
@@ -45,6 +46,7 @@ from proxlaunch.nucleo.modelos.catalogo import (
     CatalogoServidor,
     Contenido,
     DetallePlantilla,
+    ListadoSnippets,
     ListadoStorage,
     PermisosEfectivos,
     Plantilla,
@@ -71,6 +73,7 @@ from proxlaunch.nucleo.origen.storages import (
 )
 from proxlaunch.nucleo.persistencia.perfiles import RepositorioPerfiles
 from proxlaunch.nucleo.reloj import Reloj
+from proxlaunch.nucleo.servicios.catalogo import ServicioCatalogo
 from proxlaunch.nucleo.servicios.conexion import Sesion
 from proxlaunch.nucleo.transferencias.modelos import (
     EstadoTransferencia,
@@ -85,6 +88,13 @@ _log = logging.getLogger("proxlaunch.interfaz.controlador_origen")
 ESPERA_CANCELACION_S = 3.0
 
 _Clave = tuple[str, Contenido]
+
+
+def leer_snippets_del_nodo(
+    sesion: Sesion, reloj: Reloj, inv: Inventario, nodo: str, storages: tuple[str, ...]
+) -> tuple[ListadoSnippets, ...]:
+    """Lista los snippets de los almacenamientos de un nodo (solo GET, en un trabajador)."""
+    return ServicioCatalogo(sesion, reloj).leer_snippets(inv, [nodo], storages)
 
 
 def _hora_local() -> str:
@@ -138,6 +148,8 @@ class ControladorOrigen(QObject):
         self._errores_lectura: dict[_Clave, ErrorProxLaunch] = {}
         self._plantillas: tuple[Plantilla, ...] | None = None
         self._formatos: dict[str, frozenset[str]] = {}
+        # Fase B: snippets leídos por (nodo, almacenamiento) (DT-B11).
+        self._snippets: dict[tuple[str, str], ListadoSnippets] = {}
         # Fase A: pools y política de etiquetas del servidor (los lee el descubrimiento).
         self._pools = PoolsServidor(EstadoPools.NO_LEIDO)
         self._politica_etiquetas: PoliticaEtiquetas | None = None
@@ -250,6 +262,7 @@ class ControladorOrigen(QObject):
     def _reiniciar_lecturas(self) -> None:
         self._gen += 1
         self._listados.clear()
+        self._snippets.clear()
         self._errores_lectura.clear()
         self._plantillas = None
         self._formatos.clear()
@@ -272,6 +285,7 @@ class ControladorOrigen(QObject):
             pools=self._pools,
             politica_etiquetas=self._politica_etiquetas,
             politica_etiquetas_fallida=self._politica_etiquetas_fallida,
+            snippets=tuple(self._snippets[k] for k in sorted(self._snippets)),
         )
         inv.catalogo = catalogo
         return catalogo
@@ -493,7 +507,8 @@ class ControladorOrigen(QObject):
         sesion, inv = self._sesion, self._inv
         if sesion is None or inv is None:
             return
-        necesidades = necesidades_catalogo(filas_efectivas(definicion))
+        # Fase B: las opciones del lote (cloud-init, snippets) añaden los storages a listar.
+        necesidades = necesidades_catalogo(filas_efectivas(definicion), definicion.opciones)
         if necesidades.vacias or necesidades in self._necesidades_hechas:
             return
         self._necesidades_hechas.add(necesidades)
@@ -525,6 +540,8 @@ class ControladorOrigen(QObject):
                 for p in catalogo.plantillas
             )
         self._formatos.update(catalogo.formatos)
+        for ls in catalogo.snippets:
+            self._snippets[(ls.nodo, ls.storage)] = ls
         # Fase A: la lectura con ``opciones=True`` trae pools y política recién leídos.
         self._pools = catalogo.pools
         self._politica_etiquetas = catalogo.politica_etiquetas
@@ -566,6 +583,74 @@ class ControladorOrigen(QObject):
             self._necesita(cfg.nodo, Contenido.IMPORT)
         elif cfg.origen == OrigenSO.CLONAR_PLANTILLA:
             self._sincronizar_clon(cfg)
+            if self._avanzado and cfg.nodo:  # los scripts solo se ofrecen en modo avanzado
+                self.cargar_snippets(cfg.nodo)
+
+    def _buscar_snippets(self, nodo: str, storage: str) -> ListadoSnippets | None:
+        """Listado de un almacenamiento visto desde un nodo (uno compartido vale para todos)."""
+        for (n, st), listado in self._snippets.items():
+            if st == storage and (n == nodo or listado.compartido):
+                return listado
+        return None
+
+    def cargar_snippets(self, nodo: str, *, forzar: bool = False) -> None:
+        """Lee los snippets de los almacenamientos del nodo que aún no se han leído (solo GET).
+
+        Un almacenamiento compartido ya leído en otro nodo no se vuelve a pedir. Un fallo de
+        listado queda en el propio ``ListadoSnippets`` y el formulario pasa a entrada manual.
+        """
+        sesion, inv = self._sesion, self._inv
+        clave = ("snippets", nodo)
+        if sesion is None or inv is None or not nodo or clave in self._en_curso:
+            return
+        if not forzar and clave in self._fallidas:
+            return
+        storages = tuple(
+            s.id for s in inv.storages_todos.get(nodo, ()) if s.activo and "snippets" in s.contenido
+        )
+        if forzar:
+            for st in storages:
+                self._snippets.pop((nodo, st), None)
+        pendientes = tuple(st for st in storages if self._buscar_snippets(nodo, st) is None)
+        if not pendientes:
+            return
+        self._fallidas.discard(clave)
+        self._en_curso.add(clave)
+        gen = self._gen
+        self._lanzador.lanzar(
+            leer_snippets_del_nodo,
+            sesion,
+            self._reloj,
+            inv,
+            nodo,
+            pendientes,
+            al_terminar=lambda r: self._tras_snippets(gen, clave, r),
+            al_fallar=lambda e: self._fallo_lectura(gen, clave, e),
+        )
+
+    def _tras_snippets(
+        self, gen: int, clave: object, listados: tuple[ListadoSnippets, ...]
+    ) -> None:
+        if gen != self._gen:
+            return
+        self._en_curso.discard(clave)
+        for listado in listados:
+            self._snippets[(listado.nodo, listado.storage)] = listado
+        self._publicar()
+
+    def info_cloudinit(self, cfg: ConfiguracionVM) -> InfoCloudInitPlantilla | None:
+        """Lo que la plantilla elegida dice de cloud-init (``DetallePlantilla.cloudinit``).
+
+        ``None`` mientras no se haya leído su configuración o si el origen no es un clon: el
+        formulario lo trata como «desconocida» (V-B20 avisa «no se pudo comprobar»).
+        """
+        det = cfg.detalle_origen
+        if cfg.origen != OrigenSO.CLONAR_PLANTILLA or not isinstance(det, DetalleClon):
+            return None
+        plantilla = self._plantilla_elegida(det.plantilla)
+        if plantilla is None or plantilla.detalle is None:
+            return None
+        return plantilla.detalle.cloudinit
 
     def _necesita(self, nodo: str, contenido: Contenido) -> None:
         clave: _Clave = (nodo, contenido)

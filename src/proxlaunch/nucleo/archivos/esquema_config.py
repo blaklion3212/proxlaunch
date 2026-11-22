@@ -1,6 +1,7 @@
 """Lista blanca de la configuración de hardware en archivos (RF-X04, CA-X01.8).
 
-Dos modos con las mismas claves de hardware:
+Dos modos con las mismas claves de hardware (la fase B, ``cloudinit`` y ``esperar_ip``, solo
+existe en el modo lote; un perfil no guarda nada de ella, RF-B6.2):
 
 - **perfil**: sin storage/bridge reales; solo pistas opcionales (``storage_preferido`` por
   disco, ``storage_efi_preferido``, ``bridge_preferido`` por red). Los rangos de capa 1 de M1
@@ -25,6 +26,10 @@ from dataclasses import dataclass
 
 from proxlaunch.nucleo.archivos.constantes import MAX_LONG_TEXTO
 from proxlaunch.nucleo.archivos.esquema import LectorEsquema, MotivoCampo
+from proxlaunch.nucleo.archivos.esquema_cloudinit import (
+    cloudinit_requiere_v4,
+    espera_ip_requiere_v4,
+)
 from proxlaunch.nucleo.archivos.esquema_opciones import (
     CLAVES_OPCIONES_CFG,
     leer_limite,
@@ -163,6 +168,19 @@ def requiere_version_3(cfg: ConfiguracionVM | ConfigPerfil) -> bool:
         or cfg.etiquetas_usuario
         or cfg.pool is not None
         or cfg.proteger
+    )
+
+
+def requiere_version_4(cfg: ConfiguracionVM | ConfigPerfil) -> bool:
+    """¿La configuración usa algo de la fase B? Entonces el lote se escribe como v4 (DT-B12).
+
+    Cuenta cloud-init con algo que enviar y la espera de IP (activa o con plazo distinto del
+    defecto). Un perfil nunca la usa: no guarda nada de la fase B (RF-B6.2).
+    """
+    if isinstance(cfg, ConfigPerfil):
+        return False
+    return cloudinit_requiere_v4(cfg.cloudinit) or espera_ip_requiere_v4(
+        cfg.esperar_ip, cfg.plazo_ip_s
     )
 
 
@@ -1017,4 +1035,7 @@ def leer_configuracion(lector: LectorEsquema, valor: object, ruta: str) -> Confi
         etiquetas_usuario=opciones.etiquetas_usuario,
         pool=opciones.pool,
         proteger=opciones.proteger,
+        cloudinit=opciones.cloudinit,
+        esperar_ip=opciones.esperar_ip,
+        plazo_ip_s=opciones.plazo_ip_s,
     )

@@ -209,9 +209,9 @@ def pytest_collection_modifyitems(config, items):
 @pytest.fixture(autouse=True)
 def _olvidar_secretos_entre_casos():
     """Evita que un secreto registrado en un caso se filtre al siguiente."""
-    olvidar_secretos()
+    olvidar_secretos(incluir_cloudinit=True)
     yield
-    olvidar_secretos()
+    olvidar_secretos(incluir_cloudinit=True)
 
 
 @pytest.fixture(scope="session")

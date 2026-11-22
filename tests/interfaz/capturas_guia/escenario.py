@@ -70,6 +70,11 @@ def _plantillas(nodo: str):
     )
 
 
+def plantillas_del_escenario(nodo: str):
+    """Las plantillas ``plantilla-debian12`` (9000) y ``plantilla-ubuntu`` (9001) del escenario."""
+    return _plantillas(nodo)
+
+
 def imagenes_import():
     return [
         replace(volumen(v, Contenido.IMPORT, 2 * GIB), creado=FECHA_ARCHIVOS)
@@ -87,7 +92,12 @@ def _catalogo(base: CatalogoServidor, nodos: list[str]) -> CatalogoServidor:
     return replace(base, listados=tuple(listados), plantillas=_plantillas(nodos[0]))
 
 
-def inventario_guia_individual(privilegios=ROL_14) -> Inventario:
+# Rol de la guía más los privilegios del agente (9.x: VM.GuestAgent.Audit; 8.x: VM.Monitor),
+# para que «Esperar la IP» no salga deshabilitada en las capturas que no tratan de eso.
+PRIVILEGIOS_ESCENARIO = (*ROL_14, "VM.GuestAgent.Audit", "VM.Monitor")
+
+
+def inventario_guia_individual(privilegios=PRIVILEGIOS_ESCENARIO) -> Inventario:
     """Servidor individual ``pve`` con el catálogo de ISOs, imágenes y plantillas de la guía."""
     base = inv_origen(
         privilegios=privilegios,
@@ -143,6 +153,12 @@ def configuracion_guia(**cambios) -> ConfiguracionVM:
     return ConfiguracionVM(**base)
 
 
+# Clave pública ed25519 FALSA: base64 válido (tipo + 32 bytes con un patrón), sin clave privada
+# detrás. Se usa en las capturas y en los ejemplos de cloud-init; nunca es una clave real.
+CLAVE_SSH_FALSA = (
+    "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIAMKERgfJi00O0JJUFdeZWxzeoGIj5adpKuyucDHztXc ana@portatil"
+)
+
 # CSV de ejemplo de la guía (copia de ``docs/ejemplos``; se escribe con BOM, como lo haría Excel).
 CSV_MIXTAS = """"nombre";"perfil";"cpu";"memoria";"disco";"almacenamiento";"red";"vlan";"nodo";"vmid";"origen";"fuente";"so";"virtio";"modo_clon"
 "web-01";"fabrica.servidor-mediano";"";"";"";"local-lvm";"vmbr0";"";"";"";"vacio";"";"";"";""
@@ -164,6 +180,62 @@ CSV_CON_ERRORES = """"nombre";"perfil";"cpu";"memoria";"disco";"vmid";"origen";"
 "sin-perfil";"fabrica.no-existe";"2";"4";"40";"";"vacio";"";""
 "iso-url";"";"2";"4";"40";"";"iso";"https://example.com/a.iso";"linux"
 """  # noqa: E501
+
+
+def _csv_cloudinit() -> str:
+    """CSV de la captura de cloud-init: ``docs/ejemplos/mvs-cloudinit.csv`` más la columna
+    ``ci_contrasena`` (contraseña inventada; la aplicación la muestra siempre enmascarada)."""
+    columnas = [
+        *("nombre", "perfil", "origen", "fuente", "encender", "esperar_ip"),
+        *("ci_usuario", "ci_claves", "ci_contrasena", "ci_ip", "ci_puerta", "ci_dns"),
+    ]
+    clave = CLAVE_SSH_FALSA
+    filas = (
+        ("app-01", "fabrica.servidor-mediano", "plantilla-debian12", "si", "ana", "dhcp", "", ""),
+        (
+            "app-02",
+            "fabrica.servidor-mediano",
+            "plantilla-debian12",
+            "si",
+            "ana",
+            "192.0.2.51/24",
+            "192.0.2.1",
+            "192.0.2.2",
+        ),
+        (
+            "app-03",
+            "fabrica.servidor-mediano",
+            "plantilla-debian12",
+            "si",
+            "ana",
+            "192.0.2.52/24",
+            "192.0.2.1",
+            "192.0.2.2",
+        ),
+        (
+            "bd-01",
+            "fabrica.base-de-datos",
+            "plantilla-ubuntu",
+            "no",
+            "ana",
+            "192.0.2.60/24",
+            "192.0.2.1",
+            "192.0.2.2",
+        ),
+    )
+    lineas = [";".join(f'"{c}"' for c in columnas)]
+    for nombre, perfil, plantilla, espera, usuario, ip, puerta, dns in filas:
+        celdas = (nombre, perfil, "clonar", plantilla, "si", espera, usuario, clave) + (
+            "Ejemplo-1234",
+            ip,
+            puerta,
+            dns,
+        )
+        lineas.append(";".join(f'"{c}"' for c in celdas))
+    return "\n".join(lineas) + "\n"
+
+
+CSV_CLOUDINIT = _csv_cloudinit()
 
 
 def escribir_csv_guia(carpeta, nombre: str, texto: str):

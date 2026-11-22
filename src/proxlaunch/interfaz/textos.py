@@ -26,6 +26,12 @@ from proxlaunch.nucleo.archivos.esquema import (
     ErrorCampo,
     MotivoCampo,
 )
+from proxlaunch.nucleo.cloudinit.claves import resumen_clave
+from proxlaunch.nucleo.cloudinit.modelos import (
+    NINGUNO,
+    TIPOS_SNIPPET,
+    ModoTarjeta,
+)
 from proxlaunch.nucleo.constructor_peticion import formato_limite
 from proxlaunch.nucleo.csv_importacion.modelos import EstadoFila, MapaColumnas, ProblemaCelda
 from proxlaunch.nucleo.errores import CodigoError, ErrorProxLaunch
@@ -145,6 +151,12 @@ def texto_generico() -> str:
     return QCoreApplication.translate("Textos", "Proxmox respondió con un error que no conocemos")
 
 
+# Causas de un ajuste posterior al clon que tienen su propio texto (BUG-B-P1-2).
+_CAUSAS_CON_TEXTO_PROPIO = frozenset(
+    {str(CodigoError.CLAVE_SSH_RECHAZADA), str(CodigoError.SNIPPET_NO_ENCONTRADO)}
+)
+
+
 def texto_error(error: ErrorProxLaunch) -> str:
     """Mensaje en español de un ``ErrorProxLaunch`` según su código y parámetros."""
     p = error.params
@@ -196,6 +208,13 @@ def texto_error(error: ErrorProxLaunch) -> str:
             )
         return QCoreApplication.translate("Textos", "El nodo no está disponible.")
     if c == CodigoError.PERMISO_INSUFICIENTE:
+        if p.get("ajuste") in ("cloudinit", "contrasena"):
+            # 403 de un paso de la fase B: la máquina existe y el lote no se pausa (RF-B5.3).
+            from proxlaunch.interfaz.textos_b import texto_error_b
+
+            texto_b = texto_error_b(error)
+            if texto_b is not None:
+                return texto_b
         if p.get("via"):
             return _texto_permiso_con_via(p)
         if p.get("privilegio") and p.get("inferido") == "1":
@@ -270,6 +289,8 @@ def texto_error(error: ErrorProxLaunch) -> str:
             campo=campo,
         )
     if c == CodigoError.PARAMETRO_INVALIDO:
+        if p.get("campo", "").startswith("cloudinit."):
+            return _texto_parametro_cloudinit(p.get("campo", ""))
         texto_campo = _texto_parametro_origen(p.get("campo", ""))
         if texto_campo is not None:
             return texto_campo
@@ -325,6 +346,12 @@ def texto_error(error: ErrorProxLaunch) -> str:
         return QCoreApplication.translate(
             "Textos",
             "No hay un llavero disponible en este equipo; las credenciales no se guardarán",
+        )
+    if c == CodigoError.DESCONOCIDO and p.get("motivo") == "respuesta_demasiado_grande":
+        return QCoreApplication.translate(
+            "Textos",
+            "Proxmox devolvió una respuesta demasiado grande y se descartó por seguridad. "
+            "Comprueba que la dirección apunta a un servidor Proxmox.",
         )
     texto_lote = _texto_error_lote(error)
     if texto_lote is not None:
@@ -401,6 +428,9 @@ def texto_campo(campo: str) -> str:
         "agente_qemu": t("Textos", "Agente de QEMU"),
         "firmware": t("Textos", "Arranque"),
         "tipo_cpu": t("Textos", "Tipo de CPU"),
+        "cloudinit": t("Textos", "Configuración inicial"),
+        "esperar_ip": t("Textos", "Esperar la IP"),
+        "plazo_ip_s": t("Textos", "Plazo de espera de la IP"),
     }
     return nombres.get(base, "")
 
@@ -528,6 +558,9 @@ def texto_problema(p: Problema) -> str:
     texto_fase_a = _texto_problema_fase_a(p)
     if texto_fase_a is not None:
         return texto_fase_a
+    texto_fase_b = _texto_problema_fase_b(p)
+    if texto_fase_b is not None:
+        return texto_fase_b
     return texto_generico()
 
 
@@ -912,7 +945,7 @@ def _texto_error_lote(error: ErrorProxLaunch) -> str | None:
         return QCoreApplication.translate(
             "Textos", "Error interno: se intentó escribir en modo simulación. No se creó nada."
         )
-    return _texto_error_fase_a(error)
+    return _texto_error_fase_a(error) or _texto_error_fase_b(error)
 
 
 def texto_existe_sin_confirmar() -> str:
@@ -1897,6 +1930,19 @@ def alias_columnas_csv() -> dict[str, str]:
         QCoreApplication.translate("ColumnasCsv", "proteger"): "proteger",
         QCoreApplication.translate("ColumnasCsv", "mtu"): "mtu",
         QCoreApplication.translate("ColumnasCsv", "limite_red"): "limite_red",
+        # Fase B (RF-B6.3). ``ci_contrasena`` no admite alias traducidos (lista cerrada, DT-B13).
+        QCoreApplication.translate("ColumnasCsv", "ci_usuario"): "ci_usuario",
+        QCoreApplication.translate("ColumnasCsv", "ci_claves"): "ci_claves",
+        QCoreApplication.translate("ColumnasCsv", "ci_ip"): "ci_ip",
+        QCoreApplication.translate("ColumnasCsv", "ci_puerta"): "ci_puerta",
+        QCoreApplication.translate("ColumnasCsv", "ci_dns"): "ci_dns",
+        QCoreApplication.translate("ColumnasCsv", "ci_dominio"): "ci_dominio",
+        QCoreApplication.translate("ColumnasCsv", "ci_actualizar"): "ci_actualizar",
+        QCoreApplication.translate("ColumnasCsv", "ci_snippet_usuario"): "ci_snippet_usuario",
+        QCoreApplication.translate("ColumnasCsv", "ci_snippet_vendor"): "ci_snippet_vendor",
+        QCoreApplication.translate("ColumnasCsv", "ci_snippet_red"): "ci_snippet_red",
+        QCoreApplication.translate("ColumnasCsv", "ci_snippet_meta"): "ci_snippet_meta",
+        QCoreApplication.translate("ColumnasCsv", "esperar_ip"): "esperar_ip",
     }
 
 
@@ -1953,6 +1999,18 @@ def texto_aviso_archivo(aviso: AvisoArchivo) -> str:
             "Textos",
             "El archivo era de la versión {desde} del formato y se convirtió a la {hasta}.",
         ).format(desde=p.get("desde", "?"), hasta=p.get("hasta", "?"))
+    if c == CodigoAvisoArchivo.CSV_CON_CONTRASENAS:
+        return QCoreApplication.translate(
+            "Textos",
+            "Este CSV contiene contraseñas en texto claro. Bórralo cuando termines; ProxLaunch "
+            "no las guarda.",
+        )
+    if c == CodigoAvisoArchivo.CONTRASENA_NO_GUARDADA:
+        return QCoreApplication.translate(
+            "Textos",
+            "Este lote usaba una contraseña de cloud-init y no se guardó. Vuelve a escribirla "
+            "antes de crear las máquinas.",
+        )
     if c == CodigoAvisoArchivo.COLUMNA_NO_USADA:
         return QCoreApplication.translate(
             "Textos", "La columna «{columna}» no se usa y se ignoró."
@@ -2089,6 +2147,15 @@ def _texto_valor_no_admitido(p: ProblemaCelda) -> str:
         return QCoreApplication.translate(
             "Textos",
             "El texto de «{columna}» no es válido. No uses caracteres especiales.",
+        ).format(columna=p.columna or "·")
+    if motivo == "token":
+        return QCoreApplication.translate(
+            "Textos",
+            "El texto de «{columna}» parece un token de acceso y no se usa. Quítalo de la celda.",
+        ).format(columna=p.columna or "·")
+    if motivo == "longitud":
+        return QCoreApplication.translate(
+            "Textos", "El texto de «{columna}» es demasiado largo."
         ).format(columna=p.columna or "·")
     if motivo == "sin_disco_principal":
         return QCoreApplication.translate(
@@ -2777,6 +2844,10 @@ def _ajuste_verbo(ajuste: str) -> str:
         return QCoreApplication.translate("Textos", "configurar el arranque con el servidor")
     if ajuste == "proteccion":
         return QCoreApplication.translate("Textos", "activar la protección contra borrado")
+    if ajuste == "cloudinit":
+        return QCoreApplication.translate("Textos", "aplicar la configuración inicial (cloud-init)")
+    if ajuste == "contrasena":
+        return QCoreApplication.translate("Textos", "poner la contraseña de cloud-init")
     return QCoreApplication.translate("Textos", "aplicar los ajustes")
 
 
@@ -2792,6 +2863,10 @@ def _ajuste_sustantivo(ajuste: str) -> str:
         return QCoreApplication.translate("Textos", "el arranque con el servidor")
     if ajuste == "proteccion":
         return QCoreApplication.translate("Textos", "la protección contra borrado")
+    if ajuste == "cloudinit":
+        return QCoreApplication.translate("Textos", "la configuración inicial (cloud-init)")
+    if ajuste == "contrasena":
+        return QCoreApplication.translate("Textos", "la contraseña de cloud-init")
     return QCoreApplication.translate("Textos", "los ajustes")
 
 
@@ -2805,6 +2880,9 @@ def texto_aviso_origen(codigo: str) -> str:
     texto_fase_a = _texto_aviso_fase_a(codigo)
     if texto_fase_a:
         return texto_fase_a
+    texto_fase_b = _texto_aviso_fase_b(codigo)
+    if texto_fase_b:
+        return texto_fase_b
     if base == "ajuste_pendiente":
         return QCoreApplication.translate(
             "Textos", "Se creó, pero falta aplicar {ajuste}. Puedes reintentar los ajustes."
@@ -2947,13 +3025,58 @@ def _texto_permiso_con_via(p: Mapping[str, str]) -> str:
     )
 
 
+def _nombre_campo_cloudinit(campo: str) -> str:
+    """Nombre legible de un campo ``cloudinit.*`` (defensa en profundidad del núcleo)."""
+    resto = campo.removeprefix("cloudinit.")
+    coincidencia = re.fullmatch(r"tarjetas\[(\d+)\]\.(ip|puerta)", resto)
+    if coincidencia is not None:
+        n = int(coincidencia.group(1)) + 1
+        if coincidencia.group(2) == "ip":
+            return QCoreApplication.translate("Textos", "la IP de la tarjeta de red {n}").format(
+                n=n
+            )
+        return QCoreApplication.translate(
+            "Textos", "la puerta de enlace de la tarjeta de red {n}"
+        ).format(n=n)
+    if resto.startswith("snippets."):
+        return QCoreApplication.translate("Textos", "el script de configuración «{tipo}»").format(
+            tipo=texto_tipo_snippet(resto.partition(".")[2])
+        )
+    nombres: dict[str, Callable[[], str]] = {
+        "usuario": lambda: QCoreApplication.translate("Textos", "el usuario"),
+        "claves": lambda: QCoreApplication.translate("Textos", "las claves SSH"),
+        "dns": lambda: QCoreApplication.translate("Textos", "los servidores DNS"),
+        "dominio": lambda: QCoreApplication.translate("Textos", "el dominio de búsqueda"),
+        "actualizar": lambda: QCoreApplication.translate(
+            "Textos", "la opción de actualizar paquetes"
+        ),
+        "contrasena": lambda: QCoreApplication.translate("Textos", "la contraseña"),
+    }
+    fabrica = nombres.get(resto)
+    return (
+        fabrica()
+        if fabrica is not None
+        else QCoreApplication.translate("Textos", "un valor de la configuración inicial")
+    )
+
+
+def _texto_parametro_cloudinit(campo: str) -> str:
+    return QCoreApplication.translate(
+        "Textos",
+        "No se envió a Proxmox: {que} de la configuración inicial (cloud-init) no es válido. "
+        "Corrígelo en esa sección y vuelve a intentarlo.",
+    ).format(que=_nombre_campo_cloudinit(campo))
+
+
 def _texto_parametro_origen(campo: str) -> str | None:
     """Rechazos de Proxmox que el traductor clasifica por campo (``filename``, ``content``…)."""
     if campo == "filename":
         return QCoreApplication.translate(
             "Textos",
             "Proxmox no aceptó el nombre del archivo. Usa solo letras sin acentos, números, "
-            "punto, guion y guion bajo, con la extensión correcta (iso, qcow2, raw o vmdk).",
+            "punto, guion y guion bajo, con la extensión correcta (iso, qcow2, raw o vmdk). Una "
+            "imagen de disco debe terminar en .qcow2, .raw, .vmdk u .ova; si es un .img, "
+            "renómbralo a .qcow2.",
         )
     if campo == "content":
         return QCoreApplication.translate(
@@ -3253,6 +3376,14 @@ def _texto_error_origen(error: ErrorProxLaunch) -> str | None:
             "Textos", "Hay una transferencia en curso. Espera a que termine o cancélala."
         )
     if c == CodigoError.AJUSTE_POST_CLON_FALLIDO:
+        if p.get("causa") in _CAUSAS_CON_TEXTO_PROPIO:
+            # BUG-B-P1-2: el servidor rechazó algo concreto (claves SSH, script): se dice eso.
+            return texto_error(
+                ErrorProxLaunch(
+                    CodigoError(p["causa"]),
+                    {k: v for k, v in p.items() if k == "snippet"},
+                )
+            )
         ajustes = [a for a in p.get("ajuste", "").split(",") if a]
         return _fmt(
             QCoreApplication.translate(
@@ -3685,6 +3816,17 @@ def texto_nombre_opcion_fase_a(opcion: str) -> str:
         "mtu": lambda: QCoreApplication.translate("Textos", "MTU de la red"),
         "limite_red": lambda: QCoreApplication.translate("Textos", "Límite de velocidad de red"),
         "proteger": lambda: QCoreApplication.translate("Textos", "Proteger contra borrado"),
+        # Fase B (0.7)
+        "cloudinit": lambda: QCoreApplication.translate(
+            "Textos", "Configuración inicial (cloud-init)"
+        ),
+        "contrasena": lambda: QCoreApplication.translate("Textos", "Contraseña"),
+        "dns_dominio": lambda: QCoreApplication.translate("Textos", "DNS y dominio"),
+        "snippets": lambda: QCoreApplication.translate("Textos", "Scripts de configuración"),
+        "esperar_ip": lambda: QCoreApplication.translate("Textos", "Esperar la IP"),
+        "activar_agente": lambda: QCoreApplication.translate(
+            "Textos", "Activar el agente invitado"
+        ),
     }
     fabrica = nombres.get(opcion)
     return fabrica() if fabrica is not None else opcion
@@ -3695,15 +3837,7 @@ def _texto_error_fase_a(error: ErrorProxLaunch) -> str | None:
     p = error.params
     c = error.codigo
     if c == CodigoError.OPCION_SIN_PRIVILEGIO:
-        return _fmt(
-            QCoreApplication.translate(
-                "Textos",
-                "«{opcion}» no está disponible: tu usuario no tiene el privilegio {privilegio} "
-                "en «{ruta}». Pídeselo a tu administrador.",
-            ),
-            p,
-            opcion=texto_nombre_opcion_fase_a(p.get("opcion", "")),
-        )
+        return _texto_sin_privilegio(p)
     if c == CodigoError.OPCION_SIN_VERSION:
         return _fmt(
             QCoreApplication.translate(
@@ -4170,6 +4304,9 @@ def texto_estado_opcion(estado: EstadoOpcion) -> str:
     if estado.codigo is not None:
         return texto_error(ErrorProxLaunch(estado.codigo, dict(estado.params)))
     motivo = estado.params.get("motivo")
+    texto_b = _texto_motivo_opcion_b(motivo or "")
+    if texto_b:
+        return texto_b
     if motivo == "sin_pools":
         return QCoreApplication.translate("Textos", "No hay pools en este servidor.")
     if motivo == "no_leido":
@@ -4312,3 +4449,703 @@ def texto_detalle_red_fase_a(mtu: int | None, limite_mb: float | None, *, virtio
             )
         )
     return "".join(f", {x}" for x in partes)
+
+
+# --- Fase B (0.7): cloud-init, snippets y espera de IP -----------------------------------------
+#
+# Todos los textos usan ``QCoreApplication.translate`` directo (sin alias) para que ``lupdate``
+# los extraiga. Ningún texto incluye contraseñas, cuerpos de claves ni líneas completas: solo
+# números de línea y motivos (CA-B14.1). Los textos de B2 (plantilla desde imagen) y de B3
+# (estados de la IP) viven en ``textos_b`` y se enlazan desde ``_texto_error_fase_b``.
+
+
+def _numero_tarjeta(prm: Mapping[str, str]) -> str:
+    """Número de tarjeta como lo ve el usuario (1 = net0) a partir del índice ``netN``."""
+    try:
+        return str(int(prm.get("tarjeta", "")) + 1)
+    except ValueError:
+        return "?"
+
+
+def texto_tipo_snippet(tipo: str) -> str:
+    """Nombre llano de cada tipo de script de cloud-init (RF-B4.1)."""
+    if tipo == "user":
+        return QCoreApplication.translate("Textos", "Datos de usuario")
+    if tipo == "vendor":
+        return QCoreApplication.translate("Textos", "Datos del proveedor")
+    if tipo == "network":
+        return QCoreApplication.translate("Textos", "Red")
+    if tipo == "meta":
+        return QCoreApplication.translate("Textos", "Metadatos")
+    return tipo
+
+
+def _texto_sin_privilegio(p: Mapping[str, str]) -> str:
+    """Opción deshabilitada o con reservas por falta de privilegio (RF-B0.3, RF-B5.3)."""
+    opcion = texto_nombre_opcion_fase_a(p.get("opcion", ""))
+    motivo = p.get("motivo", "")
+    if motivo == "version_incierta":
+        return _fmt(
+            QCoreApplication.translate(
+                "Textos",
+                "«{opcion}»: tu usuario no tiene el privilegio {privilegio} en «{ruta}», pero "
+                "sí VM.Config.Network. En tu versión de Proxmox puede que lo rechace; si falla, "
+                "pídele el privilegio a tu administrador.",
+            ),
+            p,
+            opcion=opcion,
+        )
+    if motivo == "no_verificado":
+        return _fmt(
+            QCoreApplication.translate(
+                "Textos",
+                "«{opcion}»: tu usuario no tiene el privilegio {privilegio} en «{ruta}». En tu "
+                "versión de Proxmox puede hacer falta (no está verificado): si Proxmox rechaza "
+                "el script, pídeselo a tu administrador.",
+            ),
+            p,
+            opcion=opcion,
+        )
+    if p.get("alternativo"):
+        return _fmt(
+            QCoreApplication.translate(
+                "Textos",
+                "«{opcion}» no está disponible: tu usuario no tiene el privilegio {privilegio} "
+                "(ni {alternativo}, que en tu versión también vale) en «{ruta}». Pídeselo a tu "
+                "administrador.",
+            ),
+            p,
+            opcion=opcion,
+        )
+    return _fmt(
+        QCoreApplication.translate(
+            "Textos",
+            "«{opcion}» no está disponible: tu usuario no tiene el privilegio {privilegio} "
+            "en «{ruta}». Pídeselo a tu administrador.",
+        ),
+        p,
+        opcion=opcion,
+    )
+
+
+def _texto_motivo_opcion_b(motivo: str) -> str:
+    """Por qué una opción de la fase B está deshabilitada o con reservas (sin código de error)."""
+    if motivo == "unidad_desconocida":
+        return QCoreApplication.translate(
+            "Textos",
+            "No se pudo leer la configuración de la plantilla, así que no se sabe si tiene "
+            "unidad cloud-init. Puedes rellenar la sección, pero si la plantilla no la tiene "
+            "Proxmox no entregará estos datos.",
+        )
+    if motivo == "windows":
+        return QCoreApplication.translate(
+            "Textos",
+            "Con Windows, Proxmox guardaría la contraseña sin cifrar; no se permite.",
+        )
+    if motivo == "sin_storage_snippets":
+        return QCoreApplication.translate(
+            "Textos",
+            "Pide al administrador que active el contenido «Fragmentos» (snippets) en un "
+            "almacenamiento de archivos.",
+        )
+    if motivo == "agente_ya_activo":
+        return QCoreApplication.translate(
+            "Textos", "La plantilla ya tiene el agente invitado activado."
+        )
+    return ""
+
+
+def _texto_error_fase_b(error: ErrorProxLaunch) -> str | None:
+    """Errores de cloud-init y snippets de la fase B. ``None`` si el código no es uno de ellos.
+
+    Los de B2 y B3 (plantilla desde imagen, agente, suma) los traduce ``textos_b``.
+    """
+    p = error.params
+    c = error.codigo
+    if c == CodigoError.CLOUDINIT_SIN_UNIDAD:
+        if p.get("plantilla"):
+            return _fmt(
+                QCoreApplication.translate(
+                    "Textos",
+                    "La plantilla «{plantilla}» no tiene unidad cloud-init, así que Proxmox no "
+                    "podría entregar estos datos a la máquina. Usa una plantilla creada con "
+                    "«Crear plantilla desde imagen cloud» o añade una unidad «CloudInit Drive» "
+                    "a la plantilla en Proxmox.",
+                ),
+                p,
+            )
+        return QCoreApplication.translate(
+            "Textos",
+            "Esta plantilla no tiene unidad cloud-init, así que Proxmox no podría entregar "
+            "estos datos a la máquina. Usa una plantilla creada con «Crear plantilla desde "
+            "imagen cloud» o añade una unidad «CloudInit Drive» a la plantilla en Proxmox.",
+        )
+    if c == CodigoError.CLAVE_SSH_RECHAZADA:
+        return QCoreApplication.translate(
+            "Textos",
+            "Proxmox rechazó una de las claves SSH. Revisa que sean claves públicas completas.",
+        )
+    if c == CodigoError.SNIPPET_NO_ENCONTRADO:
+        if p.get("snippet"):
+            return _fmt(
+                QCoreApplication.translate(
+                    "Textos",
+                    "Proxmox no encuentra el script «{snippet}». Revisa que exista en el "
+                    "almacenamiento del nodo.",
+                ),
+                p,
+            )
+        return QCoreApplication.translate(
+            "Textos",
+            "Proxmox no encuentra uno de los scripts de configuración. Revisa que exista en el "
+            "almacenamiento del nodo.",
+        )
+    if c == CodigoError.CONTRASENA_OLVIDADA:
+        return QCoreApplication.translate(
+            "Textos",
+            "La contraseña de cloud-init ya no está en memoria (por seguridad no se guarda). "
+            "Vuelve a escribirla y reintenta los ajustes.",
+        )
+    if c == CodigoError.ARCHIVO_CLAVES_NO_VALIDO:
+        motivo = p.get("motivo", "")
+        if motivo == "tamano":
+            return QCoreApplication.translate(
+                "Textos",
+                "Ese archivo es demasiado grande para ser una clave pública (máximo 64 KiB).",
+            )
+        if motivo == "binario":
+            return QCoreApplication.translate(
+                "Textos",
+                "Ese archivo no es de texto. Elige el archivo de la clave pública (el que "
+                "termina en .pub).",
+            )
+        return QCoreApplication.translate(
+            "Textos", "No se pudo leer ese archivo. Revisa que exista y que puedas abrirlo."
+        )
+    # Importación diferida: ``textos_b`` (B2 y B3) no depende de este módulo.
+    from proxlaunch.interfaz.textos_b import texto_error_b
+
+    return texto_error_b(error)
+
+
+def _texto_aviso_fase_b(codigo: str) -> str:
+    """Avisos de máquina de cloud-init (``ajuste_pendiente:cloudinit`` y ``…:contrasena``)."""
+    if codigo == "ajuste_pendiente:cloudinit":
+        return QCoreApplication.translate(
+            "Textos",
+            "Se creó, pero falta aplicar la configuración inicial (cloud-init). Puedes "
+            "reintentar los ajustes.",
+        )
+    if codigo == "ajuste_pendiente:contrasena":
+        return QCoreApplication.translate(
+            "Textos",
+            "Se creó y la configuración inicial se aplicó, pero falta poner la contraseña. "
+            "Puedes reintentar los ajustes (si ya no está en memoria, tendrás que escribirla de "
+            "nuevo).",
+        )
+    # Importación diferida: ``textos_b`` (B2 y B3) no depende de este módulo.
+    from proxlaunch.interfaz.textos_b import texto_aviso_b
+
+    return texto_aviso_b(codigo)
+
+
+def _motivo_clave(motivo: str) -> str:
+    if motivo == "tipo_desconocido":
+        return QCoreApplication.translate(
+            "Textos", "no empieza por un tipo de clave conocido (ssh-ed25519, ssh-rsa…)"
+        )
+    if motivo == "sin_cuerpo":
+        return QCoreApplication.translate("Textos", "falta el cuerpo de la clave")
+    if motivo == "base64":
+        return QCoreApplication.translate("Textos", "el cuerpo de la clave no es válido")
+    if motivo == "con_opciones":
+        return QCoreApplication.translate(
+            "Textos", "no puede llevar opciones por delante (command=…, from=…)"
+        )
+    return QCoreApplication.translate("Textos", "no es una clave pública válida")
+
+
+def _motivo_ip_cloudinit(motivo: str) -> str:
+    if motivo == "sin_prefijo":
+        return QCoreApplication.translate(
+            "Textos", "falta la máscara (por ejemplo 192.168.1.50/24)"
+        )
+    if motivo == "prefijo":
+        return QCoreApplication.translate("Textos", "la máscara debe estar entre /8 y /30")
+    if motivo == "octeto":
+        return QCoreApplication.translate(
+            "Textos", "cada número de la dirección debe estar entre 0 y 255"
+        )
+    if motivo == "ceros":
+        return QCoreApplication.translate(
+            "Textos", "no uses ceros a la izquierda (010.0.0.1 es ambiguo)"
+        )
+    if motivo == "reservada":
+        return QCoreApplication.translate(
+            "Textos", "es una dirección reservada (0.0.0.0, loopback, multicast o link-local)"
+        )
+    if motivo == "fuera_de_red":
+        return QCoreApplication.translate("Textos", "no está en la misma red que la IP")
+    if motivo == "igual_a_ip":
+        return QCoreApplication.translate("Textos", "es la misma que la IP de la máquina")
+    if motivo == "red_o_difusion":
+        return QCoreApplication.translate("Textos", "es la dirección de red o de difusión")
+    return QCoreApplication.translate("Textos", "no es una dirección IPv4")
+
+
+def _texto_v_b25(prm: Mapping[str, str]) -> str:
+    motivo = prm.get("motivo", "")
+    if motivo == "no_coincide":
+        return QCoreApplication.translate("Textos", "Las dos contraseñas no coinciden.")
+    if motivo == "control":
+        return QCoreApplication.translate(
+            "Textos", "La contraseña no puede tener saltos de línea ni caracteres de control."
+        )
+    if motivo == "larga":
+        return QCoreApplication.translate(
+            "Textos", "La contraseña no puede superar los 128 caracteres."
+        )
+    if motivo == "corta":
+        return QCoreApplication.translate(
+            "Textos",
+            "La contraseña debe tener al menos 8 caracteres. Con menos, Proxmox la acepta pero "
+            "es fácil de adivinar, así que no se admite.",
+        )
+    return _texto_motivo_opcion_b("windows")
+
+
+def _texto_v_b30(prm: Mapping[str, str]) -> str:
+    motivo = prm.get("motivo", "")
+    if motivo == "desborde":
+        causa = QCoreApplication.translate("Textos", "se sale de la red")
+    elif motivo == "puerta":
+        causa = QCoreApplication.translate("Textos", "es la puerta de enlace")
+    else:
+        causa = QCoreApplication.translate("Textos", "es la dirección de red o de difusión")
+    base = _fmt(
+        QCoreApplication.translate(
+            "Textos",
+            "La serie de IP de la tarjeta {n} no cabe: «{nombre}» recibiría {direccion}, que "
+            "{causa}.",
+        ),
+        prm,
+        n=_numero_tarjeta(prm),
+        causa=causa,
+    )
+    if _entero(prm.get("afectadas")) not in (None, 1):
+        base += " " + _fmt(
+            QCoreApplication.translate("Textos", "Afecta a {afectadas} máquinas."), prm
+        )
+    return base
+
+
+def _texto_v_b20(prm: Mapping[str, str]) -> str:
+    """V-B20: la plantilla no tiene unidad cloud-init (o no se pudo comprobar)."""
+    if prm.get("motivo") == "no_comprobable":
+        return _fmt(
+            QCoreApplication.translate(
+                "Textos",
+                "No se pudo leer la configuración de la plantilla «{plantilla}», así que no se "
+                "sabe si tiene unidad cloud-init. Si no la tiene, Proxmox no entregará estos "
+                "datos.",
+            ),
+            prm,
+        )
+    texto = texto_error(ErrorProxLaunch(CodigoError.CLOUDINIT_SIN_UNIDAD, dict(prm)))
+    elementos = _entero(prm.get("elementos"))
+    if elementos is not None and elementos > 1:
+        texto += " " + QCoreApplication.translate(
+            "Textos", "Afecta a {n} máquinas del lote."
+        ).format(n=elementos)
+    return texto
+
+
+def _texto_v_b34(prm: Mapping[str, str]) -> str:
+    n = _numero_tarjeta(prm)
+    motivo = prm.get("motivo", "")
+    if motivo == "rango":
+        return QCoreApplication.translate(
+            "Textos", "La tarjeta de red {n} no existe: una máquina tiene hasta 32."
+        ).format(n=n)
+    if motivo == "repetida":
+        return QCoreApplication.translate("Textos", "La tarjeta de red {n} está repetida.").format(
+            n=n
+        )
+    return QCoreApplication.translate(
+        "Textos", "La plantilla no tiene la tarjeta de red {n}."
+    ).format(n=n)
+
+
+def _texto_v_b_snippets(p: Problema) -> str | None:
+    cod, prm = p.codigo, p.params
+    if cod == "V-B50":
+        return _fmt(
+            QCoreApplication.translate(
+                "Textos",
+                "El nodo «{nodo}» no tiene ningún almacenamiento con el contenido «Fragmentos» "
+                "(snippets). Pide al administrador que lo active.",
+            ),
+            prm,
+        )
+    if cod == "V-B51":
+        if prm.get("motivo") == "sin_almacen":
+            return _fmt(
+                QCoreApplication.translate(
+                    "Textos",
+                    "El almacenamiento del script «{snippet}» no existe en el nodo «{nodo}».",
+                ),
+                prm,
+            )
+        return _fmt(
+            QCoreApplication.translate(
+                "Textos", "El script «{snippet}» no existe en el nodo «{nodo}»."
+            ),
+            prm,
+        )
+    if cod == "V-B52":
+        if prm.get("motivo") == "suma":
+            return QCoreApplication.translate(
+                "Textos", "Los scripts elegidos suman más de 3 MiB, el máximo que admite Proxmox."
+            )
+        return _fmt(
+            QCoreApplication.translate(
+                "Textos", "El script «{snippet}» pesa más de 1 MiB, el máximo que admite Proxmox."
+            ),
+            prm,
+        )
+    if cod == "V-B53":
+        return QCoreApplication.translate(
+            "Textos",
+            "Con «Datos de usuario» elegido, el usuario, las claves y la contraseña de arriba "
+            "se ignoran: ese script sustituye a los datos que genera Proxmox.",
+        )
+    if cod == "V-B54":
+        return QCoreApplication.translate(
+            "Textos",
+            "El identificador del script «{tipo}» no es válido: usa almacén:snippets/archivo, "
+            "sin espacios, comas ni «..».",
+        ).format(tipo=texto_tipo_snippet(prm.get("tipo", "")))
+    if cod == "V-B56":
+        return _fmt(
+            QCoreApplication.translate(
+                "Textos",
+                "La plantilla «{plantilla}» ya tiene scripts que ProxLaunch no sabe interpretar: "
+                "solo se puede dejar «Como la plantilla».",
+            ),
+            prm,
+        )
+    return None
+
+
+def _texto_v_b_espera(p: Problema) -> str | None:
+    cod, prm = p.codigo, p.params
+    if cod == "V-B60":
+        return QCoreApplication.translate(
+            "Textos",
+            "La IP solo se puede conocer con la máquina encendida: marca «Encender al terminar».",
+        )
+    if cod == "V-B61":
+        return _fmt(
+            QCoreApplication.translate(
+                "Textos",
+                "El plazo debe ser un número entero de segundos entre {minimo} y {maximo}.",
+            ),
+            prm,
+        )
+    if cod == "V-B62":
+        if prm.get("origen") == "plantilla":
+            return QCoreApplication.translate(
+                "Textos",
+                "La plantilla no tiene activado el agente invitado, así que no se podrá saber "
+                "la IP. Marca «Activar el agente invitado» en la configuración inicial y "
+                "asegúrate de que el programa esté instalado dentro de la máquina.",
+            )
+        return QCoreApplication.translate(
+            "Textos",
+            "La máquina no tiene activado el agente invitado (casilla «Agente de QEMU»), así "
+            "que no se podrá saber la IP.",
+        )
+    if cod == "V-B63":
+        return _texto_estado_de_problema(prm)
+    if cod == "V-B64":
+        return QCoreApplication.translate(
+            "Textos",
+            "Las imágenes de Ubuntu y Debian no traen el agente invitado instalado: sin él no "
+            "se podrá saber la IP. Las de Rocky y Alma sí lo traen.",
+        )
+    if cod == "V-B65":
+        return _fmt(
+            QCoreApplication.translate(
+                "Textos",
+                "Con las actualizaciones activadas, el primer arranque puede tardar más que el "
+                "plazo de {plazo_s} s. Sube el plazo o desactiva «Actualizar paquetes».",
+            ),
+            prm,
+        )
+    return None
+
+
+def _texto_estado_de_problema(prm: Mapping[str, str]) -> str:
+    """V-B37, V-B55 y V-B63: el problema trae los parámetros de un estado de opción."""
+    sin_version = prm.get("motivo") == str(CodigoError.OPCION_SIN_VERSION)
+    return texto_error(
+        ErrorProxLaunch(
+            CodigoError.OPCION_SIN_VERSION if sin_version else CodigoError.OPCION_SIN_PRIVILEGIO,
+            dict(prm),
+        )
+    )
+
+
+def _texto_problema_fase_b(p: Problema) -> str | None:
+    """Mensaje de las reglas V-B20..V-B65 (cloud-init, snippets y espera de IP).
+
+    ``None`` si la regla no es de la fase B (las de B2, V-B01..V-B16, las traduce ``textos_b``).
+    """
+    cod, prm = p.codigo, p.params
+    if cod == "V-B20":
+        return _texto_v_b20(prm)
+    if cod == "V-B21":
+        if prm.get("motivo") == "patron":
+            return QCoreApplication.translate(
+                "Textos",
+                "El usuario no sigue el patrón habitual (minúsculas, números, «_» y «-», hasta "
+                "32 caracteres). Proxmox lo acepta, pero cloud-init podría rechazarlo.",
+            )
+        return QCoreApplication.translate(
+            "Textos", "El usuario no puede tener espacios, «:» ni caracteres de control."
+        )
+    if cod == "V-B22":
+        return QCoreApplication.translate(
+            "Textos", "La línea {linea} de las claves SSH no es una clave pública válida: {motivo}."
+        ).format(linea=prm.get("linea", "?"), motivo=_motivo_clave(prm.get("motivo", "")))
+    if cod == "V-B23":
+        return QCoreApplication.translate(
+            "Textos",
+            "Eso parece una clave privada. Nunca la pegues aquí: usa solo la clave pública (el "
+            "archivo que termina en .pub).",
+        )
+    if cod == "V-B24":
+        motivo = prm.get("motivo", "")
+        if motivo == "duplicadas":
+            return _fmt(
+                QCoreApplication.translate("Textos", "Se descartaron {cantidad} claves repetidas."),
+                prm,
+            )
+        if motivo == "demasiado_texto":
+            return QCoreApplication.translate(
+                "Textos", "Las claves SSH ocupan demasiado (máximo 8 KiB en total)."
+            )
+        return QCoreApplication.translate("Textos", "Hay demasiadas claves SSH (máximo 20).")
+    if cod == "V-B25":
+        return _texto_v_b25(prm)
+    if cod == "V-B26":
+        return QCoreApplication.translate(
+            "Textos", "La IP de la tarjeta de red {n} no es válida: {motivo}."
+        ).format(n=_numero_tarjeta(prm), motivo=_motivo_ip_cloudinit(prm.get("motivo", "")))
+    if cod == "V-B27":
+        return QCoreApplication.translate(
+            "Textos",
+            "La IP de la tarjeta de red {n} es la dirección de red o de difusión de su red: "
+            "elige otra.",
+        ).format(n=_numero_tarjeta(prm))
+    if cod == "V-B28":
+        return QCoreApplication.translate(
+            "Textos", "La puerta de enlace de la tarjeta de red {n} no es válida: {motivo}."
+        ).format(n=_numero_tarjeta(prm), motivo=_motivo_ip_cloudinit(prm.get("motivo", "")))
+    if cod == "V-B29":
+        return QCoreApplication.translate(
+            "Textos", "La puerta de enlace de la tarjeta de red {n} solo vale con IP fija."
+        ).format(n=_numero_tarjeta(prm))
+    if cod == "V-B30":
+        return _texto_v_b30(prm)
+    if cod == "V-B31":
+        return _fmt(
+            QCoreApplication.translate(
+                "Textos", "La IP {direccion} se repite: la usan «{con}» y «{nombre}»."
+            ),
+            prm,
+        )
+    if cod == "V-B32":
+        if prm.get("cantidad"):
+            return _fmt(
+                QCoreApplication.translate(
+                    "Textos",
+                    "Has puesto {cantidad} servidores DNS; lo habitual es usar hasta tres.",
+                ),
+                prm,
+            )
+        return QCoreApplication.translate(
+            "Textos",
+            "Los DNS no son válidos: escribe direcciones IP (por ejemplo 1.1.1.1 o 8.8.8.8) "
+            "separadas por espacio o coma.",
+        )
+    if cod == "V-B33":
+        return QCoreApplication.translate(
+            "Textos",
+            "El dominio de búsqueda no es válido: usa un nombre como lab.local, sin espacios.",
+        )
+    if cod == "V-B34":
+        return _texto_v_b34(prm)
+    if cod == "V-B35":
+        return _fmt(
+            QCoreApplication.translate(
+                "Textos",
+                "La plantilla «{plantilla}» es de Windows: cloud-init no está probado con "
+                "Windows y puede no funcionar.",
+            ),
+            prm,
+        )
+    if cod == "V-B36":
+        return QCoreApplication.translate(
+            "Textos", "«Actualizar paquetes» debe ser «Como la plantilla», «Sí» o «No»."
+        )
+    if cod in ("V-B37", "V-B55"):
+        return _texto_estado_de_problema(prm)
+    if cod == "V-B38":
+        return QCoreApplication.translate(
+            "Textos",
+            "Las {cantidad} máquinas del lote tendrían la misma IP en la tarjeta de red {n}. "
+            "Marca «Sumar 1 a cada máquina» o usa DHCP.",
+        ).format(cantidad=prm.get("cantidad", "?"), n=_numero_tarjeta(prm))
+    if cod == "V-B39":
+        return QCoreApplication.translate(
+            "Textos",
+            "La configuración inicial (cloud-init) solo se puede usar al clonar una plantilla.",
+        )
+    if cod == "V-B40":
+        return QCoreApplication.translate(
+            "Textos", "La contraseña ya no está en memoria; vuelve a escribirla."
+        )
+    texto = _texto_v_b_snippets(p) or _texto_v_b_espera(p)
+    if texto is not None:
+        return texto
+    from proxlaunch.interfaz.textos_b import texto_problema_b2
+
+    return texto_problema_b2(p)
+
+
+# --- Resumen de la fase B -----------------------------------------------------------------------
+
+
+def texto_claves_ssh(claves: tuple[str, ...]) -> str:
+    """«2 claves: ssh-ed25519 (ana@portatil), ssh-rsa»; nunca el cuerpo de una clave (RF-B0.1)."""
+    partes: list[str] = []
+    for clave in claves:
+        tipo, comentario = resumen_clave(clave)
+        partes.append(f"{tipo} ({comentario})" if comentario else tipo)
+    n = len(claves)
+    cuenta = (
+        QCoreApplication.translate("Textos", "1 clave")
+        if n == 1
+        else QCoreApplication.translate("Textos", "{n} claves").format(n=n)
+    )
+    return f"{cuenta}: {', '.join(partes)}"
+
+
+def texto_tarjeta_cloudinit(
+    modo: ModoTarjeta, ip: str | None, puerta: str | None, serie: bool
+) -> str:
+    """Modo de red de una tarjeta: «DHCP» o «IP fija 10.0.0.50/24, puerta 10.0.0.1»."""
+    if modo == ModoTarjeta.DHCP:
+        return QCoreApplication.translate("Textos", "DHCP")
+    texto = QCoreApplication.translate("Textos", "IP fija {ip}").format(ip=ip or "—")
+    if puerta:
+        texto += QCoreApplication.translate("Textos", ", puerta {puerta}").format(puerta=puerta)
+    if serie:
+        texto += QCoreApplication.translate("Textos", " (sumando 1 a cada máquina)")
+    return texto
+
+
+def texto_snippet_elegido(valor: str) -> str:
+    """Un script elegido: el identificador, o «ninguno» si se quita el de la plantilla."""
+    if valor == NINGUNO:
+        return QCoreApplication.translate("Textos", "ninguno")
+    return valor
+
+
+def _lineas_avanzadas_fase_b(cfg: ConfiguracionVM) -> list[tuple[str, str]]:
+    ci = cfg.cloudinit
+    if ci is None:
+        return []
+    lineas: list[tuple[str, str]] = []
+    if ci.dns:
+        lineas.append((QCoreApplication.translate("Textos", "DNS"), ", ".join(ci.dns)))
+    if ci.dominio:
+        lineas.append((QCoreApplication.translate("Textos", "Dominio de búsqueda"), ci.dominio))
+    if ci.actualizar is not None:
+        lineas.append(
+            (
+                QCoreApplication.translate("Textos", "Actualizar paquetes al arrancar"),
+                texto_si_no(ci.actualizar),
+            )
+        )
+    for tipo in TIPOS_SNIPPET:
+        valor: str | None = getattr(ci.snippets, tipo)
+        if valor is not None:
+            lineas.append(
+                (
+                    QCoreApplication.translate("Textos", "Script: {tipo}").format(
+                        tipo=texto_tipo_snippet(tipo)
+                    ),
+                    texto_snippet_elegido(valor),
+                )
+            )
+    return lineas
+
+
+def lineas_opciones_fase_b(cfg: ConfiguracionVM, *, avanzado: bool) -> list[tuple[str, str]]:
+    """Líneas «etiqueta, valor» de cloud-init y la espera de IP para el Resumen (RF-B0.1).
+
+    Solo salen los valores que difieren del predeterminado: sin opciones de la fase B no hay
+    ninguna línea. La contraseña es «definida (oculta)» y las claves, número, tipo y comentario.
+    Las avanzadas (DNS, dominio, actualizar, scripts) solo si ``avanzado``; en modo básico las
+    lista ``opciones_avanzadas_fase_b`` como ocultas.
+    """
+    lineas: list[tuple[str, str]] = []
+    ci = cfg.cloudinit
+    if ci is not None and not ci.vacia:
+        if ci.usuario:
+            lineas.append((QCoreApplication.translate("Textos", "Usuario inicial"), ci.usuario))
+        if ci.claves:
+            lineas.append(
+                (QCoreApplication.translate("Textos", "Claves SSH"), texto_claves_ssh(ci.claves))
+            )
+        if ci.contrasena is not None and ci.contrasena.definido:
+            lineas.append(
+                (
+                    QCoreApplication.translate("Textos", "Contraseña inicial"),
+                    QCoreApplication.translate("Textos", "definida (oculta)"),
+                )
+            )
+        for t in ci.tarjetas:
+            if t.modo != ModoTarjeta.SIN_CONFIGURAR:
+                lineas.append(
+                    (
+                        QCoreApplication.translate("Textos", "Red net{i}").format(i=t.indice),
+                        texto_tarjeta_cloudinit(t.modo, t.ip, t.puerta, t.serie),
+                    )
+                )
+        if ci.activar_agente:
+            lineas.append(
+                (
+                    QCoreApplication.translate("Textos", "Activar el agente invitado"),
+                    texto_si_no(True),
+                )
+            )
+        if avanzado:
+            lineas.extend(_lineas_avanzadas_fase_b(cfg))
+    if cfg.esperar_ip:
+        lineas.append(
+            (
+                QCoreApplication.translate("Textos", "Esperar la IP"),
+                QCoreApplication.translate("Textos", "sí (plazo {n} s)").format(n=cfg.plazo_ip_s),
+            )
+        )
+    return lineas
+
+
+def opciones_avanzadas_fase_b(cfg: ConfiguracionVM) -> list[str]:
+    """Opciones avanzadas de cloud-init que se aplicarán aunque el modo básico las oculte."""
+    if cfg.cloudinit is None or cfg.cloudinit.vacia:
+        return []
+    return [f"{nombre}: {valor}" for nombre, valor in _lineas_avanzadas_fase_b(cfg)]

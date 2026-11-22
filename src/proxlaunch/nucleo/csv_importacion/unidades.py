@@ -13,6 +13,7 @@ from fractions import Fraction
 from typing import TypeVar
 
 from proxlaunch.nucleo.archivos.esquema import CodigoAvisoArchivo
+from proxlaunch.nucleo.cloudinit.modelos import ModoTarjeta
 from proxlaunch.nucleo.modelos.origen import ModoClon, TipoSO
 from proxlaunch.nucleo.modelos.vm import MAX_LIMITE_MB, Firmware, ModeloRed, OrigenSO
 
@@ -299,3 +300,20 @@ def es_ninguno(texto: str) -> bool:
 def modo_clon(texto: str) -> ModoClon:
     """``auto``, ``enlazado`` o ``completo``."""
     return _enumeracion(_clave_enum(texto), _MODOS_CLON, "auto, enlazado, completo", "auto")
+
+
+# --- Fase B: red de cloud-init (``ci_ip``) ---
+
+
+def modo_ip(texto: str) -> tuple[ModoTarjeta, str | None]:
+    """Celda ``ci_ip``: ``heredar`` = sin configurar, ``dhcp`` o una IPv4 con prefijo.
+
+    Devuelve ``(modo, ip)``; ``ip`` solo con modo fijo. El formato de la dirección lo valida
+    V-B26/V-B27 después (aquí cualquier otro texto es «fija»).
+    """
+    clave = _clave_enum(texto)
+    if clave in _MTU_HEREDAR:
+        return ModoTarjeta.SIN_CONFIGURAR, None
+    if clave == "dhcp":
+        return ModoTarjeta.DHCP, None
+    return ModoTarjeta.FIJA, _recortar(texto)

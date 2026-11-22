@@ -256,6 +256,10 @@ def aplicar_config(
         etiquetas_usuario=actual.etiquetas_usuario,
         pool=actual.pool,
         proteger=actual.proteger,
+        # Fase B: cloud-init y espera de IP son del formulario, no del perfil (como en el clon).
+        cloudinit=actual.cloudinit,
+        esperar_ip=actual.esperar_ip,
+        plazo_ip_s=actual.plazo_ip_s,
     )
     return ResultadoAplicacion(cfg, tuple(avisos))
 

@@ -10,7 +10,9 @@ from PySide6.QtWidgets import QGroupBox, QLabel, QPushButton, QVBoxLayout, QWidg
 
 from proxlaunch.interfaz.textos import (
     lineas_opciones_fase_a,
+    lineas_opciones_fase_b,
     opciones_avanzadas_fase_a,
+    opciones_avanzadas_fase_b,
     texto_ajustes_clon,
     texto_cambio_asistente,
     texto_campo,
@@ -114,6 +116,7 @@ def opciones_avanzadas_no_predeterminadas(cfg: ConfiguracionVM) -> list[str]:
             )
     # Fase A: orden, espera, protección, MTU y límite (avanzados que el modo básico oculta).
     lineas.extend(opciones_avanzadas_fase_a(cfg, con_red=cfg.origen != OrigenSO.CLONAR_PLANTILLA))
+    lineas.extend(opciones_avanzadas_fase_b(cfg))
     return lineas
 
 
@@ -255,9 +258,12 @@ class ResumenVM(QGroupBox):
             lineas.append(f"<b>{e(et_redes)}:</b> {e(sin_red)}")
         for nombre, valor in lineas_opciones_fase_a(cfg, avanzado=avanzado):
             lineas.append(f"<b>{e(nombre)}:</b> {e(valor)}")
+        # Fase B: cloud-init y espera de IP (la contraseña sale como «definida», nunca su valor).
+        for nombre, valor in lineas_opciones_fase_b(cfg, avanzado=avanzado):
+            lineas.append(f"<b>{e(nombre)}:</b> {e(valor)}")
         if not avanzado:
             ocultas = (
-                opciones_avanzadas_fase_a(cfg, con_red=False)
+                [*opciones_avanzadas_fase_a(cfg, con_red=False), *opciones_avanzadas_fase_b(cfg)]
                 if clon
                 else opciones_avanzadas_no_predeterminadas(cfg)
             )

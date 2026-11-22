@@ -522,3 +522,26 @@ def ruta_lote_homogeneo(tmp_path):
     ruta = tmp_path / "base.proxlaunch-lote.json"
     guardar_lote(ruta, LoteGuardado("base", definicion(3, "web")), app_version="0.1.0")
     return ruta
+
+
+# --- Fase B: el panel de compatibilidad usa lo que dice la plantilla ------------------------------
+
+
+def test_la_compatibilidad_recibe_la_info_cloudinit_de_la_plantilla_elegida(conectado, monkeypatch):
+    """V-B20 no debe avisar «no se pudo comprobar» si la plantilla ya se leyó."""
+    from proxlaunch.interfaz import ventana_principal as modulo
+    from proxlaunch.nucleo.cloudinit.modelos import InfoCloudInitPlantilla
+
+    v = conectado
+    crear_perfil_usuario(v)
+    info = InfoCloudInitPlantilla(unidad=True, clave_unidad="ide2")
+    monkeypatch.setattr(v.origen, "info_cloudinit", lambda cfg: info)
+    recibido = []
+
+    def _evaluar(cfg, config, inv, caps, **kw):
+        recibido.append(cfg.info_cloudinit)
+        return []
+
+    monkeypatch.setattr(modulo, "evaluar_compatibilidad", _evaluar)
+    v._actualizar_compatibilidad(v.formulario.configuracion(), en_lote=False)
+    assert recibido == [info]

@@ -21,7 +21,7 @@ from collections.abc import Callable
 from dataclasses import dataclass, field, fields, is_dataclass
 from enum import Enum
 from typing import Any
-from urllib.parse import parse_qs, urlsplit
+from urllib.parse import parse_qs, unquote_plus, urlencode, urlsplit
 
 from proxlaunch.nucleo.api.autenticacion import Autenticador
 from proxlaunch.nucleo.errores import CodigoError, ErrorProxLaunch
@@ -190,7 +190,9 @@ def upid_de(nodo_: str, vmid: int, tipo: str = "qmcreate") -> str:
     return f"UPID:{nodo_}:0003A1B2:00F4C1D3:6535AB12:{tipo}:{vmid}:root@pam:"
 
 
-_RE_UPID_VMID = re.compile(r"UPID:[^:]+:[^:]+:[^:]+:[^:]+:(qmcreate|qmdestroy|qmstop):(\d+):")
+_RE_UPID_VMID = re.compile(
+    r"UPID:[^:]+:[^:]+:[^:]+:[^:]+:(qmcreate|qmdestroy|qmstop|qmtemplate):(\d+):"
+)
 _RE_QEMU = re.compile(r"^/nodes/(?P<n>[^/]+)/qemu$")
 _RE_CONFIG = re.compile(r"^/nodes/(?P<n>[^/]+)/qemu/(?P<v>\d+)/config$")
 _RE_ACTUAL = re.compile(r"^/nodes/(?P<n>[^/]+)/qemu/(?P<v>\d+)/status/current$")
@@ -198,6 +200,11 @@ _RE_STOP = re.compile(r"^/nodes/(?P<n>[^/]+)/qemu/(?P<v>\d+)/status/stop$")
 _RE_QEMU_VM = re.compile(r"^/nodes/(?P<n>[^/]+)/qemu/(?P<v>\d+)$")
 _RE_ESTADO_NODO = re.compile(r"^/nodes/(?P<n>[^/]+)/status$")
 _RE_TAREA = re.compile(r"^/nodes/(?P<n>[^/]+)/tasks/(?P<u>.+)/(?P<q>status|log)$")
+# Fase B (0.7): agente invitado, conversión en plantilla y listado de snippets.
+_RE_AGENTE = re.compile(r"^/nodes/(?P<n>[^/]+)/qemu/(?P<v>\d+)/agent/network-get-interfaces$")
+_RE_PLANTILLA = re.compile(r"^/nodes/(?P<n>[^/]+)/qemu/(?P<v>\d+)/template$")
+_RE_CONTENIDO = re.compile(r"^/nodes/(?P<n>[^/]+)/storage/(?P<s>[^/]+)/content$")
+_RE_CLONAR = re.compile(r"^/nodes/(?P<n>[^/]+)/qemu/(?P<v>\d+)/clone$")
 
 
 @dataclass
@@ -261,6 +268,33 @@ def envio_incierto() -> ErrorProxLaunch:
     )
 
 
+def error_http(estado: int, mensaje: str, nodo: str = "pve1") -> ErrorProxLaunch:
+    """El error que produce el traductor real ante una respuesta HTTP de error de Proxmox."""
+    from proxlaunch.nucleo.api.traductor_errores import traducir_http
+
+    cuerpo = json.dumps({"data": None, "message": mensaje})
+    return traducir_http(estado, mensaje, cuerpo, nodo=nodo)
+
+
+def respuesta_agente(*interfaces: tuple[str, str | None, tuple[str, ...]]) -> dict[str, Any]:
+    """``data`` de ``network-get-interfaces``: ``(nombre, mac, (ip, ...))`` por interfaz."""
+    resultado = []
+    for nombre, mac, ips in interfaces:
+        direcciones = [
+            {
+                "ip-address": ip,
+                "ip-address-type": "ipv6" if ":" in ip else "ipv4",
+                "prefix": 64 if ":" in ip else 24,
+            }
+            for ip in ips
+        ]
+        entrada: dict[str, Any] = {"name": nombre, "ip-addresses": direcciones}
+        if mac is not None:
+            entrada["hardware-address"] = mac
+        resultado.append(entrada)
+    return {"result": resultado}
+
+
 class Cluster:
     """Servidor de Proxmox simulado: estado, rutas de la API usadas por el lote y contadores.
 
@@ -297,6 +331,26 @@ class Cluster:
         self._activas = 0
         self.barrera: threading.Barrier | None = None
         self.barrera_usada: set[str] = set()
+        # --- Fase B (0.7) -----------------------------------------------------------------
+        # Agente invitado: guion de respuestas por VMID (la última se repite). Cada elemento es
+        # un ``ErrorProxLaunch`` (se lanza), un ``Http`` (solo con ``instalar_http``), un
+        # ``callable(Llamada)`` o el valor de ``data``. Sin guion: «agent is not running».
+        self.agente_guion: dict[int, list[Any]] = {}
+        self.sondeos_agente: Counter[int] = Counter()
+        self.llamadas_agente: list[tuple[str, int]] = []  # (método, vmid) en orden de llegada
+        self.conversiones: Counter[int] = Counter()  # POST …/template por VMID
+        # Snippets por (nodo, storage): [(volid, tamaño)]; ``listados_snippets`` cuenta consultas.
+        self.snippets: dict[tuple[str, str], list[tuple[str, int]]] = {}
+        self.listados_snippets: list[tuple[str, str]] = []
+        # ``PUT …/config`` en bruto (VMID, cuerpo del formulario en bytes) y modo eco: con
+        # ``eco_put`` el servidor falla (500) repitiendo el cuerpo en el texto del error. ``True``
+        # = todo PUT de config; un conjunto = solo si el cuerpo lleva alguna de esas claves.
+        self.puts_crudos: list[tuple[int, bytes]] = []
+        self.eco_put: bool | set[str] = False
+        # VMIDs cuyo clon queda con ``lock: clone`` de forma persistente.
+        self.bloqueo_clon: set[int] = set()
+        # Traza completa (método, ruta, consulta, cuerpo en bytes); la llena ``instalar_http``.
+        self.trazas: list[tuple[str, str, str, bytes]] = []
 
     # --- Configuración ---------------------------------------------------------------------
 
@@ -360,12 +414,18 @@ class Cluster:
         ruta: str,
         params: dict[str, Any] | None = None,
         datos: dict[str, Any] | None = None,
+        crudo: bytes | None = None,
     ) -> Any:
         metodo = metodo.upper()
         llamada = Llamada(metodo, ruta, params, datos)
         with self._cerrojo:
             self.llamadas.append(llamada)
             self.metodos[metodo] += 1
+            if metodo == "PUT" and (mc := _RE_CONFIG.match(ruta)):
+                # Cuerpo en bruto del formulario: el real si lo hay (HTTP) o el que codificaría
+                # ``requests`` para el diccionario (transporte en memoria).
+                cuerpo = crudo if crudo is not None else urlencode(datos or {}).encode()
+                self.puts_crudos.append((int(mc["v"]), cuerpo))
             # Un POST de creación cuenta como intento aunque una regla de fallo lo corte después.
             if metodo == "POST" and (mt := _RE_QEMU.match(ruta)) and datos and "vmid" in datos:
                 vmid = int(datos["vmid"])
@@ -393,7 +453,85 @@ class Cluster:
             resultado = r.accion(ll)
             if not isinstance(resultado, _Normal):
                 return resultado
-        return self._normal(ll)
+        propio = self._fase_b(ll)  # antes que ``_normal``: sirve también a los clústeres derivados
+        if not isinstance(propio, _Normal):
+            return propio
+        resultado = self._normal(ll)
+        self._tras_normal(ll)
+        return resultado
+
+    # --- Rutas de la fase B (0.7) --------------------------------------------------------------
+
+    def guion_agente(self, vmid: int, *respuestas: Any) -> None:
+        """Fija el guion del agente de una MV (véase ``agente_guion``)."""
+        self.agente_guion[vmid] = list(respuestas)
+
+    def _fase_b(self, ll: Llamada) -> Any:
+        m, ruta = ll.metodo, ll.ruta
+        if m in ("GET", "POST") and (mt := _RE_AGENTE.match(ruta)):
+            return self._agente(ll, int(mt["v"]))
+        if m == "POST" and (mt := _RE_PLANTILLA.match(ruta)):
+            vmid = int(mt["v"])
+            with self._cerrojo:
+                vm = self.vms.get(vmid)
+                if vm is None:
+                    raise ErrorProxLaunch(CodigoError.RECURSO_INEXISTENTE, {}, "no such VM")
+                self.conversiones[vmid] += 1
+                vm["config"]["template"] = 1
+            return upid_de(mt["n"], vmid, "qmtemplate")
+        if (
+            m == "GET"
+            and (mt := _RE_CONTENIDO.match(ruta))
+            and (ll.params or {}).get("content") == "snippets"
+        ):
+            with self._cerrojo:
+                self.listados_snippets.append((mt["n"], mt["s"]))
+                lista = list(self.snippets.get((mt["n"], mt["s"]), []))
+            return [{"volid": v, "size": t, "ctime": 1} for v, t in lista]
+        if m == "PUT" and (mt := _RE_CONFIG.match(ruta)) and self.eco_put:
+            cuerpo = next(
+                (b.decode() for v, b in reversed(self.puts_crudos) if v == int(mt["v"])), ""
+            )
+            claves = {k for k, _ in (ll.datos or {}).items()}
+            if self.eco_put is True or claves & set(self.eco_put):
+                # El servidor repite el cuerpo (codificado y decodificado) en el texto del error.
+                raise ErrorProxLaunch(
+                    CodigoError.DESCONOCIDO,
+                    {},
+                    f"HTTP 500: Parameter verification failed. cuerpo: {cuerpo} | "
+                    f"{unquote_plus(cuerpo)}",
+                )
+        return NORMAL
+
+    def _agente(self, ll: Llamada, vmid: int) -> Any:
+        with self._cerrojo:
+            self.sondeos_agente[vmid] += 1
+            self.llamadas_agente.append((ll.metodo, vmid))
+            guion = self.agente_guion.get(vmid)
+            indice = self.sondeos_agente[vmid] - 1
+        if not guion:
+            raise error_http(500, "QEMU guest agent is not running")
+        item = guion[min(indice, len(guion) - 1)]
+        if isinstance(item, BaseException):
+            raise item
+        if callable(item):
+            item = item(ll)
+        return item
+
+    def _tras_normal(self, ll: Llamada) -> None:
+        """Efectos de la fase B sobre el estado del clúster tras atender una petición normal."""
+        if ll.metodo == "PUT" and (mt := _RE_CONFIG.match(ll.ruta)):
+            with self._cerrojo:
+                vm = self.vms.get(int(mt["v"]))
+                if vm is not None and "cipassword" in vm["config"]:
+                    # Proxmox nunca devuelve la contraseña: la lee como «**********» (CA-B1.6.8).
+                    vm["config"]["cipassword"] = "**********"
+        elif ll.metodo == "POST" and _RE_CLONAR.match(ll.ruta):
+            nuevo = int((ll.datos or {}).get("newid", 0))
+            if nuevo in self.bloqueo_clon:
+                with self._cerrojo:
+                    if nuevo in self.vms:
+                        self.vms[nuevo]["config"]["lock"] = "clone"
 
     def _normal(self, ll: Llamada) -> Any:
         m, ruta = ll.metodo, ll.ruta
@@ -585,11 +723,14 @@ def instalar_http(rsps: Any, cluster: Cluster, host: str = HOST) -> None:
         ruta = partes.path.removeprefix("/api2/json")
         params = {k: v[0] for k, v in parse_qs(partes.query).items()} or None
         cuerpo = request.body
+        crudo = cuerpo if isinstance(cuerpo, bytes) else (cuerpo or "").encode()
         if isinstance(cuerpo, bytes):
             cuerpo = cuerpo.decode()
         datos = {k: v[0] for k, v in parse_qs(cuerpo or "").items()} or None
+        with cluster._cerrojo:
+            cluster.trazas.append((request.method, ruta, partes.query, crudo))
         try:
-            valor = cluster.atender(request.method, ruta, params, datos)
+            valor = cluster.atender(request.method, ruta, params, datos, crudo)
         except ErrorProxLaunch as e:
             texto = e.detalle_tecnico or str(e.codigo)
             return 500, {}, json.dumps({"data": None, "message": texto})
@@ -600,6 +741,7 @@ def instalar_http(rsps: Any, cluster: Cluster, host: str = HOST) -> None:
     rsps.add_callback(responses.GET, re.compile(r"https://.*/api2/json/.*"), callback=_callback)
     rsps.add_callback(responses.POST, re.compile(r"https://.*/api2/json/.*"), callback=_callback)
     rsps.add_callback(responses.DELETE, re.compile(r"https://.*/api2/json/.*"), callback=_callback)
+    rsps.add_callback(responses.PUT, re.compile(r"https://.*/api2/json/.*"), callback=_callback)
 
 
 def _respuesta_http(h: Http) -> tuple[int, dict[str, str], str]:
@@ -705,8 +847,12 @@ def crear_banco(
     return Banco(cl, sesion, reloj, inv or inventario(tuple(nodo(n) for n in nodos)))
 
 
-def crear_banco_http(rsps: Any, nodos: tuple[str, ...] = ("pve1",)) -> Banco:
-    """Como ``crear_banco`` pero con el ``TransporteHttp`` real y el clúster en ``responses``."""
+def crear_banco_http(
+    rsps: Any, nodos: tuple[str, ...] = ("pve1",), cluster: Cluster | None = None
+) -> Banco:
+    """Como ``crear_banco`` pero con el ``TransporteHttp`` real y el clúster en ``responses``.
+
+    ``cluster`` permite pasar un clúster derivado (``ClusterM4``, ``ClusterA``…)."""
     from proxlaunch.nucleo.api.autenticacion import AutenticadorToken
     from proxlaunch.nucleo.api.cliente import ClienteProxmox
     from proxlaunch.nucleo.api.transporte import TransporteHttp
@@ -714,7 +860,7 @@ def crear_banco_http(rsps: Any, nodos: tuple[str, ...] = ("pve1",)) -> Banco:
 
     from .apoyo_api import HUELLA_A, TOKEN_ID, TOKEN_SECRETO, TransporteFalso
 
-    cl = Cluster(nodos)
+    cl = cluster or Cluster(nodos)
     instalar_http(rsps, cl)
     reloj = RelojSeguro()
     sesion = crear_sesion(TransporteFalso(), reloj=reloj)

@@ -4,12 +4,14 @@ from __future__ import annotations
 
 import contextlib
 import faulthandler
+import json
 import logging
 import os
 import re
 import sys
 import threading
 import traceback
+from collections import Counter
 from collections.abc import Callable
 from logging.handlers import RotatingFileHandler
 from pathlib import Path
@@ -35,7 +37,7 @@ MAX_BYTES_FALLO_PREVIO = 256 * 1024
 # Nombres de campo cuyo valor siempre se enmascara (cabeceras, parámetros de formulario,
 # claves de diccionarios o JSON). Cubre `clave=valor`, `clave: valor` y `'clave': 'valor'`.
 _CAMPOS = (
-    "tfa-challenge|tfa_challenge|password|contrasena|otp|tfa|ticket|"
+    "tfa-challenge|tfa_challenge|cipassword|password|contrasena|otp|tfa|ticket|"
     "CSRFPreventionToken|PVEAuthCookie|PVEAPIToken"
 )
 _RE_CAMPO = re.compile(
@@ -57,22 +59,63 @@ _RE_TOKEN_GENERICO = re.compile(
 )
 
 _lock = threading.Lock()
-_secretos: set[str] = set()
+# Valores (y sus variantes) -> número de registros vivos. Contar referencias evita que olvidar
+# un secreto desproteja a otro con el mismo valor (dos MVs con la misma contraseña).
+_secretos: Counter[str] = Counter()
+# Igual, pero solo para las contraseñas de cloud-init: ``olvidar_secretos()`` (cerrar sesión)
+# NO las toca, porque su vida es la del plan y no la de la sesión.
+_secretos_cloudinit: Counter[str] = Counter()
+
+_RE_PORCENTAJE = re.compile(r"%[0-9A-F]{2}")
 
 
-def registrar_secreto(valor: str) -> None:
+def _variantes(valor: str) -> set[str]:
+    """El valor y sus formas habituales de aparecer en un eco: percent-encoding (``quote`` con
+    ``safe`` vacío y con ``/``, ``quote_plus``, también con hexadecimales en minúsculas) y el
+    interior de una cadena JSON escapada."""
+    base = {
+        valor,
+        quote(valor, safe=""),
+        quote(valor, safe="/"),
+        quote_plus(valor),
+        json.dumps(valor)[1:-1],
+    }
+    minusculas = {_RE_PORCENTAJE.sub(lambda m: m.group().lower(), v) for v in base}
+    return base | minusculas
+
+
+def registrar_secreto(valor: str, *, cloudinit: bool = False) -> None:
     """Registra un valor concreto para que se enmascare en cualquier mensaje del log
-    (incluidas sus variantes codificadas para URL). Los vacíos se ignoran."""
+    (incluidas sus variantes codificadas). Los vacíos se ignoran. Cada llamada suma una
+    referencia; ``cloudinit=True`` lo guarda en la categoría que no borra ``olvidar_secretos``."""
     if not valor:
         return
+    destino = _secretos_cloudinit if cloudinit else _secretos
     with _lock:
-        _secretos.update({valor, quote(valor, safe=""), quote_plus(valor)})
+        destino.update(_variantes(valor))
 
 
-def olvidar_secretos() -> None:
-    """Vacía la lista de secretos registrados (útil en pruebas)."""
+def olvidar_secreto(valor: str, *, cloudinit: bool = False) -> None:
+    """Resta una referencia al valor y a sus variantes; solo deja de enmascararse al llegar a 0.
+    A diferencia de ``olvidar_secretos`` no toca el resto (p. ej. el token)."""
+    if not valor:
+        return
+    destino = _secretos_cloudinit if cloudinit else _secretos
+    with _lock:
+        for v in _variantes(valor):
+            if destino[v] <= 1:
+                destino.pop(v, None)
+            else:
+                destino[v] -= 1
+
+
+def olvidar_secretos(*, incluir_cloudinit: bool = False) -> None:
+    """Vacía los secretos de la sesión (cerrar sesión). Los de cloud-init se conservan salvo
+    que se pida ``incluir_cloudinit=True`` (útil en pruebas)."""
     with _lock:
         _secretos.clear()
+        if incluir_cloudinit:
+            _secretos_cloudinit.clear()
 
 
 def enmascarar(texto: str) -> str:
@@ -83,7 +126,7 @@ def enmascarar(texto: str) -> str:
     if "@" in texto and "!" in texto and "=" in texto:  # evita la expresión en textos sin token
         texto = _RE_TOKEN_GENERICO.sub(lambda m: f"{m.group(1)}{MASCARA}", texto)
     with _lock:
-        conocidos = sorted(_secretos, key=len, reverse=True)
+        conocidos = sorted(_secretos.keys() | _secretos_cloudinit.keys(), key=len, reverse=True)
     for s in conocidos:
         texto = texto.replace(s, MASCARA)
     return texto

@@ -2,7 +2,8 @@
 
 Fuera del lote (INV-O1): solo lo invoca la interfaz tras una confirmación explícita. Una sola
 transferencia a la vez (V-O27). Nunca sobrescribe (INV-O2): el nombre se comprueba antes y de
-nuevo justo antes del primer byte, y no existe ninguna opción para sobrescribir. Nada de lo que
+nuevo justo antes del primer byte; solo se sobrescribe con ``permitir_reemplazo`` (fase B, tras
+la elección explícita «Reemplazarla» del asistente de plantillas). Nada de lo que
 se registra o se escribe en el log contiene la URL, la ruta local ni el hash (INV-O6).
 """
 
@@ -54,6 +55,7 @@ from proxlaunch.nucleo.transferencias.modelos import (
 )
 from proxlaunch.nucleo.transferencias.progreso import MedidorProgreso, progreso_de_log
 from proxlaunch.nucleo.transferencias.url import (
+    AlgoritmoChecksum,
     ChecksumTransferencia,
     UrlDescarga,
     host_y_archivo,
@@ -309,16 +311,19 @@ class ServicioTransferencias:
         inv: Inventario,
         *,
         para_subida: bool = True,
+        permitir_reemplazo: bool = False,
     ) -> ComprobacionPrevia:
         """Comprobaciones previas con solo lecturas (RF-O10, CA-O10.6).
 
-        Nombre existente (V-O14), espacio en el storage (V-O13), espacio en la raíz del nodo
-        (aviso; solo ``para_subida``: la descarga escribe directo en el storage) y permisos
-        (V-O15; V-O16 si es una descarga). Los permisos salen de ``inv.catalogo``.
+        Nombre existente (V-O14; con ``permitir_reemplazo`` ya no bloquea, pero el volid
+        existente se sigue devolviendo para que la interfaz lo muestre), espacio en el storage
+        (V-O13), espacio en la raíz del nodo (aviso; solo ``para_subida``: la descarga escribe
+        directo en el storage) y permisos (V-O15; V-O16 si es una descarga). Los permisos salen
+        de ``inv.catalogo``.
         """
         problemas: list[Problema] = []
         volid_existente = self._volid_existente(destino)
-        if volid_existente is not None:
+        if volid_existente is not None and not permitir_reemplazo:
             problemas.append(
                 Problema(
                     "destino",
@@ -460,12 +465,19 @@ class ServicioTransferencias:
         al_progresar: Callable[[Progreso], None],
         cancelado: threading.Event,
         acepta_aviso_raiz: bool,
+        suma_esperada: ChecksumTransferencia | None = None,
+        permitir_reemplazo: bool = False,
     ) -> ResultadoTransferencia:
         """Sube ``ruta`` a ``destino`` (hash → comprobar → enviar → tarea → verificar).
 
         Devuelve siempre un ``ResultadoTransferencia`` (también si falla o se cancela). Lanza
         ``TRANSFERENCIA_EN_CURSO`` si ya hay otra transferencia. ``acepta_aviso_raiz`` es la
         casilla «Entiendo que la subida puede fallar» (CA-O10.4).
+
+        Fase B (RF-B2.4, RF-B2.5): ``suma_esperada`` (solo SHA-256, la huella que ya se
+        calcula) se compara antes de cualquier escritura; si no coincide no se envía nada
+        (``SUMA_NO_COINCIDE``). ``permitir_reemplazo`` deja de bloquear un nombre ya
+        existente: solo lo activa la interfaz tras la elección explícita «Reemplazarla».
         """
         _validar_destino(destino)
         self._tomar()
@@ -486,8 +498,11 @@ class ServicioTransferencias:
                     ),
                     cancelado=cancelado,
                 )
+                self._comprobar_suma(suma_esperada, huella)
                 seg.emitir(EstadoTransferencia.COMPROBANDO, 0, tamano, forzar=True)
-                self._antes_de_enviar(destino, tamano, inv, cancelado, acepta_aviso_raiz)
+                self._antes_de_enviar(
+                    destino, tamano, inv, cancelado, acepta_aviso_raiz, permitir_reemplazo
+                )
                 seg.emitir(EstadoTransferencia.TRANSFIRIENDO, 0, tamano, forzar=True)
                 vivo = hashlib.sha256()
                 upid = self._cliente.subir_archivo(
@@ -517,10 +532,13 @@ class ServicioTransferencias:
         inv: Inventario,
         cancelado: threading.Event,
         acepta_aviso_raiz: bool,
+        permitir_reemplazo: bool = False,
     ) -> None:
         """Comprobaciones, aviso de la raíz y nombre libre justo antes del primer byte."""
         self._cancelar_si(cancelado)
-        comp = self.comprobar(destino, tamano, inv, para_subida=True)
+        comp = self.comprobar(
+            destino, tamano, inv, para_subida=True, permitir_reemplazo=permitir_reemplazo
+        )
         error = self._error_de_problemas(comp, destino, _VIA_SUBIR.get(destino.contenido.value, ""))
         if error is not None:
             raise error
@@ -532,12 +550,28 @@ class ServicioTransferencias:
             )
         self._cancelar_si(cancelado)
         # CA-O10.2: el nombre puede haber aparecido tras la comprobación anterior.
-        if self._volid_existente(destino) is not None:
+        if not permitir_reemplazo and self._volid_existente(destino) is not None:
             raise ErrorProxLaunch(
                 CodigoError.NOMBRE_YA_EXISTE,
                 {"storage": destino.storage, "nombre": destino.nombre_archivo},
             )
         self._cancelar_si(cancelado)
+
+    @staticmethod
+    def _comprobar_suma(suma: ChecksumTransferencia | None, huella: str) -> None:
+        """RF-B2.4: la suma dada se compara con la huella local ANTES de escribir nada.
+
+        Solo SHA-256 (es la huella que ya se calculó). Ambas sumas se muestran recortadas.
+        """
+        if suma is None:
+            return
+        if suma.algoritmo != AlgoritmoChecksum.SHA256:
+            raise ErrorProxLaunch(CodigoError.PARAMETRO_INVALIDO, {"campo": "suma"})
+        if suma.valor.casefold() != huella.casefold():
+            raise ErrorProxLaunch(
+                CodigoError.SUMA_NO_COINCIDE,
+                {"esperada": suma.valor[:12].lower(), "obtenida": huella[:12].lower()},
+            )
 
     @staticmethod
     def _cancelar_si(cancelado: threading.Event) -> None:
@@ -603,11 +637,13 @@ class ServicioTransferencias:
         verificar_certificados: bool,
         al_progresar: Callable[[Progreso], None],
         dejar_de_esperar: threading.Event,
+        permitir_reemplazo: bool = False,
     ) -> ResultadoTransferencia:
         """Hace que el nodo descargue ``url`` en ``destino`` y sigue la tarea ``download``.
 
         Un solo ``POST download-url`` (CA-O11.2). ``dejar_de_esperar`` deja de sondear
         (``SIN_ESPERAR``): la descarga sigue en el servidor y no se puede detener desde la app.
+        ``permitir_reemplazo`` (fase B) deja de bloquear un nombre ya existente.
         """
         _validar_destino(destino)
         self._tomar()
@@ -620,14 +656,16 @@ class ServicioTransferencias:
             self._cancelar_si(dejar_de_esperar)
             tamano = self._tamano_del_servidor(destino.nodo, url, verificar_certificados)
             self._cancelar_si(dejar_de_esperar)
-            comp = self.comprobar(destino, tamano, inv, para_subida=False)
+            comp = self.comprobar(
+                destino, tamano, inv, para_subida=False, permitir_reemplazo=permitir_reemplazo
+            )
             via = _VIA_DESCARGAR.get(destino.contenido.value, "")
             error = self._error_de_problemas(comp, destino, via)
             if error is not None:
                 raise error
             self._cancelar_si(dejar_de_esperar)
             # CA-O10.2: nombre libre justo antes de pedir la descarga.
-            if self._volid_existente(destino) is not None:
+            if not permitir_reemplazo and self._volid_existente(destino) is not None:
                 raise ErrorProxLaunch(
                     CodigoError.NOMBRE_YA_EXISTE,
                     {"storage": destino.storage, "nombre": destino.nombre_archivo},

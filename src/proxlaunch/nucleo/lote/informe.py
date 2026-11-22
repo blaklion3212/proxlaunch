@@ -11,8 +11,10 @@ import dataclasses
 import ipaddress
 import re
 from collections.abc import Sequence
+from dataclasses import dataclass
 from urllib.parse import quote
 
+from proxlaunch.nucleo.agente.modelos import EstadoIp, ResultadoIp
 from proxlaunch.nucleo.errores import ErrorProxLaunch
 from proxlaunch.nucleo.lote.constantes import LINEAS_LOG_TAREA
 from proxlaunch.nucleo.lote.libro import Libro
@@ -25,6 +27,7 @@ from proxlaunch.nucleo.lote.modelos import (
     Problema,
     ResultadoRollback,
 )
+from proxlaunch.nucleo.modelos.vm import ConfiguracionVM
 from proxlaunch.nucleo.reloj import Reloj
 from proxlaunch.nucleo.transferencias.modelos import RegistroTransferencia
 
@@ -106,12 +109,35 @@ def _sanear_error(
     return ErrorProxLaunch(error.codigo, params, detalle)
 
 
+def _sin_cloudinit(cfg: ConfiguracionVM) -> ConfiguracionVM:
+    """Copia de la configuración sin ningún valor de cloud-init (CA-B7.2.4, RF-B0.8).
+
+    El libro conserva ``cfg.cloudinit`` en memoria (lo necesita «Reintentar ajustes»), pero lo que
+    sale de él, el informe, nunca lleva usuario, claves, contraseña ni snippets.
+    """
+    if cfg.cloudinit is None and cfg.info_cloudinit is None:
+        return cfg
+    return dataclasses.replace(cfg, cloudinit=None, info_cloudinit=None)
+
+
+def _ip_saneada(ip: ResultadoIp | None, ocultar: Sequence[str] = ()) -> ResultadoIp | None:
+    """Las IPs de las MVs son datos del informe (RD-B5); solo se sanea el error del sondeo, cuyo
+    detalle técnico puede traer la dirección del servidor."""
+    if ip is None or ip.error is None:
+        return ip
+    return dataclasses.replace(ip, error=_sanear_error(ip.error, ocultar))
+
+
 def _saneada(entrada: EntradaLibro, ocultar: Sequence[str] = ()) -> EntradaLibro:
+    elemento = entrada.elemento
+    cfg = _sin_cloudinit(elemento.cfg)
     return dataclasses.replace(
         entrada,
+        elemento=elemento if cfg is elemento.cfg else dataclasses.replace(elemento, cfg=cfg),
         upid=upid_sin_usuario(entrada.upid) if entrada.upid else None,
         error=_sanear_error(entrada.error, ocultar),
         log_tarea=tuple(_sanear_texto(linea, ocultar) for linea in entrada.log_tarea),
+        ip=_ip_saneada(entrada.ip, ocultar),
     )
 
 
@@ -224,10 +250,45 @@ def informe_desde_entradas(
         contadores=contadores,
         entradas=entradas,
         duraciones_s=duraciones,
-        plantilla=plan.definicion.plantilla,  # por filas: solo informativa (CA-C08.8)
+        plantilla=_sin_cloudinit(plan.definicion.plantilla),  # por filas: solo informativa
         rollback=tuple(_rollback_saneado(r, ocultar) for r in rollback),
         problemas_plan=tuple(_problema_saneado(p, ocultar) for p in plan.problemas),
         permisos_verificados=plan.permisos_verificados,
         por_filas=plan.definicion.es_por_filas,
         transferencias=tuple(_transferencia_saneada(t, ocultar) for t in transferencias),
     )
+
+
+@dataclass(frozen=True)
+class ResumenIps:
+    """Resumen «n con IP / m sin IP / k no aplicable» del informe (RF-B3.6)."""
+
+    con_ip: int
+    sin_ip: int
+    no_aplicable: int
+
+    @property
+    def hay_espera(self) -> bool:
+        """``True`` si alguna MV pidió esperar la IP (si no, el informe no muestra el resumen)."""
+        return self.con_ip + self.sin_ip > 0
+
+
+def resumen_ips(entradas: Sequence[EntradaLibro]) -> ResumenIps:
+    """Cuenta las MVs por resultado de IP.
+
+    - con IP: hay IP principal (``obtenida`` u ``obtenida_parcial``);
+    - no aplicable: no pidió esperar la IP o quedó ``omitida`` (no se encendió);
+    - sin IP: pidió esperar y no la hay (agotó el plazo, sin agente, cancelada, pendiente…).
+    """
+    con_ip = sin_ip = no_aplicable = 0
+    for e in entradas:
+        ip = e.ip
+        if ip is not None and ip.principal:
+            con_ip += 1
+        elif (ip is None and not e.elemento.cfg.esperar_ip) or (
+            ip is not None and ip.estado == EstadoIp.OMITIDA
+        ):
+            no_aplicable += 1
+        else:
+            sin_ip += 1
+    return ResumenIps(con_ip, sin_ip, no_aplicable)

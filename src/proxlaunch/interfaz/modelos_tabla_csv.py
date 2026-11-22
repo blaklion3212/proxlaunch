@@ -30,12 +30,14 @@ from proxlaunch.interfaz.textos import (
     texto_linea_problema,
     tooltip_plano,
 )
+from proxlaunch.nucleo.csv_importacion.columnas import COLUMNAS_SECRETAS
 from proxlaunch.nucleo.csv_importacion.modelos import (
     EstadoFila,
     FilaInterpretada,
     ResultadoImportacion,
 )
 from proxlaunch.nucleo.modelos.vm import ConfiguracionVM
+from proxlaunch.nucleo.secreto import MASCARA
 from proxlaunch.nucleo.validacion import Severidad
 
 _Indice: TypeAlias = QModelIndex | QPersistentModelIndex
@@ -56,6 +58,12 @@ _TOKEN_ESTADO: dict[EstadoFila, str] = {
 
 
 # --- Valores interpretados ------------------------------------------------------------
+
+
+def valor_original_visible(canonica: str, valor: str) -> str:
+    """Valor del archivo tal como puede verse en pantalla: la columna de contraseñas siempre
+    enmascarada (RF-B6.5). El núcleo ya la entrega enmascarada; esta es la segunda defensa."""
+    return MASCARA if canonica in COLUMNAS_SECRETAS else valor
 
 
 def texto_memoria(mib: int) -> str:
@@ -312,7 +320,8 @@ class ModeloVistaPreviaCsv(QAbstractTableModel):
         if clave == "nodo":
             return f.nodo or QCoreApplication.translate("ModelosTablaCsv", "automático")
         if cfg is None:
-            return original.get(dict(_COLUMNAS).get(clave) or clave, "—")
+            columna = dict(_COLUMNAS).get(clave) or clave
+            return valor_original_visible(columna, original.get(columna, "—"))
         if clave == "nucleos":
             return _nucleos(cfg)
         if clave == "memoria":

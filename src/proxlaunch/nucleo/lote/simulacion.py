@@ -9,6 +9,12 @@ peticiones (``POST``/``clone`` + ``PUT config`` + ``PUT resize``): todas salen e
 
 from dataclasses import replace
 
+from proxlaunch.nucleo.cloudinit.modelos import INFO_DESCONOCIDA
+from proxlaunch.nucleo.cloudinit.peticion import (
+    PARAMETROS_CONTRASENA_SIMULADOS,
+    construir_put_cloudinit,
+    parametros_simulados,
+)
 from proxlaunch.nucleo.constructor_peticion import construir_parametros
 from proxlaunch.nucleo.errores import ErrorProxLaunch
 from proxlaunch.nucleo.lote.modelos import (
@@ -40,7 +46,9 @@ from proxlaunch.nucleo.servicios.creacion import (
 def _peticiones_de_clon(
     e: ElementoPlan, inv: Inventario
 ) -> tuple[dict[str, str], tuple[PeticionSimulada, ...]]:
-    """Clon + ``PUT config`` + ``PUT resize`` de un elemento (lanza ``ErrorProxLaunch``)."""
+    """Clon + ``PUT config`` + cloud-init + contraseña + ``PUT resize`` de un elemento (lanza
+    ``ErrorProxLaunch``). El orden es el de ``ServicioCreacion`` (DT-B7). La contraseña va
+    siempre enmascarada y las claves SSH como ``[n]``: nunca se simula un secreto."""
     peticion = construir_peticion_clon(e.cfg, inv)
     detalle = [
         PeticionSimulada(AccionPeticion.CLONAR, peticion.nodo_plantilla, peticion.parametros)
@@ -50,10 +58,37 @@ def _peticiones_de_clon(
         ajustes, _ = ajustes_de_clon(e.cfg, inv, plantilla)
         if ajustes.config:
             detalle.append(PeticionSimulada(AccionPeticion.CONFIGURAR, e.nodo, ajustes.config))
+        ci = e.cfg.cloudinit
+        if ci is not None and ajustes.cloudinit:
+            detalle.append(
+                PeticionSimulada(
+                    AccionPeticion.CLOUDINIT, e.nodo, parametros_simulados(ajustes.cloudinit, ci)
+                )
+            )
+        if ajustes.contrasena is not None and ajustes.contrasena.definido:
+            detalle.append(
+                PeticionSimulada(
+                    AccionPeticion.CONTRASENA, e.nodo, dict(PARAMETROS_CONTRASENA_SIMULADOS)
+                )
+            )
         if ajustes.disco is not None:
             clave, gib = ajustes.disco
             detalle.append(
                 PeticionSimulada(AccionPeticion.AMPLIAR, e.nodo, parametros_ampliacion(clave, gib))
+            )
+    elif e.cfg.cloudinit is not None and not e.cfg.cloudinit.vacia:
+        # Sin la config de la plantilla se simula con lo que se sabe (cloud-init sin heredados).
+        ci = e.cfg.cloudinit
+        put = construir_put_cloudinit(ci, INFO_DESCONOCIDA)
+        if put:
+            detalle.append(
+                PeticionSimulada(AccionPeticion.CLOUDINIT, e.nodo, parametros_simulados(put, ci))
+            )
+        if ci.contrasena is not None and ci.contrasena.definido:
+            detalle.append(
+                PeticionSimulada(
+                    AccionPeticion.CONTRASENA, e.nodo, dict(PARAMETROS_CONTRASENA_SIMULADOS)
+                )
             )
     return peticion.parametros, tuple(detalle)
 
@@ -131,6 +166,13 @@ def simular(
                 *detalle[e.vmid],
                 PeticionSimulada(AccionPeticion.ENCENDER, e.nodo, {}),
             )
+            if e.cfg.esperar_ip:  # fase B: sondeo de la IP con el agente, tras encender
+                detalle[e.vmid] = (
+                    *detalle[e.vmid],
+                    PeticionSimulada(
+                        AccionPeticion.SONDEAR_IP, e.nodo, {"plazo_s": str(e.cfg.plazo_ip_s)}
+                    ),
+                )
     return ResultadoSimulacion(
         plan=plan,
         peticiones=peticiones,

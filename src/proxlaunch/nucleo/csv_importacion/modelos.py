@@ -6,6 +6,7 @@ from enum import StrEnum
 from proxlaunch.nucleo.archivos.esquema import AvisoArchivo
 from proxlaunch.nucleo.modelos.vm import ConfiguracionVM
 from proxlaunch.nucleo.opciones.modelos import OpcionesParciales
+from proxlaunch.nucleo.secreto import MASCARA
 from proxlaunch.nucleo.validacion import Severidad
 
 
@@ -44,6 +45,10 @@ class FilaCsv:
     numero: int
     celdas: tuple[str, ...]
 
+    def __repr__(self) -> str:
+        """Sin las celdas: pueden traer contraseñas, claves o tokens (B5)."""
+        return f"FilaCsv(numero={self.numero!r}, celdas=<{len(self.celdas)} celdas>)"
+
 
 @dataclass(frozen=True)
 class TablaCsv:
@@ -51,6 +56,24 @@ class TablaCsv:
     deteccion: DeteccionSeparador
     encabezado: tuple[str, ...]
     filas: tuple[FilaCsv, ...]  # sin filas vacías
+
+    def __repr__(self) -> str:
+        """Como el ``repr`` generado, pero con las columnas secretas (``ci_contrasena``...)
+        enmascaradas: un registro o un traceback con la tabla no debe filtrar contraseñas."""
+        from proxlaunch.nucleo.csv_importacion.columnas import es_encabezado_secreto
+
+        secretas = {i for i, titulo in enumerate(self.encabezado) if es_encabezado_secreto(titulo)}
+        filas = tuple(
+            FilaCsv(
+                f.numero,
+                tuple(MASCARA if i in secretas and c else c for i, c in enumerate(f.celdas)),
+            )
+            for f in self.filas
+        )
+        return (
+            f"TablaCsv(codificacion={self.codificacion!r}, deteccion={self.deteccion!r}, "
+            f"encabezado={self.encabezado!r}, filas={filas!r})"
+        )
 
 
 @dataclass(frozen=True)

@@ -10,16 +10,17 @@ import re
 import threading
 from collections.abc import Callable
 from dataclasses import dataclass
-from typing import Any
+from typing import Any, Final
 from urllib.parse import quote
 
 from proxlaunch.nucleo.api.autenticacion import Autenticador
 from proxlaunch.nucleo.api.multipart import CuerpoMultipart, ParteArchivo
 from proxlaunch.nucleo.api.solo_lectura import TransporteSoloLectura
-from proxlaunch.nucleo.api.transporte import Transporte, TransporteSubida
+from proxlaunch.nucleo.api.transporte import Transporte, TransporteSubida, limitar_respuesta
 from proxlaunch.nucleo.capacidades import interpretar_version
+from proxlaunch.nucleo.cloudinit.snippets import nombre_de_snippet, volid_snippet_valido
 from proxlaunch.nucleo.errores import CodigoError, ErrorProxLaunch
-from proxlaunch.nucleo.modelos.catalogo import Contenido, Plantilla, Volumen
+from proxlaunch.nucleo.modelos.catalogo import Contenido, Plantilla, Snippet, Volumen
 from proxlaunch.nucleo.modelos.inventario import (
     Bridge,
     Nodo,
@@ -32,6 +33,7 @@ from proxlaunch.nucleo.modelos.tarea import EstadoTarea
 from proxlaunch.nucleo.origen.constantes import PARO_SIN_PROGRESO_S
 from proxlaunch.nucleo.origen.nombres import validar_volid
 from proxlaunch.nucleo.reloj import Reloj
+from proxlaunch.nucleo.secreto import Secreto
 from proxlaunch.nucleo.transferencias.url import ChecksumTransferencia, UrlDescarga, ocultar_url
 
 _log = logging.getLogger("proxlaunch.api.cliente")
@@ -41,6 +43,11 @@ _MIB = 1024**2
 _RE_UPID = re.compile(r"^UPID:[A-Za-z0-9._-]+:\S+$")
 # Líneas de log pedidas (por defecto la API devuelve solo 50). Por verificar en laboratorio.
 LINEAS_LOG_TAREA = 500
+# Método con el que se lee ``agent/network-get-interfaces`` (DT-B9, R-B3). Único punto: si el
+# servidor responde «Method not implemented», ``interfaces_agente`` prueba el otro una vez.
+METODO_AGENTE_INICIAL: Final = "GET"
+# Tope de la respuesta del agente invitado, que no es de fiar (B4): 4 MiB antes de interpretarla.
+MAX_RESPUESTA_AGENTE: Final = 4 * 1024 * 1024
 
 
 def _seg(valor: object) -> str:
@@ -80,6 +87,12 @@ def _formatos_de(valor: Any) -> frozenset[str] | None:
         return None
     formatos = frozenset(n.strip() for n in nombres if n.strip())
     return formatos or None
+
+
+def _no_implementado(error: ErrorProxLaunch) -> bool:
+    """¿El servidor dijo que el método no está implementado? (501 / «Method not implemented»)."""
+    texto = error.detalle_tecnico.lower()
+    return "not implemented" in texto or texto.startswith("http 501")
 
 
 def _nombre_en_storage(volid: str) -> str | None:
@@ -127,6 +140,9 @@ class ClienteProxmox:
         self._auth = auth
         self._reloj = reloj
         self._cerrojo_renovacion = threading.Lock()
+        # Método de lectura del agente (DT-B9): propio de cada cliente, es decir, de la sesión.
+        self._metodo_agente: str = METODO_AGENTE_INICIAL
+        self._agente_alternado = False
         transporte.usar_autenticador(auth)
 
     def cerrar(self) -> None:
@@ -370,6 +386,32 @@ class ClienteProxmox:
             )
         return resultado
 
+    def contenido_snippets(self, nodo: str, storage: str) -> list[Snippet]:
+        """``GET /nodes/{n}/storage/{s}/content?content=snippets`` (B4, DT-B11).
+
+        Como ``contenido_storage``, el volid y el nombre son texto no confiable: ``admitido``
+        indica si tienen el formato ``almacén:snippets/archivo`` (V-B54).
+        """
+        data = self._llamar(
+            "GET",
+            f"/nodes/{_seg(nodo)}/storage/{_seg(storage)}/content",
+            params={"content": "snippets"},
+        )
+        resultado: list[Snippet] = []
+        for e in data if isinstance(data, list) else []:
+            volid = e.get("volid") if isinstance(e, dict) else None
+            if not isinstance(volid, str) or not nombre_de_snippet(volid):
+                continue
+            resultado.append(
+                Snippet(
+                    volid=volid,
+                    nombre=nombre_de_snippet(volid),
+                    tamano=_entero(e.get("size")),
+                    admitido=volid_snippet_valido(volid),
+                )
+            )
+        return resultado
+
     def plantillas_visibles(self) -> list[Plantilla]:
         """``GET /cluster/resources?type=vm``, solo las plantillas (``template = 1``, I4-§D)."""
         data = self._llamar("GET", "/cluster/resources", params={"type": "vm"})
@@ -528,6 +570,60 @@ class ClienteProxmox:
     def configurar_vm(self, nodo: str, vmid: int, parametros: dict[str, str]) -> None:
         """``PUT /nodes/{n}/qemu/{vmid}/config`` (ajustes tras un clon)."""
         self._llamar("PUT", f"/nodes/{_seg(nodo)}/qemu/{_seg(vmid)}/config", datos=parametros)
+
+    def configurar_contrasena(self, nodo: str, vmid: int, contrasena: Secreto) -> None:
+        """``PUT /nodes/{n}/qemu/{vmid}/config`` con SOLO ``cipassword`` (RF-B1.17, R-B5).
+
+        Es el único sitio que llama a ``Secreto.revelar()``. El valor se envía en claro por HTTPS
+        (Proxmox lo guarda con hash salvo en Windows). Nunca se registra: el ``Secreto`` ya está
+        en la lista de secretos del registro, que enmascara cualquier eco del servidor.
+
+        Raises:
+            ValueError: si el ``Secreto`` no está definido (ya se olvidó); no se envía nada.
+        """
+        if not contrasena.definido:
+            raise ValueError("la contraseña no está definida")
+        self._llamar(
+            "PUT",
+            f"/nodes/{_seg(nodo)}/qemu/{_seg(vmid)}/config",
+            datos={"cipassword": contrasena.revelar()},
+        )
+
+    def interfaces_agente(self, nodo: str, vmid: int) -> Any:
+        """``…/qemu/{vmid}/agent/network-get-interfaces``: respuesta cruda del agente (B3).
+
+        Usa ``METODO_AGENTE_INICIAL`` (GET). Ante «Method not implemented» prueba el otro método
+        UNA vez y lo recuerda en este cliente (una sesión): DT-B9, R-B3 [LAB]. Los demás
+        errores se propagan tal cual para que ``clasificar_error`` los interprete.
+        """
+        with limitar_respuesta(MAX_RESPUESTA_AGENTE):  # B4: la respuesta del invitado no es fiable
+            return self._interfaces_agente(nodo, vmid)
+
+    def _interfaces_agente(self, nodo: str, vmid: int) -> Any:
+        ruta = f"/nodes/{_seg(nodo)}/qemu/{_seg(vmid)}/agent/network-get-interfaces"
+        try:
+            return self._llamar(self._metodo_agente, ruta)
+        except ErrorProxLaunch as e:
+            if self._agente_alternado or not _no_implementado(e):
+                raise
+            self._agente_alternado = True  # solo se prueba el otro método una vez
+            otro = "POST" if self._metodo_agente == "GET" else "GET"
+            try:
+                resultado = self._llamar(otro, ruta)
+            except ErrorProxLaunch as e2:
+                if not _no_implementado(e2):
+                    # El servidor sí implementa ese método (respondió algo distinto de 501, p. ej.
+                    # un 500 «agent is not running»): se recuerda aunque el intento fallara.
+                    self._metodo_agente = otro
+                raise
+            self._metodo_agente = otro
+            return resultado
+
+    def convertir_en_plantilla(self, nodo: str, vmid: int) -> str | None:
+        """``POST /nodes/{n}/qemu/{vmid}/template`` (``VM.Allocate``). Devuelve el UPID de la
+        tarea o ``None`` si el servidor responde sin ella."""
+        data = self._llamar("POST", f"/nodes/{_seg(nodo)}/qemu/{_seg(vmid)}/template")
+        return data if isinstance(data, str) and _RE_UPID.match(data) else None
 
     def ampliar_disco(self, nodo: str, vmid: int, disco: str, tamano_gib: int) -> str | None:
         """``PUT /nodes/{n}/qemu/{vmid}/resize`` con ``size=<n>G`` (valor absoluto, idempotente).

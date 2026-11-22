@@ -8,7 +8,7 @@ import dataclasses
 import logging
 import re
 import secrets
-from collections.abc import Callable
+from collections.abc import Callable, Collection
 from dataclasses import dataclass, field
 from datetime import datetime
 from pathlib import Path
@@ -38,6 +38,8 @@ from proxlaunch.interfaz.archivos_ui import (
     elegir_para_abrir,
     elegir_para_guardar,
 )
+from proxlaunch.interfaz.archivos_ui import nombre_sugerido as nombre_archivo_sugerido
+from proxlaunch.interfaz.ayuda import texto_pedir_al_administrador
 from proxlaunch.interfaz.controlador_origen import ControladorOrigen
 from proxlaunch.interfaz.desplazable import AreaInterna, crear_area_desplazable, limitar_a_pantalla
 from proxlaunch.interfaz.dialogos.acerca_de import DialogoAcercaDe
@@ -56,6 +58,7 @@ from proxlaunch.interfaz.dialogos.informe import DialogoInforme
 from proxlaunch.interfaz.dialogos.lote_no_encaja import PanelLoteNoEncaja
 from proxlaunch.interfaz.dialogos.pausa_lote import AccionPausa, DialogoPausaLote
 from proxlaunch.interfaz.dialogos.perfiles_maquina import DialogoPerfilesMaquina
+from proxlaunch.interfaz.dialogos.plantilla_imagen import DialogoPlantillaImagen
 from proxlaunch.interfaz.dialogos.transferencias_sesion import DialogoTransferenciasSesion
 from proxlaunch.interfaz.informe_lote import (
     guardar_informe_parcial,
@@ -81,28 +84,41 @@ from proxlaunch.interfaz.textos import (
     texto_problema_lote,
     textos_perfiles_fabrica,
 )
+from proxlaunch.interfaz.textos_b import (
+    texto_confirmar_cerrar_con_espera_ip,
+    texto_espera_ip_en_uno,
+    texto_ip_en_uno,
+)
 from proxlaunch.interfaz.trabajadores import (
     Lanzador,
     PuenteLote,
     PuenteRollback,
     armar_reintento,
+    cancelar_espera_en_fondo,
     comprobar_dudosas_lote,
     comprobar_existencia,
     comprobar_vmid,
     continuar_lote,
+    crear_espera_ip,
     descubrir_y_comprobar_permisos,
     deshacer_lotes,
     ejecutar_lote,
     escribir_informe_csv,
+    guardar_ips,
     guardar_lote_guardado,
+    hay_contrasena_pendiente,
     inspeccionar_lotes,
     leer_lote_guardado,
+    olvidar_secretos_de_filas,
+    olvidar_secretos_de_plan,
     planificar_lote,
     reanudar_seguimiento,
     recargar_nodo,
     reintentar_ajustes_lote,
     reintentar_nodos,
     replanificar_lote,
+    secretos_de_filas,
+    secretos_de_plan,
     simular_lote,
     simular_reintento,
 )
@@ -117,6 +133,9 @@ from proxlaunch.interfaz.vistas.progreso_lote import FaseLote, ProgresoLote, tex
 from proxlaunch.interfaz.vistas.resumen import ResumenVM, nombre_campo
 from proxlaunch.interfaz.vistas.resumen_lote import ResumenLote
 from proxlaunch.interfaz.vistas.selector_perfil import PanelAvisos, SelectorPerfil
+from proxlaunch.nucleo.agente.espera import EsperaIp
+from proxlaunch.nucleo.capacidades import Capacidades, asistente_plantilla_disponible
+from proxlaunch.nucleo.cloudinit.disponibilidad import disponibilidad_fase_b
 from proxlaunch.nucleo.csv_importacion.interpretacion import filas_lote, interpretar
 from proxlaunch.nucleo.csv_importacion.modelos import ResultadoImportacion, TablaCsv
 from proxlaunch.nucleo.errores import CodigoError, ErrorProxLaunch
@@ -206,6 +225,7 @@ from proxlaunch.nucleo.persistencia.preferencias import (
 from proxlaunch.nucleo.persistencia.rutas import crear_carpeta_privada
 from proxlaunch.nucleo.persistencia.secretos import AlmacenSecretos
 from proxlaunch.nucleo.reloj import Reloj, RelojCalendario, RelojCalendarioSistema
+from proxlaunch.nucleo.secreto import Secreto
 from proxlaunch.nucleo.servicios.conexion import CodigoAviso, ServicioConexion, Sesion
 from proxlaunch.nucleo.servicios.creacion import ServicioCreacion
 from proxlaunch.nucleo.validacion import Severidad, validar_vm
@@ -288,6 +308,10 @@ class _Lote:
     puente_rollback: PuenteRollback | None = None
     resultados_rollback: list[ResultadoRollback] = field(default_factory=list)
     cerrado: bool = False
+    # Fase B (B3): una ``EsperaIp`` por ejecución del motor, cada una en su propio hilo, y cuántas
+    # siguen vivas. Deshacer y «Dejar de esperar la IP» las cancelan.
+    esperas: list[EsperaIp] = field(default_factory=list)
+    esperas_vivas: int = 0
 
 
 @dataclass
@@ -345,6 +369,14 @@ def diferencia_planes(antes: Plan, despues: Plan) -> str:
     return "; ".join(cambios)
 
 
+def _ip_fija_de(cfg: ConfiguracionVM) -> str | None:
+    """IP fija (CIDR) de la primera tarjeta si cloud-init la fijó; sirve para explicar un
+    «la IP no coincide» (B3)."""
+    ci = cfg.cloudinit
+    tarjeta = ci.tarjeta(0) if ci is not None else None
+    return tarjeta.ip if tarjeta is not None and tarjeta.ip else None
+
+
 class VentanaPrincipal(QMainWindow):
     """Orquesta conexión, descubrimiento, validación en vivo y creación de la MV."""
 
@@ -398,6 +430,10 @@ class VentanaPrincipal(QMainWindow):
         self._id_lote_previo: str | None = None
         self._cierre_confirmado = False
         self._guardando_para_cerrar = False  # escritura asíncrona de «Guardar y cerrar» en curso
+        # Fase B: asistente «Crear plantilla desde imagen cloud» abierto y línea de IP de una sola
+        # máquina (para sustituirla cuando llega el resultado de la espera).
+        self._dialogo_b2: DialogoPlantillaImagen | None = None
+        self._linea_ip_uno = ""
 
         self._construir()
         self._crear_menus()
@@ -444,6 +480,9 @@ class VentanaPrincipal(QMainWindow):
         self.progreso_lote.reintentar_solicitado.connect(lambda: self._reintentar_pendientes())
         self.progreso_lote.informe_solicitado.connect(self._mostrar_informe)
         self.progreso_lote.decidir_pausa_solicitado.connect(self._decidir_pausa)
+        self.progreso_lote.dejar_de_esperar_ip_solicitado.connect(self._dejar_de_esperar_ip)
+        self.progreso.dejar_de_esperar_ip_solicitado.connect(self._dejar_de_esperar_ip)
+        self.progreso_lote.exportar_ips_solicitado.connect(self._exportar_ips)
         self.progreso_lote.volver_solicitado.connect(self._volver_de_lote)
         self.progreso.deshacer_solicitado.connect(self._deshacer)
         self._timer_lote = QTimer(self)
@@ -592,8 +631,19 @@ class VentanaPrincipal(QMainWindow):
         self._accion_ultimo_lote.triggered.connect(self._ver_ultimo_lote)
         self._accion_archivos_subidos = QAction(self.tr("Archivos subidos en esta sesión…"), self)
         self._accion_archivos_subidos.triggered.connect(self._ver_archivos_subidos)
+        self._accion_plantilla_imagen = QAction(
+            self.tr("Crear plantilla desde imagen cloud…"), self
+        )
+        self._accion_plantilla_imagen.triggered.connect(self._abrir_plantilla_imagen)
+        self._accion_plantilla_imagen.setEnabled(False)
         m_archivo.addActions(
-            [a_conectar, a_cerrar, self._accion_ultimo_lote, self._accion_archivos_subidos]
+            [
+                a_conectar,
+                a_cerrar,
+                self._accion_ultimo_lote,
+                self._accion_archivos_subidos,
+                self._accion_plantilla_imagen,
+            ]
         )
         m_archivo.addSeparator()
         m_archivo.addAction(a_salir)
@@ -663,7 +713,15 @@ class VentanaPrincipal(QMainWindow):
 
         m_ayuda = barra.addMenu(self.tr("A&yuda"))
         a_guia = QAction(self.tr("¿Cómo creo un API Token?"), self)
-        a_guia.triggered.connect(lambda: self._mostrar_y_borrar(DialogoGuiaToken(self)))
+        a_guia.triggered.connect(
+            lambda: self._mostrar_y_borrar(
+                DialogoGuiaToken(
+                    self,
+                    caps=self._caps_sesion(),
+                    almacen_snippets=self.formulario.almacen_snippets(),
+                )
+            )
+        )
         a_acerca = QAction(self.tr("Acerca de ProxLaunch"), self)
         a_acerca.triggered.connect(
             lambda: self._mostrar_y_borrar(
@@ -787,6 +845,10 @@ class VentanaPrincipal(QMainWindow):
         self._sesion = sesion
         self._perfil_id = perfil.id
         self.origen.establecer_sesion(sesion, None if cambio_perfil else self._inv)
+        # RF-B5.2: lo que se pide al administrador depende de la versión conectada.
+        self.formulario.selector_origen.establecer_texto_administrador(
+            texto_pedir_al_administrador(sesion.capacidades, self.formulario.almacen_snippets())
+        )
         self._restaurar_etiquetado()
         if dialogo.version_forzada != self._prefs.version_forzada:
             self._prefs.version_forzada = dialogo.version_forzada
@@ -832,6 +894,9 @@ class VentanaPrincipal(QMainWindow):
             return
         self._descubrir()
 
+    def _caps_sesion(self) -> Capacidades | None:
+        return self._sesion.capacidades if self._sesion is not None else None
+
     def _actualizar_barra(self) -> None:
         sesion = self._sesion
         if sesion is None:
@@ -862,6 +927,11 @@ class VentanaPrincipal(QMainWindow):
     def _cerrar_sesion_confirmada(self) -> None:
         if self._creando or self._lote_en_curso:
             return  # pudo cambiar mientras se guardaba el lote
+        # Al desconectar se descartan los lotes de la sesión: ni espera de IP ni contraseñas.
+        for lt in (*self._lotes_previos, *([self._lote] if self._lote is not None else [])):
+            self._cancelar_esperas(lt)
+            self._olvidar_secretos(lt)
+        self._olvidar_filas_en_pantalla()  # QA-M4: las de un lote importado o «por filas»
         sesion = self._sesion
         if sesion is not None:
             try:
@@ -977,6 +1047,13 @@ class VentanaPrincipal(QMainWindow):
         self._refrescar_botones_red()
         self._inv = self.origen.adoptar(inv)
         self.formulario.establecer_storage_recordado(self.origen.recordado(Contenido.IMAGENES))
+        if self._sesion is not None:
+            # B3: la guía de permisos nombra el almacén de snippets del inventario recién leído.
+            self.formulario.selector_origen.establecer_texto_administrador(
+                texto_pedir_al_administrador(
+                    self._sesion.capacidades, self.formulario.almacen_snippets()
+                )
+            )
         self._estado_descubrimiento.setText(
             self.tr("{n} nodo(s) encontrados.").format(n=len(inv.topologia.nodos))
         )
@@ -1010,6 +1087,7 @@ class VentanaPrincipal(QMainWindow):
         Va siempre que se reinicia el formulario, para que un lote armado a mano o cargado de
         antes no sobreviva (ni se sobrescriba luego con el hardware por defecto).
         """
+        self._olvidar_filas_en_pantalla()  # QA-M4
         self._ruta_lote = None
         self._origen_lote = None
         self._huella_guardada = None
@@ -1132,6 +1210,7 @@ class VentanaPrincipal(QMainWindow):
         cfg = self.formulario.configuracion()
         self.origen.sincronizar(cfg)
         cfg, problemas_origen = self.origen.resolver(cfg)
+        self._actualizar_info_cloudinit(cfg, sesion, inv)
         problemas_lote = self.bloque_lote.problemas(cfg)
         self.bloque_lote.aplicar_problemas(problemas_lote)
         if en_lote:
@@ -1502,13 +1581,24 @@ class VentanaPrincipal(QMainWindow):
             if boton != QMessageBox.StandardButton.Yes:
                 return
         self._restaurar_etiquetado()
+        self._descartar_lote_uno()
         self.progreso.reiniciar()
         self._desbloquear()
         self._timer_validar.start()
 
+    def _descartar_lote_uno(self) -> None:
+        """Se sale del resultado de una sola máquina: se deja de esperar su IP y se olvida su
+        contraseña (§9.1). La máquina creada no se toca."""
+        lote = self._lote
+        if lote is not None and lote.modo_uno:
+            self._cancelar_esperas(lote)
+            self._olvidar_secretos(lote)
+        self._linea_ip_uno = ""
+
     def _crear_otra(self) -> None:
         if self._creando:
             return
+        self._descartar_lote_uno()
         self.progreso.reiniciar()
         self._desbloquear()
         self._restaurar_etiquetado()
@@ -1932,6 +2022,15 @@ class VentanaPrincipal(QMainWindow):
         if anterior is not None and anterior.libro is not None and not anterior.cerrado:
             # El lote anterior (p. ej. el que se reintenta) conserva su libro y su rollback.
             self._lotes_previos.append(anterior)
+        if anterior is not None and anterior.plan is not plan:
+            # Empezar otro lote deja de esperar la IP del anterior (ya no se ve) y descarta su
+            # contraseña (§9.1)... salvo la que el reintento comparta: reutiliza las mismas
+            # máquinas y su secreto.
+            self._cancelar_esperas(anterior)
+            comparte = {id(x) for x in secretos_de_plan(plan)}
+            for sec in secretos_de_plan(anterior.plan):
+                if id(sec) not in comparte:
+                    sec.olvidar()
         # M4: el libro se crea aquí, antes de ejecutar, para que exista aunque el motor falle
         # y «Deshacer» y «Comprobar» sigan disponibles sobre lo ya creado.
         libro = Libro(plan)
@@ -1944,6 +2043,11 @@ class VentanaPrincipal(QMainWindow):
             self._pila_derecha.setCurrentIndex(2)
         self._refrescar_botones_red()
         adaptada = self._fabrica_adaptada()
+        # B3: la espera de IP va en su propio hilo y se lanza antes que el motor.
+        espera = self._crear_espera(lote, libro, solo_pendientes=False)
+        self._arrancar_espera(lote, espera)
+        # Sin espera de IP la llamada es exactamente la de 0.6.0.
+        extra_espera: dict[str, Any] = {} if espera is None else {"espera_ip": espera}
         self._lanzador.lanzar(
             ejecutar_lote,
             sesion,
@@ -1956,8 +2060,13 @@ class VentanaPrincipal(QMainWindow):
             libro,
             al_terminar=lambda r: self._al_lote_terminado(lote, r),
             al_fallar=lambda e: self._fallo_lote(lote, e),
+            **extra_espera,
         )
         self._timer_lote.start()
+        # La contraseña escrita ya vive en el plan: el formulario la suelta (sin olvidarla, la
+        # usa el lote) y borra sus campos.
+        self.formulario.ceder_secreto()
+        self.formulario.limpiar_secretos()
 
     def _reintentar_ajustes(self) -> None:
         """«Reintentar ajustes» de los clones PARCIAL: solo reenvía los PUT pendientes."""
@@ -1971,6 +2080,9 @@ class VentanaPrincipal(QMainWindow):
         lote.pausa_mostrada = False
         self.progreso_lote.mostrar_aviso(None)
         self.progreso_lote.establecer_fase(FaseLote.EJECUTANDO)
+        # QA-M6: una espera nueva para las máquinas que el reintento enciende con éxito.
+        espera = self._crear_espera(lote, lote.libro, solo_pendientes=False, solo_vmids=vmids)
+        self._arrancar_espera(lote, espera)
         self._lanzador.lanzar(
             reintentar_ajustes_lote,
             lote.sesion,
@@ -1981,6 +2093,7 @@ class VentanaPrincipal(QMainWindow):
             lote.puente.observar,
             lote.control,
             self._fabrica_adaptada(),
+            espera,
             al_terminar=lambda libro: self._al_lote_terminado(lote, libro),
             al_fallar=lambda e: self._fallo_lote(lote, e),
         )
@@ -2007,15 +2120,17 @@ class VentanaPrincipal(QMainWindow):
         if snap is not None and not lote.cerrado:
             if lote.modo_uno:
                 self._refrescar_uno(snap[0])
+                self._actualizar_ip_uno(lote)
             else:
                 self.progreso_lote.actualizar(snap)
+                self._actualizar_espera_ui(lote)
         if lote.puente_rollback is not None:
             res = lote.puente_rollback.tomar_si_sucio()
             if res is not None:
                 self.progreso_lote.actualizar_rollback(res)
         if not lote.terminado and not lote.modo_uno:
             self._revisar_pausa(lote)
-        if lote.terminado and not lote.deshaciendo:
+        if lote.terminado and not lote.deshaciendo and lote.esperas_vivas == 0:
             self._timer_lote.stop()
 
     def _refrescar_uno(self, e: EntradaLibro) -> None:
@@ -2166,6 +2281,7 @@ class VentanaPrincipal(QMainWindow):
 
     def _fallo_lote(self, lote: _Lote, error: ErrorProxLaunch) -> None:
         """El motor falló fuera de lo previsto: la interfaz no se queda «ocupada» (RNF-L11)."""
+        self._sin_mas_objetivos(lote)  # QA-B2: las esperas no se quedan aguardando más máquinas
         if not self._vigente(lote):
             return
         if lote.modo_uno:
@@ -2178,12 +2294,14 @@ class VentanaPrincipal(QMainWindow):
         self._finalizar_lote()
 
     def _al_lote_terminado(self, lote: _Lote, libro: Libro) -> None:
+        self._sin_mas_objetivos(lote)  # QA-B2
         if not self._vigente(lote):
             return
         lote.libro = libro
         self._cerrar_dialogo_pausa(lote)
         if lote.modo_uno:
             self._fin_uno(lote, libro, None)
+            self._olvidar_si_no_se_necesita(lote)
             return
         cont, lote.continuacion = lote.continuacion, None
         self._tick_lote_final(lote)
@@ -2202,6 +2320,8 @@ class VentanaPrincipal(QMainWindow):
             self._finalizar_lote()
             if cont == AccionPausa.SIN_ETIQUETAS:
                 self._reintentar_pendientes(etiquetar=False)
+            else:
+                self._olvidar_si_no_se_necesita(lote)
 
     def _tick_lote_final(self, lote: _Lote) -> None:
         if lote.libro is not None:
@@ -2219,6 +2339,10 @@ class VentanaPrincipal(QMainWindow):
         lote.pausa_mostrada = False
         self.progreso_lote.mostrar_aviso(None)
         self.progreso_lote.establecer_fase(FaseLote.EJECUTANDO)
+        # Una espera de IP nueva para las máquinas que aún faltan por enviar (una por ejecución).
+        espera = self._crear_espera(lote, libro, solo_pendientes=True)
+        self._arrancar_espera(lote, espera)
+        extra_espera: dict[str, Any] = {} if espera is None else {"espera_ip": espera}
         self._lanzador.lanzar(
             continuar_lote,
             sesion,
@@ -2230,6 +2354,7 @@ class VentanaPrincipal(QMainWindow):
             comprobar,
             al_terminar=lambda r: self._al_lote_terminado(lote, r),
             al_fallar=lambda e: self._fallo_lote(lote, e),
+            **extra_espera,
         )
         self._timer_lote.start()
 
@@ -2261,6 +2386,7 @@ class VentanaPrincipal(QMainWindow):
         )
         self.statusBar().showMessage(texto_barra(entradas))
         self._accion_ultimo_lote.setEnabled(True)
+        self._actualizar_espera_ui(lote)
         self._refrescar_botones_red()
         self._timer_validar.start()
 
@@ -2304,10 +2430,12 @@ class VentanaPrincipal(QMainWindow):
             self._mostrar_existe_sin_confirmar(e)
             return
         self._fin_uno_inicial = True
+        self._linea_ip_uno = ""
         try:
             self._terminar_uno(e, error_uno)
         finally:
             self._fin_uno_inicial = False
+        self._actualizar_ip_uno(lote)
 
     def _terminar_uno(self, e: EntradaLibro, error_uno: ErrorProxLaunch | None) -> None:
         self._al_terminar_creacion(
@@ -2341,6 +2469,8 @@ class VentanaPrincipal(QMainWindow):
         self._bloquear_edicion(True)
         self._refrescar_botones_red()
         self.progreso.mostrar_progreso_mensaje(self.tr("Reintentando los ajustes pendientes..."))
+        espera = self._crear_espera(lote, lote.libro, solo_pendientes=False, solo_vmids=vmids)
+        self._arrancar_espera(lote, espera)
         self._lanzador.lanzar(
             reintentar_ajustes_lote,
             lote.sesion,
@@ -2351,6 +2481,7 @@ class VentanaPrincipal(QMainWindow):
             lote.puente.observar,
             lote.control,
             self._fabrica_adaptada(),
+            espera,
             al_terminar=lambda libro: self._al_lote_terminado(lote, libro),
             al_fallar=lambda e: self._fallo_lote(lote, e),
         )
@@ -2484,7 +2615,8 @@ class VentanaPrincipal(QMainWindow):
             ):
                 candidatos.append(c)
                 duenos[id(c)] = lt
-        dialogo = DialogoDeshacer(candidatos, self)
+        hay_espera = any(lt.esperas_vivas > 0 for lt in self._lotes_deshacibles())
+        dialogo = DialogoDeshacer(candidatos, self, hay_espera_ip=hay_espera)
         dialogo.finished.connect(lambda r: self._tras_dialogo_deshacer(lote, dialogo, r, duenos))
         dialogo.open()
 
@@ -2611,6 +2743,15 @@ class VentanaPrincipal(QMainWindow):
         sesion = self._sesion
         if sesion is None:
             return
+        # B3 (RF-B3.5, DT-B14): ANTES del primer ``DELETE`` se deja de sondear la IP de las
+        # máquinas elegidas. ``cancelar`` bloquea hasta que termina la petición en vuelo: lo hace
+        # el trabajador de Deshacer, en su hilo y antes de borrar (nunca el hilo de la interfaz).
+        elegidos_vmids = frozenset(c.entrada.elemento.vmid for c in elegidos)
+        esperas_a_cancelar = [
+            (espera, elegidos_vmids)
+            for lt in {id(x): x for x in (lote, *dueno_de_vmid.values())}.values()
+            for espera in lt.esperas
+        ]
         lote.deshaciendo = True
         self._accion_ultimo_lote.setEnabled(False)
         lote.control_rollback = ControlLote()
@@ -2639,6 +2780,7 @@ class VentanaPrincipal(QMainWindow):
             forzar_apagado,
             forzar_desproteccion,
             permisos,
+            esperas_a_cancelar=esperas_a_cancelar,
             al_terminar=lambda r2: self._tras_deshacer(lote, r2, dueno_de_vmid),
             al_fallar=lambda e: self._fallo_deshacer(lote, e),
         )
@@ -2789,6 +2931,11 @@ class VentanaPrincipal(QMainWindow):
         ):
             return
         self._pila_derecha.setCurrentIndex(0)
+        if lote is not None:
+            # Se cierra el resultado: se deja de esperar la IP. La contraseña solo se olvida si el
+            # lote ya no se puede reintentar (QA-M5); si no, sigue hasta que se cierre de verdad.
+            self._cancelar_esperas(lote)
+            self._olvidar_si_no_se_necesita(lote)
         if lote is not None and lote.modo_uno:
             self.progreso.reiniciar()
         self._desbloquear()
@@ -2808,8 +2955,12 @@ class VentanaPrincipal(QMainWindow):
     def _cerrar_lote_por_cambio_de_perfil(self, lote: _Lote) -> None:
         """CA-L17.4: con otro servidor el lote anterior queda cerrado y sin acciones."""
         lote.cerrado = True
+        self._cancelar_esperas(lote)
+        self._olvidar_secretos(lote)
         for previo in self._lotes_previos:
             previo.cerrado = True
+            self._cancelar_esperas(previo)
+            self._olvidar_secretos(previo)
         self._lotes_previos.clear()
         lote.control.dejar_de_esperar()
         if lote.control_rollback is not None:
@@ -2898,6 +3049,7 @@ class VentanaPrincipal(QMainWindow):
         self._accion_administrar_perfiles.setEnabled(libre)
         self.origen.establecer_ocupado(not libre or not sin_plan)
         self._accion_capacidades.setEnabled(listo)
+        self._actualizar_accion_plantilla_imagen(listo and libre and sin_plan)
         self._accion_recordados.setEnabled(
             listo and self.origen.hay_recordado_no_disponible(self.formulario.nodo_efectivo())
         )
@@ -2907,6 +3059,297 @@ class VentanaPrincipal(QMainWindow):
         self._mostrar_y_borrar(
             DialogoTransferenciasSesion(self.origen.registro, self, lanzador=self._lanzador)
         )
+
+    # --- Fase B: cloud-init de la plantilla elegida ---
+
+    def _actualizar_info_cloudinit(
+        self, cfg: ConfiguracionVM, sesion: Sesion, inv: Inventario
+    ) -> None:
+        """Dice al formulario qué trae la plantilla elegida (unidad cloud-init, tarjetas, valores
+        heredados) y qué opciones de la fase B se pueden usar (versión, privilegios, snippets).
+
+        Es puro y barato: se llama en cada revalidación; la sección ignora lo que no cambió.
+        """
+        catalogo = inv.catalogo
+        permisos = catalogo.permisos if catalogo is not None else None
+        info = self.origen.info_cloudinit(cfg)
+        disponibilidad = disponibilidad_fase_b(
+            permisos, sesion.capacidades, info, self.formulario.hay_storage_snippets()
+        )
+        self.formulario.establecer_info_cloudinit(info, disponibilidad)
+
+    # --- Fase B: asistente «Crear plantilla desde imagen cloud» (B2) ---
+
+    def _actualizar_accion_plantilla_imagen(self, libre: bool) -> None:
+        """Habilita «Crear plantilla desde imagen cloud…» (RF-B2.1): solo con Proxmox 8.4 o más y
+        sin una transferencia, un lote o un asistente ya en marcha."""
+        sesion = self._sesion
+        version_ok = sesion is not None and asistente_plantilla_disponible(sesion.capacidades)
+        ocupado = self.origen.transferencia_activa or self._dialogo_b2 is not None
+        self._accion_plantilla_imagen.setEnabled(bool(version_ok and libre and not ocupado))
+        if sesion is not None and not version_ok:
+            self._accion_plantilla_imagen.setToolTip(
+                self.tr("Necesita Proxmox 8.4 o una versión posterior.")
+            )
+        else:
+            self._accion_plantilla_imagen.setToolTip("")
+
+    def _abrir_plantilla_imagen(self) -> None:
+        sesion, inv = self._sesion, self._inv
+        if sesion is None or inv is None or self._dialogo_b2 is not None:
+            return
+        if self._creando or self._lote_en_curso or self.origen.transferencia_activa:
+            self.statusBar().showMessage(
+                self.tr(
+                    "Hay una transferencia, un lote o una simulación en curso. Espera a que "
+                    "termine o cancélala."
+                )
+            )
+            return
+        dialogo = DialogoPlantillaImagen(
+            sesion=sesion,
+            reloj=self._deps.reloj,
+            lanzador=self._lanzador,
+            transferencias=self.origen.servicio_transferencias,
+            inv=inv,
+            avanzado=self.avanzado,
+            nodo=self.formulario.nodo_efectivo(),
+            fabrica_creacion=self._fabrica_adaptada(),
+            parent=self,
+        )
+        self._dialogo_b2 = dialogo
+        dialogo.terminada.connect(self._tras_plantilla_imagen)
+        dialogo.finished.connect(lambda _r: self._cerrar_dialogo_b2(dialogo))
+        self._actualizar_acciones()
+        dialogo.open()
+
+    def _tras_plantilla_imagen(self, _estado: object) -> None:
+        """La plantilla ya existe: se relee la lista de «Clonar una plantilla» (RF-B2.11)."""
+        self.origen.cargar_plantillas(forzar=True)
+        self.statusBar().showMessage(self.tr("Plantilla creada. Ya puedes clonarla."))
+        self._descubrir()  # refresca VMID y espacio libre
+
+    def _cerrar_dialogo_b2(self, dialogo: DialogoPlantillaImagen) -> None:
+        if self._dialogo_b2 is dialogo:
+            self._dialogo_b2 = None
+        dialogo.deleteLater()
+        self._actualizar_acciones()
+        self._timer_validar.start()
+
+    # --- Fase B: espera de la IP de cada máquina (B3) ---
+
+    def _crear_espera(
+        self,
+        lote: _Lote,
+        libro: Libro,
+        *,
+        solo_pendientes: bool,
+        solo_vmids: Collection[int] | None = None,
+    ) -> EsperaIp | None:
+        """Una ``EsperaIp`` nueva para UNA ejecución del motor (o ``None`` si nadie pidió IP).
+
+        ``solo_vmids`` (QA-M6, «Reintentar ajustes»): solo cuentan esas máquinas, y solo las que
+        se encenderán.
+        """
+        entradas = libro.instantanea()
+        if solo_vmids is not None:
+            pide = any(
+                e.elemento.cfg.esperar_ip
+                and e.elemento.cfg.encender
+                and e.elemento.vmid in solo_vmids
+                for e in entradas
+            )
+        else:
+            pide = any(
+                e.elemento.cfg.esperar_ip
+                and (not solo_pendientes or e.estado == EstadoMV.PENDIENTE)
+                for e in entradas
+            )
+        if not pide:
+            return None
+        espera = crear_espera_ip(lote.sesion, self._deps.reloj, libro, lote.puente.observar)
+        lote.esperas.append(espera)
+        return espera
+
+    def _arrancar_espera(self, lote: _Lote, espera: EsperaIp | None) -> None:
+        """Lanza ``espera.ejecutar()`` en su propio hilo (antes que el motor, que le entrega las
+        máquinas encendidas)."""
+        if espera is None:
+            return
+        lote.esperas_vivas += 1
+        self._lanzador.lanzar_espera(
+            espera,
+            al_terminar=lambda _r: self._tras_espera(lote),
+            al_fallar=lambda e: self._tras_espera(lote, e),
+        )
+        self._timer_lote.start()
+
+    def _tras_espera(self, lote: _Lote, error: ErrorProxLaunch | None = None) -> None:
+        """Terminó una ``EsperaIp``: ya no queda nada por esperar de las máquinas que le tocaban."""
+        lote.esperas_vivas = max(0, lote.esperas_vivas - 1)
+        if error is not None:
+            _log.warning("La espera de IP terminó con un error: %s", error.codigo)
+        if not self._vigente(lote):
+            return
+        if lote.modo_uno:
+            self._actualizar_ip_uno(lote)
+        elif lote.libro is not None:
+            self._tick_lote_final(lote)
+            self._actualizar_espera_ui(lote)
+            if error is not None:
+                self.progreso_lote.mostrar_error(
+                    self.tr("La espera de la IP terminó de forma inesperada: {m}").format(
+                        m=texto_error(error)
+                    )
+                )
+
+    def _pendientes_ip(self, lote: _Lote) -> int:
+        """Máquinas creadas cuya IP aún se espera."""
+        if lote.esperas_vivas == 0:
+            return 0
+        return sum(
+            1
+            for e in lote.puente.instantanea()
+            if e.elemento.cfg.esperar_ip
+            and e.ip is None
+            and e.estado in (EstadoMV.OK, EstadoMV.CON_AVISOS)
+        )
+
+    def _actualizar_espera_ui(self, lote: _Lote) -> None:
+        if lote.modo_uno or lote is not self._lote:
+            return
+        self.progreso_lote.establecer_espera_ip(
+            self._pendientes_ip(lote), creacion_terminada=lote.terminado
+        )
+
+    def _cancelar_esperas(self, lote: _Lote, vmids: frozenset[int] | None = None) -> None:
+        """Deja de esperar la IP (``None`` = todas las máquinas del lote). No toca el servidor.
+
+        ``EsperaIp.cancelar`` bloquea hasta que termina la petición en vuelo, así que NUNCA se
+        llama aquí (hilo de la interfaz): va a un hilo de fondo. Deshacer es la excepción y la
+        hace su propio trabajador antes del primer ``DELETE`` (``deshacer_lotes``).
+        """
+        for espera in lote.esperas:
+            cancelar_espera_en_fondo(espera, vmids)
+
+    @staticmethod
+    def _sin_mas_objetivos(lote: _Lote) -> None:
+        """El motor ya no entregará más máquinas a las esperas del lote (idempotente, QA-B2)."""
+        for espera in lote.esperas:
+            espera.sin_mas_objetivos()
+
+    def _dejar_de_esperar_ip(self) -> None:
+        """«Dejar de esperar la IP»: las máquinas pasan a «se dejó de esperar» y el lote no se
+        deshace (CA-B3.5.3)."""
+        lote = self._lote
+        if lote is not None and not lote.cerrado:
+            self._cancelar_esperas(lote)
+
+    def _exportar_ips(self) -> None:
+        """«Exportar IPs…»: CSV «nombre → IP» (el diálogo de guardado confirma la sobrescritura)."""
+        lote = self._lote
+        if lote is None:
+            return
+        entradas = lote.libro.instantanea() if lote.libro else lote.puente.instantanea()
+        ruta = elegir_para_guardar(
+            self,
+            TipoArchivo.CSV,
+            nombre_archivo_sugerido(TipoArchivo.CSV, f"ips-lote-{lote.plan.id_lote}"),
+        )
+        if ruta is None:
+            return
+        self._lanzador.lanzar(
+            guardar_ips,
+            ruta,
+            entradas,
+            al_terminar=lambda r: self.statusBar().showMessage(
+                self.tr("IPs guardadas en «{archivo}»").format(archivo=r.name)
+            ),
+            al_fallar=self._mostrar_error_archivo,
+        )
+
+    def _actualizar_ip_uno(self, lote: _Lote) -> None:
+        """Una sola máquina: añade al resultado la línea de la IP (esperando, obtenida…)."""
+        if not lote.modo_uno or lote.libro is None or not lote.terminado:
+            return
+        entradas = lote.libro.instantanea()
+        if not entradas or not entradas[0].elemento.cfg.esperar_ip:
+            return
+        e = entradas[0]
+        if e.ip is not None:
+            linea = texto_ip_en_uno(e.ip, ip_fija=_ip_fija_de(e.elemento.cfg))
+        elif lote.esperas_vivas > 0 and e.estado in (EstadoMV.OK, EstadoMV.CON_AVISOS):
+            linea = texto_espera_ip_en_uno(e.elemento.cfg.plazo_ip_s)
+        else:
+            return
+        esperando = e.ip is None and lote.esperas_vivas > 0
+        if linea == self._linea_ip_uno or self._ultimo_resultado is None:
+            self.progreso.ofrecer_dejar_de_esperar_ip(esperando)
+            return
+        texto = self.progreso.texto_mensaje
+        if self._linea_ip_uno and texto.endswith(self._linea_ip_uno):
+            texto = texto[: -len(self._linea_ip_uno)].rstrip("\n")
+        self._linea_ip_uno = linea
+        resultado = self._ultimo_resultado
+        oculto = self.progreso.boton_deshacer.isHidden()
+        self.progreso.mostrar_resultado(f"{texto}\n{linea}", resultado.desenlace, resultado.upid)
+        self.progreso.ofrecer_reintentar_ajustes(tiene_ajustes_pendientes(e))
+        self.progreso.boton_deshacer.setVisible(not oculto)
+        self.progreso.ofrecer_dejar_de_esperar_ip(esperando)
+
+    # --- Fase B: contraseña de cloud-init (DT-B1, §9.1) ---
+
+    def _olvidar_secretos(self, lote: _Lote | None) -> None:
+        """Olvida las contraseñas del lote (``Secreto.olvidar``). Se llama al descartarlo: se
+        cierra su resultado, se empieza otro lote, se desconecta o se sale."""
+        if lote is not None:
+            olvidar_secretos_de_plan(lote.plan)
+
+    @staticmethod
+    def _necesita_secretos(lote: _Lote) -> bool:
+        """El lote aún puede usar sus contraseñas: se ejecuta, tiene una continuación pendiente o
+        alguna máquina sigue por enviar, dudosa o con la contraseña por reenviar («Reintentar
+        ajustes»), o se puede reintentar con un lote nuevo (que reutiliza la contraseña)."""
+        if lote.cerrado:
+            return False
+        if lote.libro is None or lote.continuacion is not None or not lote.terminado:
+            return True
+        entradas = lote.libro.instantanea()
+        if hay_contrasena_pendiente(entradas):
+            return True
+        sigue = _ESTADOS_REINTENTABLES | ESTADOS_DUDOSOS | ESTADOS_EN_CURSO
+        return any(e.estado in sigue for e in entradas)
+
+    def _olvidar_si_no_se_necesita(self, lote: _Lote) -> None:
+        """El motor terminó: la contraseña se olvida ya si ninguna máquina la necesita más.
+
+        Mientras se necesite (ver ``_necesita_secretos``) se conserva y se olvida al descartar el
+        lote: se cierra de verdad su resultado, se empieza otro, se desconecta o se sale.
+        """
+        if lote.libro is None or lote.continuacion is not None:
+            return
+        if self._necesita_secretos(lote):
+            return
+        self._olvidar_secretos(lote)
+
+    def _olvidar_filas_en_pantalla(self, salvo: Collection[Secreto] = ()) -> None:
+        """QA-M4: olvida las contraseñas de las filas del lote importado o «por filas» que se
+        descarta (todas las interpretadas del CSV y las de la tabla), salvo ``salvo`` y las de un
+        lote que se ejecuta o puede reintentarse (comparte esas mismas contraseñas)."""
+        filas: list[Any] = []
+        origen = self._origen_lote
+        if origen is not None and origen.resultado is not None:
+            filas.extend(origen.resultado.filas)
+        definicion = self.panel_filas.definicion
+        if definicion is not None:
+            filas.extend(definicion.filas)
+        if not filas:
+            return
+        conservar = list(salvo)
+        for lt in (*self._lotes_previos, *([self._lote] if self._lote is not None else [])):
+            if self._necesita_secretos(lt):
+                conservar.extend(secretos_de_plan(lt.plan))
+        olvidar_secretos_de_filas(filas, salvo=conservar)
 
     def _mostrar_error_archivo(self, error: ErrorProxLaunch) -> None:
         """Error al leer o escribir un archivo: banner rojo y barra de estado (sin diálogo)."""
@@ -3002,6 +3445,9 @@ class VentanaPrincipal(QMainWindow):
         except ErrorProxLaunch:
             self.selector_perfil.mostrar_compatibilidad([], [])
             return
+        if cfg.info_cloudinit is None:
+            # Sin lo que dice la plantilla, V-B20 avisaría «no se pudo comprobar» sin motivo.
+            cfg = dataclasses.replace(cfg, info_cloudinit=self.origen.info_cloudinit(cfg))
         problemas = evaluar_compatibilidad(cfg, perfil.config, inv, sesion.capacidades)
         # El nombre y el VMID no son del perfil: sus errores no son de compatibilidad.
         problemas = [p for p in problemas if p.campo not in ("nombre", "vmid")]
@@ -3286,6 +3732,7 @@ class VentanaPrincipal(QMainWindow):
         """Vuelca el lote leído de una vez en el hilo de la interfaz (RNF-M11). No crea nada."""
         lote: LoteGuardado = archivo.lote
         definicion = lote.definicion
+        self._olvidar_filas_en_pantalla()  # QA-M4: el lote anterior se descarta
         self._errores_sesion = []
         self._aplicando = True
         try:
@@ -3400,6 +3847,7 @@ class VentanaPrincipal(QMainWindow):
     def _salir_de_por_filas_confirmado(self) -> None:
         if not self.bloque_lote.es_por_filas or self._lote_en_curso:
             return  # pudo cambiar mientras se guardaba el lote
+        self._olvidar_filas_en_pantalla()  # QA-M4: se descartan las filas y sus contraseñas
         self.bloque_lote.salir_de_por_filas()
         self._mostrar_modo_filas(False)
         self._origen_lote = None
@@ -3516,6 +3964,7 @@ class VentanaPrincipal(QMainWindow):
             inv=self._inv,
             nodo_referencia=self.formulario.nodo_efectivo() or None,
             lanzador=self._lanzador,
+            encender_base=self.formulario.chk_encender.isChecked(),
             avanzado=self.avanzado,
             alias_extra=alias_columnas_csv(),
             tema=self._deps.gestor_tema.tema_actual,
@@ -3565,7 +4014,12 @@ class VentanaPrincipal(QMainWindow):
                 nodo_referencia=self.formulario.nodo_efectivo() or None,
                 alias_extra=alias_columnas_csv(),
             )
-        dialogo.mostrar_resultado(origen.tabla, resultado_actual, origen.nombre)
+        dialogo.mostrar_resultado(
+            origen.tabla,
+            resultado_actual,
+            origen.nombre,
+            propio=resultado_actual is not origen.resultado,
+        )
         elegido = dialogo.ejecutar()
         try:
             if elegido is None:
@@ -3599,6 +4053,8 @@ class VentanaPrincipal(QMainWindow):
             etiquetar=self.bloque_lote.chk_etiquetar.isChecked(),
         )
         origen = _OrigenLote("csv", nombre_archivo, tabla, resultado, len(resultado.filas))
+        # QA-M4: el lote anterior se descarta, pero no las contraseñas que comparta el nuevo.
+        self._olvidar_filas_en_pantalla(salvo=secretos_de_filas(resultado.filas))
         self._entrar_por_filas(definicion, origen)
         self._origen_lote = origen
         self._ruta_lote = None
@@ -3737,6 +4193,41 @@ class VentanaPrincipal(QMainWindow):
             lote.control.dejar_de_esperar()
         elif lote is not None and lote.modo_uno and self._creando:
             lote.control.dejar_de_esperar()
+        solo_espera_ip = (
+            lote is not None
+            and lote.esperas_vivas > 0
+            and not lote.cerrado
+            and not self._lote_en_curso
+            and not self._creando
+        )
+        # B3 (CA-B3.5.5): la espera de IP no hace nada en el servidor; solo se avisa.
+        if solo_espera_ip and not confirmar(
+            self,
+            QCoreApplication.translate(
+                "VentanaPrincipal", "Se está esperando la IP de las máquinas"
+            ),
+            texto_confirmar_cerrar_con_espera_ip(),
+            QCoreApplication.translate("VentanaPrincipal", "Cerrar de todos modos"),
+            QCoreApplication.translate("VentanaPrincipal", "Seguir en ProxLaunch"),
+        ):
+            ev.ignore()
+            return
+        dialogo_b2 = self._dialogo_b2
+        if dialogo_b2 is not None and dialogo_b2.en_curso:
+            if not confirmar(
+                self,
+                QCoreApplication.translate("VentanaPrincipal", "Hay una plantilla en creación"),
+                QCoreApplication.translate(
+                    "VentanaPrincipal",
+                    "El asistente de plantillas está trabajando. Si cierras, ProxLaunch dejará "
+                    "de esperar: lo que ya se envió seguirá en Proxmox y no se borrará nada.",
+                ),
+                QCoreApplication.translate("VentanaPrincipal", "Cerrar de todos modos"),
+                QCoreApplication.translate("VentanaPrincipal", "Seguir en ProxLaunch"),
+            ):
+                ev.ignore()
+                return
+            dialogo_b2.cancelar_trabajo()
         if self._creando:
             boton = QMessageBox.question(
                 self,
@@ -3759,6 +4250,11 @@ class VentanaPrincipal(QMainWindow):
             self.statusBar().showMessage(self.tr("Cerrando..."))
             self.setEnabled(False)
             QApplication.processEvents()
+        # Al salir se descartan los lotes: se deja de esperar la IP y se olvidan las contraseñas.
+        for lt in (*self._lotes_previos, *([self._lote] if self._lote is not None else [])):
+            self._cancelar_esperas(lt)
+            self._olvidar_secretos(lt)
+        self._olvidar_filas_en_pantalla()  # QA-M4
         self._lanzador.cancelar_todos()
         terminaron = self._lanzador.esperar(3000)
         sesion = self._sesion

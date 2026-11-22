@@ -2,8 +2,10 @@
 
 from __future__ import annotations
 
+import contextlib
 import contextvars
 import http.client
+import json
 import logging
 import ssl
 import threading
@@ -45,6 +47,48 @@ _METODOS_SEGUROS = frozenset({"GET", "HEAD"})
 POOL_MAXSIZE = MAX_PETICIONES_SIMULTANEAS + MAX_NODOS_PARALELOS * CONCURRENCIA_ENLAZADO_POR_NODO + 1
 
 _log = logging.getLogger("proxlaunch.api.transporte")
+
+# Tope de bytes de la respuesta de la petición en curso del hilo (B4). ``None`` = sin tope: el
+# resto de peticiones no cambia. Se activa con ``limitar_respuesta`` (sin tocar el contrato
+# ``Transporte``) y obliga a leer la respuesta en streaming y por trozos.
+_LIMITE_RESPUESTA: contextvars.ContextVar[int | None] = contextvars.ContextVar(
+    "limite_respuesta", default=None
+)
+_TROZO_LECTURA = 64 * 1024
+
+
+@contextlib.contextmanager
+def limitar_respuesta(max_bytes: int) -> Iterator[None]:
+    """Las peticiones de este hilo dentro del bloque rechazan respuestas de más de ``max_bytes``
+    (``DESCONOCIDO`` con ``motivo=respuesta_demasiado_grande``) antes de interpretarlas."""
+    marca = _LIMITE_RESPUESTA.set(max_bytes)
+    try:
+        yield
+    finally:
+        _LIMITE_RESPUESTA.reset(marca)
+
+
+def _leer_acotado(resp: requests.Response, limite: int) -> bytes:
+    """Lee el cuerpo de una respuesta en streaming sin pasar de ``limite`` bytes."""
+    demasiado = ErrorProxLaunch(
+        CodigoError.DESCONOCIDO,
+        {"estado_http": str(resp.status_code), "motivo": "respuesta_demasiado_grande"},
+        f"la respuesta supera el tope de {limite} bytes",
+    )
+    try:
+        declarado = resp.headers.get("Content-Length", "")
+        if declarado.isdigit() and int(declarado) > limite:
+            raise demasiado
+        trozos: list[bytes] = []
+        total = 0
+        for trozo in resp.iter_content(_TROZO_LECTURA):
+            total += len(trozo)
+            if total > limite:
+                raise demasiado
+            trozos.append(trozo)
+        return b"".join(trozos)
+    finally:
+        resp.close()
 
 
 class Transporte(Protocol):
@@ -499,6 +543,7 @@ class TransporteHttp:
                 timeout=self._timeout,
                 verify=False,
                 allow_redirects=False,
+                stream=_LIMITE_RESPUESTA.get() is not None,  # B4: lectura por trozos con tope
             )
         finally:
             # Nada de cookies persistentes en la sesión.
@@ -530,9 +575,11 @@ class TransporteHttp:
     def _procesar(self, resp: requests.Response, metodo: str, ruta: str) -> Any:
         # Solo método, ruta y estado: nunca cabeceras ni cuerpos (pueden llevar secretos).
         _log.debug("%s %s -> %s (host %s)", metodo, ruta, resp.status_code, self.host_activo)
+        limite = _LIMITE_RESPUESTA.get()
+        crudo = _leer_acotado(resp, limite) if limite is not None else None
         if 200 <= resp.status_code < 300:
             try:
-                cuerpo = resp.json()
+                cuerpo = resp.json() if crudo is None else json.loads(crudo)
             except ValueError:
                 raise ErrorProxLaunch(
                     CodigoError.DESCONOCIDO,
@@ -543,7 +590,7 @@ class TransporteHttp:
         raise traducir_http(
             resp.status_code,
             resp.reason or "",
-            resp.text,
+            resp.text if crudo is None else crudo.decode("utf-8", "replace"),
             nodo=nodo_de_ruta(ruta),
             sesion_ticket=isinstance(self._auth, AutenticadorTicket),
         )

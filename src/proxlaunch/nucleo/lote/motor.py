@@ -18,7 +18,10 @@ from dataclasses import dataclass, field
 from enum import StrEnum
 from typing import Any
 
+from proxlaunch.nucleo.agente.espera import EsperaIp
+from proxlaunch.nucleo.agente.modelos import EstadoIp, ResultadoIp
 from proxlaunch.nucleo.api.traductor_errores import CODIGOS_DE_RED
+from proxlaunch.nucleo.cloudinit.modelos import ModoTarjeta
 from proxlaunch.nucleo.errores import CodigoError, ErrorProxLaunch
 from proxlaunch.nucleo.lote.constantes import (
     CONCURRENCIA_ENLAZADO_POR_NODO,
@@ -36,7 +39,7 @@ from proxlaunch.nucleo.lote.modelos import (
     MotivoNoEnviada,
     MotivoPausa,
 )
-from proxlaunch.nucleo.lote.politica_pausa import PoliticaPausa
+from proxlaunch.nucleo.lote.politica_pausa import AJUSTES_SIN_PAUSA, PoliticaPausa
 from proxlaunch.nucleo.lote.reconciliacion import reconciliar_incierta
 from proxlaunch.nucleo.modelos.inventario import Inventario
 from proxlaunch.nucleo.modelos.tarea import Desenlace, Etapa, ResultadoCreacion
@@ -45,7 +48,11 @@ from proxlaunch.nucleo.registro import enmascarar
 from proxlaunch.nucleo.reloj import Reloj
 from proxlaunch.nucleo.servicios.catalogo import con_catalogo
 from proxlaunch.nucleo.servicios.conexion import Sesion
-from proxlaunch.nucleo.servicios.creacion import AVISO_ENCENDIDO_OMITIDO, ServicioCreacion
+from proxlaunch.nucleo.servicios.creacion import (
+    AVISO_ENCENDIDO_FALLIDO,
+    AVISO_ENCENDIDO_OMITIDO,
+    ServicioCreacion,
+)
 
 _log = logging.getLogger("proxlaunch.lote.motor")
 
@@ -55,6 +62,33 @@ FabricaCreacion = Callable[[Sesion, Reloj], ServicioCreacion]
 _MAX_DETALLE_LOG = 300
 # Aviso de una importación fallida tras el POST: pudo quedar un volumen suelto (E-L21, CA-O30.4).
 AVISO_DISCOS_SUELTOS = "discos_sueltos_posibles"
+
+
+def enlazar_espera(libro: Libro, observador: Observador) -> Callable[[int, ResultadoIp], None]:
+    """``al_resultado`` listo para ``EsperaIp``: anota el resultado de IP en el libro (con su
+    aviso) y avisa al observador del lote. No pasa por la política de pausa (RF-B3.5)."""
+
+    def al_resultado(vmid: int, resultado: ResultadoIp) -> None:
+        entrada = libro.registrar_ip(vmid, resultado)
+        if entrada is None:
+            return
+        try:
+            observador(entrada)
+        except Exception:
+            _log.exception("El observador del lote falló (vmid=%s)", vmid)
+
+    return al_resultado
+
+
+def _ip_fija_net0(cfg: ConfiguracionVM) -> str | None:
+    """IP fija (CIDR) de ``net0`` si cloud-init la fijó (ya expandida si iba en serie)."""
+    ci = cfg.cloudinit
+    if ci is None:
+        return None
+    tarjeta = ci.tarjeta(0)
+    if tarjeta is None or tarjeta.modo != ModoTarjeta.FIJA:
+        return None
+    return tarjeta.ip
 
 
 def _avisos_con_encendido(
@@ -225,9 +259,12 @@ def _respuesta_2xx_sin_upid(error: ErrorProxLaunch | None) -> bool:
 
 def _es_permiso_de_escritura(error: ErrorProxLaunch) -> bool:
     """``True`` si es un 403 por un privilegio de las escrituras del MVP 4 (VM.Clone, ajustes
-    de la MV, lectura/escritura de la fuente): el mismo fallo se repetiría en todo el lote."""
+    de la MV, lectura/escritura de la fuente): el mismo fallo se repetiría en todo el lote.
+    Un 403 de cloud-init o de la contraseña (``params["ajuste"]``) no pausa: la MV queda PARCIAL
+    y las demás siguen, aunque en 8.x nombre ``VM.Config.Network`` (arquitectura §0)."""
     return (
         error.codigo == CodigoError.PERMISO_INSUFICIENTE
+        and error.params.get("ajuste", "") not in AJUSTES_SIN_PAUSA
         and error.params.get("privilegio", "") in PRIVILEGIOS_DE_ESCRITURA
     )
 
@@ -252,6 +289,7 @@ class _Corrida:
     cupos: CuposEjecucion
     cerrojo: threading.Lock = field(default_factory=threading.Lock)
     intentados: set[int] = field(default_factory=set)  # vmids para los que se llamó a crear
+    espera_ip: EsperaIp | None = None  # fase B: a quién se entrega cada MV encendida (B3)
 
 
 @dataclass
@@ -312,7 +350,12 @@ class MotorLote:
         self._concurrencia_pesada = max(1, concurrencia_pesada_storage)
 
     def _corrida(
-        self, libro: Libro, inv: Inventario, observador: Observador, control: ControlLote
+        self,
+        libro: Libro,
+        inv: Inventario,
+        observador: Observador,
+        control: ControlLote,
+        espera_ip: EsperaIp | None = None,
     ) -> _Corrida:
         """Estado de una ejecución: el inventario lleva el catálogo leído al planificar
         (permisos, fuentes, plantillas) para construir las peticiones."""
@@ -323,7 +366,15 @@ class MotorLote:
             por_nodo=self._concurrencia_enlazado,
             pesadas_por_storage=self._concurrencia_pesada,
         )
-        return _Corrida(libro, inv, observador, control, PoliticaPausa(self._umbral), cupos)
+        return _Corrida(
+            libro,
+            inv,
+            observador,
+            control,
+            PoliticaPausa(self._umbral),
+            cupos,
+            espera_ip=espera_ip,
+        )
 
     # --- API pública ------------------------------------------------------------------
 
@@ -335,17 +386,26 @@ class MotorLote:
         control: ControlLote,
         *,
         libro: Libro | None = None,
+        espera_ip: EsperaIp | None = None,
     ) -> Libro:
         """Ejecuta el plan completo y devuelve el libro. Bloqueante.
 
         Si el lote se pausa, bloquea hasta ``control.reanudar()``, ``cancelar()`` o
         ``suspender()``. Con ``libro`` (creado antes con ``Libro(plan)``, p. ej. por la
         interfaz) se usa ese en vez de crear uno.
+
+        Fase B: con ``espera_ip`` el motor entrega a esa espera cada MV encendida que la pidió
+        (``cfg.esperar_ip``) y descarta las demás; al terminar avisa con ``sin_mas_objetivos``.
+        La espera corre en otro hilo (``espera_ip.ejecutar()``): el motor nunca la aguarda.
         """
         if libro is None:
             libro = Libro(plan)
-        corrida = self._corrida(libro, inv, observador, control)
-        self._correr(corrida, [e.elemento for e in libro.instantanea()])
+        corrida = self._corrida(libro, inv, observador, control, espera_ip)
+        try:
+            self._correr(corrida, [e.elemento for e in libro.instantanea()])
+        finally:
+            if espera_ip is not None:
+                espera_ip.sin_mas_objetivos()
         return libro
 
     def ejecutar_pendientes(
@@ -354,13 +414,20 @@ class MotorLote:
         inv: Inventario,
         observador: Observador,
         control: ControlLote,
+        *,
+        espera_ip: EsperaIp | None = None,
     ) -> Libro:
         """Envía solo las MVs ``PENDIENTE`` que nunca se intentaron (CA-L17.3).
 
-        Nunca toca una MV ya intentada (INV-L1/INV-L3). Devuelve el mismo libro.
+        Nunca toca una MV ya intentada (INV-L1/INV-L3). Devuelve el mismo libro. ``espera_ip``
+        como en ``ejecutar`` (una instancia NUEVA: la anterior ya recibió su aviso final).
         """
-        corrida = self._corrida(libro, inv, observador, control)
-        self._correr(corrida, [e.elemento for e in libro.pendientes()])
+        corrida = self._corrida(libro, inv, observador, control, espera_ip)
+        try:
+            self._correr(corrida, [e.elemento for e in libro.pendientes()])
+        finally:
+            if espera_ip is not None:
+                espera_ip.sin_mas_objetivos()
         return libro
 
     def comprobar_dudosas(
@@ -537,6 +604,7 @@ class MotorLote:
         for elemento in elementos:
             entrada = c.libro.marcar_no_enviada(elemento.vmid, motivo, self._reloj.ahora())
             self._emitir(c, entrada)
+            self._descartar_espera(c, elemento)
 
     def _procesar_elemento(self, c: _Corrida, servicio: ServicioCreacion, el: ElementoPlan) -> bool:
         """Crea una MV. Devuelve ``True`` si hay que vaciar la cola del nodo (nodo caído)."""
@@ -622,6 +690,7 @@ class MotorLote:
             if upid is None and not enviado:
                 motivo = motivo_bloqueo or MotivoNoEnviada.CANCELADO
                 self._emitir(c, libro.marcar_no_enviada(vmid, motivo, self._reloj.ahora()))
+                self._descartar_espera(c, el)
                 return False
             estado = EstadoMV.CONEXION_PERDIDA  # dejó de esperarse una tarea en vuelo
             if upid is None:
@@ -682,8 +751,41 @@ class MotorLote:
         )
         self._registrar(libro, entrada)
         self._emitir(c, entrada)
+        self._entregar_a_espera(c, el, entrada)
         self._evaluar_pausa(c, entrada)
         return self._fallo_de_nodo(entrada)
+
+    @staticmethod
+    def _descartar_espera(c: _Corrida, el: ElementoPlan) -> None:
+        """La MV no llegó a existir o encenderse: su IP queda ``omitida`` (RF-B3.2)."""
+        if c.espera_ip is not None and el.cfg.esperar_ip:
+            try:
+                c.espera_ip.omitir(el.vmid)
+            except Exception:
+                _log.exception("Fallo al descartar la espera de IP (vmid=%s)", el.vmid)
+
+    def _entregar_a_espera(self, c: _Corrida, el: ElementoPlan, entrada: EntradaLibro) -> None:
+        """Entrega la MV a ``EsperaIp`` si se encendió bien; si no, la descarta (§3.3).
+
+        Solo con ``cfg.esperar_ip`` y una espera conectada: sin eso no se hace nada y la
+        secuencia de peticiones es la de 0.6.0 (CA-B3.1.4). Nunca lanza ni espera.
+        """
+        espera = c.espera_ip
+        if espera is None or not el.cfg.esperar_ip:
+            return
+        encendida = (
+            el.cfg.encender
+            and entrada.estado in (EstadoMV.OK, EstadoMV.CON_AVISOS)
+            and AVISO_ENCENDIDO_FALLIDO not in entrada.avisos
+            and AVISO_ENCENDIDO_OMITIDO not in entrada.avisos
+        )
+        try:
+            if encendida:
+                espera.anadir(el.vmid, el.nodo, el.cfg.plazo_ip_s, _ip_fija_net0(el.cfg))
+            else:
+                espera.omitir(el.vmid)
+        except Exception:
+            _log.exception("Fallo al entregar la MV a la espera de IP (vmid=%s)", el.vmid)
 
     def _fallo_de_nodo(self, entrada: EntradaLibro) -> bool:
         """``True`` si el nodo de la MV debe darse por caído tras este resultado.
@@ -784,6 +886,9 @@ class MotorLote:
         except Exception:
             _log.exception("Fallo al comprobar la MV dudosa (vmid=%s)", elemento.vmid)
             return
+        if elemento.cfg.esperar_ip and nueva.estado not in ESTADOS_DUDOSOS and nueva.ip is None:
+            # QA-B3: la MV se resolvió tarde y nadie la sondeará: su IP queda «omitida», no vacía.
+            nueva = libro.registrar_ip(elemento.vmid, ResultadoIp(EstadoIp.OMITIDA)) or nueva
         self._registrar(libro, nueva)
         try:
             observador(nueva)

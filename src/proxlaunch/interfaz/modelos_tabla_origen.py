@@ -26,7 +26,11 @@ from PySide6.QtCore import (
 from PySide6.QtGui import QColor
 
 from proxlaunch.interfaz.tema.paleta import TOKENS_CLARO, TOKENS_OSCURO
-from proxlaunch.interfaz.textos import texto_estado_via, texto_tamano_bytes
+from proxlaunch.interfaz.textos import (
+    texto_estado_via,
+    texto_tamano_bytes,
+    tooltip_plano,
+)
 from proxlaunch.nucleo.errores import CodigoError
 from proxlaunch.nucleo.modelos.catalogo import (
     Contenido,
@@ -269,7 +273,7 @@ class ModeloCatalogoVolumenes(_ModeloOrigenBase):
         if role == Qt.ItemDataRole.TextAlignmentRole and col == self.COL_TAMANO:
             return int(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
         if role == Qt.ItemDataRole.ToolTipRole:
-            return f"{v.volid}\n{f.motivo}" if f.motivo else v.volid
+            return tooltip_plano(f"{v.volid}\n{f.motivo}" if f.motivo else v.volid)
         if role == Qt.ItemDataRole.ForegroundRole:
             if not f.elegible:
                 return self._color("texto_deshabilitado")
@@ -358,7 +362,7 @@ class ModeloPlantillas(_ModeloOrigenBase):
         if role == Qt.ItemDataRole.TextAlignmentRole and col in (self.COL_VMID, self.COL_DISCOS):
             return int(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
         if role == Qt.ItemDataRole.ToolTipRole and f.motivo:
-            return f.motivo
+            return tooltip_plano(f.motivo)
         if role == Qt.ItemDataRole.ForegroundRole and not f.elegible:
             return self._color("texto_deshabilitado")
         if role == Qt.ItemDataRole.AccessibleTextRole:

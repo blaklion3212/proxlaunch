@@ -73,6 +73,9 @@ class CodigoAvisoArchivo(StrEnum):
     GIB_ASUMIDO = "gib_asumido"  # CA-C05.6, una vez por columna y archivo
     DECIMAL_COMA = "decimal_coma"
     GB_COMO_GIB = "gb_como_gib"
+    # Fase B (RF-B0.8, RF-B6.5): sin parámetros; nunca llevan valores del usuario.
+    CONTRASENA_NO_GUARDADA = "contrasena_no_guardada"  # el lote tenía contraseña y no se guardó
+    CSV_CON_CONTRASENAS = "csv_con_contrasenas"  # el CSV trae la columna de contraseñas
 
 
 @dataclass(frozen=True)
@@ -161,11 +164,13 @@ class LectorEsquema:
         self.errores: list[ErrorCampo] = []
         self._desconocidas = 0
         self._credenciales = 0
+        self._contrasena_no_guardada = False
 
     # --- Avisos y errores ---
 
     def avisos(self) -> tuple[AvisoArchivo, ...]:
-        """Avisos acumulados: campos desconocidos y credenciales ignoradas (solo contadores)."""
+        """Avisos acumulados: campos desconocidos, credenciales ignoradas (solo contadores) y, en
+        la fase B, el indicador de contraseña no guardada."""
         res: list[AvisoArchivo] = []
         if self._desconocidas:
             res.append(
@@ -175,7 +180,13 @@ class LectorEsquema:
             res.append(
                 AvisoArchivo(CodigoAvisoArchivo.CREDENCIAL_IGNORADA, {"n": str(self._credenciales)})
             )
+        if self._contrasena_no_guardada:
+            res.append(AvisoArchivo(CodigoAvisoArchivo.CONTRASENA_NO_GUARDADA))
         return tuple(res)
+
+    def marcar_contrasena_no_guardada(self) -> None:
+        """Anota que el archivo indica «tenía contraseña» (``con_acceso_local``, RF-B0.8)."""
+        self._contrasena_no_guardada = True
 
     def error(self, ruta: str, motivo: MotivoCampo, **params: str) -> None:
         """Anota un error de campo (hasta ``MAX_ERRORES_CAMPO``)."""

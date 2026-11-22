@@ -2,12 +2,14 @@
 
 Todo archivo lleva ``formato``, ``version_formato`` (entero ≥ 1) y ``app_version`` (informativa).
 
-VERSIONES (MVP 4, DT-O15; fase A, DT-A9): ``VERSION_FORMATO`` (3) es la máxima que se LEE. Al
-escribir, el archivo lleva ``3`` solo si usa algo de la fase A (encender, arranque, notas,
-etiquetas, pool, MTU, límite, protección), ``2`` si usa algo del MVP 4 (origen distinto de disco
-vacío o datos de SO) y ``1`` en otro caso, de modo que una versión anterior siga abriendo los
-archivos que no necesitan lo nuevo. Las migraciones v1 → v2 y v2 → v3 son la identidad (un
-archivo antiguo ya es uno nuevo con los valores por defecto de cada campo añadido) y no avisan.
+VERSIONES (MVP 4, DT-O15; fase A, DT-A9; fase B, DT-B12): ``VERSION_FORMATO`` (4) es la máxima que
+se LEE. Al escribir, un lote lleva ``4`` solo si usa algo de la fase B (cloud-init, espera de IP),
+``3`` si usa algo de la fase A (encender, arranque, notas, etiquetas, pool, MTU, límite,
+protección), ``2`` si usa algo del MVP 4 (origen distinto de disco vacío o datos de SO) y ``1``
+en otro caso, de modo que una versión anterior siga abriendo los archivos que no necesitan lo
+nuevo. Los perfiles nunca se escriben en v4 (no guardan nada de la fase B). Las migraciones
+v1 → v2, v2 → v3 y v3 → v4 son la identidad (un archivo antiguo ya es uno nuevo con los valores
+por defecto de cada campo añadido) y no avisan.
 
 REGLA DE VERSIONADO (CA-X01.7): añadir un campo OPCIONAL con valor por defecto NO sube
 ``VERSION_FORMATO``; cambiar el significado de un campo existente, o volver obligatorio uno
@@ -34,18 +36,20 @@ Migracion = Callable[[dict[str, object]], dict[str, object]]
 
 
 def _identidad(contenido: dict[str, object]) -> dict[str, object]:
-    """v1 → v2 y v2 → v3: sin cambios. Los campos ausentes toman su valor por defecto al leer."""
+    """v1 → v2, v2 → v3 y v3 → v4: sin cambios. Los campos ausentes toman su valor por defecto."""
     return dict(contenido)
 
 
-# formato → {versión de origen: migración}. v1 → v2 (MVP 4) y v2 → v3 (fase A) son la identidad.
+# formato → {versión de origen: migración}. v1 → v2 (MVP 4), v2 → v3 (fase A) y v3 → v4 (fase B)
+# son la identidad.
 MIGRACIONES: dict[str, dict[int, Migracion]] = {
-    FORMATO_PERFILES: {1: _identidad, 2: _identidad},
-    FORMATO_LOTE: {1: _identidad, 2: _identidad},
+    FORMATO_PERFILES: {1: _identidad, 2: _identidad, 3: _identidad},
+    FORMATO_LOTE: {1: _identidad, 2: _identidad, 3: _identidad},
 }
 # Pasos de la tabla por defecto que no producen el aviso ``MIGRADO``: un archivo v1 sigue siendo
-# válido tal cual (CA-O03.2: «se cargan sin cambios y sin avisos nuevos»; CA-A7.1.1 en 0.6).
-PASOS_SIN_AVISO: frozenset[int] = frozenset({1, 2})
+# válido tal cual (CA-O03.2: «se cargan sin cambios y sin avisos nuevos»; CA-A7.1.1 en 0.6). El
+# paso 3 → 4 tampoco avisa (decisión del orquestador: perfiles y lotes de 0.6.0 se abren sin ruido).
+PASOS_SIN_AVISO: frozenset[int] = frozenset({1, 2, 3})
 
 
 def _formato_ajeno(esperado: str, encontrado: object = None) -> ErrorProxLaunch:
@@ -123,7 +127,8 @@ def crear_envoltura(
 
     ``version_formato`` es la versión que se ESCRIBE (1 por defecto; 2 si el contenido usa algo
     del MVP 4, ver ``esquema_config.requiere_version_2``; 3 si usa algo de la fase A, ver
-    ``esquema_config.requiere_version_3``).
+    ``esquema_config.requiere_version_3``; 4 si usa algo de la fase B, ver
+    ``esquema_config.requiere_version_4``).
     """
     if CLAVES_ENVOLTURA & contenido.keys():
         raise ValueError("El contenido no puede usar claves de la envoltura")

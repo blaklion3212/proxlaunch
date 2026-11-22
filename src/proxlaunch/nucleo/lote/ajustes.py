@@ -44,6 +44,12 @@ def tiene_ajustes_pendientes(entrada: EntradaLibro) -> bool:
     )
 
 
+def ajustes_pendientes(entrada: EntradaLibro) -> frozenset[str]:
+    """Nombres de ajuste de los avisos ``ajuste_pendiente:*`` de la entrada (``cloudinit``…)."""
+    prefijo = f"{AVISO_AJUSTE_PENDIENTE}:"
+    return frozenset(a.removeprefix(prefijo) for a in entrada.avisos if a.startswith(prefijo))
+
+
 def reintentar_ajustes(
     libro: Libro,
     vmids: Collection[int],
@@ -62,6 +68,11 @@ def reintentar_ajustes(
     quedó aplicado, ``PARCIAL`` (con los ajustes que faltan) si algo vuelve a fallar. Un
     fallo de red o un error de la comprobación deja la MV como estaba. Se detiene si el
     control se cancela o suspende.
+
+    Fase B: si la MV lleva cloud-init, solo se reenvían los pasos que constan como pendientes
+    (``cloudinit``, ``contrasena``…); la contraseña únicamente si el ``Secreto`` del plan sigue
+    definido (si no, la MV sigue ``PARCIAL`` con ``CONTRASENA_OLVIDADA``). Sin cloud-init el
+    reintento es el de 0.6.0.
     """
     if libro.plan.catalogo is not None:
         inv = con_catalogo(inv, libro.plan.catalogo)
@@ -74,7 +85,13 @@ def reintentar_ajustes(
         if vmid not in pedidos or not tiene_ajustes_pendientes(entrada):
             continue
         try:
-            res = servicio.reintentar_ajustes(entrada.elemento.cfg, inv, control.evento_abandono)
+            cfg = entrada.elemento.cfg
+            if cfg.cloudinit is None:  # sin fase B: exactamente el comportamiento de 0.6.0
+                res = servicio.reintentar_ajustes(cfg, inv, control.evento_abandono)
+            else:
+                res = servicio.reintentar_ajustes(
+                    cfg, inv, control.evento_abandono, pendientes=ajustes_pendientes(entrada)
+                )
         except Exception:
             _log.exception("Fallo inesperado al reintentar los ajustes (vmid=%s)", vmid)
             continue

@@ -17,7 +17,12 @@ from pathlib import Path
 
 import pytest
 
-from proxlaunch.nucleo.archivos.constantes import MAX_BYTES_LOTE, MAX_LONG_NOTAS, VERSION_FORMATO
+from proxlaunch.nucleo.archivos.constantes import (
+    MAX_BYTES_LOTE,
+    MAX_LONG_NOTAS,
+    VERSION_FORMATO,
+    VERSION_FORMATO_FASE_A,
+)
 from proxlaunch.nucleo.archivos.envoltura import FORMATO_LOTE, abrir_envoltura
 from proxlaunch.nucleo.archivos.esquema import CodigoAvisoArchivo, ErrorArchivo
 from proxlaunch.nucleo.errores import CodigoError, ErrorProxLaunch
@@ -166,19 +171,20 @@ def test_ca_a7_1_3_el_lote_migrado_no_añade_ningun_parametro_nuevo_a_la_peticio
 # --- CA-A7.1.4 / A7.1.6: versión futura y versión 3 en el archivo -----------------------------
 
 
-def test_ca_a7_1_4_version_4_se_rechaza_con_version_futura():
+def test_ca_a7_1_4_version_5_se_rechaza_con_version_futura():
+    # Con la fase B (CA-B6.1.5) la máxima legible es 4: la 5 es la primera «futura».
     datos = json.loads(archivo_lote())
     datos["version_formato"] = VERSION_FORMATO + 1
     with pytest.raises(ErrorProxLaunch) as exc:
         leer_lote(json.dumps(datos).encode())
     assert exc.value.codigo == CodigoError.ARCHIVO_VERSION_FUTURA
-    assert exc.value.params["version_archivo"] == "4"
-    assert exc.value.params["version_soportada"] == "3"
+    assert exc.value.params["version_archivo"] == "5"
+    assert exc.value.params["version_soportada"] == "4"
 
 
 def test_ca_a7_1_6_un_lote_con_opciones_nuevas_declara_version_formato_3():
     datos = json.loads(lote_a_bytes(_lote(proteger=True), app_version="0.6.0"))
-    assert datos["version_formato"] == 3 == VERSION_FORMATO
+    assert datos["version_formato"] == VERSION_FORMATO_FASE_A == 3
 
 
 def test_ca_a7_1_6_un_lector_de_0_5_1_rechaza_la_v3_como_version_futura():

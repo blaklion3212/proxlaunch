@@ -1,0 +1,107 @@
+{
+  "nombre": "Por filas v3",
+  "por_filas": {
+    "destino": {
+      "algoritmo": "equilibrado"
+    },
+    "etiquetar": true,
+    "filas": [
+      {
+        "config": {
+          "ballooning": null,
+          "con_disco": true,
+          "controlador_scsi": "virtio-scsi-single",
+          "cores": 2,
+          "discos": [
+            {
+              "bus": "scsi",
+              "discard": true,
+              "formato": "auto",
+              "iothread": true,
+              "ssd": true,
+              "storage": "datos",
+              "tamano_gib": 32
+            }
+          ],
+          "firmware": "seabios",
+          "memoria_mib": 4096,
+          "origen": "disco_vacio",
+          "redes": [
+            {
+              "bridge": "vmbr0",
+              "limite_mb": 100.0,
+              "modelo": "virtio",
+              "mtu": 1500,
+              "vlan": 20
+            }
+          ],
+          "sockets": 1,
+          "storage_efi": null,
+          "tipo_cpu": "x86-64-v2-AES"
+        },
+        "nodo": null,
+        "nombre": "a-01",
+        "vmid": null
+      },
+      {
+        "config": {
+          "ballooning": null,
+          "con_disco": true,
+          "controlador_scsi": "virtio-scsi-single",
+          "cores": 2,
+          "discos": [
+            {
+              "bus": "scsi",
+              "discard": true,
+              "formato": "auto",
+              "iothread": true,
+              "ssd": true,
+              "storage": "datos",
+              "tamano_gib": 32
+            }
+          ],
+          "firmware": "seabios",
+          "memoria_mib": 8192,
+          "origen": "disco_vacio",
+          "redes": [
+            {
+              "bridge": "vmbr0",
+              "limite_mb": 100.0,
+              "modelo": "virtio",
+              "mtu": 1500,
+              "vlan": 20
+            }
+          ],
+          "sockets": 1,
+          "storage_efi": null,
+          "tipo_cpu": "x86-64-v2-AES"
+        },
+        "nodo": "pve2",
+        "nombre": "a-02",
+        "opciones": {
+          "encender": true,
+          "etiquetas_usuario": [
+            "db"
+          ],
+          "notas": "solo esta",
+          "proteger": true
+        },
+        "vmid": 150
+      }
+    ],
+    "opciones": {
+      "arranque_auto": true,
+      "encender": true,
+      "etiquetas_usuario": [
+        "web",
+        "prod"
+      ],
+      "notas": "Lote de 0.6.0",
+      "pool": "produccion",
+      "proteger": true
+    },
+    "vmid_inicial": null
+  },
+  "tipo": "por_filas",
+  "version_proxmox": "9.2"
+}

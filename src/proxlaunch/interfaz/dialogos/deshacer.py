@@ -18,6 +18,7 @@ from PySide6.QtWidgets import (
 
 from proxlaunch.interfaz.desplazable import hacer_desplazable
 from proxlaunch.interfaz.textos import texto_estado_mv, texto_motivo_no_elegible
+from proxlaunch.interfaz.textos_b import texto_nota_deshacer_espera_ip
 from proxlaunch.nucleo.lote.modelos import CandidatoRollback
 
 _ROL_INDICE = Qt.ItemDataRole.UserRole
@@ -26,7 +27,13 @@ _ROL_INDICE = Qt.ItemDataRole.UserRole
 class DialogoDeshacer(QDialog):
     """Lista con casillas, advertencia y botón «Eliminar N máquinas» con foco en Cancelar."""
 
-    def __init__(self, candidatos: Sequence[CandidatoRollback], parent: QWidget | None = None):
+    def __init__(
+        self,
+        candidatos: Sequence[CandidatoRollback],
+        parent: QWidget | None = None,
+        *,
+        hay_espera_ip: bool = False,
+    ):
         super().__init__(parent)
         self._candidatos = list(candidatos)
         self.setWindowTitle(
@@ -80,6 +87,11 @@ class DialogoDeshacer(QDialog):
         )
         self._nota_archivos.setWordWrap(True)
         self._nota_archivos.setProperty("secundario", True)
+        # B3: Deshacer corta antes la espera de IP de las máquinas elegidas (RF-B3.5).
+        self._nota_espera_ip = QLabel(texto_nota_deshacer_espera_ip())
+        self._nota_espera_ip.setWordWrap(True)
+        self._nota_espera_ip.setProperty("secundario", True)
+        self._nota_espera_ip.setVisible(hay_espera_ip)
         self.boton_eliminar = QPushButton()
         self.boton_cancelar = QPushButton(QCoreApplication.translate("DialogoDeshacer", "Cancelar"))
         self.boton_eliminar.setAutoDefault(False)
@@ -98,6 +110,7 @@ class DialogoDeshacer(QDialog):
         capa.addWidget(self.radio_incompletas)
         capa.addWidget(self.lista)
         capa.addWidget(self._nota_archivos)
+        capa.addWidget(self._nota_espera_ip)
         capa.addWidget(self._advertencia)
         capa_pie.addLayout(fila)
         self._actualizar()

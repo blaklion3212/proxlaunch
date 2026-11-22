@@ -23,6 +23,7 @@ from PySide6.QtWidgets import (
 from proxlaunch.interfaz.informe_lote import texto_permisos_no_verificados, texto_rangos
 from proxlaunch.interfaz.modelos_tabla import ModeloPlan, TablaCopiable
 from proxlaunch.interfaz.textos import (
+    texto_claves_ssh,
     texto_error,
     texto_limite_mb,
     texto_modo_clon,
@@ -32,9 +33,13 @@ from proxlaunch.interfaz.textos import (
     texto_problema_lote,
     texto_resumen_origen,
     texto_si_no,
+    texto_snippet_elegido,
+    texto_tarjeta_cloudinit,
+    texto_tipo_snippet,
 )
 from proxlaunch.interfaz.vistas.campos import etiqueta, mensaje, poner_mensaje
 from proxlaunch.interfaz.vistas.detalles_tecnicos import DetallesTecnicos
+from proxlaunch.nucleo.cloudinit.modelos import TIPOS_SNIPPET, ConfigCloudInit, ModoTarjeta
 from proxlaunch.nucleo.errores import CodigoError, ErrorProxLaunch
 from proxlaunch.nucleo.lote.modelos import (
     COMPARTIDO,
@@ -46,7 +51,7 @@ from proxlaunch.nucleo.lote.modelos import (
     Severidad,
 )
 from proxlaunch.nucleo.modelos.origen import DetalleClon, DetalleImportacion, ModoClon
-from proxlaunch.nucleo.modelos.vm import OrigenSO
+from proxlaunch.nucleo.modelos.vm import ConfiguracionVM, OrigenSO
 
 _MAX_AVISOS_VISIBLES = 12
 
@@ -108,8 +113,12 @@ def _ruta_de_peticion(accion: AccionPeticion, nodo: str, vmid: int, e: ElementoP
         return f"PUT /nodes/{nodo}/qemu/{vmid}/config"
     if accion == AccionPeticion.AMPLIAR:
         return f"PUT /nodes/{nodo}/qemu/{vmid}/resize"
+    if accion in (AccionPeticion.CLOUDINIT, AccionPeticion.CONTRASENA):  # fase B: PUT de config
+        return f"PUT /nodes/{nodo}/qemu/{vmid}/config"
     if accion == AccionPeticion.ENCENDER:  # fase A: siempre la última petición de la máquina
         return f"POST /nodes/{nodo}/qemu/{vmid}/status/start"
+    if accion == AccionPeticion.SONDEAR_IP:  # fase B: espera de la IP (solo lectura)
+        return f"GET /nodes/{nodo}/qemu/{vmid}/agent/network-get-interfaces"
     return f"POST /nodes/{nodo}/qemu"
 
 
@@ -250,7 +259,153 @@ def texto_opciones_del_plan(plan: Plan) -> str:
             lineas.append(
                 _valores_o_varia(t("ResumenLote", "Límite de net{i}").format(i=i), limites)
             )
+    lineas.extend(_lineas_fase_b_del_plan(cfgs))
     return "\n".join(x for x in lineas if x)
+
+
+def _texto_tarjeta_del_plan(ci: ConfigCloudInit | None, indice: int) -> str | None:
+    """Modo de red de una tarjeta de una máquina; una IP en serie se resume por su inicio."""
+    t = ci.tarjeta(indice) if ci is not None else None
+    if t is None or t.modo == ModoTarjeta.SIN_CONFIGURAR:
+        return None
+    if t.serie_inicial:
+        return texto_tarjeta_cloudinit(t.modo, t.serie_inicial, t.puerta, True)
+    return texto_tarjeta_cloudinit(t.modo, t.ip, t.puerta, False)
+
+
+def _lineas_fase_b_del_plan(cfgs: list[ConfiguracionVM]) -> list[str | None]:
+    """Cloud-init y espera de IP del lote (RF-B0.1): solo si alguna máquina los usa. La
+    contraseña nunca se muestra: solo «definida (oculta)»."""
+    lineas: list[str | None] = []
+    cis = [c.cloudinit for c in cfgs]
+    n = len(cfgs)
+    if any(ci is not None and not ci.vacia for ci in cis):
+        lineas.append(
+            _valores_o_varia(
+                QCoreApplication.translate("ResumenLote", "Usuario inicial"),
+                [ci.usuario or None if ci else None for ci in cis],
+            )
+        )
+        lineas.append(
+            _valores_o_varia(
+                QCoreApplication.translate("ResumenLote", "Claves SSH"),
+                [texto_claves_ssh(ci.claves) if ci and ci.claves else None for ci in cis],
+            )
+        )
+        con_clave = sum(
+            1 for ci in cis if ci and ci.contrasena is not None and ci.contrasena.definido
+        )
+        if con_clave:
+            lineas.append(
+                _cuantas(
+                    QCoreApplication.translate(
+                        "ResumenLote", "Contraseña inicial (definida, oculta)"
+                    ),
+                    con_clave,
+                    n,
+                )
+            )
+        indices = sorted({t.indice for ci in cis if ci for t in ci.tarjetas})
+        for i in indices:
+            lineas.append(
+                _valores_o_varia(
+                    QCoreApplication.translate("ResumenLote", "Red net{i}").format(i=i),
+                    [_texto_tarjeta_del_plan(ci, i) for ci in cis],
+                )
+            )
+        lineas.append(
+            _valores_o_varia(
+                QCoreApplication.translate("ResumenLote", "DNS"),
+                [", ".join(ci.dns) if ci and ci.dns else None for ci in cis],
+            )
+        )
+        lineas.append(
+            _valores_o_varia(
+                QCoreApplication.translate("ResumenLote", "Dominio de búsqueda"),
+                [ci.dominio or None if ci else None for ci in cis],
+            )
+        )
+        lineas.append(
+            _valores_o_varia(
+                QCoreApplication.translate("ResumenLote", "Actualizar paquetes al arrancar"),
+                [
+                    texto_si_no(ci.actualizar) if ci and ci.actualizar is not None else None
+                    for ci in cis
+                ],
+            )
+        )
+        for tipo in TIPOS_SNIPPET:
+            lineas.append(
+                _valores_o_varia(
+                    QCoreApplication.translate("ResumenLote", "Script: {tipo}").format(
+                        tipo=texto_tipo_snippet(tipo)
+                    ),
+                    [
+                        texto_snippet_elegido(valor)
+                        if ci and (valor := getattr(ci.snippets, tipo)) is not None
+                        else None
+                        for ci in cis
+                    ],
+                )
+            )
+        lineas.append(
+            _cuantas(
+                QCoreApplication.translate("ResumenLote", "Activar el agente invitado"),
+                sum(1 for ci in cis if ci and ci.activar_agente),
+                n,
+            )
+        )
+    esperan = [c for c in cfgs if c.esperar_ip]
+    if esperan:
+        plazos = sorted({c.plazo_ip_s for c in esperan})
+        plazo = (
+            QCoreApplication.translate("ResumenLote", "plazo {n} s").format(n=plazos[0])
+            if len(plazos) == 1
+            else QCoreApplication.translate("ResumenLote", "plazos distintos")
+        )
+        etiqueta_ip = QCoreApplication.translate("ResumenLote", "Esperar la IP")
+        if len(esperan) == n:
+            lineas.append(
+                QCoreApplication.translate("ResumenLote", "{nombre}: sí ({plazo})").format(
+                    nombre=etiqueta_ip, plazo=plazo
+                )
+            )
+        else:
+            lineas.append(
+                QCoreApplication.translate(
+                    "ResumenLote", "{nombre}: sí en {n} de {total} máquinas ({plazo})"
+                ).format(nombre=etiqueta_ip, n=len(esperan), total=n, plazo=plazo)
+            )
+    return lineas
+
+
+def texto_ips_del_plan(plan: Plan, *, maximo: int = 40) -> str:
+    """Tabla «máquina → IP» calculada antes de crear (RF-B1.9, CA-B1.9.8), con el aviso de que
+    ProxLaunch no puede saber si una IP ya está en uso. Vacío si ninguna máquina usa IP fija."""
+    filas: list[str] = []
+    for e in plan.elementos:
+        ci = e.cfg.cloudinit
+        if ci is None:
+            continue
+        ips = [f"net{t.indice}: {t.ip}" for t in ci.tarjetas if t.modo == ModoTarjeta.FIJA and t.ip]
+        if ips:
+            filas.append(f"{e.nombre}  →  {', '.join(ips)}")
+    if not filas:
+        return ""
+    visibles = filas[:maximo]
+    if len(filas) > maximo:
+        visibles.append(
+            QCoreApplication.translate("ResumenLote", "… y {n} máquinas más").format(
+                n=len(filas) - maximo
+            )
+        )
+    cabecera = QCoreApplication.translate(
+        "ResumenLote", "IP que recibirá cada máquina (calculadas antes de crear):"
+    )
+    nota = QCoreApplication.translate(
+        "ResumenLote", "ProxLaunch no puede comprobar si una IP ya está en uso en tu red."
+    )
+    return "\n".join([cabecera, *visibles, nota])
 
 
 def texto_peticiones(sim: ResultadoSimulacion) -> str:
@@ -392,6 +547,8 @@ class ResumenLote(QWidget):
         self._totales = self._etiqueta_datos()
         self._origen = self._etiqueta_datos()
         self._opciones = self._etiqueta_datos()
+        self._ips = self._etiqueta_datos()
+        self._ips.setProperty("mono", True)
         self._reparto = self._etiqueta_datos()
         self._saltados = self._etiqueta_datos(secundario=True)
         self._errores = mensaje(error=True)
@@ -498,6 +655,7 @@ class ResumenLote(QWidget):
             self._totales,
             self._origen,
             self._opciones,
+            self._ips,
             self._reparto,
             self._saltados,
             self._errores,
@@ -695,6 +853,9 @@ class ResumenLote(QWidget):
         texto_opciones = texto_opciones_del_plan(plan)
         self._opciones.setText(texto_opciones)
         self._opciones.setVisible(bool(texto_opciones))
+        texto_ips = texto_ips_del_plan(plan)
+        self._ips.setText(texto_ips)
+        self._ips.setVisible(bool(texto_ips))
         if not elementos:
             self._totales.hide()
             self._reparto.hide()
@@ -922,6 +1083,7 @@ class ResumenLote(QWidget):
         for w in (
             self._totales,
             self._opciones,
+            self._ips,
             self._reparto,
             self._saltados,
             self._errores,

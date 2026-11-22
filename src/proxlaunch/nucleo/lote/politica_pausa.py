@@ -23,6 +23,9 @@ CODIGOS_GLOBALES = frozenset(
     }
 )
 PRIVILEGIO_CREAR = "VM.Allocate"
+# Pasos B (``params["ajuste"]``) cuyo fallo deja la MV PARCIAL sin pausar el lote, ni siquiera por
+# repetición (arquitectura §9.7, QA-M2): cloud-init y la contraseña.
+AJUSTES_SIN_PAUSA = frozenset({"cloudinit", "contrasena"})
 
 
 def es_error_global(error: ErrorProxLaunch) -> bool:
@@ -35,6 +38,8 @@ def es_error_global(error: ErrorProxLaunch) -> bool:
     if error.codigo in CODIGOS_GLOBALES:
         return True
     if error.codigo == CodigoError.PERMISO_INSUFICIENTE:
+        if error.params.get("ajuste", "") in AJUSTES_SIN_PAUSA:
+            return False  # un 403 de un paso B no es global aunque no nombre el privilegio
         privilegio = error.params.get("privilegio", "")
         return privilegio in ("", PRIVILEGIO_CREAR)
     return False
@@ -60,6 +65,8 @@ class PoliticaPausa:
                 return None
             if error.codigo in self._ignoradas:
                 return None
+            if error.params.get("ajuste", "") in AJUSTES_SIN_PAUSA:
+                return None  # QA-M2: los pasos B no cuentan para la racha «repetido»
             if es_error_global(error):
                 return MotivoPausa.ERROR_GLOBAL
             if error.codigo == self._ultimo:

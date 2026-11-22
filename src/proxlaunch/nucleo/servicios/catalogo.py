@@ -22,6 +22,7 @@ from proxlaunch.nucleo.modelos.catalogo import (
     CatalogoServidor,
     Contenido,
     DetallePlantilla,
+    ListadoSnippets,
     ListadoStorage,
     PermisosEfectivos,
     Plantilla,
@@ -164,6 +165,55 @@ class ServicioCatalogo:
         ordenados = sorted(volumenes, key=lambda v: (v.nombre.casefold(), v.volid))
         return ListadoStorage(nodo, storage.id, contenido, tuple(ordenados[:MAX_CATALOGO]))
 
+    # --- Snippets (fase B, B4) -------------------------------------------------------------
+
+    def leer_snippets(
+        self, inv: Inventario, nodos: Collection[str], storages: Collection[str]
+    ) -> tuple[ListadoSnippets, ...]:
+        """Listado de snippets de cada storage de ``storages`` en los ``nodos`` dados (solo GET).
+
+        Una consulta por (nodo, storage), salvo un storage compartido, que se lista una sola vez
+        (en el primer nodo, por orden alfabético, que lo ve) y vale para todos (CA-B4.2.2).
+        Solo se consultan los nodos donde el storage está activo y admite ``snippets``. Un fallo
+        de un listado queda en ``ListadoSnippets.error`` (el selector pasa a entrada manual y no
+        bloquea); un 403 se anota como ``CATALOGO_SIN_PERMISO``. Los errores de sesión se
+        propagan. Se muestran como máximo ``MAX_CATALOGO`` archivos por listado.
+        """
+        pares: list[tuple[str, Storage]] = []
+        for id_storage in sorted(set(storages)):
+            compartido_leido = False
+            for nodo in sorted(set(nodos)):
+                storage = next(
+                    (
+                        s
+                        for s in inv.storages_todos.get(nodo, ())
+                        if s.id == id_storage and s.activo and "snippets" in s.contenido
+                    ),
+                    None,
+                )
+                if storage is None or (storage.compartido and compartido_leido):
+                    continue
+                compartido_leido = compartido_leido or storage.compartido
+                pares.append((nodo, storage))
+        return tuple(self._en_paralelo(lambda par: self._listar_snippets_uno(*par), pares))
+
+    def _listar_snippets_uno(self, nodo: str, storage: Storage) -> ListadoSnippets:
+        try:
+            snippets = self._cliente.contenido_snippets(nodo, storage.id)
+        except ErrorProxLaunch as e:
+            if e.codigo in _CODIGOS_FATALES:
+                raise
+            if e.codigo == CodigoError.PERMISO_INSUFICIENTE:
+                e = ErrorProxLaunch(
+                    CodigoError.CATALOGO_SIN_PERMISO, {"storage": storage.id}, e.detalle_tecnico
+                )
+            _log.info("Snippets de %s en %s no disponibles: %s", storage.id, nodo, e.codigo)
+            return ListadoSnippets(nodo, storage.id, storage.compartido, error=e)
+        ordenados = sorted(snippets, key=lambda sn: (sn.nombre.casefold(), sn.volid))
+        return ListadoSnippets(
+            nodo, storage.id, storage.compartido, tuple(ordenados[:MAX_CATALOGO])
+        )
+
     # --- Plantillas -----------------------------------------------------------------------
 
     def plantillas(self) -> tuple[Plantilla, ...]:
@@ -237,15 +287,21 @@ class ServicioCatalogo:
                 formatos = self.formatos(inv, nodos_ord)
         previo = inv.catalogo
         extra: dict[str, Any] = {}
+        # Fase B: solo se listan los storages de los snippets elegidos; sin ellos se conserva lo
+        # que ya hubiera (sin ninguna consulta nueva).
+        if necesidades.snippets:
+            extra["snippets"] = self.leer_snippets(inv, nodos, necesidades.snippets)
+        elif previo is not None and previo.snippets:
+            extra["snippets"] = previo.snippets
         if opciones:
             politica, fallida = leer_politica_etiquetas(self._cliente)
-            extra = {
+            extra |= {
                 "pools": leer_pools(self._cliente, permisos),
                 "politica_etiquetas": politica,
                 "politica_etiquetas_fallida": fallida,
             }
         elif previo is not None:
-            extra = {
+            extra |= {
                 "pools": previo.pools,
                 "politica_etiquetas": previo.politica_etiquetas,
                 "politica_etiquetas_fallida": previo.politica_etiquetas_fallida,

@@ -11,9 +11,10 @@ from __future__ import annotations
 import contextlib
 import logging
 import threading
-from collections.abc import Callable
-from dataclasses import dataclass
+from collections.abc import Callable, Mapping
+from dataclasses import dataclass, replace
 from typing import Any
+from urllib.parse import unquote
 
 from proxlaunch.nucleo.api.traductor_errores import CODIGOS_DE_RED, traducir_exitstatus
 from proxlaunch.nucleo.constructor_peticion import construir_parametros
@@ -31,7 +32,7 @@ from proxlaunch.nucleo.origen.clon import (
     construir_peticion_clon,
     detalle_de_config,
 )
-from proxlaunch.nucleo.origen.permisos import estado_privilegio
+from proxlaunch.nucleo.origen.permisos import estado_privilegio, privilegios_cloudinit
 from proxlaunch.nucleo.origen.resolucion import espera_maxima_s, nodo_de_upid
 from proxlaunch.nucleo.reloj import Reloj
 from proxlaunch.nucleo.servicios.catalogo import fuente_vigente
@@ -59,6 +60,9 @@ AJUSTE_ARRANQUE = "arranque"  # onboot y startup
 AJUSTE_PROTECCION = "proteccion"  # protection
 AJUSTE_CPU_MEMORIA = "cpu_memoria"
 AJUSTE_DISCO = "disco"
+AJUSTE_CLOUDINIT = "cloudinit"  # fase B: PUT de ciuser, sshkeys, ipconfigN, cicustom, agent…
+AJUSTE_CONTRASENA = "contrasena"  # fase B: PUT propio con solo cipassword
+_AJUSTES_B = (AJUSTE_CLOUDINIT, AJUSTE_CONTRASENA)
 _CLAVES_CPU = ("sockets", "cores", "cpu", "vcpus")
 _CLAVES_MEMORIA = ("memory", "balloon")
 _CLAVES_OPCIONES = ("tags", "onboot", "startup", "protection")  # exigen VM.Config.Options
@@ -150,7 +154,7 @@ def ajustes_de_clon(
     """
     ajustes = construir_ajustes_clon(cfg, base, etiquetas_finales(cfg))
     if ajustes.disco is not None and not disco_seguro(cfg, inv):
-        return AjustesTrasClon(config=ajustes.config, disco=None), True
+        return replace(ajustes, disco=None), True
     return ajustes, False
 
 
@@ -212,7 +216,66 @@ def _filtrar_ajustes(ajustes: AjustesTrasClon, config: dict[str, Any] | None) ->
         )
         if actual_bytes is not None and actual_bytes >= disco[1] * _GIB:
             disco = None
-    return AjustesTrasClon(config=pendientes, disco=disco)
+    # Cloud-init y contraseña se conservan tal cual: aquí no se comparan (``_ajustar`` decide).
+    return replace(ajustes, config=pendientes, disco=disco)
+
+
+def _nombre_de_clave(clave: str) -> str | None:
+    """Ajuste (``etiquetas``, ``arranque``…) al que pertenece una clave del ``PUT config``."""
+    if clave == "tags":
+        return AJUSTE_ETIQUETAS
+    if clave in ("onboot", "startup"):
+        return AJUSTE_ARRANQUE
+    if clave == "protection":
+        return AJUSTE_PROTECCION
+    if clave in (*_CLAVES_CPU, *_CLAVES_MEMORIA):
+        return AJUSTE_CPU_MEMORIA
+    return None
+
+
+def _restringir_ajustes(ajustes: AjustesTrasClon, pendientes: frozenset[str]) -> AjustesTrasClon:
+    """Deja solo los pasos de ``pendientes`` (reintento de ajustes de la fase B, DT-B7)."""
+    config = {k: v for k, v in ajustes.config.items() if _nombre_de_clave(k) in pendientes}
+    return AjustesTrasClon(
+        config=config,
+        disco=ajustes.disco if AJUSTE_DISCO in pendientes else None,
+        cloudinit=ajustes.cloudinit if AJUSTE_CLOUDINIT in pendientes else {},
+        contrasena=ajustes.contrasena if AJUSTE_CONTRASENA in pendientes else None,
+    )
+
+
+def _mismo_cicustom(a: object, b: str) -> bool:
+    """``cicustom`` sin orden: Proxmox puede reordenar los tipos."""
+    return {t.strip() for t in str(a).split(",") if t.strip()} == {
+        t.strip() for t in b.split(",") if t.strip()
+    }
+
+
+def _cloudinit_aplicado(put: Mapping[str, str], config: Mapping[str, Any]) -> bool:
+    """¿La config de la MV ya tiene todo lo que enviaría el ``PUT`` de cloud-init?
+
+    Mejor esfuerzo, solo para reintentos y comprobaciones de solo lectura. ``sshkeys`` se
+    compara decodificado; ``agent`` basta que esté activo; ``delete=cicustom`` se cumple si ya
+    no hay ``cicustom``.
+    """
+    for clave, valor in put.items():
+        actual = config.get(clave)
+        if clave == "delete":
+            if config.get(valor) is not None:
+                return False
+        elif clave == "sshkeys":
+            if actual is None or unquote(str(actual)).strip() != unquote(valor).strip():
+                return False
+        elif clave == "cicustom":
+            if actual is None or not _mismo_cicustom(actual, valor):
+                return False
+        elif clave == "agent":
+            texto = str(actual or "")
+            if not (texto.startswith("1") or "enabled=1" in texto):
+                return False
+        elif actual is None or str(actual) != valor:
+            return False
+    return True
 
 
 class ServicioCreacion:
@@ -300,6 +363,7 @@ class ServicioCreacion:
         *,
         al_enviar: Callable[[str], None] | None = None,
         puede_enviar: Callable[[], bool] | None = None,
+        parametros_extra: Mapping[str, str] | None = None,
     ) -> ResultadoCreacion:
         """Valida, envía y sigue la tarea hasta un desenlace.
 
@@ -310,6 +374,10 @@ class ServicioCreacion:
         hacer el POST: si devuelve ``False`` el desenlace es ``CANCELADO`` sin UPID y sin POST
         (así una cancelación o pausa del lote impide enviar una MV que aún validaba).
 
+        ``parametros_extra`` (opcional) se fusiona con los de ``construir_parametros`` solo en el
+        ``POST /qemu`` (disco vacío, ISO, importación); el clon lo ignora. Una clave que ya
+        existe en los parámetros construidos lanza ``ValueError`` antes de enviar nada.
+
         Si ``cancelado`` se activa se deja de esperar, sin borrar nada, y el desenlace es
         ``CANCELADO`` (con ``upid`` si la tarea ya se había enviado). Una vez enviada la
         tarea, cualquier fallo que no sea el desenlace de la propia tarea (sesión
@@ -318,7 +386,9 @@ class ServicioCreacion:
         """
         ctx = _Contexto(cancelado=cancelado, inv=inv)
         try:
-            return self._crear(ctx, cfg, inv, al_cambiar_etapa, al_enviar, puede_enviar)
+            return self._crear(
+                ctx, cfg, inv, al_cambiar_etapa, al_enviar, puede_enviar, parametros_extra
+            )
         except _Cancelado:
             return self._cancelado(cfg, ctx.upid)
 
@@ -330,11 +400,14 @@ class ServicioCreacion:
         al_cambiar_etapa: Callable[[Etapa], None],
         al_enviar: Callable[[str], None] | None,
         puede_enviar: Callable[[], bool] | None = None,
+        parametros_extra: Mapping[str, str] | None = None,
     ) -> ResultadoCreacion:
         """Despacha por origen: el clon usa ``POST …/clone``; el resto, ``POST /qemu``."""
         if cfg.origen == OrigenSO.CLONAR_PLANTILLA:
             return self._crear_por_clon(ctx, cfg, inv, al_cambiar_etapa, al_enviar, puede_enviar)
-        return self._crear_por_post(ctx, cfg, inv, al_cambiar_etapa, al_enviar, puede_enviar)
+        return self._crear_por_post(
+            ctx, cfg, inv, al_cambiar_etapa, al_enviar, puede_enviar, parametros_extra
+        )
 
     def _validar_local(self, cfg: ConfiguracionVM, inv: Inventario) -> ResultadoCreacion | None:
         """``validar_vm`` (M1 + reglas del origen): un ERROR cierra sin enviar nada."""
@@ -374,6 +447,7 @@ class ServicioCreacion:
         al_cambiar_etapa: Callable[[Etapa], None],
         al_enviar: Callable[[str], None] | None,
         puede_enviar: Callable[[], bool] | None = None,
+        parametros_extra: Mapping[str, str] | None = None,
     ) -> ResultadoCreacion:
         """Disco vacío, ISO e importación de disco: un único ``POST /nodes/{n}/qemu``."""
         cliente = self._sesion.cliente
@@ -401,6 +475,11 @@ class ServicioCreacion:
             parametros = construir_parametros(cfg, inv, self._sesion.capacidades.version)
         except ErrorProxLaunch as e:
             return self._resultado(Desenlace.ERROR, cfg, error=e)
+        if parametros_extra:
+            repetidas = sorted(k for k in parametros_extra if k in parametros)
+            if repetidas:
+                raise ValueError(f"parametros_extra repite claves ya construidas: {repetidas}")
+            parametros = {**parametros, **parametros_extra}
         if cancelado.is_set():
             return self._cancelado(cfg, None)
         if puede_enviar is not None and not puede_enviar():
@@ -679,7 +758,12 @@ class ServicioCreacion:
     # --- Ajustes posteriores (RF-O18, RF-O22) -------------------------------------------
 
     def reintentar_ajustes(
-        self, cfg: ConfiguracionVM, inv: Inventario, cancelado: threading.Event
+        self,
+        cfg: ConfiguracionVM,
+        inv: Inventario,
+        cancelado: threading.Event,
+        *,
+        pendientes: frozenset[str] | None = None,
     ) -> ResultadoCreacion:
         """Reenvía solo los ``PUT`` de ajuste que la MV aún no tiene (CA-O22.6, Debería).
 
@@ -687,6 +771,13 @@ class ServicioCreacion:
         bloqueo), calcula qué falta y lo envía con valores absolutos (idempotente). Nunca
         envía un ``POST`` ni toca otra MV. El llamador (``lote.ajustes``) garantiza que la MV
         está en el libro con su UPID.
+
+        ``pendientes`` (fase B) son los nombres de ajuste (``AJUSTE_*``) que constan como
+        pendientes: solo se reenvían esos. La contraseña solo si su nombre está ahí y el
+        ``Secreto`` sigue definido; si no, el resultado es ``PARCIAL`` con
+        ``ajuste_pendiente:contrasena`` y el error ``CONTRASENA_OLVIDADA``. Con ``None`` se
+        reenvía lo que difiera de la config leída (cloud-init y contraseña incluidos, por
+        comparación de mejor esfuerzo).
         """
         ctx = _Contexto(cancelado=cancelado, inv=inv)
         try:
@@ -718,7 +809,7 @@ class ServicioCreacion:
             base = ResultadoCreacion(Desenlace.OK, cfg.vmid, cfg.nodo, None, None)
             if cfg.origen not in (OrigenSO.CLONAR_PLANTILLA, OrigenSO.IMPORTAR_DISCO):
                 return base
-            ajustado = self._ajustar(ctx, cfg, base, None)
+            ajustado = self._ajustar(ctx, cfg, base, None, pendientes=pendientes, reintento=True)
             return self._encender_si_procede(ctx, cfg, ajustado, None)
         except _Cancelado:
             return self._cancelado(cfg, None)
@@ -736,11 +827,15 @@ class ServicioCreacion:
         etapa: Callable[[Etapa], None] | None,
         *,
         solo_lectura: bool = False,
+        pendientes: frozenset[str] | None = None,
+        reintento: bool = False,
     ) -> ResultadoCreacion:
         """Etapa AJUSTANDO: lo que falta tras crear. Un fallo deja ``PARCIAL`` sin reenviar la
         creación (INV-L1); lo omitido por falta de certeza de permisos deja ``CON_AVISOS``.
 
-        Con ``solo_lectura`` calcula lo pendiente y lo reporta sin enviar nada.
+        Con ``solo_lectura`` calcula lo pendiente y lo reporta sin enviar nada. ``pendientes``
+        (fase B) restringe el envío a esos ajustes; ``reintento`` indica que la config leída es
+        la de una MV ya ajustada en parte, así que cloud-init y contraseña se comparan con ella.
         """
         if cfg.origen not in (OrigenSO.CLONAR_PLANTILLA, OrigenSO.IMPORTAR_DISCO):
             return resultado
@@ -758,6 +853,7 @@ class ServicioCreacion:
             except _ConexionPerdida:
                 config = None
         omitido = False
+        sin_unidad = olvidada = False
         if cfg.origen == OrigenSO.CLONAR_PLANTILLA:
             base = ctx.plantilla
             if base is None and config is not None:
@@ -781,6 +877,9 @@ class ServicioCreacion:
                     resultado, tuple(resultado.avisos), ["desconocido"], invalido, False
                 )
             ajustes = _filtrar_ajustes(ajustes, config)
+            ajustes, sin_unidad, olvidada = self._decidir_fase_b(
+                cfg, base, ajustes, config, pendientes, comparar=reintento or solo_lectura
+            )
         else:
             actual_gib = None
             if config is not None:
@@ -795,21 +894,84 @@ class ServicioCreacion:
             if ampliacion is not None and not sin_juicio and not disco_seguro(cfg, ctx.inv):
                 ampliacion, omitido = None, True
             ajustes = AjustesTrasClon(config={}, disco=ampliacion)
+            if pendientes is not None:
+                ajustes = _restringir_ajustes(ajustes, pendientes)
         avisos = tuple(resultado.avisos)
         if omitido:
             avisos += (f"{AVISO_AJUSTE_OMITIDO}:{AJUSTE_DISCO}",)
-        pendientes: list[str] = []
+        pendientes_lectura: list[str] = []
+        lista: list[str]
         error: ErrorProxLaunch | None = None
         if solo_lectura:
             if ajustes.config:
-                pendientes += _nombres_ajuste(ajustes.config)
+                pendientes_lectura += _nombres_ajuste(ajustes.config)
+            if ajustes.cloudinit or sin_unidad:
+                pendientes_lectura.append(AJUSTE_CLOUDINIT)
+            if ajustes.contrasena is not None:
+                pendientes_lectura.append(AJUSTE_CONTRASENA)
             if ajustes.disco is not None:
-                pendientes.append(AJUSTE_DISCO)
-            if pendientes:
-                error = self._error_ajuste_pendiente(cfg, pendientes)
-        elif ajustes.config or ajustes.disco is not None:
-            pendientes, error = self._enviar_ajustes(ctx, cfg, ajustes)
-        return self._con_ajustes(resultado, avisos, pendientes, error, omitido)
+                pendientes_lectura.append(AJUSTE_DISCO)
+            if pendientes_lectura:
+                error = self._error_ajuste_pendiente(cfg, pendientes_lectura)
+            lista = pendientes_lectura
+        elif (
+            ajustes.config
+            or ajustes.disco is not None
+            or ajustes.cloudinit
+            or ajustes.contrasena is not None
+            or sin_unidad
+        ):
+            lista, error = self._enviar_ajustes(ctx, cfg, ajustes, sin_unidad=sin_unidad)
+        else:
+            lista = []
+        if olvidada:  # la contraseña pendiente ya no está en memoria: hay que volver a escribirla
+            lista.append(AJUSTE_CONTRASENA)
+            error = error or ErrorProxLaunch(
+                CodigoError.CONTRASENA_OLVIDADA, {"nombre": cfg.nombre}
+            )
+        return self._con_ajustes(resultado, avisos, lista, error, omitido)
+
+    def _decidir_fase_b(
+        self,
+        cfg: ConfiguracionVM,
+        base: DetallePlantilla,
+        ajustes: AjustesTrasClon,
+        config: dict[str, Any] | None,
+        pendientes: frozenset[str] | None,
+        *,
+        comparar: bool,
+    ) -> tuple[AjustesTrasClon, bool, bool]:
+        """Qué de cloud-init y de la contraseña toca enviar: ``(ajustes, sin_unidad, olvidada)``.
+
+        ``sin_unidad``: la plantilla leída ahora no tiene unidad cloud-init (CA-B0.2.3): no se
+        emite el ``PUT`` y el paso queda pendiente. ``olvidada``: la contraseña consta como
+        pendiente pero el ``Secreto`` ya no está definido. Con ``pendientes`` solo cuentan esos
+        nombres; con ``comparar`` (reintento o solo lectura) se descarta lo que la config ya
+        tiene. En la creación normal se envía todo lo calculado.
+        """
+        ci = cfg.cloudinit
+        if ci is None or ci.sin_nada_que_aplicar:
+            if pendientes is not None:
+                ajustes = _restringir_ajustes(ajustes, pendientes)
+            return ajustes, False, False
+        info = base.cloudinit
+        sin_unidad = info is not None and info.unidad is False
+        if sin_unidad:
+            # El PUT no se emite; la contraseña (si hay) queda pendiente tras él.
+            secreto = ci.contrasena
+            if secreto is not None:
+                ajustes = replace(ajustes, contrasena=secreto)
+        elif comparar and pendientes is None and config is not None:
+            if ajustes.cloudinit and _cloudinit_aplicado(ajustes.cloudinit, config):
+                ajustes = replace(ajustes, cloudinit={})
+            if ajustes.contrasena is not None and config.get("cipassword"):
+                ajustes = replace(ajustes, contrasena=None)
+        olvidada = False
+        if pendientes is not None:
+            olvidada = AJUSTE_CONTRASENA in pendientes and ajustes.contrasena is None
+            sin_unidad = sin_unidad and AJUSTE_CLOUDINIT in pendientes
+            ajustes = _restringir_ajustes(ajustes, pendientes)
+        return ajustes, sin_unidad, olvidada
 
     def _encender_si_procede(
         self,
@@ -912,11 +1074,22 @@ class ServicioCreacion:
         )
 
     def _enviar_ajustes(
-        self, ctx: _Contexto, cfg: ConfiguracionVM, ajustes: AjustesTrasClon
+        self,
+        ctx: _Contexto,
+        cfg: ConfiguracionVM,
+        ajustes: AjustesTrasClon,
+        *,
+        sin_unidad: bool = False,
     ) -> tuple[list[str], ErrorProxLaunch | None]:
-        """Envía el ``PUT config`` (etiquetas, CPU, memoria) y el ``PUT resize``, en ese orden
-        (la marca de propiedad primero). Devuelve los ajustes que no se aplicaron y el primer
-        error. Cada ``PUT`` es idempotente (valores absolutos) y se envía una sola vez."""
+        """Envía, en este orden, el ``PUT config`` (etiquetas, CPU, memoria…), el de cloud-init,
+        el de la contraseña y el ``PUT resize`` (la marca de propiedad primero, DT-B7).
+
+        Devuelve los ajustes que no se aplicaron y el primer error. Cada ``PUT`` es idempotente
+        (valores absolutos) y se envía una sola vez. Si falla el ``PUT config``, cloud-init y
+        contraseña quedan pendientes sin intentarse; si falla cloud-init o la contraseña, lo que
+        sigue también (la contraseña y el disco). ``sin_unidad`` marca cloud-init como pendiente
+        con ``CLOUDINIT_SIN_UNIDAD`` sin emitir ningún ``PUT``.
+        """
         cliente = self._sesion.cliente
         pendientes: list[str] = []
         primero: ErrorProxLaunch | None = None
@@ -942,10 +1115,53 @@ class ServicioCreacion:
                 primero = self._error_ajuste(
                     cfg, _error_inesperado(e), ",".join(nombres), "config", ""
                 )
+        # Fase B: tras un fallo previo los pasos de cloud-init no se intentan (quedan pendientes).
+        fallo_config = bool(pendientes)
+        fallo_b = False
+        if ajustes.cloudinit or sin_unidad:
+            if sin_unidad:
+                pendientes.append(AJUSTE_CLOUDINIT)
+                primero = primero or ErrorProxLaunch(
+                    CodigoError.CLOUDINIT_SIN_UNIDAD,
+                    {"nombre": cfg.nombre, "plantilla": self._nombre_plantilla(cfg)},
+                )
+                fallo_b = True
+            elif fallo_config:
+                pendientes.append(AJUSTE_CLOUDINIT)
+            else:
+                fallo_b, sin_red, primero = self._enviar_paso_b(
+                    ctx,
+                    cfg,
+                    AJUSTE_CLOUDINIT,
+                    lambda: cliente.configurar_vm(cfg.nodo, cfg.vmid, ajustes.cloudinit),
+                    pendientes,
+                    primero,
+                )
+        if ajustes.contrasena is not None:
+            secreto = ajustes.contrasena
+            if fallo_config or fallo_b:
+                pendientes.append(AJUSTE_CONTRASENA)
+            elif not secreto.definido:  # se olvidó entre el plan y el envío: no se envía nada
+                pendientes.append(AJUSTE_CONTRASENA)
+                primero = primero or ErrorProxLaunch(
+                    CodigoError.CONTRASENA_OLVIDADA, {"nombre": cfg.nombre}
+                )
+            else:
+                # Único camino a ``Secreto.revelar()``: ``ClienteProxmox.configurar_contrasena``.
+                fallo_pw, sin_red_pw, primero = self._enviar_paso_b(
+                    ctx,
+                    cfg,
+                    AJUSTE_CONTRASENA,
+                    lambda: cliente.configurar_contrasena(cfg.nodo, cfg.vmid, secreto),
+                    pendientes,
+                    primero,
+                )
+                fallo_b = fallo_b or fallo_pw
+                sin_red = sin_red or sin_red_pw
         if ajustes.disco is not None:
             clave, gib = ajustes.disco
-            if sin_red:
-                pendientes.append(AJUSTE_DISCO)  # sin red no se insiste con el segundo PUT
+            if sin_red or fallo_b:
+                pendientes.append(AJUSTE_DISCO)  # sin red o tras un fallo de cloud-init
             else:
                 try:
                     upid = self._tolerante(
@@ -967,6 +1183,45 @@ class ServicioCreacion:
                         cfg, _error_inesperado(e), AJUSTE_DISCO, "resize", PRIVILEGIO_DISCO
                     )
         return pendientes, primero
+
+    def _enviar_paso_b(
+        self,
+        ctx: _Contexto,
+        cfg: ConfiguracionVM,
+        ajuste: str,
+        enviar: Callable[[], Any],
+        pendientes: list[str],
+        primero: ErrorProxLaunch | None,
+    ) -> tuple[bool, bool, ErrorProxLaunch | None]:
+        """Un ``PUT`` de la fase B (cloud-init o contraseña), una sola vez.
+
+        Devuelve ``(fallo, sin_red, primer_error)``. Un fallo deja el ajuste pendiente. Un 403
+        lleva ``params["ajuste"]`` para que el motor no pause el lote (arquitectura §0). Los
+        parámetros del error nunca llevan valores enviados (claves, contraseña).
+        """
+        try:
+            self._tolerante(ctx, enviar)
+        except _Cancelado:
+            raise
+        except (ErrorProxLaunch, _ConexionPerdida) as e:
+            err = e.error if isinstance(e, _ConexionPerdida) else e
+            pendientes.append(ajuste)
+            nuevo = self._error_ajuste(cfg, err, ajuste, "config", self._privilegio_b())
+            return True, err.codigo in CODIGOS_DE_RED, primero or nuevo
+        except Exception as e:
+            _log.exception("Fallo inesperado al aplicar %s", ajuste)
+            pendientes.append(ajuste)
+            nuevo = self._error_ajuste(cfg, _error_inesperado(e), ajuste, "config", "")
+            return True, False, primero or nuevo
+        return False, False, primero
+
+    def _privilegio_b(self) -> str:
+        """Privilegio que se infiere de un 403 sin nombre en un ``PUT`` de cloud-init."""
+        return privilegios_cloudinit(self._sesion.capacidades)[0]
+
+    @staticmethod
+    def _nombre_plantilla(cfg: ConfiguracionVM) -> str:
+        return str(getattr(getattr(cfg.detalle_origen, "plantilla", None), "nombre", ""))
 
     def _esperar_ajuste(self, ctx: _Contexto, cfg: ConfiguracionVM, upid: str) -> None:
         """Si el ``resize`` devolvió una tarea, la sigue; un fallo o tiempo agotado lanza
@@ -999,12 +1254,16 @@ class ServicioCreacion:
                 err.params["inferido"] = "1"
             err.params.setdefault("ruta", f"/vms/{cfg.vmid}")
             err.params["via"] = via
+            if ajuste in _AJUSTES_B:  # el motor no pausa el lote por estos 403 (arquitectura §0)
+                err.params["ajuste"] = ajuste
             return err
-        return ErrorProxLaunch(
-            CodigoError.AJUSTE_POST_CLON_FALLIDO,
-            {"nombre": cfg.nombre, "ajuste": ajuste, "causa": str(err.codigo)},
-            err.detalle_tecnico,
-        )
+        params = {"nombre": cfg.nombre, "ajuste": ajuste, "causa": str(err.codigo)}
+        if ajuste in _AJUSTES_B:
+            # Solo nombres de parámetro o de snippet (``ipconfig0``, ``local:snippets/x``).
+            for clave in ("campo", "snippet"):
+                if err.params.get(clave):
+                    params[clave] = err.params[clave]
+        return ErrorProxLaunch(CodigoError.AJUSTE_POST_CLON_FALLIDO, params, err.detalle_tecnico)
 
     @staticmethod
     def _completar_permiso(

@@ -72,6 +72,29 @@ _RE_CONTENIDO_NO_ADMITIDO = re.compile(
 )
 _RE_MEDIA_CDROM = re.compile(r"explicit 'media=cdrom' is required", re.IGNORECASE)
 _RE_REDUCIR_DISCO = re.compile(r"Shrinking disk size is not supported", re.IGNORECASE)
+# Fase B (0.7): cloud-init, snippets, agente invitado y conversión a plantilla.
+_RE_CLAVE_SSH = re.compile(r"SSH public key validation error", re.IGNORECASE)
+_RE_VOLID_SNIPPET = re.compile(r"(?P<snippet>[A-Za-z][\w.-]*:snippets/[^\s'\",]+)")
+_RE_SNIPPET_FUERA = re.compile(r"is not in the snippets directory", re.IGNORECASE)
+_RE_SNIPPET_INEXISTENTE = re.compile(
+    r"snippets/.*(?:does not exist|not found|no such)"
+    r"|(?:does not exist|not found|no such).*snippets/",
+    re.IGNORECASE,
+)
+_RE_AGENTE_NO_CONFIGURADO = re.compile(r"No QEMU guest agent configured", re.IGNORECASE)
+_RE_AGENTE_NO_RESPONDE = re.compile(r"QEMU guest agent is not running", re.IGNORECASE)
+_RE_MV_NO_EN_MARCHA = re.compile(
+    r"\bVM\s+\d+\s+(?:qmp command .* failed.*)?is not running", re.IGNORECASE
+)
+_RE_PLANTILLA_SNAPSHOTS = re.compile(r"because VM contains snapshots", re.IGNORECASE)
+_RE_PLANTILLA_EN_MARCHA = re.compile(
+    r"can't convert a VM to template if VM is running", re.IGNORECASE
+)
+_RE_IMAGEN_FORMATO = re.compile(
+    r"image format.{0,60}(?:does not match|doesn't match|mismatch)"
+    r"|(?:format|extension) mismatch|file extension.{0,40}(?:does not match|doesn't match)",
+    re.IGNORECASE,
+)
 
 
 def limpiar_detalle(texto: str) -> str:
@@ -116,6 +139,33 @@ def _parametro_invalido(campo: str, detalle: str) -> ErrorProxLaunch:
     return ErrorProxLaunch(
         CodigoError.PARAMETRO_INVALIDO, {"campo": campo, "mensaje": detalle}, detalle
     )
+
+
+def _clasificar_texto_fase_b(texto: str, detalle: str) -> ErrorProxLaunch | None:
+    """Patrones de la fase B (cloud-init, snippets, agente, plantilla). ``None`` si no casa.
+
+    El texto de una clave o contraseña nunca llega aquí: Proxmox solo nombra el error, y el
+    ``detalle`` ya salió enmascarado por ``limpiar_detalle``.
+    """
+    if _RE_CLAVE_SSH.search(texto):
+        return ErrorProxLaunch(CodigoError.CLAVE_SSH_RECHAZADA, {}, detalle)
+    if _RE_SNIPPET_FUERA.search(texto) or _RE_SNIPPET_INEXISTENTE.search(texto):
+        ms = _RE_VOLID_SNIPPET.search(texto)
+        params = {"snippet": ms.group("snippet")} if ms else {}
+        return ErrorProxLaunch(CodigoError.SNIPPET_NO_ENCONTRADO, params, detalle)
+    if _RE_AGENTE_NO_CONFIGURADO.search(texto):
+        return ErrorProxLaunch(CodigoError.AGENTE_NO_CONFIGURADO, {}, detalle)
+    if _RE_AGENTE_NO_RESPONDE.search(texto):  # antes que «VM n is not running»
+        return ErrorProxLaunch(CodigoError.AGENTE_NO_RESPONDE, {}, detalle)
+    if _RE_MV_NO_EN_MARCHA.search(texto):
+        return ErrorProxLaunch(CodigoError.MV_NO_EN_MARCHA, {}, detalle)
+    if _RE_PLANTILLA_SNAPSHOTS.search(texto):
+        return ErrorProxLaunch(CodigoError.PLANTILLA_CON_SNAPSHOTS, {}, detalle)
+    if _RE_PLANTILLA_EN_MARCHA.search(texto):
+        return ErrorProxLaunch(CodigoError.PLANTILLA_EN_MARCHA, {}, detalle)
+    if _RE_IMAGEN_FORMATO.search(texto) and not _RE_NOMBRE_EXTENSION.search(texto):
+        return ErrorProxLaunch(CodigoError.IMAGEN_FORMATO_INCORRECTO, {}, detalle)
+    return None
 
 
 def _clasificar_texto_origen(texto: str, detalle: str) -> ErrorProxLaunch | None:
@@ -170,6 +220,9 @@ def _clasificar_texto(
     nuevo = _clasificar_texto_origen(texto, detalle)
     if nuevo is not None:
         return nuevo
+    nuevo = _clasificar_texto_fase_b(texto, detalle)
+    if nuevo is not None:
+        return nuevo
 
     mp = _RE_POOL_INEXISTENTE.search(texto)
     if mp:
@@ -209,7 +262,7 @@ def _clasificar_texto(
         params = {}
         mq = _RE_ENTRE_COMILLAS.search(texto)
         if mq:
-            params["recurso"] = mq.group("nombre")
+            params["recurso"] = limpiar_detalle(mq.group("nombre"))
         if nodo:
             params["nodo"] = nodo
         return ErrorProxLaunch(CodigoError.RECURSO_INEXISTENTE, params, detalle)

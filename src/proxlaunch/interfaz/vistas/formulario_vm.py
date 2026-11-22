@@ -42,10 +42,14 @@ from proxlaunch.interfaz.vistas.campos import (
     mensaje,
     poner_mensaje,
 )
+from proxlaunch.interfaz.vistas.seccion_cloudinit import SeccionCloudInit
 from proxlaunch.interfaz.vistas.selector_origen import SelectorOrigen
 from proxlaunch.interfaz.vistas.tabla_discos import TablaDiscos, entero_o_cero, texto_ausente
 from proxlaunch.interfaz.vistas.tabla_redes import TablaRedes
+from proxlaunch.nucleo.cloudinit.disponibilidad import OpcionB
+from proxlaunch.nucleo.cloudinit.modelos import ConfigCloudInit, InfoCloudInitPlantilla
 from proxlaunch.nucleo.errores import ErrorProxLaunch
+from proxlaunch.nucleo.modelos.catalogo import ListadoSnippets
 from proxlaunch.nucleo.modelos.inventario import Inventario
 from proxlaunch.nucleo.modelos.origen import TipoSO
 from proxlaunch.nucleo.modelos.vm import (
@@ -155,6 +159,8 @@ class FormularioVM(QWidget):
         self._texto_estado: dict[int, str] = {}  # id(fila) -> explicación de disponibilidad
         self._texto_validacion: dict[int, str] = {}  # id(fila) -> avisos de validación
         self._grupos_opciones: list[_GrupoOpcion] = []
+        # Fase B: disponibilidad de «Esperar la IP» y texto de por qué no se puede marcar.
+        self._estados_b: dict[OpcionB, EstadoOpcion] = {}
 
         capa = QVBoxLayout(self)
         capa.setContentsMargins(0, 0, 0, 0)
@@ -169,6 +175,7 @@ class FormularioVM(QWidget):
         self._caja_discos = self._ultima_caja
         self._construir_red(capa)
         self._caja_red = self._ultima_caja
+        self._construir_cloudinit(capa)
         capa.addStretch(1)
         self._aplicar_modo()
         self._actualizar_total_cpu()
@@ -265,6 +272,30 @@ class FormularioVM(QWidget):
             self.tr("Enciende la máquina cuando termina de crearse y de ajustarse."),
         )
         self.fila_encender = FilaCampo(self.tr("Encender al terminar"), self.chk_encender)
+        # Fase B (RF-B3.1): «Esperar la IP de cada máquina» y su plazo, junto a «Encender».
+        self.chk_esperar_ip = self._casilla(
+            self.tr("Esperar la IP de cada máquina"),
+            self.tr(
+                "Tras encender cada máquina, ProxLaunch pregunta a Proxmox por su IP hasta que "
+                "la tenga o se acabe el plazo. Necesita el agente invitado dentro de la máquina."
+            ),
+            self.tr("Esperar la IP de cada máquina"),
+        )
+        self.txt_plazo_ip = QLineEdit("120")
+        self.txt_plazo_ip.setMaximumWidth(70)
+        self.txt_plazo_ip.setAccessibleName(self.tr("Plazo (segundos)"))
+        self.txt_plazo_ip.setToolTip(
+            self.tr("Segundos que se espera la IP de cada máquina, entre 10 y 1800.")
+        )
+        self.txt_plazo_ip.setEnabled(False)
+        cont_ip = _Transparente()
+        ci = QHBoxLayout(cont_ip)
+        ci.setContentsMargins(0, 0, 0, 0)
+        ci.addWidget(self.chk_esperar_ip)
+        ci.addWidget(etiqueta(self.tr("Plazo (segundos)")))
+        ci.addWidget(self.txt_plazo_ip)
+        ci.addStretch(1)
+        self.fila_esperar_ip = FilaCampo(self.tr("Esperar la IP"), cont_ip, "esperar_ip")
         self.chk_arranque_auto = self._casilla(
             self.tr("Arrancar con el servidor"),
             self.tr("La máquina se enciende sola cuando arranca el servidor Proxmox."),
@@ -345,6 +376,7 @@ class FormularioVM(QWidget):
         self.fila_proteger = FilaCampo(self.tr("Proteger contra borrado"), self.chk_proteger)
         for f in (
             self.fila_encender,
+            self.fila_esperar_ip,
             self.fila_arranque_auto,
             self.fila_notas_origen,
             self.fila_notas_usuario,
@@ -413,6 +445,8 @@ class FormularioVM(QWidget):
         orden = [
             self.combo_nodo,
             self.chk_encender,
+            self.chk_esperar_ip,
+            self.txt_plazo_ip,
             self.chk_arranque_auto,
             self.chk_notas_origen,
             self.chk_notas_usuario,
@@ -433,6 +467,10 @@ class FormularioVM(QWidget):
         ):
             chk.toggled.connect(lambda _m: self._al_editar())
         self.chk_notas_origen.toggled.connect(self._al_cambiar_notas_origen)
+        self.chk_encender.toggled.connect(lambda _m: self._actualizar_esperar_ip())
+        self.chk_esperar_ip.toggled.connect(self._al_cambiar_esperar_ip)
+        self.txt_plazo_ip.textEdited.connect(lambda _t: self._al_editar(self.fila_esperar_ip))
+        self.txt_plazo_ip.editingFinished.connect(lambda: self._tocar(self.fila_esperar_ip))
         self.txt_notas.textChanged.connect(lambda: self._al_editar(self.fila_notas))
         self.txt_etiquetas.textEdited.connect(lambda _t: self._al_editar(self.fila_etiquetas))
         self.txt_etiquetas.editingFinished.connect(lambda: self._tocar(self.fila_etiquetas))
@@ -558,12 +596,21 @@ class FormularioVM(QWidget):
         g.addWidget(self.tabla_redes)
         self.tabla_redes.cambiado.connect(self._al_cambiar_tabla)
 
+    def _construir_cloudinit(self, capa: QVBoxLayout) -> None:
+        """«Configuración inicial (cloud-init)»: solo con origen «Clonar plantilla» (RF-B1.2)."""
+        self.seccion_cloudinit = SeccionCloudInit()
+        self.seccion_cloudinit.hide()
+        capa.addWidget(self.seccion_cloudinit)
+        self._caja_cloudinit = self.seccion_cloudinit
+        self.seccion_cloudinit.cambiado.connect(self._al_editar)
+
     # --- Modo básico / avanzado -------------------------------------------------------
 
     def establecer_modo(self, avanzado: bool) -> None:
         """Cambia solo la visibilidad de los widgets avanzados; no restablece valores."""
         self._avanzado = avanzado
         self.selector_origen.establecer_modo(avanzado)
+        self.seccion_cloudinit.establecer_modo(avanzado)
         self._aplicar_modo()
 
     def _aplicar_modo(self) -> None:
@@ -581,6 +628,8 @@ class FormularioVM(QWidget):
         5; en una actualización conserva lo que el usuario ya escribió (CA-03.3).
         """
         primera = self._inv is None or reiniciar
+        if reiniciar:
+            self.limpiar_secretos()  # otro servidor: la contraseña no se arrastra
         self._inv = inv
         self._ocupado = True
         try:
@@ -818,7 +867,28 @@ class FormularioVM(QWidget):
             etiquetas_usuario=normalizar_etiquetas(self.txt_etiquetas.text()),
             pool=cast("str | None", self.combo_pool.currentData()),
             proteger=self.chk_proteger.isChecked(),
+            cloudinit=self._cloudinit_actual(),
+            esperar_ip=self.chk_esperar_ip.isChecked(),
+            plazo_ip_s=self._plazo_ip(),
         )
+
+    def _cloudinit_actual(self) -> ConfigCloudInit | None:
+        """Cloud-init solo existe al clonar una plantilla; con otro origen no se envía (V-B39)."""
+        if self.selector_origen.origen != OrigenSO.CLONAR_PLANTILLA:
+            return None
+        return self.seccion_cloudinit.configuracion()
+
+    def _plazo_ip(self) -> int:
+        """Plazo escrito. Con la casilla marcada un valor que no es número da un valor que V-B61
+        rechaza (el error sale junto al campo); sin marcar, uno inválido vuelve a 120."""
+        texto = self.txt_plazo_ip.text().strip()
+        try:
+            valor = int(texto)
+        except ValueError:
+            valor = -1 if texto else 0
+        if not self.chk_esperar_ip.isChecked() and not 10 <= valor <= 1800:
+            return 120
+        return valor
 
     # --- Opciones de la fase A -------------------------------------------------------------
 
@@ -838,6 +908,9 @@ class FormularioVM(QWidget):
                     proteger=cfg.proteger,
                     notas_origen=cfg.notas_origen,
                     notas_usuario=cfg.notas_usuario,
+                    cloudinit=cfg.cloudinit,
+                    esperar_ip=cfg.esperar_ip,
+                    plazo_ip_s=cfg.plazo_ip_s,
                 )
             )
         finally:
@@ -852,9 +925,14 @@ class FormularioVM(QWidget):
         self.txt_etiquetas.setText(", ".join(o.etiquetas_usuario))
         self._poblar_pool(o.pool)
         self.chk_proteger.setChecked(o.proteger)
+        # Fase B: cloud-init (sin contraseña, que nunca se guarda) y espera de IP.
+        self.seccion_cloudinit.aplicar(o.cloudinit)
+        self.chk_esperar_ip.setChecked(o.esperar_ip)
+        self.txt_plazo_ip.setText(str(o.plazo_ip_s))
         self._notas_forzadas_off = False
         self._actualizar_notas_usuario()
         self._reaplicar_disponibilidad()
+        self._actualizar_esperar_ip()
 
     def aplicar_opciones_lote(self, opciones: OpcionesLote) -> None:
         """Rellena las opciones de lote (un lote por filas guardado trae las suyas)."""
@@ -874,6 +952,115 @@ class FormularioVM(QWidget):
         self.chk_notas_usuario.setChecked(False)
         self.txt_notas.clear()
         self._notas_forzadas_off = True
+
+    # --- Fase B: esperar la IP y configuración inicial -----------------------------------
+
+    def _al_cambiar_esperar_ip(self, marcada: bool) -> None:
+        self.txt_plazo_ip.setEnabled(marcada and self.chk_esperar_ip.isEnabled())
+        self.seccion_cloudinit.establecer_esperar_ip(marcada)
+        self._al_editar()
+
+    def _actualizar_esperar_ip(self) -> None:
+        """«Esperar la IP» solo se puede marcar con «Encender al terminar» y con el privilegio del
+        agente (RF-B3.1, V-B60, V-B63). Si deja de poderse, se desmarca y se explica por qué."""
+        estado = self._estados_b.get(OpcionB.ESPERAR_IP)
+        sin_permiso = estado is not None and estado.disponibilidad == Disponibilidad.NO
+        sin_encender = not self.chk_encender.isChecked()
+        if estado is not None and sin_permiso:
+            texto = texto_estado_opcion(estado)
+        elif sin_encender:
+            texto = texto_problema(Problema("esperar_ip", "V-B60", Severidad.ERROR, {}))
+        else:
+            texto = texto_estado_opcion(estado) if estado is not None else ""
+        libre = not sin_permiso and not sin_encender
+        previo, self._ocupado = self._ocupado, True
+        cambio = False
+        try:
+            if not libre and self.chk_esperar_ip.isChecked():
+                self.chk_esperar_ip.setChecked(False)
+                texto = texto_opcion_restablecida(OpcionB.ESPERAR_IP.value, texto)
+                cambio = True
+            self.chk_esperar_ip.setEnabled(libre)
+            self.txt_plazo_ip.setEnabled(libre and self.chk_esperar_ip.isChecked())
+            self.chk_esperar_ip.setAccessibleDescription(texto)
+            self.seccion_cloudinit.establecer_esperar_ip(self.chk_esperar_ip.isChecked())
+        finally:
+            self._ocupado = previo
+        self._texto_estado[id(self.fila_esperar_ip)] = texto
+        self._refrescar_aviso(self.fila_esperar_ip)
+        if cambio and not previo:
+            self.cambiado.emit()
+
+    def storages_snippets(self) -> tuple[str, ...]:
+        """Ids de los almacenamientos del nodo destino con contenido «snippets» (B4)."""
+        inv = self._inv
+        if inv is None:
+            return ()
+        return tuple(
+            s.id
+            for s in inv.storages_todos.get(self.nodo_efectivo(), ())
+            if s.activo and "snippets" in s.contenido
+        )
+
+    def hay_storage_snippets(self) -> bool:
+        """¿El nodo destino tiene algún almacenamiento activo con contenido «snippets»?"""
+        return bool(self.storages_snippets())
+
+    def almacen_snippets(self) -> str | None:
+        """Almacén de snippets para la guía de permisos (B3): el del primer script elegido en la
+        sección de cloud-init y, si no hay ninguno, el primero del nodo destino; ``None`` si el
+        inventario no tiene ninguno."""
+        ids = self.storages_snippets()
+        if not ids:
+            return None
+        for sel in self.seccion_cloudinit.selectores_snippet.values():
+            valor = sel.valor()
+            almacen = valor.partition(":")[0] if valor and ":" in valor else ""
+            if almacen in ids:
+                return almacen
+        return ids[0]
+
+    def _listados_snippets(self) -> tuple[list[ListadoSnippets], bool]:
+        """Listados de snippets del nodo destino que ya trae el catálogo, y si falta alguno por
+        leer (DT-B11: ``CatalogoServidor.snippets_en``)."""
+        inv = self._inv
+        catalogo = inv.catalogo if inv is not None else None
+        nodo = self.nodo_efectivo()
+        listados: list[ListadoSnippets] = []
+        pendientes = False
+        for storage in self.storages_snippets():
+            listado = catalogo.snippets_en(nodo, storage) if catalogo is not None else None
+            if listado is None:
+                pendientes = True
+            else:
+                listados.append(listado)
+        return listados, pendientes
+
+    def establecer_info_cloudinit(
+        self,
+        info: InfoCloudInitPlantilla | None,
+        disponibilidad: Mapping[OpcionB, EstadoOpcion],
+    ) -> None:
+        """Lo que dice la plantilla elegida de cloud-init y qué opciones de la fase B están
+        disponibles (privilegios, versión, almacenamiento de snippets).
+
+        ``info`` ``None`` = plantilla sin leer o desconocida. Reparte el estado entre la sección
+        de cloud-init y la casilla «Esperar la IP», y refresca la lista de scripts con lo que
+        ya trae el catálogo del inventario. Es barato: se puede llamar en cada revalidación.
+        """
+        self._estados_b = dict(disponibilidad)
+        listados, pendientes = self._listados_snippets()
+        self.seccion_cloudinit.establecer_snippets(listados, pendientes=pendientes)
+        self.seccion_cloudinit.establecer_info(info, disponibilidad)
+        self._actualizar_esperar_ip()
+
+    def ceder_secreto(self) -> None:
+        """Al lanzar un lote: su ``Secreto`` pasa al lote (no se olvida) y los campos se vacían."""
+        self.seccion_cloudinit.ceder_secreto()
+
+    def limpiar_secretos(self) -> None:
+        """Borra los campos de la contraseña y olvida el ``Secreto`` que aún posea el formulario."""
+        self.seccion_cloudinit.limpiar_secretos()
 
     def _poblar_pool(self, seleccion: str | None) -> None:
         """«Ninguno» y los pools del servidor; un pool que ya no está (de un lote guardado) se
@@ -1028,6 +1215,8 @@ class FormularioVM(QWidget):
         ):
             if texto.strip():
                 revisar(texto, nombre)
+        if self.chk_esperar_ip.isChecked() and self.txt_plazo_ip.text().strip():
+            revisar(self.txt_plazo_ip.text(), self.tr("Plazo (segundos)"))
         malos.extend(self.tr("MTU de {n}").format(n=n) for n in self.tabla_redes.mtu_no_numericas())
         malos.extend(
             self.tr("Límite de {n}").format(n=n) for n in self.tabla_redes.limites_no_numericos()
@@ -1320,6 +1509,7 @@ class FormularioVM(QWidget):
         importar = origen == OrigenSO.IMPORTAR_DISCO
         for caja in (self._caja_firmware, self._caja_computo, self._caja_discos, self._caja_red):
             caja.setVisible(not clon)
+        self._caja_cloudinit.setVisible(clon)  # cloud-init solo al clonar (RF-B1.2)
         self._nota_clon.setVisible(clon)
         self._nota_importar.setVisible(importar)
         if importar and self.chk_sin_disco.isChecked():
@@ -1388,6 +1578,7 @@ class FormularioVM(QWidget):
     def preparar_otra(self) -> None:
         """«Crear otra»: conserva la configuración, vacía el nombre y libera el VMID."""
         self.nombre.clear()
+        self.limpiar_secretos()  # la contraseña no se arrastra a la siguiente máquina
         self.fila_nombre.tocado = False
         self.fila_vmid.tocado = False
         self._vmid_ocupado = None
@@ -1410,6 +1601,9 @@ class FormularioVM(QWidget):
                 extra.append(Problema("vmid", "V-03", Severidad.ERROR, params))
         if self._inv is not None and self._nodo_actual and not self.tabla_redes.hay_bridges():
             extra.append(Problema("redes", "V-16.sinredes", Severidad.ERROR, {}))
+        if self.selector_origen.origen == OrigenSO.CLONAR_PLANTILLA:
+            # V-B22, V-B24 y V-B25 sobre lo escrito: lo inválido no llega a ``configuracion()``.
+            extra.extend(self.seccion_cloudinit.problemas())
         return extra
 
     # --- Errores y bloqueo ------------------------------------------------------------
@@ -1443,6 +1637,7 @@ class FormularioVM(QWidget):
         self.fila_balloon_min.mostrar_error(texto("ballooning.minimo_mib"))
         self.fila_ctrl.mostrar_error(texto("controlador_scsi"))
         self._aplicar_problemas_opciones(problemas)
+        self.seccion_cloudinit.mostrar_problemas(problemas)
         self.fila_efi.marcar_tocado()
         self.fila_efi.mostrar_error(texto("storage_efi"))
         self.tabla_discos.aplicar_problemas(problemas)
@@ -1461,6 +1656,8 @@ class FormularioVM(QWidget):
             "etiquetas_usuario": self.fila_etiquetas,
             "pool": self.fila_pool,
             "proteger": self.fila_proteger,
+            "esperar_ip": self.fila_esperar_ip,
+            "plazo_ip_s": self.fila_esperar_ip,
         }
         errores: dict[int, list[str]] = {}
         avisos: dict[int, list[str]] = {}
@@ -1486,6 +1683,7 @@ class FormularioVM(QWidget):
     def establecer_lote(self, activo: bool) -> None:
         """Con más de una máquina el nombre, el VMID y el nodo salen del bloque «Lote»."""
         self._modo_lote = activo
+        self.seccion_cloudinit.establecer_lote(activo)
         # El grupo «General» sigue visible en un lote: las opciones de la fase A (encender, notas,
         # etiquetas, pool…) valen para todo el lote; solo se ocultan nombre, VMID y nodo.
         self.fila_nombre.setVisible(not activo)

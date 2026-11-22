@@ -17,6 +17,7 @@ from proxlaunch.nucleo.archivos.constantes import (
     MAX_BYTES_LOTE,
     VERSION_FORMATO,
     VERSION_FORMATO_BASE,
+    VERSION_FORMATO_FASE_A,
     VERSION_FORMATO_MVP4,
 )
 from proxlaunch.nucleo.archivos.envoltura import (
@@ -32,14 +33,17 @@ from proxlaunch.nucleo.archivos.esquema_config import (
     leer_configuracion,
     requiere_version_2,
     requiere_version_3,
+    requiere_version_4,
 )
 from proxlaunch.nucleo.archivos.esquema_opciones import (
     leer_opciones_lote,
     leer_opciones_parciales,
     opciones_lote_a_dict,
     opciones_lote_requieren_v3,
+    opciones_lote_requieren_v4,
     opciones_parciales_a_dict,
     opciones_parciales_requieren_v3,
+    opciones_parciales_requieren_v4,
 )
 from proxlaunch.nucleo.archivos.json_estricto import cargar_json_estricto
 from proxlaunch.nucleo.archivos.lector import leer_archivo_limitado
@@ -163,16 +167,23 @@ def lote_a_dict(lote: LoteGuardado) -> dict[str, object]:
 
 
 def version_para(lote: LoteGuardado) -> int:
-    """3 si el lote usa algo de la fase A (CA-A7.1.5; ``notas_origen`` sola no cuenta, P-4); si no,
-    2 si alguna MV usa algo del MVP 4 (DT-O15, CA-O27.5) y 1 en otro caso."""
+    """4 si el lote usa algo de la fase B (cloud-init, espera de IP; DT-B12); si no, 3 si usa algo
+    de la fase A (CA-A7.1.5; ``notas_origen`` sola no cuenta, P-4); si no, 2 si alguna MV usa
+    algo del MVP 4 (DT-O15, CA-O27.5) y 1 en otro caso."""
     d = lote.definicion
     cfgs = [f.cfg for f in d.filas] if d.es_por_filas else [d.plantilla]
+    if any(requiere_version_4(c) for c in cfgs):
+        return VERSION_FORMATO
+    if d.opciones is not None and opciones_lote_requieren_v4(d.opciones):
+        return VERSION_FORMATO
+    if any(f.opciones is not None and opciones_parciales_requieren_v4(f.opciones) for f in d.filas):
+        return VERSION_FORMATO
     if any(requiere_version_3(c) for c in cfgs):
-        return VERSION_FORMATO
+        return VERSION_FORMATO_FASE_A
     if d.opciones is not None and opciones_lote_requieren_v3(d.opciones):
-        return VERSION_FORMATO
+        return VERSION_FORMATO_FASE_A
     if any(f.opciones is not None and opciones_parciales_requieren_v3(f.opciones) for f in d.filas):
-        return VERSION_FORMATO
+        return VERSION_FORMATO_FASE_A
     usa_mvp4 = any(requiere_version_2(c) for c in cfgs)
     return VERSION_FORMATO_MVP4 if usa_mvp4 else VERSION_FORMATO_BASE
 

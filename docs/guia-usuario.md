@@ -17,7 +17,13 @@ Con ProxLaunch puedes:
 - **importar una hoja de cálculo (CSV)** en la que cada fila es una máquina distinta;
 - **dejar la máquina lista para trabajar**: encenderla al terminar, hacer que arranque con el servidor, añadirle
   notas, etiquetas propias, ponerla en un pool, protegerla contra borrado y ajustar el MTU y el límite de velocidad
-  de su red (ver [Opciones de la máquina](#opciones-de-la-máquina)).
+  de su red (ver [Opciones de la máquina](#opciones-de-la-máquina));
+- **configurar la máquina en su primer arranque** al clonar una plantilla: usuario, clave SSH, contraseña opcional, IP fija
+  o DHCP (también **en serie** para un lote), DNS y scripts (ver
+  [Configuración inicial con cloud-init](#configuración-inicial-con-cloud-init));
+- **conocer la IP de cada máquina** al terminar y copiar o exportar la lista (ver [Esperar la IP](#esperar-la-ip));
+- **crear una plantilla a partir de una imagen cloud** (Ubuntu, Debian, Rocky…) sin salir de ProxLaunch (ver
+  [Crear una plantilla desde una imagen cloud](#crear-una-plantilla-desde-una-imagen-cloud)).
 
 Por defecto todas las máquinas se crean **detenidas**: solo se encienden si marcas **Encender al terminar**. ProxLaunch
 nunca instala el sistema operativo por ti (con un ISO, la instalación la terminas tú desde la consola de Proxmox).
@@ -27,7 +33,8 @@ nunca instala el sistema operativo por ti (con un ISO, la instalación la termin
 > (incluida la importación de discos en 8.4 o superior) solo se verificaron con respuestas simuladas, y la
 > instalación de Windows no se probó con un ISO de Windows real (las pruebas usaron Linux). Las opciones de la máquina de
 > la versión 0.6 (encender, notas, etiquetas, pool, protección, MTU y límite, y el Deshacer con apagado y desprotección) se
-> verificaron con respuestas simuladas de Proxmox, no contra un servidor real. Si usas esos casos, revisa siempre el
+> verificaron con respuestas simuladas de Proxmox, no contra un servidor real. Lo mismo vale para las funciones de la
+> versión 0.7 (cloud-init, esperar la IP y crear una plantilla desde una imagen cloud). Si usas esos casos, revisa siempre el
 > resumen y simula antes de crear.
 
 ## Cómo leer este manual
@@ -58,22 +65,26 @@ nunca instala el sistema operativo por ti (con un ISO, la instalación la termin
    protección, MTU y límite de red
 6. [Elegir el origen del sistema operativo](#elegir-el-origen-del-sistema-operativo): vacía, ISO, disco
    existente y plantilla
-7. [Transferencias: subir y descargar archivos](#transferencias-subir-y-descargar-archivos)
-8. [Entender el progreso y los resultados](#entender-el-progreso-y-los-resultados): tiempo agotado,
-   «Comprobar» y deshacer
-9. [Crear varias máquinas de una vez (lotes)](#crear-varias-máquinas-de-una-vez-lotes)
-10. [Perfiles de máquina](#perfiles-de-máquina)
-11. [Guardar y abrir lotes](#guardar-y-abrir-lotes)
-12. [Importar máquinas desde un CSV](#importar-máquinas-desde-un-csv): formato y validación
-13. [Lote por filas](#lote-por-filas)
-14. [Cambios sin guardar](#cambios-sin-guardar)
-15. [Menús y ajustes](#menús-y-ajustes)
-16. [Referencia de ventanas y menús](#referencia-de-ventanas-y-menús)
-17. [Formatos de archivo](#formatos-de-archivo): CSV, lotes y perfiles, versiones del formato y
-    [compatibilidad con 0.5.1](#compatibilidad-con-versiones-anteriores)
-18. [Solución de problemas](#solución-de-problemas): mensajes de error y preguntas frecuentes
-19. [Privacidad y seguridad](#privacidad-y-seguridad)
-20. [Glosario](#glosario)
+7. [Configuración inicial con cloud-init](#configuración-inicial-con-cloud-init): usuario, claves SSH, contraseña, red
+   (DHCP, IP fija e IP en serie), DNS y scripts
+8. [Esperar la IP](#esperar-la-ip): conocer la IP de cada máquina al terminar
+9. [Crear una plantilla desde una imagen cloud](#crear-una-plantilla-desde-una-imagen-cloud)
+10. [Transferencias: subir y descargar archivos](#transferencias-subir-y-descargar-archivos)
+11. [Entender el progreso y los resultados](#entender-el-progreso-y-los-resultados): tiempo agotado,
+    «Comprobar» y deshacer
+12. [Crear varias máquinas de una vez (lotes)](#crear-varias-máquinas-de-una-vez-lotes)
+13. [Perfiles de máquina](#perfiles-de-máquina)
+14. [Guardar y abrir lotes](#guardar-y-abrir-lotes)
+15. [Importar máquinas desde un CSV](#importar-máquinas-desde-un-csv): formato y validación
+16. [Lote por filas](#lote-por-filas)
+17. [Cambios sin guardar](#cambios-sin-guardar)
+18. [Menús y ajustes](#menús-y-ajustes)
+19. [Referencia de ventanas y menús](#referencia-de-ventanas-y-menús)
+20. [Formatos de archivo](#formatos-de-archivo): CSV, lotes y perfiles, versiones del formato y
+    [compatibilidad con 0.5.1 y 0.6](#compatibilidad-con-versiones-anteriores)
+21. [Solución de problemas](#solución-de-problemas): mensajes de error y preguntas frecuentes
+22. [Privacidad y seguridad](#privacidad-y-seguridad)
+23. [Glosario](#glosario)
 
 ### Ejemplo que se repite en el manual
 
@@ -93,6 +104,9 @@ el formulario ([lotes](#crear-varias-máquinas-de-una-vez-lotes)), cómo se guar
 | Máquinas **distintas** entre sí (hardware, origen, nodo por fila) | Un CSV | [Importar desde CSV](#importar-máquinas-desde-un-csv) |
 | Partir siempre del mismo hardware (por ejemplo «servidor web de la oficina») | Un perfil de máquina | [Perfiles](#perfiles-de-máquina) |
 | Que las máquinas salgan encendidas, con notas, etiquetas, pool o protección | Las opciones de la máquina | [Opciones de la máquina](#opciones-de-la-máquina) |
+| Que las copias de una plantilla salgan con usuario, clave SSH e IP ya puestos | Cloud-init | [Configuración inicial con cloud-init](#configuración-inicial-con-cloud-init) |
+| Saber qué IP recibió cada máquina | Esperar la IP | [Esperar la IP](#esperar-la-ip) |
+| Tener una plantilla de Ubuntu, Debian… sin prepararla a mano en Proxmox | El asistente de plantillas | [Crear una plantilla desde una imagen cloud](#crear-una-plantilla-desde-una-imagen-cloud) |
 
 ---
 
@@ -280,10 +294,12 @@ opciones, indicando qué permiso falta. Donde asignar estos permisos (en todo el
 donde hacen falta) se explica en
 [Permisos para el administrador: alcance acotado](#permisos-para-el-administrador-alcance-acotado).
 
-**El rol no cambia en la versión 0.6**: sigue siendo la misma lista de 14 privilegios. Crear lotes, etiquetar las
-máquinas, deshacer un lote y casi todas las [opciones de la máquina](#opciones-de-la-máquina) usan privilegios que ya
-están en la lista (borrar una máquina solo exige `VM.Allocate`). Hay dos privilegios **opcionales** que no forman parte
-del rol y habilitan funciones concretas (ver [Privilegios opcionales](#privilegios-opcionales-no-forman-parte-del-rol)).
+**El rol no cambia en las versiones 0.6 ni 0.7**: sigue siendo la misma lista de 14 privilegios. Crear lotes, etiquetar las
+máquinas, deshacer un lote, casi todas las [opciones de la máquina](#opciones-de-la-máquina) y el
+[asistente de plantillas](#privilegios-del-asistente) usan privilegios que ya están en la lista (borrar una máquina solo
+exige `VM.Allocate`). Hay privilegios **opcionales** que no forman parte del rol y habilitan funciones concretas
+(`VM.PowerMgmt`, `Pool.Audit` y, desde la 0.7, los de cloud-init y de esperar la IP; ver
+[Privilegios opcionales](#privilegios-opcionales-no-forman-parte-del-rol)).
 Tu administrador, además, puede restringir qué etiquetas se pueden poner (ver
 [Etiquetas](#etiquetas-propias-y-política-del-centro-de-datos)).
 
@@ -297,7 +313,7 @@ Tu administrador, además, puede restringir qué etiquetas se pueden poner (ver
 
 ### Privilegios opcionales (no forman parte del rol)
 
-Son dos y **no hacen falta para crear máquinas**. Sin ellos ProxLaunch **no avisa al conectar**: solo deja
+**No hacen falta para crear máquinas.** Sin ellos ProxLaunch **no avisa al conectar**: solo deja
 **desactivada** (no oculta) la opción afectada y escribe debajo qué privilegio falta y dónde. Si ProxLaunch no puede
 leer tus permisos, no desactiva nada y es Proxmox quien decide al crear.
 
@@ -305,6 +321,26 @@ leer tus permisos, no desactiva nada y es Proxmox quien decide al crear.
 |---|---|---|---|
 | `VM.PowerMgmt` | `/vms` | La casilla **Encender al terminar**, y que **Deshacer** pueda apagar a la fuerza las máquinas encendidas del lote. | La casilla sale desactivada; Deshacer **omite** las máquinas encendidas (no las toca). |
 | `Pool.Audit` | `/pool` | Ver la lista de pools para elegir uno en **Pool**. | La lista de pools sale desactivada con el motivo; no se puede elegir pool desde el formulario. |
+
+**Privilegios opcionales de la versión 0.7.** Los de cloud-init y de esperar la IP **dependen de la versión de Proxmox**:
+ProxLaunch solo te muestra y te pide los que existen en la versión a la que estás conectado.
+
+| Privilegio | Ruta | Versión | Qué habilita | Sin él |
+|---|---|---|---|---|
+| `VM.Config.Cloudinit` | `/vms` | 9.x (en 8.x vale este o `VM.Config.Network`) | Toda la sección [Configuración inicial con cloud-init](#configuración-inicial-con-cloud-init). | En **8.x** basta `VM.Config.Network`, que ya está en el rol, así que normalmente no hace falta pedir nada. En **9.0 y 9.1** con solo `VM.Config.Network` la sección queda activa con un aviso («puede que Proxmox lo rechace»). Desde la **9.2** hace falta `VM.Config.Cloudinit`: sin él la sección sale desactivada. |
+| `VM.Monitor` | `/vms` | Solo 8.x | **Esperar la IP** (preguntar al agente invitado de la máquina). | La casilla **Esperar la IP de cada máquina** sale desactivada. |
+| `VM.GuestAgent.Audit` | `/vms` | Solo 9.x | Lo mismo que `VM.Monitor`, en Proxmox 9. (También vale `VM.GuestAgent.Unrestricted`.) | La casilla sale desactivada. |
+| `Datastore.AllocateSpace` | `/storage/<almacén de snippets>` | 8.x | Elegir **scripts de configuración (snippets)**. Ya está en el rol, pero compruébalo también sobre el almacenamiento donde están los scripts. | La sección de scripts sale desactivada. |
+| `Datastore.Allocate` | `/storage/<almacén de snippets>` | 8.x, **no verificado** | En algunas versiones 8.x Proxmox podría exigirlo para aceptar un script. ProxLaunch lo propone como alternativa, pero no se ha comprobado. | Con solo `Datastore.AllocateSpace` los scripts quedan disponibles con un aviso; si Proxmox los rechaza, pide este privilegio. |
+
+- **Para elegir un script** (snippet) también hace falta poder **ver** el contenido del almacenamiento: `Datastore.Audit` o
+  `Datastore.AllocateSpace` en `/storage`. Si no lo tienes, la sección de scripts sale desactivada.
+- **`VM.Config.Cloudinit` y `VM.Config.Network` se miran en `/vms`**, igual que `VM.PowerMgmt`: al rellenar el formulario la
+  máquina todavía no existe. **DNS y dominio** aceptan siempre `VM.Config.Network`, sin aviso.
+- **Para dar de golpe los de la 0.7 a un rol que ya existe**, el texto que genera la aplicación (**Copiar texto para mi
+  administrador**) incluye la orden `pveum role modify <rol> --privs "…" --append 1` con los privilegios que corresponden
+  a tu versión; el administrador la ejecuta en un nodo de Proxmox.
+- Los privilegios que usa el asistente de plantillas están en [Privilegios del asistente](#privilegios-del-asistente).
 
 - **`VM.PowerMgmt` debe concederse en `/vms`** (con propagar), no solo en una máquina concreta: al rellenar el formulario
   todavía no existe el número de la máquina, así que ProxLaunch solo mira `/vms` para habilitar **Encender al terminar**.
@@ -1190,6 +1226,12 @@ Proxmox lo acepte.
 
 **Deshacer** una copia borra la máquina nueva, **nunca la plantilla**.
 
+**Cloud-init y esperar la IP.** Cuando eliges una plantilla, debajo del formulario aparece el grupo **Configuración inicial
+(cloud-init)**, para dejar puestos el usuario, la clave SSH y la red de cada copia (ver
+[Configuración inicial con cloud-init](#configuración-inicial-con-cloud-init)). Y si no tienes una plantilla de Ubuntu,
+Debian o similar, puedes crearla con **Archivo > Crear plantilla desde imagen cloud…** (ver
+[Crear una plantilla desde una imagen cloud](#crear-una-plantilla-desde-una-imagen-cloud)).
+
 ### Orígenes en lotes, perfiles y CSV
 
 - **Lotes.** En un lote normal todas las máquinas usan el mismo origen (el mismo ISO, disco o plantilla). Ver
@@ -1201,6 +1243,7 @@ Proxmox lo acepte.
   lote no encaja en este servidor** (ver [Si el lote «no encaja»](#si-el-lote-no-encaja-en-este-servidor)).
 - **CSV.** Cada fila puede tener su propio origen con las columnas `origen`, `fuente`, `so`, `virtio` y `modo_clon`
   (ver [Columnas del CSV](#columnas-del-csv)).
+- **Perfiles de máquina.** No guardan cloud-init ni «Esperar la IP»: solo el hardware (y las opciones que ya se indicaban).
 
 ### Permisos para el administrador: alcance acotado
 
@@ -1227,6 +1270,12 @@ En las filas con «—», la guía de ProxLaunch no indica nada especial sobre *
 Si quieres que puedan elegir un pool, asigna `Pool.Audit` en la ruta `/pool` (ver
 [Privilegios opcionales](#privilegios-opcionales-no-forman-parte-del-rol)). Ninguno de los dos cambia el alcance del resto
 de permisos.
+
+**Privilegios opcionales (versión 0.7).** Para cloud-init y para esperar la IP, añade al rol que asignas en `/vms` (en este
+esquema, `ProxLaunchMaquinas`) `VM.Config.Cloudinit` y, según tu versión, `VM.Monitor` (8.x) o `VM.GuestAgent.Audit` (9.x).
+Para usar scripts de configuración (snippets) en 8.x, asigna el rol también sobre el almacenamiento donde están los scripts
+(`/storage/<almacenamiento de snippets>`). El asistente de plantillas no pide nada nuevo: ver
+[Privilegios del asistente](#privilegios-del-asistente).
 
 Pasos:
 
@@ -1271,6 +1320,658 @@ ejemplo revisando `/var/tmp` en cada nodo.
 
 Para el resto, **Copiar texto para el administrador** (en **Qué puedo hacer en este servidor**) genera un mensaje listo
 para enviar con los privilegios, las asignaciones y los pasos de «Import» y plantillas.
+
+---
+
+## Configuración inicial con cloud-init
+
+Cuando una máquina nueva arranca por primera vez suele haber que hacer siempre lo mismo: crear un usuario, dejarle tu
+clave para entrar por SSH y darle una IP. **Cloud-init** hace eso solo. Es un programa que viene **dentro** de las imágenes
+de servidores en la nube (Ubuntu, Debian, Rocky…): en el primer arranque lee unos datos que Proxmox le entrega y configura
+la máquina, sin que tengas que abrir su consola. ProxLaunch rellena esos datos por ti al crear las copias de una plantilla.
+
+Ejemplo que se sigue en toda la sección: **«quiero 4 servidores web (`srv-web-01` a `srv-web-04`), con el usuario `deploy`,
+mi clave SSH y las IP `192.168.1.50` a `192.168.1.53`»**.
+
+![Formulario en modo avanzado con «Copiar una plantilla de Proxmox» elegida y el grupo «Configuración inicial (cloud-init)» relleno: usuario «deploy», una clave SSH con el resumen «1 clave: ssh-ed25519 (ana@portatil)», «Tarjeta de red 1 (net0)» en «IP fija» con «192.168.1.50/24» y la puerta de enlace «192.168.1.1», servidores DNS, dominio de búsqueda «lab.local» y el apartado «Scripts de configuración (avanzado)».](img/68-seccion-cloudinit.png)
+
+*El grupo **Configuración inicial (cloud-init)** del formulario, con valores de ejemplo.*
+
+### Palabras que conviene conocer
+
+Si no eres experto en Proxmox, estas son las ideas que usa esta sección (también están en el [glosario](#glosario)):
+
+| Palabra | Qué es, con un ejemplo |
+|---|---|
+| **Cloud-init** | El programa de la imagen que configura la máquina en su primer arranque. *Ejemplo:* crea el usuario `deploy`, le pone tu clave y le asigna la IP `192.168.1.50`. |
+| **Imagen cloud** | Un disco ya instalado y mínimo que la distribución publica para servidores (por ejemplo, `noble-server-cloudimg-amd64.img` de Ubuntu). No trae instalador: se importa tal cual y cloud-init lo personaliza al arrancar. Ver [Crear una plantilla desde una imagen cloud](#crear-una-plantilla-desde-una-imagen-cloud). |
+| **Plantilla** | Una máquina «modelo» de la que se sacan copias (clones). No se enciende ni se edita. Para usar cloud-init, la plantilla necesita una **unidad cloud-init**: un pequeño disco virtual donde Proxmox deja los datos que cloud-init leerá. |
+| **Clave SSH pública** | Una línea de texto (el archivo que termina en `.pub`) que dejas en la máquina para poder entrar por SSH sin contraseña. *Ejemplo:* `ssh-ed25519 AAAAC3Nza… ana@portatil`. Tiene una pareja, la **clave privada**, que se queda en tu equipo y **nunca se comparte**: ver [Claves SSH](#claves-ssh). |
+| **Agente invitado (QEMU guest agent)** | Un programa que corre **dentro** de la máquina y le cuenta a Proxmox cosas como su IP. Sin él, ProxLaunch no puede saber la IP. Ver [Esperar la IP](#esperar-la-ip). |
+| **Script o snippet** | Un archivo de texto (normalmente YAML) guardado en el servidor que cloud-init usa como guion de configuración. *Ejemplo:* un script que instala el agente invitado. Lo crea el administrador. |
+| **DHCP** | La red le da a la máquina una IP **sola**, sin que escribas nada (la que tu router o servidor DHCP reparta). Cómoda, pero la IP puede cambiar. |
+| **IP fija** | Tú eliges la dirección de la máquina, con su máscara. *Ejemplo:* `192.168.1.50/24`. La máquina siempre tiene esa IP. |
+| **IP en serie** | En un lote, la primera máquina recibe la IP que escribas y cada una de las siguientes la siguiente: `.50`, `.51`, `.52`, `.53`… |
+| **Máscara (`/24`)** | Dice qué parte de la IP es «la red». `/24` equivale a `255.255.255.0`: todas las IP `192.168.1.x` están en la misma red. |
+| **Puerta de enlace** | La dirección del router por el que la máquina sale a otras redes e internet. *Ejemplo:* `192.168.1.1`. |
+| **DNS** | Los servidores que traducen nombres a IP (por ejemplo, `1.1.1.1` y `8.8.8.8`). |
+| **Dominio de búsqueda** | Se añade a los nombres cortos: con `lab.local`, escribir `srv01` equivale a `srv01.lab.local`. |
+
+### Qué hace y cuándo está disponible
+
+- **Solo al clonar una plantilla.** El grupo **Configuración inicial (cloud-init)** aparece en el formulario únicamente con
+  el origen **Copiar una plantilla de Proxmox**. Con disco vacío, ISO o disco existente no se muestra. Si una fila de un CSV
+  pide cloud-init con otro origen, da error: «La configuración inicial (cloud-init) solo se puede usar al clonar una
+  plantilla.»
+- **La plantilla necesita unidad cloud-init.** Si no la tiene, el grupo queda desactivado y dice por qué: «Esta plantilla no
+  tiene unidad cloud-init, así que Proxmox no podría entregar estos datos a la máquina. Usa una plantilla creada con «Crear
+  plantilla desde imagen cloud» o añade una unidad «CloudInit Drive» a la plantilla en Proxmox.» Si ProxLaunch no consigue
+  leer la plantilla, deja rellenar el grupo pero avisa de que, sin unidad, Proxmox no entregará los datos.
+- **Todo es opcional.** Lo que dejes vacío **se queda como lo tiene la plantilla**: ProxLaunch no lo envía. En gris, dentro
+  del campo, verás lo que hereda («Heredado de la plantilla: …»).
+- **Windows.** Con una plantilla de Windows, ProxLaunch avisa de que cloud-init no está probado con Windows y puede no
+  funcionar, y **no deja poner contraseña** («Con Windows, Proxmox guardaría la contraseña sin cifrar; no se permite.»).
+- **Modo básico y avanzado.** En básico ves **Usuario**, **Claves SSH**, **Contraseña (opcional)**, la **red de cada
+  tarjeta** y (si usas [Esperar la IP](#esperar-la-ip)) **Activar el agente invitado**. El modo avanzado añade **Servidores
+  DNS**, **Dominio de búsqueda**, **Actualizar paquetes** y **Scripts de configuración**. Cambiar de modo no borra lo que
+  escribiste.
+- **Una tarjeta por cada tarjeta de red de la plantilla** (`net0`, `net1`…). Si cambias de plantilla y la nueva no tiene una
+  tarjeta que ya habías configurado, esa tarjeta vuelve a su valor por defecto con el aviso «Se restableció la tarjeta de red
+  N: la plantilla elegida no la tiene.»
+- **Cómo se aplica.** ProxLaunch **clona** la plantilla y **después** aplica la configuración inicial a la copia. Si ese
+  último paso falla, la máquina **existe** y ves «Se creó, pero falta aplicar la configuración inicial (cloud-init). Puedes
+  reintentar los ajustes.»; el botón **Reintentar ajustes** vuelve a aplicarla sin crear máquinas nuevas. Mientras falte
+  algún ajuste, la máquina **no se enciende**.
+- **Los perfiles de máquina no la guardan.** Sí se guarda en un [lote guardado](#qué-se-guarda) y se puede fijar fila por fila
+  en un [CSV](#columnas-de-cloud-init-y-esperar-la-ip).
+
+### Los campos, de un vistazo
+
+| Campo | Modo | Defecto | Qué hace | Ejemplo |
+|---|---|---|---|---|
+| **Usuario** | Básico | Vacío («Heredado de la plantilla» o el de la imagen) | Usuario que se crea. | `deploy` |
+| **Claves SSH** + **Añadir archivo .pub…** | Básico | Vacío | Claves públicas con las que se puede entrar. | `ssh-ed25519 AAAAC3Nza… ana@portatil` |
+| **Contraseña (opcional)** + **Repite la contraseña** + **Mostrar** | Básico | Vacío | Contraseña del usuario. Opcional y poco recomendable. | (mínimo 8 caracteres) |
+| **Tarjeta de red N (netN)**: **Sin configurar** / **DHCP** / **IP fija** | Básico | **Sin configurar** | Cómo recibe su IP cada tarjeta. | **IP fija** |
+| **IP con máscara** | Básico, con IP fija | Vacío | La dirección de la máquina (en un lote, la de la primera). | `192.168.1.50/24` |
+| **Sumar 1 a cada máquina del lote** | Básico, con IP fija y más de una máquina | **Marcada** | IP en serie. | Marcada |
+| **Puerta de enlace** | Básico, con IP fija | Vacío | El router de esa red. | `192.168.1.1` |
+| **Activar el agente invitado** | Básico, solo con **Esperar la IP** y una plantilla sin agente | Desmarcada | Activa la opción del agente en la máquina. | Marcada |
+| **Servidores DNS** | Avanzado | Vacío («Heredado de la plantilla») | Servidores DNS, separados por espacio o coma. | `1.1.1.1, 8.8.8.8` |
+| **Dominio de búsqueda** | Avanzado | Vacío | Dominio que se añade a los nombres cortos. | `lab.local` |
+| **Actualizar paquetes** | Avanzado | **Como la plantilla** | **Como la plantilla**, **Sí** o **No**. | **No** |
+| **Scripts de configuración**: **Datos de usuario**, **Datos del proveedor**, **Red**, **Metadatos** | Avanzado | **Como la plantilla** | Scripts (snippets) del servidor. | `local:snippets/agente.yaml` |
+
+### Usuario
+
+El nombre del usuario que se crea en la máquina, por ejemplo `deploy`. **Vacío** = se usa el de la imagen (en Ubuntu es
+`ubuntu`). No puede tener espacios, `:` ni caracteres de control (error). Si no sigue el patrón habitual (minúsculas,
+números, `_` y `-`, hasta 32 caracteres), ProxLaunch avisa de que Proxmox lo acepta pero cloud-init podría rechazarlo.
+
+### Claves SSH
+
+Una clave SSH tiene dos partes: la **pública** (un texto que puedes repartir) y la **privada** (un archivo secreto que se
+queda en tu equipo). La máquina guarda la pública; quien tenga la privada puede entrar. En ProxLaunch **solo se usa la
+pública**.
+
+- **Pegar.** Escribe o pega **una clave por línea**. Una clave pública empieza por su tipo (`ssh-ed25519`, `ssh-rsa`,
+  `ecdsa-sha2-nistp256`…) seguido de un texto largo y, a menudo, un comentario con tu nombre: `ssh-ed25519 AAAAC3Nza… ana@portatil`.
+- **Añadir archivo .pub…** abre el selector de archivos (empieza en la carpeta `.ssh` de tu usuario, donde suelen estar) y
+  añade al campo el contenido de uno o varios archivos `.pub`. Un archivo de más de 64 KiB o que no sea de texto se descarta
+  con su motivo.
+- **Debajo del campo** ProxLaunch resume lo que entendió, **sin mostrar el cuerpo de la clave**: «2 claves: ssh-ed25519
+  (ana@portatil), ssh-rsa».
+- **Las claves repetidas se descartan** con el aviso «Se descartaron N claves repetidas.» Límites: hasta **20 claves** y
+  **8 KiB** en total. Una clave con opciones por delante (`command=…`, `from=…`) no se admite.
+- **Una clave privada se rechaza.** Si pegas (o eliges en un archivo) algo que parece una clave privada (empieza por
+  `-----BEGIN … PRIVATE KEY-----`, o es un archivo de clave de PuTTY), ProxLaunch **la borra del campo al instante** y dice:
+  «Eso parece una clave privada. Nunca la pegues aquí: usa solo la clave pública (el archivo que termina en .pub).» Nunca
+  la guarda ni la conserva. **La clave privada no se comparte con nadie ni se escribe en ningún formulario.**
+
+Si una línea no vale ves, por ejemplo, «Línea 2: no empieza por un tipo de clave conocido (por ejemplo ssh-ed25519 o
+ssh-rsa).» (nunca repite el contenido de la línea).
+
+Para saber cuál es tu clave pública: en Ubuntu o Windows 10/11 (PowerShell), con `cat ~/.ssh/id_ed25519.pub` o
+`type $env:USERPROFILE\.ssh\id_ed25519.pub`. Si no tienes ninguna, se crea con `ssh-keygen -t ed25519`.
+
+### Contraseña opcional
+
+Es **opcional** y, si puedes, usa claves SSH en su lugar. La contraseña sirve sobre todo para **entrar por la consola de
+Proxmox** si falla la red o las claves.
+
+En el formulario, la contraseña está justo debajo de las claves SSH (ver la captura del principio de la sección).
+
+- **Aviso de seguridad (se muestra siempre bajo el campo):** «Las claves SSH son más seguras. La contraseña sirve para
+  entrar por la consola de Proxmox si falla la red; quien tenga acceso a la consola o a la configuración podría obtenerla.
+  Úsala solo para pruebas o como último recurso.»
+- **Hay que escribirla dos veces** (**Contraseña** y **Repite la contraseña**). La casilla **Mostrar** enseña las dos
+  mientras las escribes. Si no coinciden: «Las dos contraseñas no coinciden.»
+- **Mínimo 8 caracteres** (máximo 128, sin saltos de línea). Con menos: «La contraseña debe tener al menos 8 caracteres. Con
+  menos, Proxmox la acepta pero es fácil de adivinar, así que no se admite.»
+- **No se guarda nunca en un archivo ni en un registro.** Ni en un lote guardado, ni en un perfil, ni en un CSV, ni en el
+  informe. Un lote guardado que la usaba se vuelve a abrir con el aviso «Este lote usaba una contraseña de cloud-init y no
+  se guardó. Vuelve a escribirla antes de crear las máquinas.»
+- **Solo vive en la memoria de ProxLaunch**, y solo mientras hace falta. Al pulsar **Crear**, los campos del formulario se
+  vacían (la contraseña pasa al lote). **Se olvida** cuando el lote ya no la necesita, y siempre al **descartar el lote**
+  (cerrar su resultado, empezar otro), al **desconectar** y al **salir**.
+- **Si ya la olvidó y vuelves a necesitarla** (por ejemplo, al reintentar los ajustes de una máquina), ves: «La contraseña
+  ya no está en memoria; vuelve a escribirla.» (o, en **Reintentar ajustes**: «La contraseña de cloud-init ya no está en
+  memoria (por seguridad no se guarda). Vuelve a escribirla y reintenta los ajustes.») Escríbela de nuevo en el formulario.
+- **En el resumen** solo ves «Contraseña inicial: definida (oculta)». En la simulación va enmascarada.
+- **Windows:** no se permite (ver arriba).
+- **Quién puede verla.** La contraseña se envía a Proxmox y queda en la configuración de la máquina: cualquiera con acceso a
+  esa configuración o a la consola podría obtenerla. Por eso es la opción menos segura.
+
+### Red de cada tarjeta
+
+Cada tarjeta de red de la plantilla (`net0`, `net1`…) tiene su propio bloque, titulado «Tarjeta de red 1 (net0)», con tres
+modos:
+
+| Modo | Qué hace | Cuándo usarlo |
+|---|---|---|
+| **Sin configurar** (defecto) | No toca la red: la máquina se queda como la plantilla («Heredado de la plantilla: …»). | Cuando la plantilla ya está bien configurada. |
+| **DHCP** | La máquina pide su IP a la red. | Redes con DHCP y no te importa qué IP recibe. |
+| **IP fija** | Tú pones la dirección. | Servidores que deben tener siempre la misma IP. |
+
+Con **IP fija** se activan estos campos:
+
+- **IP con máscara.** La dirección **con su máscara**, por ejemplo `192.168.1.50/24`. Sin la máscara es un error («falta la
+  máscara (por ejemplo 192.168.1.50/24)»). Reglas: la máscara debe estar entre `/8` y `/30`; cada número de la dirección
+  entre 0 y 255 y sin ceros a la izquierda; no vale una dirección reservada (`0.0.0.0`, loopback, multicast o link-local) ni
+  la dirección de red o de difusión de su red.
+- **Puerta de enlace.** El router, por ejemplo `192.168.1.1`. Debe estar en la **misma red** que la IP y no ser la misma
+  dirección. Es opcional. Una puerta con DHCP o sin configurar da error («solo vale con IP fija»).
+- **Sumar 1 a cada máquina del lote.** Solo aparece en un lote; ver abajo.
+
+**ProxLaunch no puede comprobar si una IP ya está en uso en tu red.** Eso lo tienes que saber tú: elige direcciones fuera
+del reparto de tu DHCP y que nadie más use. En el resumen verás siempre este recordatorio.
+
+#### IP en serie en un lote
+
+En un lote, si pones una **IP fija**, todas las máquinas tendrían la misma dirección. Para evitarlo, la casilla **Sumar 1 a
+cada máquina del lote** viene **marcada**: la primera máquina recibe la IP que escribas (**«IP de la primera máquina, por
+ejemplo 192.168.1.50/24»**), la segunda la siguiente, y así. Con nuestro ejemplo de 4 máquinas:
+
+| N.º | Nombre | IP que recibe |
+|---|---|---|
+| 1 | `srv-web-01` | `192.168.1.50/24` |
+| 2 | `srv-web-02` | `192.168.1.51/24` |
+| 3 | `srv-web-03` | `192.168.1.52/24` |
+| 4 | `srv-web-04` | `192.168.1.53/24` |
+
+![Resumen de un lote de 4 máquinas con IP fija en serie: bajo la tabla de máquinas, la lista «IP que recibirá cada máquina (calculadas antes de crear)» con «srv-web-01 → net0: 192.168.1.50/24» hasta «srv-web-04 → net0: 192.168.1.53/24» y el recordatorio «ProxLaunch no puede comprobar si una IP ya está en uso en tu red.»](img/69-cloudinit-ip-en-serie.png)
+
+*El resumen calcula y muestra, **antes de crear nada**, la IP de cada máquina. Si la lista es larga, muestra las 40
+primeras y «… y N máquinas más».*
+
+Qué puede salir mal (todo se avisa antes de crear):
+
+- **La serie no cabe.** «La serie de IP de la tarjeta 1 no cabe: «srv-web-04» recibiría 192.168.1.255/24, que es la
+  dirección de red o de difusión.» (o «…que es la puerta de enlace», o «…que se sale de la red»). Baja la cantidad o empieza
+  en otra IP.
+- **Sin serie y más de una máquina.** «Las 4 máquinas del lote tendrían la misma IP en la tarjeta de red 1. Marca «Sumar 1 a
+  cada máquina» o usa DHCP.»
+- **Una IP repetida** (por ejemplo, en un lote por filas): «La IP 192.168.1.50 se repite: la usan «a» y «b».»
+- La serie se calcula **sumando** a la IP inicial según el orden de las máquinas del lote.
+- En un [CSV](#columnas-de-cloud-init-y-esperar-la-ip) no hay serie: cada fila escribe su IP.
+
+### DNS y dominio
+
+*(Modo avanzado.)* **Servidores DNS**: direcciones IP separadas por espacio o coma, por ejemplo `1.1.1.1, 8.8.8.8`. Vacío =
+los de la plantilla (o los del servidor Proxmox). Si escribes algo que no es una IP, ves «Los DNS no son válidos: escribe
+direcciones IP (por ejemplo 1.1.1.1 o 8.8.8.8) separadas por espacio o coma.»; con más de tres, un aviso («Has puesto N
+servidores DNS; lo habitual es usar hasta tres.»). **Dominio de búsqueda**: un nombre como `lab.local`, sin espacios.
+Basta el privilegio `VM.Config.Network` en cualquier versión.
+
+### Actualizar paquetes en el primer arranque
+
+*(Modo avanzado.)* Si está en **Sí**, en el primer arranque la máquina actualiza el sistema; **puede tardar varios minutos**.
+**Como la plantilla** (defecto) no cambia nada; si la plantilla no lo define, Proxmox lo trata como «sí». **No** lo
+desactiva. Si usas [Esperar la IP](#esperar-la-ip) con un plazo corto (60 segundos o menos) y las actualizaciones activadas,
+ProxLaunch avisa: «Con las actualizaciones activadas, el primer arranque puede tardar más que el plazo de 60 s. Sube el
+plazo o desactiva «Actualizar paquetes».»
+
+### Activar el agente invitado
+
+El **agente invitado** (`qemu-guest-agent`) es lo que permite a Proxmox saber la IP de la máquina. La casilla **Activar el
+agente invitado** aparece **solo** cuando marcas [Esperar la IP](#esperar-la-ip) y la plantilla **no** tiene el agente
+activado. Al marcarla, ProxLaunch activa la opción **Agente QEMU** en la máquina. **Ojo: eso no instala el programa**: tiene
+que estar instalado dentro del sistema (ver [Instalar el agente invitado con un script](#instalar-el-agente-invitado-con-un-script)).
+Necesita `VM.Config.Options` (ya está en el rol).
+
+### Scripts de configuración (snippets)
+
+*(Modo avanzado.)* Un **script** (en Proxmox, *snippet*) es un archivo de texto, normalmente YAML, guardado en el servidor,
+que cloud-init usa como guion de configuración. Con uno puedes, por ejemplo, **instalar el agente invitado** o crear más
+usuarios. **ProxLaunch no los crea ni los sube**: los deja el **administrador** en un almacenamiento con el contenido
+**Fragmentos** (*snippets*); tú solo los eliges.
+
+Hay cuatro tipos, cada uno con su lista:
+
+| Tipo | Para qué sirve |
+|---|---|
+| **Datos del proveedor** (*vendor*) | **Recomendado.** Añade pasos a la configuración que genera Proxmox (instalar paquetes, ejecutar órdenes) **sin sustituir** el usuario ni las claves de arriba. |
+| **Datos de usuario** (*user*) | **Sustituye** los datos que genera Proxmox: el usuario, las claves y la contraseña de arriba se **ignoran** (ProxLaunch lo avisa). Solo para quien sabe lo que hace. |
+| **Red** (*network*) | Sustituye la configuración de red. |
+| **Metadatos** (*meta*) | Datos de identidad de la máquina. |
+
+En cada lista eliges: **Como la plantilla** (defecto), **Ninguno** (quita el que traiga la plantilla), uno de los scripts del
+servidor o **Escribir a mano…**, donde escribes el identificador con la forma `almacén:snippets/archivo`, por ejemplo
+`local:snippets/agente.yaml` (sin la lista del servidor ProxLaunch no puede comprobar que exista). Un script de más de
+**1 MiB** sale desactivado «(demasiado grande: máximo 1 MiB)» y todos juntos no pueden pasar de **3 MiB**.
+
+Si el nodo no tiene ningún almacenamiento con el contenido «Fragmentos», la sección sale desactivada («Pide al administrador
+que active el contenido «Fragmentos» (snippets) en un almacenamiento de archivos.»). Los privilegios necesarios dependen de
+la versión (ver [Privilegios opcionales](#privilegios-opcionales-no-forman-parte-del-rol)).
+
+El botón **Ver ejemplo para instalar el agente invitado…** muestra un script de ejemplo con un botón **Copiar**; está
+explicado en [Instalar el agente invitado con un script](#instalar-el-agente-invitado-con-un-script).
+
+### Lo que ves en el resumen, la simulación y el progreso
+
+- **Resumen.** Las líneas «Usuario inicial», «Claves SSH» (número, tipo y comentario), «Contraseña inicial: definida
+  (oculta)», «Red net0: DHCP» o «Red net0: IP fija 192.168.1.50/24, puerta 192.168.1.1 (sumando 1 a cada máquina)», «Activar
+  el agente invitado» y, en modo avanzado, «DNS», «Dominio de búsqueda», «Actualizar paquetes al arrancar» y «Script: …».
+  En modo básico, lo avanzado que hayas fijado se sigue aplicando y se lista como oculto.
+- **Simulación.** Incluye la orden que fija la configuración inicial y la de la contraseña; la contraseña sale **enmascarada**
+  y las claves SSH solo como cantidad (`[2]`). Solo **lee** del servidor.
+- **Progreso.** La máquina pasa por «Ajustando la máquina» mientras se aplican estos datos.
+- **Si falta un permiso** al aplicarlos: «Se creó, pero no se pudo guardar la configuración inicial (cloud-init): a tu
+  usuario le falta el permiso VM.Config.Cloudinit en «/vms/…». La máquina no se encendió. Pídeselo a tu administrador y
+  reintenta los ajustes.» (lo mismo con «la contraseña»).
+
+### Ejemplo completo: 4 servidores web
+
+1. Elige **Copiar una plantilla de Proxmox** y una plantilla con unidad cloud-init (por ejemplo `plantilla-ubuntu`).
+2. En el bloque **Lote**, pon cantidad 4 y prefijo `srv-web`.
+3. En **Configuración inicial (cloud-init)**: **Usuario** `deploy`; **Claves SSH**, tu clave pública (o **Añadir archivo
+   .pub…**); **Tarjeta de red 1 (net0)** en **IP fija**, **IP con máscara** `192.168.1.50/24`, **Puerta de enlace**
+   `192.168.1.1`, con **Sumar 1 a cada máquina del lote** marcada.
+4. (Avanzado) **Servidores DNS** `1.1.1.1, 8.8.8.8` y **Dominio de búsqueda** `lab.local`.
+5. Pulsa **Ver resumen**: comprueba la lista «IP que recibirá cada máquina» y pulsa **Simular** si quieres ver las órdenes.
+6. **Crear 4 máquinas**. Al terminar, `ssh deploy@192.168.1.50` debería entrar con tu clave.
+
+Un lote y un CSV listos para abrir están en [`ejemplos/`](ejemplos/LEEME.md): el CSV
+[`mvs-cloudinit.csv`](ejemplos/mvs-cloudinit.csv) y el lote
+[`lote-cloudinit.proxlaunch-lote.json`](ejemplos/lote-cloudinit.proxlaunch-lote.json) (sustituye las plantillas, redes y
+claves por las tuyas).
+
+---
+
+## Esperar la IP
+
+Al crear máquinas con DHCP, o aunque pongas una IP fija, a menudo quieres saber **qué IP tiene cada una** para entrar por
+SSH. Con **Esperar la IP de cada máquina**, ProxLaunch **pregunta a Proxmox por la IP** de cada máquina cuando termina de
+encenderse y la muestra en la columna **IP** del progreso. Se lo cuenta el **agente invitado** (un programa que corre dentro
+de la máquina).
+
+![Grupo General del formulario con «Encender al terminar» marcada, «Esperar la IP de cada máquina» marcada con el plazo de 120 segundos y, en el grupo de cloud-init, la casilla «Activar el agente invitado» junto al aviso de que el programa debe estar instalado dentro de la máquina.](img/70-esperar-ip.png)
+
+*La casilla **Esperar la IP de cada máquina** (con su plazo) junto a **Encender al terminar**.*
+
+### Qué hace falta
+
+1. **Encender al terminar** marcada. La IP solo se conoce con la máquina encendida; sin ella la casilla se desactiva con el
+   texto «La IP solo se puede conocer con la máquina encendida: marca «Encender al terminar».» (y se desmarca sola si
+   quitas **Encender al terminar**). Encender necesita [`VM.PowerMgmt`](#privilegios-opcionales-no-forman-parte-del-rol).
+2. **El privilegio para preguntar al agente**: `VM.Monitor` (Proxmox 8.x) o `VM.GuestAgent.Audit` (Proxmox 9.x), en `/vms`. Sin
+   él la casilla queda desactivada: «Tu usuario no puede preguntar a la máquina por su IP: falta el permiso … Pídeselo a tu
+   administrador.»
+3. **El agente invitado activado en Proxmox** (la opción **Agente QEMU** de la máquina). Si usas una plantilla sin agente,
+   marca **Activar el agente invitado** en el grupo de cloud-init. Si no está activado, ProxLaunch avisa antes de crear:
+   «La plantilla no tiene activado el agente invitado, así que no se podrá saber la IP. Marca «Activar el agente invitado»
+   en la configuración inicial y asegúrate de que el programa esté instalado dentro de la máquina.»
+4. **El programa instalado dentro de la máquina.** Esto es lo que más falla: **las imágenes oficiales de Ubuntu y Debian no
+   traen el agente**; las de Rocky y AlmaLinux sí. ProxLaunch lo recuerda con un aviso («Las imágenes de Ubuntu y Debian no
+   traen el agente invitado instalado: sin él no se podrá saber la IP. Las de Rocky y Alma sí lo traen.»). Se instala dentro
+   de la máquina (paquete `qemu-guest-agent`) o, mejor, con un [script de cloud-init](#instalar-el-agente-invitado-con-un-script).
+
+Funciona con cualquier origen (también con ISO o disco importado). Con ellos no hay cloud-init que active el agente por ti:
+la máquina debe tener marcada la casilla **Agente de QEMU** y el programa instalado dentro; si no, ves «La máquina no tiene
+activado el agente invitado (casilla «Agente de QEMU»), así que no se podrá saber la IP.»
+
+### El plazo
+
+El **Plazo (segundos)** es cuánto espera ProxLaunch **por máquina**: por defecto **120 s**, entre **10 y 1800**. Pasado el
+plazo sin IP, la máquina **ya está creada** y solo se marca el motivo. Mientras tanto, ProxLaunch pregunta **cada pocos
+segundos (como mínimo cada 5)**; con muchas máquinas espacia las preguntas. Si usas [Actualizar
+paquetes](#actualizar-paquetes-en-el-primer-arranque), sube el plazo: actualizar puede tardar varios minutos. Un plazo fuera
+de rango da «El plazo debe ser un número entero de segundos entre 10 y 1800.»
+
+**Esperar la IP nunca cambia el resultado de crear la máquina**: si no hay IP, la máquina se crea igual y solo se avisa.
+
+### La columna IP y sus estados
+
+Si alguna máquina pidió la IP, la tabla del progreso añade la columna **IP** (entre **Nodo** y **Detalle**):
+
+![Progreso de un lote de 4 máquinas con la columna «IP»: tres máquinas con «✓ 192.168.1.50», «✓ 192.168.1.51» y «✓ 192.168.1.52», una con «● Esperando la IP…», el resumen «3 con IP · 0 sin IP · 0 no aplicable · 1 esperando», el aviso «La creación terminó. Se está esperando la IP de 1 máquina; no hace falta esperar para usar el resto.» y los botones «Dejar de esperar la IP», «Copiar lista de IPs» y «Exportar IPs…».](img/71-progreso-con-ip.png)
+
+*La columna **IP**, el resumen de IP y los botones de la espera.*
+
+| Lo que ves en la celda | Qué significa | Qué hacer |
+|---|---|---|
+| ○ **Pendiente** | La máquina aún no se creó o no se encendió. | Esperar. |
+| ● **Esperando la IP…** | Se está preguntando al agente. | Esperar (hasta el plazo). |
+| ✓ **192.168.1.50** (verde) | Se obtuvo la IP principal. | Nada. Si no coincide con la IP fija que pediste: «No coincide con la IP fija que se configuró (…). Revisa la red de la máquina.» |
+| ⚠ **192.168.1.50 (a revisar)** | Solo se encontró una dirección que no es una IPv4 de la **primera** tarjeta (puede ser de otra tarjeta o IPv6). | Compruébala antes de usarla. |
+| – **Sin agente** | La máquina no tiene activado el agente invitado en Proxmox. | Actívalo (Opciones → Agente QEMU) y vuelve a encenderla. |
+| ⚠ **El agente no responde** | El agente no contestó a tiempo. Lo habitual: **no está instalado** (Ubuntu y Debian). | Instálalo dentro de la máquina (`qemu-guest-agent`) o usa un script de cloud-init. |
+| ⚠ **Sin IP** | El agente respondió, pero no halló ninguna IP útil (se ignoran las direcciones locales y las de Docker o de puentes). Puede que aún no tenga red. | Revisa la red de la máquina. El detalle nombra las interfaces ignoradas. |
+| ✕ **Sin permiso** | Falta `VM.Monitor` o `VM.GuestAgent.Audit` sobre la máquina. | Pídelo a tu administrador. |
+| – **No aplica** | No se esperó su IP: la máquina no se encendió o no llegó a crearse. | Nada. |
+| – **Se dejó de esperar** | Pulsaste **Dejar de esperar la IP**, o la máquina se eliminó. La máquina no se tocó. | Nada. |
+| ✕ **Error** | Un error inesperado al consultar. | Mira la IP en Proxmox, en el resumen de la máquina. |
+
+Cada estado lleva **símbolo y texto**, no solo color. Al seleccionar una fila ves la explicación completa. Encima de la
+tabla, un resumen cuenta las máquinas: «3 con IP · 1 sin IP · 0 no aplicable» (y « · N esperando» mientras dura la espera).
+
+### Botones: dejar de esperar, copiar y exportar
+
+| Botón | Qué hace |
+|---|---|
+| **Dejar de esperar la IP** | Deja de preguntar a las máquinas por su IP. Pasan a «Se dejó de esperar». **Las máquinas ya creadas no se tocan** y el lote no se deshace. Aparece mientras alguna siga esperando. |
+| **Copiar lista de IPs** | Copia al portapapeles una línea por máquina con **nombre, un tabulador y la IP** (solo las que tienen IP): se pega bien en una hoja de cálculo. |
+| **Exportar IPs…** | Guarda un CSV (separador `,`, UTF-8 con marca BOM) con las columnas `nombre`, `vmid`, `nodo`, `ip`, `otras_ips` y `estado`. El nombre sugerido es `ips-lote-<código>.csv`. No lleva usuario, claves ni contraseña. Si el archivo existe, el diálogo de guardado pide confirmar. |
+
+Con **una sola máquina** no hay tabla: bajo el resultado ves «Esperando su IP (hasta 120 s)… Puedes seguir usando
+ProxLaunch.», con el botón **Dejar de esperar la IP**, y al final la IP o el motivo («IP: …»).
+
+**Puedes seguir trabajando**: la espera no bloquea la ventana; las máquinas ya listas se pueden usar mientras otras aún
+esperan. El [**Informe** del lote](#informe) añade una sección **Direcciones IP** (resumen, una fila por máquina con su
+estado y su IP, y la explicación de las que no la tienen).
+
+### Deshacer y cerrar con una espera en marcha
+
+- **Deshacer** corta antes la espera de las máquinas que elijas y luego las elimina. El diálogo avisa: «Algunas máquinas
+  todavía esperan su IP. Si las eliminas, se dejará de esperar antes de borrarlas.»
+- **Cerrar ProxLaunch** con la espera en marcha pregunta (**Se está esperando la IP de las máquinas**): «ProxLaunch sigue
+  esperando la IP de algunas máquinas. Si cierras, dejará de esperar. Las máquinas no se tocan y no pasa nada en el
+  servidor.» (**Cerrar de todos modos** o **Seguir en ProxLaunch**). Al cerrar, la espera se descarta: no se retoma al
+  volver a abrir.
+- **Desconectar** (o **Archivo > Cerrar sesión**) también descarta la espera de los lotes de la sesión.
+
+**ProxLaunch no puede comprobar si una IP está en uso en tu red.** Solo te muestra la IP que la máquina dice tener. Si pones
+IP fija, elige direcciones libres.
+
+### Instalar el agente invitado con un script
+
+Como las imágenes de Ubuntu y Debian no traen el agente, lo más cómodo es instalarlo **en el primer arranque** con un
+**script de cloud-init**. Este es el que propone ProxLaunch (también en **Ver ejemplo para instalar el agente
+invitado…**, con el botón **Copiar**):
+
+```yaml
+#cloud-config
+package_update: true
+packages:
+  - qemu-guest-agent
+runcmd:
+  - systemctl enable --now qemu-guest-agent
+```
+
+Es de tipo **Datos del proveedor** (*vendor*). **ProxLaunch no puede subirlo**; lo tiene que dejar un administrador:
+
+1. Guardar el texto como, por ejemplo, `agente.yaml` en la carpeta de scripts de un almacenamiento con el contenido
+   **Fragmentos** (en el almacenamiento `local` suele ser `/var/lib/vz/snippets`), **en cada nodo** donde crearás máquinas.
+2. En el formulario (modo avanzado), en **Scripts de configuración**, elegir `agente.yaml` en **Datos del proveedor**.
+3. Marcar **Esperar la IP de cada máquina** (con el plazo suficiente: el script instala paquetes en el primer arranque).
+
+**Privilegio.** Para elegir el script hace falta poder ver el almacenamiento (`Datastore.Audit` o `Datastore.AllocateSpace`)
+y, en Proxmox 8.x, `Datastore.AllocateSpace` sobre ese almacenamiento (y, no verificado, `Datastore.Allocate`); en 9.x basta
+`Datastore.AllocateSpace`. Ver [Privilegios opcionales](#privilegios-opcionales-no-forman-parte-del-rol).
+
+---
+
+## Crear una plantilla desde una imagen cloud
+
+Las **imágenes cloud** son discos ya instalados que las distribuciones publican para servidores (Ubuntu, Debian, Rocky,
+AlmaLinux…). Para usarlas en Proxmox hay que **subirlas, crear una máquina con ese disco, ajustarla y convertirla en
+plantilla**: muchos pasos manuales. El asistente **Crear plantilla desde imagen cloud** lo hace por ti, y después ya puedes
+**clonar** esa plantilla con [cloud-init](#configuración-inicial-con-cloud-init).
+
+Se abre desde **Archivo > Crear plantilla desde imagen cloud…** (ver [el menú Archivo](#archivo)).
+
+### Cuándo está disponible
+
+- **Proxmox 8.4 o superior.** Antes de la 8.4 Proxmox no permite subir imágenes de disco al contenido «Importar» del
+  almacenamiento. En una versión anterior la opción del menú sale desactivada, con la ayuda «Necesita Proxmox 8.4 o una
+  versión posterior.»
+- **Un almacenamiento con el contenido «Importar»** en el nodo (de tipo directorio, NFS o CIFS). Si no hay: «Ningún
+  almacenamiento de este nodo admite el contenido «Importar». Pide al administrador que lo active (Centro de datos →
+  Almacenamiento) en uno de tipo directorio, NFS o CIFS.»
+- **Sin otra operación en marcha.** Si hay una transferencia, un lote o una simulación en curso, la opción no se abre:
+  «Hay una transferencia, un lote o una simulación en curso. Espera a que termine o cancélala.»
+- **Los privilegios** de [Privilegios del asistente](#privilegios-del-asistente).
+
+### Las cinco etapas
+
+El asistente hace, en este orden:
+
+1. **Poner la imagen en el servidor** (la subes desde tu equipo, el servidor la descarga, o usas una que ya está).
+2. **Crear la máquina e importar el disco.**
+3. **Ampliar el disco** al tamaño que pidas.
+4. **Guardar los valores de cloud-init** (opcional).
+5. **Convertir en plantilla.**
+
+![Parte superior del asistente «Crear plantilla desde imagen cloud»: el texto «Qué vas a hacer» con las cinco etapas, el apartado «1. La imagen» con las tres formas de elegirla («Un archivo de mi equipo», «Una dirección web (la descarga el servidor)» y «Una imagen que ya está en el servidor»), el campo de la suma de verificación y el apartado «2. Dónde se crea».](img/72-asistente-plantilla-imagen.png)
+
+*La parte superior del asistente. Todos los apartados tienen un botón «?» con su ayuda.*
+
+### 1. La imagen: tres orígenes
+
+| Origen | Qué haces | Notas |
+|---|---|---|
+| **Un archivo de mi equipo** | Pulsa **Elegir archivo…** y elige la imagen (`.qcow2`, `.img`, `.raw` o `.vmdk`). ProxLaunch **la sube** al servidor. | Lee solo la cabecera del archivo para saber su formato y su tamaño virtual. |
+| **Una dirección web (la descarga el servidor)** | Pega la dirección (`https://…`). El **servidor** la descarga, no tu equipo. | En modo básico solo se aceptan direcciones **https**. Necesita `Sys.AccessNetwork` en el nodo. |
+| **Una imagen que ya está en el servidor** | Elígela de la lista (**Actualizar lista** la vuelve a leer). | Sin descarga ni subida; la suma no se usa. |
+
+**Extensiones admitidas:** `.qcow2`, `.raw`, `.vmdk` e `.img`. Un archivo `.img` (como los de Ubuntu) es en realidad un
+**qcow2** sin la extensión adecuada: ProxLaunch lo sube con el nombre `.qcow2` **sin tocar su contenido** («Se subirá como
+«…qcow2» (el contenido del archivo no cambia).»); si resulta ser un disco en bruto, lo sube como `.raw`. Si el `.img` no es
+ninguno de los dos, no lo renombra a ciegas: «Conviértelo antes a qcow2.» Con una **dirección web** `.img` se pide como
+`.qcow2` y se avisa («La dirección termina en «.img». Se pedirá al servidor con la extensión «.qcow2» porque las imágenes
+cloud de este tipo son qcow2.»). **Otros formatos (ISO, OVA, ZIP…) no se pueden importar como disco** y se rechazan; si tu
+imagen es un `.ova`, conviértela antes a qcow2 o vmdk.
+
+Ejemplos de direcciones oficiales (revisa en la web de cada distribución cuál es la vigente; el asistente nunca descarga nada
+por su cuenta):
+
+- Ubuntu 24.04: `https://cloud-images.ubuntu.com/noble/current/noble-server-cloudimg-amd64.img`
+- Debian 12: `https://cloud.debian.org/images/cloud/bookworm/latest/debian-12-genericcloud-amd64.qcow2`
+- AlmaLinux 9: `https://repo.almalinux.org/almalinux/9/cloud/x86_64/images/AlmaLinux-9-GenericCloud-latest.x86_64.qcow2`
+
+#### La suma de verificación (SHA-256)
+
+Una **suma SHA-256** es un código de 64 letras y números (la «huella») que identifica **exactamente** un archivo: si cambia
+un solo byte, la suma cambia. Las distribuciones publican la de cada imagen; si la escribes, ProxLaunch comprueba que lo que
+llegó al servidor **es** lo publicado. Si no coincide, **no se usa nada**: «La suma no coincide: la descarga no es la
+esperada. No se usó el archivo.»
+
+- **Dónde está.** En la misma carpeta de la imagen suele haber un archivo `SHA256SUMS`. Ejemplo de Ubuntu
+  (`https://cloud-images.ubuntu.com/noble/current/SHA256SUMS`), con una línea por archivo:
+
+  ```text
+  1f2e3d4c5b6a79881f2e3d4c5b6a79881f2e3d4c5b6a79881f2e3d4c5b6a7988 *noble-server-cloudimg-amd64.img
+  ```
+
+  Copia **solo los 64 caracteres del principio** (la suma), sin el asterisco ni el nombre del archivo, y pégalos en el campo
+  **Opcional: suma de verificación (SHA-256…)**. (Los valores de este ejemplo son inventados.)
+- **Formato.** Solo números y letras de la A a la F. Se admiten 64 caracteres (SHA-256) y 128 (SHA-512), y también MD5 (32) y
+  SHA-1 (40), que protegen poco.
+- **Archivo de tu equipo:** solo SHA-256 (64 caracteres).
+- **Imagen ya en el servidor:** la suma no se usa.
+- **Es obligatoria** (SHA-256 o SHA-512) cuando **nada garantiza** que la descarga no fue alterada: con una dirección
+  **`http://`** (solo en modo avanzado) o **sin verificar el certificado** (casilla del modo avanzado). Entonces ves: «Con una
+  dirección http:// o sin verificar los certificados nada garantiza que el archivo no fue alterado por el camino, así que
+  hace falta la suma de verificación SHA-256 o SHA-512. Suele publicarla la distribución junto a la imagen, por ejemplo en el
+  archivo SHA256SUMS de Ubuntu.» Con MD5 o SHA-1 en esos casos, solo se avisa de que son débiles.
+- **Con `https://` y el certificado verificado** (lo normal) la suma es opcional, pero **conviene ponerla**.
+
+En **modo avanzado** aparece además la casilla **Comprobar el certificado del servidor web (recomendado)**. Si la desmarcas,
+el servidor podría descargar un archivo de un sitio falso, y la confirmación final te lo recuerda.
+
+### 2 y 3. Dónde se crea y la máquina modelo
+
+| Campo | Defecto | Qué hace |
+|---|---|---|
+| **Nodo** | El nodo actual | Dónde se crea. |
+| **Imagen importada en** | El primer almacenamiento con «Importar» | Dónde queda el archivo de la imagen. **ProxLaunch no lo borra después.** |
+| **Disco de la máquina en** | El primer almacenamiento de discos | Dónde queda el disco de la plantilla. Si es de tipo **LVM grueso**, avisa: las copias solo podrán ser clones completos. |
+| **Nombre** | Sugerido a partir del archivo | Nombre de la plantilla: letras sin acentos, números y guiones, hasta 63 caracteres. |
+| **Número (VMID)** | El primer libre (desde 100) | El número de la máquina. |
+| **Procesadores** | 1 socket × 2 núcleos | |
+| **Memoria** | 2 GiB | |
+| **Tamaño final del disco** | 10 GiB (o el tamaño de la imagen, si es mayor) | El disco **solo puede crecer**: si pides menos que la imagen no se amplía («El tamaño pedido (8 GiB) no supera el de la imagen (10 GiB): el disco no se ampliará (solo puede crecer).»). |
+| **Firmware** | **SeaBIOS (el clásico)** | O **UEFI (OVMF)**. |
+| **Red** | El primer bridge | Bridge, modelo (**VirtIO** o **Intel E1000**) y VLAN (**Sin VLAN**). |
+
+### 4. Opciones para imágenes cloud
+
+Tres casillas, **marcadas por defecto**, que las imágenes cloud esperan:
+
+| Casilla | Qué hace | Privilegio |
+|---|---|---|
+| **Unidad cloud-init (donde Proxmox deja los datos)** | Añade el pequeño disco donde Proxmox deja usuario, claves y red. **Sin ella, [cloud-init](#configuración-inicial-con-cloud-init) no funciona en las copias.** | `VM.Config.Disk` |
+| **Consola serie (la que esperan las imágenes cloud)** | Activa la consola serie. Con ella, la consola gráfica clásica de Proxmox (noVNC) **se queda en negro**: usa la consola **xterm.js** (la de texto). | `VM.Config.HWType` |
+| **Agente invitado (para conocer la IP de las copias)** | Activa la opción del agente. Las imágenes de Ubuntu y Debian **no traen el programa**: ProxLaunch avisa y propone [instalarlo con un script](#instalar-el-agente-invitado-con-un-script). | `VM.Config.Options` |
+
+Si falta un privilegio, esa casilla sale desmarcada y desactivada, con el motivo.
+
+### 5. Valores de cloud-init para las copias (opcional)
+
+Un grupo con casilla propia (**Valores de cloud-init para las copias**, desmarcado). Si lo marcas, dejas guardados valores que
+**heredarán todas las copias** (que luego pueden cambiarlos):
+
+| Campo | Qué hace |
+|---|---|
+| **Usuario** | Usuario por defecto (vacío = el de la imagen). Ejemplo: `ubuntu`. |
+| **Claves SSH** + **Añadir archivo .pub…** | Claves públicas (una por línea). La clave privada se rechaza, igual que en el formulario. |
+| **Pedir IP por DHCP en la primera tarjeta (recomendado)** | Marcada por defecto. |
+| **DNS** y **Dominio** | Por ejemplo `1.1.1.1 8.8.8.8` y `lab.local`. |
+| **Actualizar paquetes** | **Como la plantilla (sin cambios)**, **Sí, actualizar en el primer arranque** o **No actualizar**. |
+
+**Qué no hay, a propósito:** **contraseña** («Aquí no hay campo de contraseña a propósito: se copiaría a todas las
+máquinas»), **IP fija** (solo la primera tarjeta y por DHCP; la IP fija se elige al clonar) ni **scripts** (se eligen al
+clonar). Necesita `VM.Config.Cloudinit` o `VM.Config.Network`, según la versión.
+
+### 6. Confirmar
+
+![Final del asistente: el apartado «5. Valores de cloud-init (opcional)» marcado, con usuario, claves y DHCP, y el apartado «6. Confirmar» con la casilla «Entiendo que la plantilla no se puede encender ni volver a convertir en máquina normal; solo sirve para crear copias» y el botón «Crear plantilla».](img/73-asistente-plantilla-confirmar.png)
+
+*La casilla de confirmación y los valores de cloud-init de la plantilla.*
+
+- **Convertir en plantilla es irreversible.** Una plantilla no se enciende ni vuelve a ser una máquina normal: solo sirve para
+  crear copias. **ProxLaunch no puede borrarla**; si te equivocas, se borra desde Proxmox (y no se puede mientras tenga copias
+  enlazadas). Por eso **Crear plantilla** queda desactivado hasta marcar **«Entiendo que la plantilla no se puede encender ni
+  volver a convertir en máquina normal; solo sirve para crear copias»**.
+- **Ya hay un archivo con ese nombre** en el servidor: eliges **Usar la que ya está (recomendado)** o **Reemplazarla por la
+  nueva**.
+- Con poco espacio temporal en el nodo aparece **Entiendo que la subida puede fallar** (igual que en las
+  [transferencias](#transferencias-subir-y-descargar-archivos)).
+- Al pulsar **Crear plantilla**, ProxLaunch hace primero **comprobaciones previas que solo leen** («Comprobando el servidor
+  (solo lecturas, no se escribe nada)…») y luego abre una última confirmación, **Crear la plantilla**, con el resumen («Se
+  va a crear la plantilla «ubuntu-2404» (número 9000) en el nodo «pve», con un disco de 10 GiB en «local-lvm», a partir de
+  «…»…»). El botón predeterminado es **Cancelar**.
+
+### Mientras trabaja: pasos, reintentar, comprobar ahora y omitir
+
+El asistente muestra las cinco etapas con un símbolo y un estado cada una:
+
+| Símbolo | Estado | Significa |
+|---|---|---|
+| ○ | **Pendiente** | Aún no se llegó. |
+| ● | **En curso** | Trabajando (con barra de avance y tiempo transcurrido). |
+| ✓ | **Hecho** | Terminó bien. |
+| ✕ | **Falló** | Dio un error (el mensaje dice cuál). |
+| – | **Omitido** | Elegiste continuar sin ese paso. |
+| ? | **No sabemos cómo acabó** | Se perdió la conexión o se dejó de esperar y no se sabe si el paso se hizo. |
+
+![Asistente tras un fallo: los pasos con «✓ 1. Poner la imagen en el servidor — Hecho», «✕ 2. Crear la máquina e importar el disco — Falló», los demás «Pendiente», el mensaje del error y lo que quedó en el servidor, y los botones «Reintentar este paso» y «Borrar la máquina a medio crear…».](img/74-asistente-plantilla-fallo.png)
+
+*Tras un fallo, el asistente explica **qué quedó en el servidor** y ofrece las acciones que tienen sentido.*
+
+Nunca repite un paso ya hecho. Cuando algo se detiene, ves qué quedó en el servidor y qué puedes hacer:
+
+| Paso detenido | Qué puede haber quedado | Acciones |
+|---|---|---|
+| 1. Imagen | Un archivo parcial o nada en el almacenamiento de importación (ProxLaunch no borra archivos del almacenamiento). | **Reintentar la imagen** |
+| 2. Crear | Una máquina a medio crear con el número reservado. | **Reintentar este paso** (puedes cambiar el **Número (VMID)** para reintentar con otro), **Borrar la máquina a medio crear…** |
+| 3. Ampliar | La máquina está completa, pero el disco no se amplió. | **Reintentar este paso** o **Continuar sin ampliar** |
+| 4. cloud-init | La máquina está completa, pero sin los valores de cloud-init. | **Reintentar este paso** o **Continuar sin cloud-init** |
+| 5. Convertir | La máquina está completa, pero todavía no es una plantilla. | **Reintentar la conversión** o **Dejarla como máquina normal** |
+
+- **Reintentar / Continuar** reanuda en el primer paso sin resolver. «Continuar» aparece cuando se detuvo (por ejemplo, al
+  cerrar) sin fallar.
+- **Comprobar ahora** aparece cuando un paso quedó en «No sabemos cómo acabó»: consulta el servidor (**solo lee, no cambia
+  nada**) y reconcilia el estado. Para ese paso **no** hay «Reintentar» hasta saber qué pasó, para no duplicar nada.
+- **Continuar sin ampliar / sin cloud-init / Dejarla como máquina normal** omiten el paso 3, 4 o 5 **solo si falló**. Las
+  consecuencias: sin ampliar, el disco tiene el tamaño de la imagen; sin cloud-init, las copias no heredarán esos valores;
+  «Dejarla como máquina normal» deja una máquina normal que puedes encender o convertir tú en Proxmox.
+- **Errores típicos de convertir:** «No se puede convertir en plantilla una máquina encendida. Apágala y reintenta.»; «…con
+  instantáneas (snapshots). Bórralas en Proxmox y reintenta.»; «La máquina no está apagada…»; o bloqueada por otra tarea de
+  Proxmox.
+
+### Borrar la máquina a medio crear
+
+Si el paso 2 o uno posterior falla y quedó una máquina a medio hacer, puede aparecer **Borrar la máquina a medio crear…**.
+Es una acción **manual**, nunca automática, con confirmación: «Se va a eliminar de Proxmox la máquina «x» (número N), que
+este asistente dejó a medio crear. Esta acción no se puede deshacer. La imagen del almacenamiento de importación no se
+borra.»
+
+Para evitar borrar algo ajeno, el botón **solo se ofrece si se cumplen TODAS estas condiciones**, que ProxLaunch comprueba
+justo antes (solo lecturas):
+
+- El asistente **reservó ese número** en esta sesión (hay un identificador de la tarea de creación).
+- La máquina tiene **el nombre que el asistente pidió**.
+- **No** es ya una plantilla, **no** está bloqueada por otra tarea, **no** tiene protección contra borrado y **no** está
+  encendida.
+- Tu usuario tiene `VM.Allocate` sobre ella.
+
+**Cuándo NO se ofrece**, y qué ves:
+
+| Motivo | Mensaje |
+|---|---|
+| No consta que el asistente la creara, o no se pudo leer su estado | «No puedo confirmar que la máquina sea tuya (no consta que este asistente la creara, o no se pudo leer su estado), así que no la borro. Si la máquina es de este asistente, bórrala desde Proxmox (menú «Más» → «Eliminar»).» |
+| Está encendida | «No se ofrece borrarla: está encendida. Apágala en Proxmox primero.» |
+| Está bloqueada | «No se ofrece borrarla: está bloqueada por otra tarea de Proxmox.» |
+| Tiene protección | «No se ofrece borrarla: tiene la protección contra borrado activada.» |
+| Falta el privilegio | «No se ofrece borrarla: tu usuario no tiene el permiso VM.Allocate sobre la máquina.» |
+| Cualquier otra condición | «No se ofrece borrarla: no cumple todas las condiciones de seguridad (nombre, plantilla, bloqueos).» |
+
+Si la máquina ya es plantilla (paso 5 hecho), no se ofrece borrar nada: ya no es «a medio crear».
+
+### Al terminar
+
+Verás «La plantilla «x» (número N) está lista en «almacén». Ya puedes usarla en «Clonar una plantilla» (actualiza la lista de
+plantillas si no aparece).» ProxLaunch **actualiza solo la lista de plantillas** y dice «Plantilla creada. Ya puedes
+clonarla.». Bajo el resultado, «Para tener en cuenta:» repite los avisos que apliquen (la consola serie, el agente que hay
+que instalar, el LVM grueso, el `.img` pedido como `.qcow2`). Si omitiste la conversión: «La máquina «x» (número N) quedó
+como máquina normal, no como plantilla. Puedes convertirla en plantilla desde Proxmox cuando quieras.»
+
+**Cerrar con el asistente trabajando.** Si cierras el asistente en pleno trabajo: «El asistente está trabajando. Si lo
+cierras, ProxLaunch dejará de esperar, pero lo que ya se envió al servidor seguirá su curso y no se borrará nada. Después
+podrás ver en Proxmox cómo quedó.» Si cierras ProxLaunch entero, la pregunta es **Hay una plantilla en creación**: «El
+asistente de plantillas está trabajando. Si cierras, ProxLaunch dejará de esperar: lo que ya se envió seguirá en Proxmox y no
+se borrará nada.» (**Cerrar de todos modos** o **Seguir en ProxLaunch**).
+
+### Privilegios del asistente
+
+El asistente **no necesita ningún privilegio fuera del rol** `ProxLaunchCreador`. Cada control que no puedes usar queda
+desactivado con el motivo:
+
+| Qué | Privilegio | Dónde |
+|---|---|---|
+| Subir la imagen de tu equipo | `Datastore.AllocateTemplate` | `/storage/<almacén de importación>` |
+| Que el servidor descargue la dirección web | `Datastore.AllocateTemplate` y `Sys.AccessNetwork` (también vale `Sys.Modify` en `/`, que ProxLaunch nunca pide) | Almacén y `/nodes/<nodo>` |
+| Crear la máquina e importar el disco | `VM.Allocate`, `VM.Config.CPU`, `VM.Config.Memory`, `VM.Config.Network`, `VM.Config.HWType`, `VM.Config.Options`, `Datastore.AllocateSpace`, `SDN.Use` | `/vms`, almacén y red |
+| Ampliar el disco y añadir la unidad cloud-init | `VM.Config.Disk` | `/vms` |
+| Consola serie | `VM.Config.HWType` | `/vms` |
+| Agente invitado | `VM.Config.Options` | `/vms` |
+| Valores de cloud-init | `VM.Config.Cloudinit` o `VM.Config.Network` (ver [versiones](#privilegios-opcionales-no-forman-parte-del-rol)) | `/vms` |
+| Convertir en plantilla y borrar lo medio creado | `VM.Allocate` | `/vms` |
+
+Si te falta un privilegio, el origen o la casilla afectados quedan desactivados con el motivo (por ejemplo, sin
+`Datastore.AllocateTemplate` no puedes subir un archivo ni pedir una descarga, pero sí usar una imagen que ya esté en el
+servidor).
 
 ---
 
@@ -1598,6 +2299,7 @@ Al pulsar **Ver resumen**, ProxLaunch consulta el servidor (no crea nada) y mues
 |---|---|
 | Tabla | Una fila por máquina: **N.º**, **Nombre**, **VMID**, **Nodo**, **Almacenamiento** y **Discos (GiB)**. En un [lote por filas](#lote-por-filas) añade **Procesadores**, **Memoria (GiB)** y **Sistema operativo**. |
 | Totales, espacio y reparto | Cuánto pide el lote, cuánto hay libre en cada almacenamiento y cuántas máquinas recibe cada nodo; los números saltados. |
+| IP que recibirá cada máquina | Solo con [IP fija](#red-de-cada-tarjeta): la lista «máquina → IP» calculada antes de crear (ver [IP en serie](#ip-en-serie-en-un-lote)). |
 | Errores (✕) y avisos (⚠) | Siempre **antes** de los botones. |
 | **Volver al formulario** | Vuelve a editar; cualquier cambio invalida el resumen. |
 | **Copiar resumen** | Lo copia al portapapeles. |
@@ -1670,7 +2372,7 @@ Al confirmar, el formulario se bloquea y aparece el progreso, con el título «C
 |---|---|
 | Barra | «7 de 20 terminadas · 1 con error · 2 en curso». Solo cuenta terminadas: no inventa porcentajes ni tiempos. Añade «N sin confirmar» y «N sin enviar» si los hay. |
 | **Mostrar solo problemas** | Filtra la tabla. |
-| Tabla (Estado, Nombre, VMID, Nodo, Detalle) | Una fila por máquina; el estado lleva siempre símbolo y texto. |
+| Tabla (Estado, Nombre, VMID, Nodo, Detalle) | Una fila por máquina; el estado lleva siempre símbolo y texto. Si alguna máquina pidió [esperar la IP](#la-columna-ip-y-sus-estados), aparece además la columna **IP**. |
 | Al seleccionar una fila | Aparece su **UPID** con **Copiar UPID** y sus detalles técnicos. |
 | **Cancelar lote** | Ver [Cancelar y «Dejar de esperar»](#cancelar-y-dejar-de-esperar). |
 
@@ -1739,7 +2441,8 @@ Cuando todas tienen resultado, el título pasa a «Lote terminado (N máquinas)�
 | **Comprobar la dudosa** / **Comprobar las N dudosas**, **Comprobar ahora** | Hay máquinas «No sabemos si se creó» o «Sin confirmar». |
 | **Deshacer…** | Siempre; se activa si hay algo que ProxLaunch pueda borrar. |
 | **Reintentar pendientes** | Hay máquinas «No enviada», «No se creó» o «Con error». |
-| **Reintentar ajustes** | Hay clones creados a los que les falta algún ajuste (etiquetas, arranque con el servidor, protección contra borrado, procesadores, memoria o disco). Solo reenvía esos ajustes; no crea máquinas. (No sale en la captura porque no hay clones.) |
+| **Reintentar ajustes** | Hay clones creados a los que les falta algún ajuste (etiquetas, arranque con el servidor, protección contra borrado, procesadores, memoria, disco o la [configuración inicial de cloud-init y la contraseña](#configuración-inicial-con-cloud-init)). Solo reenvía esos ajustes; no crea máquinas. Si la contraseña ya no está en memoria, hay que volver a escribirla. (No sale en la captura porque no hay clones.) |
+| **Dejar de esperar la IP**, **Copiar lista de IPs**, **Exportar IPs…** | Solo si el lote usó [Esperar la IP](#esperar-la-ip). |
 | **Informe** | Siempre. |
 | **Volver al formulario** | Siempre. Si hay máquinas sin confirmar avisa: «No sabemos si algunas máquinas se crearon. Si vuelves y repites el lote, podrías duplicarlas.» |
 
@@ -1835,8 +2538,9 @@ lote y que no está bloqueada.
   de las máquinas con problemas**; **Configuración de las máquinas**; avisos del plan; sección **Deshacer** (si la hubo); y
   **Cómo encontrar estas máquinas en Proxmox** (etiquetas y rango de números).
 - **No contiene:** la dirección ni la IP del servidor, tu usuario, claves, tokens, contraseñas o tickets (del UPID se
-  oculta el usuario). Sí contiene nombres de máquinas, de nodos y de tu perfil: revísalo antes de enviarlo fuera de tu
-  organización.
+  oculta el usuario). Tampoco el contenido de la configuración inicial de cloud-init (usuario, claves SSH o contraseña).
+  Sí contiene nombres de máquinas, de nodos y de tu perfil y, si usaste [Esperar la IP](#esperar-la-ip), una sección
+  **Direcciones IP** con la IP de cada máquina: revísalo antes de enviarlo fuera de tu organización.
 - Con un lote hecho, **Lote > Guardar el informe del lote como CSV…** lo guarda en una hoja de cálculo (ver
   [Formatos de archivo](#informe-del-lote-en-csv)).
 
@@ -1862,7 +2566,9 @@ una plantilla de Proxmox ni un perfil de conexión.**
   tarjeta), y, de las [opciones de la máquina](#opciones-de-la-máquina), solo **Arrancar con el servidor**.
 - **Lo que nunca toca:** el **nombre** de la máquina, su **número (VMID)**, el **nodo** y el bloque **Lote**. Un perfil
   tampoco elige el archivo ISO ni instala nada por sí solo, y **no guarda** **Encender al terminar**, las notas, las
-  etiquetas, el pool, la protección contra borrado ni el orden y la espera de arranque: esas las decides cada vez.
+  etiquetas, el pool, la protección contra borrado ni el orden y la espera de arranque: esas las decides cada vez. Desde la
+  0.7 tampoco guarda la [configuración inicial de cloud-init](#configuración-inicial-con-cloud-init) ni **Esperar la IP**
+  (por eso un perfil no sube un archivo al formato 4).
 
 El grupo **Perfil de máquina** está arriba del formulario, en modo básico y avanzado. Con un lote en marcha queda
 desactivado.
@@ -2026,8 +2732,20 @@ de esas opciones).
 > 0.5.1 sí abre. Ver [Compatibilidad con versiones anteriores](#compatibilidad-con-versiones-anteriores). Ejemplo listo para
 > abrir: [`lote-con-opciones.proxlaunch-lote.json`](ejemplos/lote-con-opciones.proxlaunch-lote.json).
 
-**No se guarda nunca:** datos de conexión (servidor, usuario, token, contraseña), el resumen, los números ya reservados,
-el código del lote ni la casilla de sobreasignar espacio. Si algún texto que escribiste parece una credencial
+**Desde la versión 0.7**, el lote guarda también la [configuración inicial de cloud-init](#configuración-inicial-con-cloud-init)
+(usuario, **claves SSH públicas**, red de cada tarjeta con su IP o IP en serie y puerta de enlace, DNS, dominio, actualizar
+paquetes, **identificadores** de los scripts y la casilla del agente invitado) y [Esperar la IP](#esperar-la-ip) con su plazo.
+Fíjate en que las **claves públicas** y las **direcciones IP** quedan escritas en el archivo: son datos que se pueden
+compartir, pero no son secretos de ProxLaunch. **La contraseña nunca se guarda**: al abrir un lote que la usaba ves «Este lote
+usaba una contraseña de cloud-init y no se guardó. Vuelve a escribirla antes de crear las máquinas.»
+
+> **Compatibilidad (0.7).** Un lote que usa cloud-init o **Esperar la IP** se guarda en el **formato 4**, que **ProxLaunch
+> 0.6.0 no abre** (ni 0.5.1). Un lote que no usa nada de la versión 0.7 se sigue guardando en el formato de antes, que 0.6.0
+> sí abre. Ver [Compatibilidad con versiones anteriores](#compatibilidad-con-versiones-anteriores). Ejemplo listo para
+> abrir: [`lote-cloudinit.proxlaunch-lote.json`](ejemplos/lote-cloudinit.proxlaunch-lote.json).
+
+**No se guarda nunca:** datos de conexión (servidor, usuario, token, contraseña), la contraseña de cloud-init, el resumen,
+los números ya reservados, el código del lote ni la casilla de sobreasignar espacio. Si algún texto que escribiste parece una credencial
 (`usuario@realm!token=...`), ProxLaunch **no guarda** y te dice en qué campo (sin mostrar el valor).
 
 ### Guardar
@@ -2061,10 +2779,11 @@ cambias con otro programa, ábrelo de nuevo.
 parecen una credencial («El archivo traía datos que parecen una credencial. No se usaron. Si eran reales, cámbialas.») o
 que el lote se guardó con una versión de Proxmox más nueva.
 
-**Lotes guardados con versiones anteriores.** ProxLaunch 0.6 abre los lotes de las versiones 1 y 2 del formato. Los abre con
-las opciones nuevas en su valor por defecto (sin encender, sin notas propias, sin etiquetas extra, sin pool, sin protección,
-MTU «Heredar» y sin límite), de modo que se crean **igual que antes**. En particular, **Añadir notas de origen** queda
-**desmarcada** al abrir un lote antiguo, aunque en un formulario nuevo venga marcada.
+**Lotes guardados con versiones anteriores.** ProxLaunch 0.7 abre los lotes de las versiones 1 a 3 del formato (los de 0.5 y
+0.6). Los abre con las opciones nuevas en su valor por defecto (sin encender, sin notas propias, sin etiquetas extra, sin
+pool, sin protección, MTU «Heredar» y sin límite, **sin cloud-init y sin esperar la IP**), de modo que se crean **igual que
+antes**. En particular, **Añadir notas de origen** queda **desmarcada** al abrir un lote antiguo, aunque en un formulario
+nuevo venga marcada.
 
 **Un pool que ya no existe.** Si el lote nombra un pool que este servidor no tiene, el pool se muestra como «x (no existe)» y
 la validación lo bloquea hasta que elijas otro o «Ninguno» (ver [Pool](#pool)).
@@ -2096,7 +2815,8 @@ después hay un resumen que debes confirmar, como en cualquier lote.
 > **Archivos de ejemplo** (carpeta [`ejemplos/`](ejemplos/LEEME.md)):
 > [`mvs-minimo.csv`](ejemplos/mvs-minimo.csv) · [`mvs-mixtas.csv`](ejemplos/mvs-mixtas.csv) ·
 > [`mvs-multidisco-cluster.csv`](ejemplos/mvs-multidisco-cluster.csv) · [`mvs-con-errores.csv`](ejemplos/mvs-con-errores.csv) ·
-> [`mvs-escrito-a-mano.csv`](ejemplos/mvs-escrito-a-mano.csv) · [`mvs-opciones.csv`](ejemplos/mvs-opciones.csv)
+> [`mvs-escrito-a-mano.csv`](ejemplos/mvs-escrito-a-mano.csv) · [`mvs-opciones.csv`](ejemplos/mvs-opciones.csv) ·
+> [`mvs-cloudinit.csv`](ejemplos/mvs-cloudinit.csv)
 
 ### Paso a paso
 
@@ -2151,11 +2871,13 @@ lab-03;4;8;80;vmbr0
   (el de la columna `perfil`, o el **Perfil base** si la celda está vacía) y por último las **columnas del archivo**. Si una
   fila dice `memoria` = 8 y su perfil trae 4 GiB, se crea con 8 GiB.
 - **Límites:** hasta **100 filas** (sin contar el encabezado ni las vacías), **60 columnas**, **256 caracteres por celda**
-  (la columna `notas` admite hasta **8192**) y **1 MiB** por archivo. Si te pasas, ProxLaunch no recorta: te pide dividir el
+  (las columnas `notas` y `ci_claves` admiten hasta **8192**) y **1 MiB** por archivo. Si te pasas, ProxLaunch no recorta: te pide dividir el
   archivo.
 - **Numeración de filas:** como en Excel; el encabezado es la fila 1, así que tu primera máquina es la **fila 2**.
 - **Credenciales:** una columna cuyo nombre parece una credencial (`token`, `password`, `contraseña`, `secreto`, `ticket`,
-  `csrf`, `apikey`, `credencial`) se ignora **sin leer sus celdas**.
+  `csrf`, `apikey`, `credencial`) se ignora **sin leer sus celdas**. **Única excepción:** la columna `ci_contrasena` (y sus
+  nombres `cipassword` y `ci_password`), la contraseña de [cloud-init](#columnas-de-cloud-init-y-esperar-la-ip), que sí se
+  lee y se trata como secreto.
 - **Error de todo el archivo:** una columna repetida («La columna «cpu» aparece dos veces.»), datos en una columna sin
   encabezado o la falta de `nombre`.
 
@@ -2193,6 +2915,19 @@ Solo **`nombre`** es obligatoria. Las demás son opcionales.
 | `proteger` (`protection`) | No | `si` o `no`. | — | `si` | Protege contra borrado. Vacío = el formulario. |
 | `mtu` | No | `heredar` (`inherit`), `igual` (`same`, `bridge`) o un entero de 576 a 65520. | — | `1500` | Solo VirtIO; **primera tarjeta**. Uso avanzado. |
 | `limite_red` (`rate`) | No | Número mayor que 0 (admite decimales). | **MB/s** (sin unidad escrita) | `100`, `12.5` | **Primera tarjeta**. Uso avanzado. |
+| `ci_usuario` (`ciuser`, `ci_user`) | No | Nombre de usuario (sin espacios ni `:`). | — | `deploy` | Cloud-init, solo con `clonar`. Ver [abajo](#columnas-de-cloud-init-y-esperar-la-ip). |
+| `ci_claves` (`sshkeys`, `ssh_keys`, `claves_ssh`) | No | Claves SSH **públicas**, separadas por salto de línea o `;`. | — | `ssh-ed25519 AAAAC3Nza… ana@portatil` | Hasta **8192** caracteres. Una clave privada es un error. |
+| `ci_contrasena` (`cipassword`, `ci_password`) | No | Contraseña de 8 a 128 caracteres. | — | (no la escribas en archivos que compartas) | **Secreta**: se enmascara y nunca se guarda. No está en la plantilla CSV. |
+| `ci_ip` (`ipconfig0`) | No | `dhcp`, `heredar` (sin configurar) o una IPv4 con máscara. | — | `192.168.1.50/24` | Primera tarjeta (`net0`). |
+| `ci_puerta` (`puerta_enlace`) | No | Una IPv4 de la misma red que `ci_ip`. | — | `192.168.1.1` | Solo con IP fija. |
+| `ci_dns` (`nameserver`) | No | Direcciones IP separadas por espacio, `,` o `;`. | — | `1.1.1.1;8.8.8.8` | Uso avanzado. |
+| `ci_dominio` (`searchdomain`, `dominio_busqueda`) | No | Un nombre de dominio. | — | `lab.local` | Uso avanzado. |
+| `ci_actualizar` (`ciupgrade`) | No | `si` o `no`. | — | `no` | Actualizar paquetes en el primer arranque. Uso avanzado. |
+| `ci_snippet_usuario` (`cicustom_user`, `snippet_user`) | No | Identificador `almacén:snippets/archivo`, o `ninguno`. | — | `local:snippets/usuarios.yaml` | Script «Datos de usuario». Uso avanzado. |
+| `ci_snippet_vendor` (`cicustom_vendor`, `snippet_vendor`) | No | Igual. | — | `local:snippets/agente.yaml` | Script «Datos del proveedor». Uso avanzado. |
+| `ci_snippet_red` (`cicustom_network`, `snippet_network`) | No | Igual. | — | `local:snippets/red.yaml` | Script «Red». Uso avanzado. |
+| `ci_snippet_meta` (`cicustom_meta`, `snippet_meta`) | No | Igual. | — | `local:snippets/meta.yaml` | Script «Metadatos». Uso avanzado. |
+| `esperar_ip` (`wait_ip`, `wait_for_ip`) | No | `si` o `no`. | — | `si` | [Esperar la IP](#esperar-la-ip). Pide que la máquina se encienda. |
 
 **Equivalencias que enseñan los ejemplos:**
 
@@ -2254,6 +2989,59 @@ En una hoja de cálculo (a la derecha del bridge `vmbr0` empiezan las columnas d
 `web-02` no fija nada y hereda lo del formulario; `bd-01` separa las etiquetas con `;`, no usa pool aunque el formulario
 tenga uno y pone el MTU «igual al bridge»; `lab-01` escribe `no` en lugar de dejar la celda vacía, anula el MTU del perfil
 con `heredar` y limita la tarjeta a 12.5 MB/s.
+
+#### Columnas de cloud-init y esperar la IP
+
+Las trece columnas nuevas de la versión 0.7 (`ci_usuario`, `ci_claves`, `ci_contrasena`, `ci_ip`, `ci_puerta`, `ci_dns`,
+`ci_dominio`, `ci_actualizar`, `ci_snippet_usuario`, `ci_snippet_vendor`, `ci_snippet_red`, `ci_snippet_meta` y
+`esperar_ip`) fijan, **fila por fila**, la [configuración inicial con cloud-init](#configuración-inicial-con-cloud-init) y
+[Esperar la IP](#esperar-la-ip). Cómo se comportan:
+
+- **Celda vacía = lo del formulario**, igual que en las columnas de opciones. Para anular algo del formulario escribe `no`
+  (o `ninguno` en un script, o `heredar` en `ci_ip`).
+- **Solo al clonar.** Una fila con cloud-init y un origen que no sea `clonar` da error («La configuración inicial
+  (cloud-init) solo se puede usar al clonar una plantilla.»).
+- **La red es de la primera tarjeta** (`net0`). `ci_ip` acepta `dhcp`, `heredar` (sin configurar) o una IP con máscara
+  (`192.168.1.50/24`); `ci_puerta` solo vale con IP fija. **No hay IP en serie en el CSV**: cada fila escribe su IP, y dos
+  filas con la misma IP dan error («La IP 192.168.1.50 se repite: la usan «a» y «b».»).
+- **Claves.** `ci_claves` admite varias claves públicas separadas por salto de línea (en una celda entre comillas) o por `;`.
+  Una clave privada da error en esa celda («Eso parece una clave privada. Nunca la pegues aquí…»); el contenido de la celda
+  nunca se repite en los mensajes.
+- **`ci_contrasena` es especial, porque es una contraseña:**
+  - Se **reconoce a propósito** aunque su nombre parezca una credencial (las demás columnas así se ignoran). Solo valen
+    esos tres nombres (`ci_contrasena`, `cipassword`, `ci_password`); los alias traducidos no se aplican a ella.
+  - **Se enmascara siempre** en pantalla (••••••), también en la columna «Valor del archivo» del detalle y en los errores.
+  - **Nunca se guarda**: no entra en un lote guardado, ni en el informe, ni en el CSV de **Descargar filas con error…**
+    (esa columna no se copia). **No está en la plantilla CSV descargable.**
+  - Tiene las mismas reglas que en el formulario (8 a 128 caracteres).
+  - Al importar un CSV que la usa, ves el aviso «Este CSV contiene contraseñas en texto claro. Bórralo cuando termines;
+    ProxLaunch no las guarda.» Un archivo así **tiene contraseñas en claro**: guárdalo con cuidado y bórralo al terminar.
+  - Si descartas el lote (o desconectas), se **olvida**: habrá que importar el CSV otra vez.
+- **`esperar_ip`** con `si` exige que esa fila se encienda (columna `encender` o casilla del formulario); si no, error («La IP
+  solo se puede conocer con la máquina encendida: marca «Encender al terminar».»). El plazo es el del formulario.
+- **Qué se valida cuándo.** La vista previa comprueba el formato; lo que depende del servidor (si la plantilla tiene unidad
+  cloud-init, si existen los scripts, tus privilegios) se comprueba al pulsar **Ver resumen**.
+- **La plantilla CSV** que descarga ProxLaunch incluye las doce columnas **menos** `ci_contrasena`. Su fila `ejemplo-05`, que
+  clona una plantilla, lleva `ci_usuario` = `ubuntu` y `ci_ip` = `dhcp`. Un CSV de la versión 0.6 (sin estas columnas) se lee
+  igual que antes.
+
+![Vista previa de «Importar desde CSV» con mvs-cloudinit.csv: el aviso «Este CSV contiene contraseñas en texto claro. Bórralo cuando termines; ProxLaunch no las guarda.», una tabla de filas correctas y, al seleccionar una, el detalle con la columna «ci_contrasena» enmascarada como «••••••».](img/75-importar-csv-cloudinit.png)
+
+*La vista previa de un CSV con cloud-init: la contraseña se ve siempre enmascarada y ProxLaunch avisa de que el archivo la
+lleva en claro.*
+
+Ejemplo: [`mvs-cloudinit.csv`](ejemplos/mvs-cloudinit.csv) (sustituye las plantillas, redes, claves y contraseñas por las
+tuyas). Un fragmento, con la clave abreviada con «…» (en el archivo va completa) y una contraseña inventada:
+
+```text
+"nombre";"origen";"fuente";"encender";"ci_usuario";"ci_claves";"ci_contrasena";"ci_ip";"ci_puerta";"ci_dns";"ci_dominio";"esperar_ip"
+"web-01";"clonar";"plantilla-ubuntu";"si";"deploy";"ssh-ed25519 AAAAC3Nza… ana@portatil";"";"192.168.1.50/24";"192.168.1.1";"1.1.1.1;8.8.8.8";"lab.local";"si"
+"web-02";"clonar";"plantilla-ubuntu";"si";"deploy";"ssh-ed25519 AAAAC3Nza… ana@portatil";"";"192.168.1.51/24";"192.168.1.1";"1.1.1.1;8.8.8.8";"lab.local";"si"
+"lab-01";"clonar";"plantilla-ubuntu";"si";"ubuntu";"";"clave-de-pruebas-1";"dhcp";"";"";"";"si"
+```
+
+Qué enseña cada fila: `web-01` y `web-02` usan clave SSH e **IP fija distinta** (en un CSV la «serie» la escribes tú);
+`lab-01` usa DHCP y una contraseña solo para pruebas.
 
 #### Unidades y números
 
@@ -2396,6 +3184,9 @@ Al terminar verás «Se importaron N máquinas desde «archivo.csv»» y el [lot
 
 - ProxLaunch **solo lee** tu CSV; nunca lo modifica.
 - Las celdas se tratan como texto: nunca se ejecuta una fórmula ni se abre un enlace.
+- **Contraseñas.** Si tu CSV lleva la columna `ci_contrasena`, las contraseñas están **en claro dentro del archivo**:
+  ProxLaunch las enmascara en pantalla y no las guarda en ninguna parte, pero el archivo es tuyo. Bórralo al terminar o no
+  uses esa columna y escribe la contraseña en el formulario.
 - Los CSV que **escribe** ProxLaunch (plantilla, filas con error, informe) llevan todas las celdas entre comillas, en UTF-8
   con marca (BOM), y si una celda empieza por `=`, `+`, `-` o `@` se le antepone un apóstrofo (`'`) para que Excel no la
   tome por una fórmula. Al reimportar un archivo así, ese apóstrofo se quita una vez.
@@ -2482,7 +3273,12 @@ La barra de menús tiene cinco menús. Los de **Lote** y el detalle de cada opci
 | **Cerrar sesión** | | Cierra la sesión actual (con [cambios sin guardar](#cambios-sin-guardar), pregunta). |
 | **Ver el último lote** | | Vuelve a mostrar el último lote. Desactivada hasta que haya uno. |
 | **Archivos subidos en esta sesión…** | | Ver [Archivos subidos](#archivos-subidos-en-esta-sesión). |
+| **Crear plantilla desde imagen cloud…** | | Abre el [asistente](#crear-una-plantilla-desde-una-imagen-cloud) que convierte una imagen cloud (Ubuntu, Debian…) en una plantilla. Desactivada con Proxmox anterior a la 8.4 («Necesita Proxmox 8.4 o una versión posterior.») y mientras haya una transferencia, un lote o un asistente en marcha. |
 | **Salir** | Atajo estándar de salir | Cierra ProxLaunch. |
+
+![Menú «Archivo» desplegado con «Conectar...», «Cerrar sesión», «Ver el último lote», «Archivos subidos en esta sesión…», «Crear plantilla desde imagen cloud…» y «Salir».](img/76-menu-archivo-plantilla.png)
+
+*El menú **Archivo** desde la versión 0.7.*
 
 ### Lote
 
@@ -2567,13 +3363,22 @@ opciones.
 | Resumen de lote con opciones | **Ver resumen** | [64](img/64-lote-resumen-opciones.png) | Revisar las opciones de todo el lote | [Opciones en un lote](#opciones-de-la-máquina-en-un-lote) |
 | Simulación con encendido | **Simular** | [65](img/65-simulacion-encender.png) | Ver `description`, `tags`, `startup` y el encendido final | [Simulación](#simulación) |
 | **Confirmar Deshacer con apagado o desprotección** | **Deshacer…** con máquinas encendidas o protegidas | [66](img/66-deshacer-confirmacion-forzada.png) | Confirmar el apagado a la fuerza y la desprotección | [Deshacer](#deshacer-con-máquinas-encendidas-o-protegidas) |
-| Privilegios opcionales en la guía del token | **Ayuda > ¿Cómo creo un API Token?** | [67](img/67-guia-privilegios-opcionales.png) | `VM.PowerMgmt`, `Pool.Audit` y lo que no se pide | [Privilegios opcionales](#privilegios-opcionales-no-forman-parte-del-rol) |
+| Privilegios opcionales en la guía del token | **Ayuda > ¿Cómo creo un API Token?** | [67](img/67-guia-privilegios-opcionales.png) | `VM.PowerMgmt`, `Pool.Audit`, los de cloud-init y de esperar la IP (según tu versión) y lo que no se pide | [Privilegios opcionales](#privilegios-opcionales-no-forman-parte-del-rol) |
+| **Configuración inicial (cloud-init)** (grupo del formulario) | Origen **Copiar una plantilla de Proxmox** | [68](img/68-seccion-cloudinit.png) | Usuario, claves SSH, contraseña, red, DNS y scripts | [Cloud-init](#configuración-inicial-con-cloud-init) |
+| Resumen de un lote con IP en serie | **Ver resumen** con IP fija y **Sumar 1 a cada máquina** | [69](img/69-cloudinit-ip-en-serie.png) | Ver la IP que recibirá cada máquina antes de crear | [IP en serie](#ip-en-serie-en-un-lote) |
+| **Esperar la IP de cada máquina** | Grupo General del formulario (con **Encender al terminar**) | [70](img/70-esperar-ip.png) | Pedir la IP de cada máquina y el plazo | [Esperar la IP](#esperar-la-ip) |
+| Progreso con la columna **IP** | **Crear N máquinas** con **Esperar la IP** | [71](img/71-progreso-con-ip.png) | Ver las IP, dejar de esperar, copiar y exportar | [La columna IP](#la-columna-ip-y-sus-estados) |
+| **Crear plantilla desde imagen cloud** | **Archivo > Crear plantilla desde imagen cloud…** | [72](img/72-asistente-plantilla-imagen.png), [73](img/73-asistente-plantilla-confirmar.png), [74](img/74-asistente-plantilla-fallo.png) | Convertir una imagen cloud en plantilla (etapas, confirmación y fallos) | [Crear una plantilla](#crear-una-plantilla-desde-una-imagen-cloud) |
+| **Se está esperando la IP de las máquinas** | Cerrar ProxLaunch con la espera en marcha | — | Avisar de que se dejará de esperar | [Deshacer y cerrar](#deshacer-y-cerrar-con-una-espera-en-marcha) |
+| **Hay una plantilla en creación** | Cerrar ProxLaunch con el asistente trabajando | — | Avisar de que lo ya enviado sigue su curso | [Al terminar](#al-terminar) |
+| Vista previa de un CSV con cloud-init | **Lote > Importar desde CSV…** con `ci_contrasena` | [75](img/75-importar-csv-cloudinit.png) | Ver la contraseña enmascarada y el aviso | [Columnas de cloud-init](#columnas-de-cloud-init-y-esperar-la-ip) |
+| Menú **Archivo** con el asistente | **Archivo** | [76](img/76-menu-archivo-plantilla.png) | Abrir el asistente de plantillas | [Archivo](#archivo) |
 
 ### Menús
 
 | Menú | Capturas | Opciones | Sección |
 |---|---|---|---|
-| **Archivo** | — | Conectar..., Cerrar sesión, Ver el último lote, Archivos subidos en esta sesión…, Salir | [Archivo](#archivo) |
+| **Archivo** | [76](img/76-menu-archivo-plantilla.png) | Conectar..., Cerrar sesión, Ver el último lote, Archivos subidos en esta sesión…, Crear plantilla desde imagen cloud…, Salir | [Archivo](#archivo) |
 | **Lote** | [02](img/02-menu-lote.png) | Abrir lote…, Guardar lote…, Guardar lote como…, Importar desde CSV…, Descargar plantilla CSV…, Guardar el informe del lote como CSV… | [Guardar y abrir lotes](#guardar-y-abrir-lotes) |
 | **Perfiles** | — | Guardar como perfil de máquina…, Administrar perfiles… (solo avanzado) | [Perfiles](#perfiles) |
 | **Ajustes** | [03](img/03-menu-ajustes.png) | Almacenamientos recordados…, Tema, Modo | [Ajustes](#ajustes) |
@@ -2591,6 +3396,9 @@ opciones.
 | Seguir sin etiquetas | Eliges **Seguir sin etiquetas** en una pausa | **Preparar el lote sin etiquetas** y cancelar |
 | Confirmar Deshacer con apagado o desprotección | Al deshacer, hay máquinas del lote encendidas o protegidas | **Apagar, desproteger y eliminar** (desactivado hasta marcar la casilla), **Eliminar sin apagar ni desproteger**, **Cancelar** (predeterminado) |
 | Hay un lote en curso | Cierras con un lote en marcha | **Seguir en ProxLaunch**, **Cerrar de todos modos** |
+| Se está esperando la IP de las máquinas | Cierras con la [espera de IP](#esperar-la-ip) en marcha y nada más | **Cerrar de todos modos**, **Seguir en ProxLaunch** |
+| Hay una plantilla en creación | Cierras ProxLaunch con el [asistente de plantillas](#crear-una-plantilla-desde-una-imagen-cloud) trabajando | **Cerrar de todos modos**, **Seguir en ProxLaunch** |
+| Crear la plantilla | Pulsas **Crear plantilla** en el asistente (tras las comprobaciones que solo leen) | **Crear la plantilla**, **Cancelar** (predeterminado) |
 | Todavía no sabemos si se creó | **Volver al formulario** con una máquina dudosa | **Sí** / **No** («¿Volver de todos modos?») |
 | Reemplazar la huella guardada, Conexión sin verificar, Eliminar perfil | En la conexión (avanzado) | **Sí** / **No** (por defecto, **No**) |
 
@@ -2604,16 +3412,16 @@ y no se comparte. Los ejemplos están en la carpeta [`ejemplos/`](ejemplos/LEEME
 | # | Archivo | Extensión sugerida | Cómo se importa | Cómo se exporta | ¿Sirve para crear MVs? | Ejemplo |
 |---|---|---|---|---|---|---|
 | 1 | CSV de máquinas | `.csv` (filtro `*.csv *.txt`) | **Lote > Importar desde CSV…** | **Lote > Descargar plantilla CSV…** (plantilla) | **Sí:** una fila = una MV (lote por filas) | [`mvs-*.csv`](ejemplos/LEEME.md#qué-es-cada-archivo) |
-| 2 | Lote guardado | `.proxlaunch-lote.json` | **Lote > Abrir lote…** (`Ctrl+O`) | **Lote > Guardar lote…** (`Ctrl+S`) | **Sí:** lote homogéneo o por filas | [`lote-homogeneo`](ejemplos/lote-homogeneo.proxlaunch-lote.json), [`lote-por-filas`](ejemplos/lote-por-filas.proxlaunch-lote.json) |
+| 2 | Lote guardado | `.proxlaunch-lote.json` | **Lote > Abrir lote…** (`Ctrl+O`) | **Lote > Guardar lote…** (`Ctrl+S`) | **Sí:** lote homogéneo o por filas | [`lote-homogeneo`](ejemplos/lote-homogeneo.proxlaunch-lote.json), [`lote-por-filas`](ejemplos/lote-por-filas.proxlaunch-lote.json), [`lote-cloudinit`](ejemplos/lote-cloudinit.proxlaunch-lote.json) |
 | 3 | Perfiles de máquina | `.proxlaunch-perfiles.json` | **Administrar perfiles… > Importar…** | **Administrar perfiles… > Exportar…** | **Indirecto:** aporta hardware; no crea nada por sí solo | [`perfiles-ejemplo`](ejemplos/perfiles-ejemplo.proxlaunch-perfiles.json) |
 | 4 | Perfiles de conexión | `perfiles.json` (carpeta de configuración) | **No hay importar** | **No hay exportar** | **No** (solo servidor y credenciales) | — |
 
 > **Los perfiles de conexión no se exportan ni se importan.** Para usar un servidor en otro equipo hay que crear su perfil
 > de nuevo (el token o la contraseña nunca viajan en archivos).
 
-**Límites comunes:** CSV hasta 1 MiB, 60 columnas, 256 caracteres por celda (8192 en la columna `notas`) y 100 filas; lote
+**Límites comunes:** CSV hasta 1 MiB, 60 columnas, 256 caracteres por celda (8192 en las columnas `notas` y `ci_claves`) y 100 filas; lote
 guardado hasta 1 MiB; archivo de perfiles hasta 256 KiB y 100 perfiles (también 100 perfiles propios en total); nombre de
-perfil o de lote hasta 60 caracteres; descripción hasta 200; versión máxima de formato legible: 3. Las cadenas que parecen
+perfil o de lote hasta 60 caracteres; descripción hasta 200; versión máxima de formato legible: 4. Las cadenas que parecen
 credenciales se descartan y avisan. Un lote guardado de 100 máquinas con notas muy largas en cada fila puede acercarse al
 límite de 1 MiB: si lo supera, ProxLaunch no lo guarda y lo dice. Un archivo creado por una versión más nueva de ProxLaunch no se abre: «Este archivo lo creó una versión más nueva
 de ProxLaunch. Actualiza la aplicación para abrirlo.»
@@ -2622,19 +3430,22 @@ de ProxLaunch. Actualiza la aplicación para abrirlo.»
 
 Reglas, [columnas](#columnas-del-csv), unidades y [validación](#validación-un-archivo-con-errores-a-propósito) están en
 [Importar máquinas desde un CSV](#importar-máquinas-desde-un-csv). La plantilla que descarga ProxLaunch tiene las columnas
-más usadas (en 0.6, también las de [opciones de la máquina](#columnas-de-opciones-de-la-máquina)) y cinco filas de ejemplo
+más usadas (en 0.6, también las de [opciones de la máquina](#columnas-de-opciones-de-la-máquina); en 0.7, las de
+[cloud-init y esperar la IP](#columnas-de-cloud-init-y-esperar-la-ip), **salvo `ci_contrasena`**, que nunca está en la
+plantilla) y cinco filas de ejemplo
 (dos con disco vacío y una por cada origen: ISO, disco existente y plantilla). Sus nombres empiezan por `ejemplo-`; si las
 importas tal cual, ProxLaunch avisa «Parece una fila de ejemplo de la plantilla.» Las dos primeras filas muestran algunas
-opciones (`arranque_auto`, `notas`, `etiquetas`, `pool`, `mtu`, `limite_red`…); las demás las dejan vacías. El texto del
-archivo (separador `;`; ProxLaunch escribe **todas las celdas entre comillas**, en UTF-8 con BOM):
+opciones (`arranque_auto`, `notas`, `etiquetas`, `pool`, `mtu`, `limite_red`…) y la que clona una plantilla (`ejemplo-05`)
+un ejemplo de cloud-init (`ci_usuario` = `ubuntu` y `ci_ip` = `dhcp`); las demás las dejan vacías. El texto del archivo
+(separador `;`; ProxLaunch escribe **todas las celdas entre comillas**, en UTF-8 con BOM):
 
 ```text
-"nombre";"perfil";"cpu";"memoria";"disco";"almacenamiento";"red";"vlan";"nodo";"vmid";"origen";"fuente";"so";"virtio";"modo_clon";"encender";"arranque_auto";"notas";"etiquetas";"pool";"proteger";"mtu";"limite_red"
-"ejemplo-01";"fabrica.servidor-mediano";"";"8";"100";"local-lvm";"vmbr0";"";"";"";"vacio";"";"";"";"";"";"si";"Servidor de ejemplo";"web,prod";"";"";"";""
-"ejemplo-02";"";"2";"4 GiB";"40";"";"vmbr1";"20";"pve2";"250";"vacio";"";"";"";"";"no";"";"";"";"ninguno";"no";"heredar";"50"
-"ejemplo-03";"";"2";"4";"32";"";"";"";"";"";"iso";"ejemplo-instalador.iso";"linux";"";"";"";"";"";"";"";"";"";""
-"ejemplo-04";"";"2";"4";"40";"";"";"";"";"";"importar";"ejemplo-disco.qcow2";"";"";"";"";"";"";"";"";"";"";""
-"ejemplo-05";"";"4";"8";"80";"";"";"";"";"";"clonar";"ejemplo-plantilla";"";"";"auto";"";"";"";"";"";"";"";""
+"nombre";"perfil";"cpu";"memoria";"disco";"almacenamiento";"red";"vlan";"nodo";"vmid";"origen";"fuente";"so";"virtio";"modo_clon";"encender";"arranque_auto";"notas";"etiquetas";"pool";"proteger";"mtu";"limite_red";"ci_usuario";"ci_claves";"ci_ip";"ci_puerta";"ci_dns";"ci_dominio";"ci_actualizar";"ci_snippet_usuario";"ci_snippet_vendor";"ci_snippet_red";"ci_snippet_meta";"esperar_ip"
+"ejemplo-01";"fabrica.servidor-mediano";"";"8";"100";"local-lvm";"vmbr0";"";"";"";"vacio";"";"";"";"";"";"si";"Servidor de ejemplo";"web,prod";"";"";"";"";"";"";"";"";"";"";"";"";"";"";"";""
+"ejemplo-02";"";"2";"4 GiB";"40";"";"vmbr1";"20";"pve2";"250";"vacio";"";"";"";"";"no";"";"";"";"ninguno";"no";"heredar";"50";"";"";"";"";"";"";"";"";"";"";"";""
+"ejemplo-03";"";"2";"4";"32";"";"";"";"";"";"iso";"ejemplo-instalador.iso";"linux";"";"";"";"";"";"";"";"";"";"";"";"";"";"";"";"";"";"";"";"";"";""
+"ejemplo-04";"";"2";"4";"40";"";"";"";"";"";"importar";"ejemplo-disco.qcow2";"";"";"";"";"";"";"";"";"";"";"";"";"";"";"";"";"";"";"";"";"";"";""
+"ejemplo-05";"";"4";"8";"80";"";"";"";"";"";"clonar";"ejemplo-plantilla";"";"";"auto";"";"";"";"";"";"";"";"";"ubuntu";"";"dhcp";"";"";"";"";"";"";"";"";""
 ```
 
 #### Informe del lote en CSV
@@ -2693,7 +3504,7 @@ completo.)
 
 | Clave | Qué es | Unidad o valores |
 |---|---|---|
-| `formato`, `version_formato`, `app_version` | Tipo de archivo y versión del formato (1, 2 o 3) y de ProxLaunch que lo guardó. | `proxlaunch.lote` |
+| `formato`, `version_formato`, `app_version` | Tipo de archivo y versión del formato (1 a 4) y de ProxLaunch que lo guardó. | `proxlaunch.lote` |
 | `nombre` | Nombre del lote (el de **Guardar lote**). | Hasta 60 caracteres. |
 | `tipo` | `homogeneo` o `por_filas`. | |
 | `version_proxmox` | Versión de Proxmox con la que se guardó. | Texto, por ejemplo `9.2`. |
@@ -2709,8 +3520,10 @@ completo.)
 | `config.notas_origen`, `config.notas_usuario`, `config.notas` | **Añadir notas de origen**, **Incluir mi usuario en las notas** y el texto de **Notas**. | `true` / `true` / texto de hasta 8192 caracteres. `notas_usuario` y `notas` piden el formato 3; `notas_origen` sola **no** lo sube (se escribe igualmente). |
 | `config.etiquetas_usuario`, `config.pool` | Las etiquetas propias y el pool. *(Formato 3.)* | Lista de textos / nombre del pool (`padre/hijo` admitido). |
 | `config.redes[].mtu`, `config.redes[].limite_mb` | MTU y límite de velocidad de cada tarjeta. *(Formato 3.)* | `1` (igual al bridge) o 576 a 65520 / número de MB/s mayor que 0. |
+| `config.cloudinit` (y `opciones.cloudinit`) | La [configuración inicial de cloud-init](#configuración-inicial-con-cloud-init): `usuario`, `claves` (claves **públicas**), `tarjetas` (cada una con `indice`, `modo`, `ip`, `serie` y `puerta`), `dns`, `dominio`, `actualizar`, `snippets` (`user`, `vendor`, `network`, `meta`) y `activar_agente`. *(Formato 4.)* | `modo`: `sin_configurar`, `dhcp` o `fija`. **Nunca lleva la contraseña**: si la había, solo se anota `con_acceso_local: true`. |
+| `config.esperar_ip` (y `opciones.esperar_ip`) | [Esperar la IP](#esperar-la-ip): `activo` y `plazo_s`. *(Formato 4.)* | `true` y de 10 a 1800. Solo se escribe si está activa. |
 | `homogeneo.opciones` (o `por_filas.opciones`) | Las opciones que valen para todo el lote. | Mismas claves que arriba (sin las de arranque ni las de red). |
-| `por_filas.filas[].opciones` | Lo que **una fila** sobrescribe de las opciones del lote. | `encender`, `arranque_auto`, `notas`, `etiquetas_usuario`, `pool` y `proteger`; lo que no aparece, se hereda. |
+| `por_filas.filas[].opciones` | Lo que **una fila** sobrescribe de las opciones del lote. | `encender`, `arranque_auto`, `notas`, `etiquetas_usuario`, `pool` y `proteger` y, desde la 0.7, `cloudinit` (con `tarjeta0`: solo la primera tarjeta) y `esperar_ip`; lo que no aparece, se hereda. |
 
 El lote **por filas** ([`lote-por-filas.proxlaunch-lote.json`](ejemplos/lote-por-filas.proxlaunch-lote.json)) usa la clave
 `por_filas` con `destino.algoritmo`, `etiquetar`, `vmid_inicial` y una lista `filas`; cada fila tiene `nombre`, `vmid`,
@@ -2787,26 +3600,33 @@ ni importarlos**; para llevar un servidor a otro equipo se crea de nuevo su perf
 ### Compatibilidad con versiones anteriores
 
 Los lotes guardados y los archivos de perfiles llevan un número de versión del formato (`version_formato`). Desde ProxLaunch
-0.6 la versión más alta es la **3**.
+0.7 la versión más alta es la **4**. **ProxLaunch 0.7.0 abre los archivos de las versiones 0.5 y 0.6.**
 
-| Archivo | ¿Lo abre 0.6.0? | ¿Lo abre 0.5.1? |
-|---|---|---|
-| Lote o perfiles de versión **1** o **2** (de 0.5.x o anteriores) | Sí. Las opciones nuevas toman su valor por defecto y se crea **igual que antes**. | Sí. |
-| Lote o perfiles de versión **3** (usan alguna opción nueva) | Sí. | **No**: «Este archivo lo creó una versión más nueva de ProxLaunch. Actualiza la aplicación para abrirlo.» |
-| CSV de 0.5.1 (sin columnas de opciones) | Sí, se lee igual que antes. | — |
-| CSV con columnas de opciones | Sí. | Las abre, pero **ignora** las columnas que no conoce con un aviso, de modo que las opciones no se aplican. |
+| Archivo | ¿Lo abre 0.7.0? | ¿Lo abre 0.6.0? | ¿Lo abre 0.5.1? |
+|---|---|---|---|
+| Lote o perfiles de versión **1** o **2** (de 0.5.x o anteriores) | Sí. Las opciones nuevas toman su valor por defecto y se crea **igual que antes**. | Sí. | Sí. |
+| Lote o perfiles de versión **3** (usan alguna opción de la 0.6) | Sí. | Sí. | **No**: «Este archivo lo creó una versión más nueva de ProxLaunch. Actualiza la aplicación para abrirlo.» |
+| Lote de versión **4** (usa **cloud-init** o **Esperar la IP**) | Sí. | **No**: el mismo mensaje de «versión más nueva». | **No**. |
+| Perfiles de máquina | Sí (los perfiles **no guardan** cloud-init ni esperar la IP, así que **no suben** a la versión 4). | Sí. | Según su versión (ver arriba). |
+| CSV de 0.5.1 o 0.6 (sin columnas de cloud-init) | Sí, se lee igual que antes. | — | — |
+| CSV con columnas de cloud-init o `esperar_ip` | Sí. | Lo abre, pero **ignora** las columnas que no conoce con un aviso (las de cloud-init **no se aplican**). | Igual. |
 
-- **Cuándo se escribe la versión 3.** ProxLaunch 0.6 escribe un lote o un perfil en versión 3 **solo si usa alguna opción
-  nueva** (por ejemplo, un lote con **Encender al terminar**, notas propias, etiquetas, pool, protección, MTU o límite; o un
-  perfil con **Arrancar con el servidor** o con MTU o límite en alguna tarjeta). Si no usa ninguna, lo escribe en la
-  versión más baja posible (1 o 2), igual que antes, y 0.5.1 lo sigue abriendo. Los perfiles de fábrica no cambian.
+- **Cuándo se escribe la versión 4.** ProxLaunch 0.7 escribe un **lote** en versión 4 **solo si usa cloud-init o Esperar la
+  IP** (con la casilla marcada). Si no usa ninguna, lo escribe en la versión más baja posible (1, 2 o 3), igual que antes, y
+  0.6.0 lo sigue abriendo. Un plazo cambiado con **Esperar la IP** desmarcada no se escribe y no sube el formato.
+- **Cuándo se escribe la versión 3.** ProxLaunch 0.6 y 0.7 escriben un lote o un perfil en versión 3 **solo si usa alguna
+  opción de la 0.6** (por ejemplo, un lote con **Encender al terminar**, notas propias, etiquetas, pool, protección, MTU o
+  límite; o un perfil con **Arrancar con el servidor** o con MTU o límite en alguna tarjeta). Si no usa ninguna, lo escribe en
+  la versión más baja posible (1 o 2), igual que antes, y 0.5.1 lo sigue abriendo. Los perfiles de fábrica no cambian.
+- **La contraseña de cloud-init nunca viaja en el archivo.** Un lote de versión 4 que la usaba solo guarda una marca de «tenía
+  contraseña» y, al abrirlo, ProxLaunch pide escribirla de nuevo.
 - **La casilla «Añadir notas de origen».** Viene marcada por defecto, pero **por sí sola no sube el formato**: se guarda en el
   archivo, y un lote que solo la usa sigue siendo de versión 1 o 2. 0.5.1 lo abre y, al no conocer ese dato, lo ignora y
   muestra el aviso de campos desconocidos («Se ignoró 1 campo que ProxLaunch no conoce.»).
-- **Abrir un archivo antiguo no lo modifica.** Los archivos de terceros solo se leen. Si lo vuelves a guardar con 0.6, se
+- **Abrir un archivo antiguo no lo modifica.** Los archivos de terceros solo se leen. Si lo vuelves a guardar con 0.7, se
   escribe con la versión que le corresponda según lo que use.
-- **Un archivo de una versión futura** (más de 3) se rechaza con el mismo mensaje de «versión más nueva».
-- **Perfiles exportados** con alguna opción nueva (versión 3) tampoco se pueden importar en 0.5.1; los demás sí.
+- **Un archivo de una versión futura** (más de 4) se rechaza con el mismo mensaje de «versión más nueva».
+- **Perfiles exportados** con alguna opción de la 0.6 (versión 3) tampoco se pueden importar en 0.5.1; los demás sí.
 
 ---
 
@@ -2904,6 +3724,86 @@ Los textos entre «x» o «N» cambian en cada caso. Los privilegios y las rutas
 | «x» está encendida y no se pudo apagar: falta el privilegio VM.PowerMgmt. … / «x» está protegida y no se pudo desproteger: falta el privilegio VM.Config.Options. … | En Deshacer, falta el privilegio para apagar o desproteger esa máquina; se omite. | Apágala o quítale la protección desde Proxmox, o pide el privilegio. |
 | No se pudo apagar «x», así que no se eliminó. … / No se pudo quitar la protección de «x», así que no se eliminó. … | Falló un paso previo al borrado. | Hazlo desde Proxmox y vuelve a intentarlo. |
 
+#### Mensajes de cloud-init, esperar la IP y plantillas desde imagen
+
+Los textos entre «x» o «N» cambian en cada caso. ProxLaunch **nunca** repite en un mensaje una contraseña ni el cuerpo de
+una clave: solo nombra el número de línea, el campo o el motivo.
+
+**Cloud-init**
+
+| Mensaje | Qué significa | Qué hacer |
+|---|---|---|
+| Esta plantilla no tiene unidad cloud-init, así que Proxmox no podría entregar estos datos a la máquina. … | La plantilla no tiene el pequeño disco de cloud-init. El grupo sale desactivado. | Usa una plantilla creada con **Crear plantilla desde imagen cloud** o añade una unidad «CloudInit Drive» a la plantilla en Proxmox (Hardware, Añadir). |
+| No se pudo leer la configuración de la plantilla «x», así que no se sabe si tiene unidad cloud-init. … | Aviso: no se pudo comprobar. | Puedes seguir; si la plantilla no tiene unidad, Proxmox no entregará los datos. |
+| Eso parece una clave privada. Nunca la pegues aquí: usa solo la clave pública (el archivo que termina en .pub). | Pegaste o elegiste una clave privada. Se borra al instante. | Usa el archivo `.pub`. Si esa clave privada se compartió, considérala comprometida y crea otra con `ssh-keygen`. |
+| Línea 2: no empieza por un tipo de clave conocido (por ejemplo ssh-ed25519 o ssh-rsa). / …le falta el cuerpo de la clave. / …el cuerpo de la clave no es válido. / …lleva opciones por delante (command=…, from=…), que no se admiten. | Una línea de claves no es una clave pública. | Corrige esa línea o bórrala. |
+| Hay demasiadas claves SSH (máximo 20). / Las claves SSH ocupan demasiado (máximo 8 KiB en total). | Límites de claves. | Quita claves. |
+| Ese archivo es demasiado grande para ser una clave pública (máximo 64 KiB). / Ese archivo no es de texto. … / No se pudo leer ese archivo. … | **Añadir archivo .pub…** no pudo usar el archivo. | Elige el archivo `.pub` correcto. |
+| Proxmox rechazó una de las claves SSH. Revisa que sean claves públicas completas. | Proxmox no aceptó una clave. | Pega la línea completa de la clave pública. |
+| Las dos contraseñas no coinciden. / La contraseña debe tener al menos 8 caracteres. … / La contraseña no puede superar los 128 caracteres. / …saltos de línea ni caracteres de control. | La contraseña no cumple las reglas. | Corrígela. |
+| Con Windows, Proxmox guardaría la contraseña sin cifrar; no se permite. | Plantilla de Windows con contraseña. | Quita la contraseña. |
+| La contraseña ya no está en memoria; vuelve a escribirla. / La contraseña de cloud-init ya no está en memoria (por seguridad no se guarda). Vuelve a escribirla y reintenta los ajustes. | ProxLaunch ya la olvidó (descartaste el lote, desconectaste…). | Escríbela de nuevo en el formulario. |
+| Este lote usaba una contraseña de cloud-init y no se guardó. Vuelve a escribirla antes de crear las máquinas. | Abriste un lote guardado que la tenía. | Escríbela de nuevo. |
+| Este CSV contiene contraseñas en texto claro. Bórralo cuando termines; ProxLaunch no las guarda. | Aviso: tu CSV usa la columna `ci_contrasena`. | Guárdalo con cuidado y bórralo al terminar. |
+| Se creó, pero falta aplicar la configuración inicial (cloud-init). Puedes reintentar los ajustes. / Se creó y la configuración inicial se aplicó, pero falta poner la contraseña. … | La máquina existe, pero ese último paso falló. | Pulsa **Reintentar ajustes**. |
+| Se creó, pero no se pudo guardar la configuración inicial (cloud-init) / la contraseña: a tu usuario le falta el permiso VM.Config.Cloudinit en «/vms/…». La máquina no se encendió. … | Falta un privilegio. | Pídelo a tu administrador y reintenta los ajustes. |
+| La IP de la tarjeta de red N no es válida: falta la máscara (por ejemplo 192.168.1.50/24). (y otros motivos: la máscara debe estar entre /8 y /30; cada número debe estar entre 0 y 255; no uses ceros a la izquierda; es una dirección reservada; no es una dirección IPv4) | La IP está mal escrita. | Corrígela. |
+| La IP de la tarjeta de red N es la dirección de red o de difusión de su red: elige otra. | Es la primera o la última de la red. | Elige otra. |
+| La puerta de enlace de la tarjeta de red N no es válida: no está en la misma red que la IP. (o: es la misma que la IP de la máquina / es la dirección de red o de difusión) / …solo vale con IP fija. | La puerta no corresponde. | Usa una dirección de la misma red, o quita la puerta. |
+| La serie de IP de la tarjeta N no cabe: «x» recibiría 192.168.1.255, que … | En un lote, la IP en serie se sale de la red o choca con la puerta. | Baja la cantidad o empieza en otra IP. |
+| Las N máquinas del lote tendrían la misma IP en la tarjeta de red N. Marca «Sumar 1 a cada máquina» o usa DHCP. | Una IP fija sin serie en un lote. | Marca la serie o usa DHCP. |
+| La IP 192.168.1.50 se repite: la usan «a» y «b». | Dos máquinas del lote con la misma IP. | Cambia una. |
+| Los DNS no son válidos: escribe direcciones IP … / Has puesto N servidores DNS; lo habitual es usar hasta tres. / El dominio de búsqueda no es válido: usa un nombre como lab.local, sin espacios. | DNS o dominio mal escritos (o aviso por demasiados DNS). | Corrígelos. |
+| La tarjeta de red N no existe: una máquina tiene hasta 32. / La plantilla no tiene la tarjeta de red N. / La tarjeta de red N está repetida. | Una tarjeta que la plantilla no tiene (típico en un lote guardado con otra plantilla). | Cambia la plantilla o quita esa tarjeta. |
+| El nodo «x» no tiene ningún almacenamiento con el contenido «Fragmentos» (snippets). Pide al administrador que lo active. | No hay dónde estén los scripts. | Pide que active «Fragmentos» en un almacenamiento. |
+| El script «x» no existe en el nodo «y». / Proxmox no encuentra el script «x». … | El script no está en ese nodo. | Déjalo en el almacenamiento de **cada nodo** donde crees máquinas, o elige otro. |
+| El script «x» pesa más de 1 MiB, el máximo que admite Proxmox. / Los scripts elegidos suman más de 3 MiB, el máximo que admite Proxmox. | Scripts demasiado grandes. | Usa otros más pequeños. |
+| Con «Datos de usuario» elegido, el usuario, las claves y la contraseña de arriba se ignoran: ese script sustituye a los datos que genera Proxmox. | Aviso. | Usa «Datos del proveedor» si quieres mantener el usuario y las claves de arriba. |
+| El identificador del script «x» no es válido: usa almacén:snippets/archivo, sin espacios, comas ni «..». | El texto de **Escribir a mano…** no tiene la forma correcta. | Escríbelo como `local:snippets/agente.yaml`. |
+| La plantilla «x» ya tiene scripts que ProxLaunch no sabe interpretar: solo se puede dejar «Como la plantilla». | La plantilla trae scripts con un formato que ProxLaunch no entiende. | Déjalos como están. |
+| «x» no está disponible: tu usuario no tiene el privilegio … en «/vms». Pídeselo a tu administrador. (con «x» el nombre de la opción: cloud-init, contraseña, DNS y dominio, scripts, esperar la IP o activar el agente) | Falta un privilegio opcional. La opción queda desactivada. | Ver [Privilegios opcionales](#privilegios-opcionales-no-forman-parte-del-rol). |
+
+**Esperar la IP**
+
+| Mensaje | Qué significa | Qué hacer |
+|---|---|---|
+| La IP solo se puede conocer con la máquina encendida: marca «Encender al terminar». | **Esperar la IP** sin **Encender al terminar**. | Marca **Encender al terminar**. |
+| El plazo debe ser un número entero de segundos entre 10 y 1800. | Plazo fuera de rango. | Corrígelo. |
+| La plantilla no tiene activado el agente invitado, así que no se podrá saber la IP. … / La máquina no tiene activado el agente invitado (casilla «Agente de QEMU»), así que no se podrá saber la IP. | Aviso: sin agente activado no hay IP. | Marca **Activar el agente invitado** o la casilla **Agente de QEMU**. |
+| Las imágenes de Ubuntu y Debian no traen el agente invitado instalado: sin él no se podrá saber la IP. Las de Rocky y Alma sí lo traen. | Aviso. | Instálalo dentro de la máquina o usa [un script](#instalar-el-agente-invitado-con-un-script). |
+| Con las actualizaciones activadas, el primer arranque puede tardar más que el plazo de 60 s. Sube el plazo o desactiva «Actualizar paquetes». | Aviso: el plazo es corto. | Sube el plazo. |
+| La máquina se creó, pero no se pudo conocer su IP. Mira la columna «IP» para ver el motivo. | La máquina existe; falló la IP. | Ver la tabla de [estados de la columna IP](#la-columna-ip-y-sus-estados). |
+| El agente invitado no respondió en el plazo. Suele pasar con las imágenes de Ubuntu y Debian, que no traen el agente: … | El agente no está instalado o no arrancó. | Instálalo (`qemu-guest-agent`). |
+| La IP que tiene la máquina no coincide con la IP fija que se pidió. | Aviso: la máquina tiene otra IP. | Revisa la red de la máquina. |
+| Tu usuario no puede preguntar a la máquina por su IP: falta el permiso VM.Monitor (Proxmox 8) o VM.GuestAgent.Audit (Proxmox 9) … | Falta el privilegio del agente. | Pídelo a tu administrador. |
+
+**Crear una plantilla desde una imagen cloud**
+
+| Mensaje | Qué significa | Qué hacer |
+|---|---|---|
+| Este asistente necesita Proxmox 8.4 o una versión posterior; este servidor es el 8.2. | Versión anterior a la 8.4. | Actualiza Proxmox o crea la plantilla a mano. |
+| Ningún almacenamiento de este nodo admite el contenido «Importar». … / El almacenamiento elegido para la imagen no admite el contenido «Importar» en este nodo. | No hay almacenamiento con «Importar». | Pide que lo activen (tipo directorio, NFS o CIFS). |
+| El archivo debe terminar en .qcow2, .img, .raw o .vmdk. Otros formatos (ISO, OVA, ZIP…) no se pueden importar como disco. | Extensión no admitida. | Convierte la imagen. |
+| El archivo «.img» no es una imagen qcow2 ni un disco en bruto: no se renombra a ciegas. Conviértelo antes a qcow2. / El contenido del archivo no corresponde a su extensión. … | El contenido no es lo que dice la extensión. | Conviértelo o renómbralo al formato correcto. |
+| Con una dirección http:// o sin verificar los certificados nada garantiza que el archivo no fue alterado por el camino, así que hace falta la suma de verificación SHA-256 o SHA-512. … | Falta la suma obligatoria. | Copia la suma de la web de la distribución (por ejemplo, de `SHA256SUMS`). |
+| La suma SHA-1 es débil: no protege bien contra un archivo manipulado. Mejor usa SHA-256 o SHA-512. | Aviso (MD5 o SHA-1 con descarga sin garantías). | Usa SHA-256. |
+| Para un archivo de tu equipo solo se admite la suma SHA-256 (64 caracteres). / La suma de verificación no tiene un formato válido: solo números y letras de la A a la F, con la longitud de su algoritmo (64 caracteres para SHA-256). | La suma está mal. | Pega **solo** el código, sin el nombre del archivo. |
+| La suma no coincide: la descarga no es la esperada. Esperada «…», obtenida «…». No se usó el archivo. | El archivo no es el que dice la distribución (dañado o manipulado). | No lo uses; descárgalo otra vez o revisa la suma. |
+| Proxmox no aceptó el archivo porque su formato no coincide con la extensión. … | Proxmox rechazó la imagen. | Elige una imagen `.qcow2` o `.raw`, o impórtala a mano. |
+| Ya hay un archivo con ese nombre en el servidor. Elige si usar el que ya está o reemplazarlo. | Nombre repetido. | Elige **Usar la que ya está** o **Reemplazarla por la nueva**. |
+| Marca la casilla de que entiendes que la plantilla no se puede deshacer. | Falta confirmar. | Marca la casilla. |
+| El nombre de la plantilla no es válido: usa letras sin acentos, números y guiones (sin espacios ni guiones al principio o al final), hasta 63 caracteres. | Nombre mal escrito. | Corrígelo. |
+| El almacenamiento «x» no guarda discos de máquinas en el nodo «y». Elige otro. | Destino no válido. | Elige otro almacenamiento. |
+| Una de las opciones marcadas necesita el permiso X en «Y», que tu usuario no tiene. … | Falta un privilegio. | Desmarca esa opción o pídelo. |
+| Aquí no hay campo de contraseña a propósito… / Una plantilla nunca lleva contraseña: se copiaría a todas las máquinas. / Los scripts (snippets) se eligen al clonar, no en la plantilla. / En la plantilla solo se puede configurar la primera tarjeta de red y por DHCP. La IP fija se elige al clonar. | Lo que el asistente no deja guardar en la plantilla. | Hazlo al clonar. |
+| No se puede convertir en plantilla una máquina encendida. Apágala y reintenta. / …con instantáneas (snapshots). Bórralas en Proxmox y reintenta. / La máquina está bloqueada por otra tarea de Proxmox (…). Espera a que termine y reintenta. | No se pudo convertir. | Haz lo que dice el mensaje y pulsa **Reintentar la conversión**. |
+| No sabemos cómo terminó el paso «x» (se perdió la conexión o se dejó de esperar). Pulsa «Comprobar ahora» … | Quedó en duda. | **Comprobar ahora**. |
+| La imagen se quedó en el almacenamiento de importación. ProxLaunch no la borra: … | Aviso: la imagen sigue en el servidor. | Pide al administrador que la elimine si ya no la necesitas. |
+| La máquina del intento anterior («x», VMID N) sigue en Proxmox. ProxLaunch no la borra: si no la quieres, bórrala a mano desde Proxmox. | Reintentaste con otro número y quedó la anterior. | Bórrala desde Proxmox si no la quieres. |
+| Se borró la máquina a medio crear. Puedes reintentar la creación (con otro VMID si quieres). / Se pidió borrar la máquina a medio crear, pero se dejó de esperar: la tarea sigue en Proxmox. Comprueba allí si se borró. | Resultado de **Borrar la máquina a medio crear…**. | Reintenta, o comprueba en Proxmox. |
+| No se amplió el disco: el tamaño pedido no supera el de la imagen (el disco solo puede crecer). / …no pudimos comprobar que tengas el permiso VM.Config.Disk. Amplíalo en Proxmox si lo necesitas. | Aviso del paso 3. | Amplía el disco en Proxmox si lo necesitas. |
+| El almacenamiento de destino es de tipo LVM grueso: las copias de esta plantilla solo podrán ser clones completos (no enlazados). | Aviso. | Nada; solo afecta al modo de clonar. |
+
 #### Mensajes del origen del sistema operativo
 
 Los puntos suspensivos (…) son datos que cambian en cada caso.
@@ -2960,7 +3860,86 @@ centro de datos, o quita tus etiquetas propias. Ver
 [Etiquetas propias](#etiquetas-propias-y-política-del-centro-de-datos).
 
 **Abrí un lote guardado con 0.6 en 0.5.1 y no se abre.** Los lotes y perfiles que usan opciones nuevas son de formato 3, que
-0.5.1 no entiende. Abre ese archivo con 0.6 (ver [Compatibilidad](#compatibilidad-con-versiones-anteriores)).
+0.5.1 no entiende. Abre ese archivo con 0.6 o 0.7 (ver [Compatibilidad](#compatibilidad-con-versiones-anteriores)).
+
+**Guardé un lote con cloud-init en 0.7 y 0.6.0 no lo abre.** Un lote que usa cloud-init o **Esperar la IP** es de formato 4,
+que 0.6.0 no entiende («Este archivo lo creó una versión más nueva de ProxLaunch»). Ábrelo con 0.7. Los lotes que no usan
+nada de la 0.7 se siguen guardando en el formato de antes.
+
+**¿Qué es cloud-init y para qué sirve aquí?** Es el programa de las imágenes de servidores que, en el primer arranque, crea el
+usuario, pone tu clave SSH y configura la red con los datos que ProxLaunch le deja. Evita entrar a cada máquina a configurarla.
+Ver [Configuración inicial con cloud-init](#configuración-inicial-con-cloud-init).
+
+**La sección «Configuración inicial (cloud-init)» no aparece, o está desactivada.** Solo aparece al **clonar una plantilla**.
+Si sale desactivada, debajo dice por qué: la plantilla no tiene **unidad cloud-init** (se la añade en Proxmox, o se usa una
+plantilla creada con [el asistente](#crear-una-plantilla-desde-una-imagen-cloud)) o falta un privilegio (`VM.Config.Cloudinit`
+o `VM.Config.Network`, según tu versión; ver [Privilegios opcionales](#privilegios-opcionales-no-forman-parte-del-rol)).
+
+**¿Cuál es mi clave SSH pública?** El archivo que termina en `.pub` en la carpeta `.ssh` de tu usuario (por ejemplo
+`id_ed25519.pub`). Pulsa **Añadir archivo .pub…** o pega su contenido (una línea). Si no tienes ninguna, créala fuera de
+ProxLaunch con `ssh-keygen -t ed25519`.
+
+**Pegué mi clave y ProxLaunch dijo que es privada y la borró.** Pegaste el archivo **sin** `.pub` (o su contenido). Ese es el
+secreto: no se comparte con nadie. Usa el archivo con la extensión `.pub`. Si ya lo habías pegado en otro sitio (un chat, un
+correo), créate una pareja de claves nueva.
+
+**¿Dónde queda la contraseña que pongo en cloud-init?** Se envía a Proxmox y queda en la configuración de la máquina (cualquiera
+con acceso a ella podría obtenerla). ProxLaunch **no la guarda nunca** en un archivo, un perfil, un CSV, el informe ni el
+registro, y la olvida al descartar el lote, al desconectar y al salir. Si puedes, usa mejor una clave SSH.
+
+**¿Puedo usar una contraseña de menos de 8 caracteres?** No: ProxLaunch la rechaza («La contraseña debe tener al menos 8
+caracteres…»), aunque Proxmox la aceptaría.
+
+**Me pide «vuelve a escribirla» la contraseña.** ProxLaunch ya la había olvidado (por ejemplo, porque descartaste el lote o te
+desconectaste). Escríbela de nuevo en el formulario; nunca se recupera de un archivo.
+
+**¿Qué diferencia hay entre DHCP e IP fija?** Con **DHCP** la red le da a la máquina la IP que quiera (puede cambiar). Con
+**IP fija** tú eliges la dirección y siempre es la misma; en un lote, con **Sumar 1 a cada máquina del lote** reciben `.50`,
+`.51`, `.52`… ProxLaunch **no puede comprobar** si esa IP ya está en uso en tu red: elígela libre.
+
+**Mi lote de IP fija no me deja crear («tendrían la misma IP»).** En un lote hay que marcar **Sumar 1 a cada máquina del
+lote** (viene marcada) o usar DHCP. Si la serie no cabe en la red, baja la cantidad o empieza en otra IP.
+
+**«Esperar la IP» está desactivada.** Hace falta marcar antes **Encender al terminar** (y tener `VM.PowerMgmt`) y tener el
+privilegio de consultar al agente (`VM.Monitor` en Proxmox 8, `VM.GuestAgent.Audit` en Proxmox 9). Debajo de la casilla se
+dice cuál falta.
+
+**Esperar la IP dice «El agente no responde» (o «Sin agente»).** El agente invitado no está activado o, lo más habitual, **no
+está instalado** dentro de la máquina: las imágenes de Ubuntu y Debian no lo traen. Instálalo (`qemu-guest-agent`) o usa el
+[script de ejemplo](#instalar-el-agente-invitado-con-un-script) al crear las máquinas. La máquina **no tiene ningún problema**:
+solo ProxLaunch no puede saber su IP.
+
+**¿Qué pasa si cierro ProxLaunch mientras espera las IP?** Te avisa («Se está esperando la IP de las máquinas»); si cierras,
+deja de esperar y las máquinas no se tocan. Al volver a abrir no se retoma: mira las IP en Proxmox.
+
+**¿Puedo crear una plantilla de Ubuntu sin tocar Proxmox?** Sí, con **Archivo > Crear plantilla desde imagen cloud…** (necesita
+Proxmox 8.4 o superior). Ver [Crear una plantilla desde una imagen cloud](#crear-una-plantilla-desde-una-imagen-cloud).
+
+**«Crear plantilla desde imagen cloud…» está desactivado.** Tu Proxmox es anterior a la 8.4, o hay una transferencia, un lote
+o un asistente en marcha. Si el asistente se abre pero no te deja crear, lee el mensaje: suele ser que ningún almacenamiento
+tiene el contenido «Importar» o que falta un privilegio.
+
+**¿Qué es la suma SHA-256 y cuál pongo?** Un código de 64 letras y números que identifica **exactamente** un archivo. La
+publica la distribución junto a la imagen (en Ubuntu, el archivo `SHA256SUMS`). Copia solo los 64 caracteres. Es **obligatoria**
+con una dirección `http://` o sin verificar el certificado, y recomendable siempre. Ver
+[La suma de verificación](#la-suma-de-verificación-sha-256).
+
+**¿Puedo usar un `.ova` o un `.iso` como imagen?** No: el asistente solo admite `.qcow2`, `.img`, `.raw` y `.vmdk`. Convierte
+antes la imagen.
+
+**Me equivoqué al crear la plantilla, ¿la puedo deshacer?** Convertir en plantilla no se puede deshacer y ProxLaunch no puede
+borrarla; bórrala desde Proxmox (no se puede mientras tenga copias enlazadas). Si el asistente se detuvo **antes** de
+convertir, **Borrar la máquina a medio crear…** (si se ofrece) limpia la máquina, pero **no** la imagen del almacenamiento.
+
+**La consola de Proxmox se ve en negro con mi plantilla.** Tiene **consola serie**, que es lo que esperan las imágenes cloud.
+En Proxmox, abre la consola **xterm.js** (la de texto) en lugar de noVNC.
+
+**El asistente se detuvo y dice «No sabemos cómo terminó el paso».** Se perdió la conexión o se dejó de esperar. Pulsa
+**Comprobar ahora**: solo lee del servidor y te dice qué se hizo. No repitas el paso a mano.
+
+**¿Por qué el asistente de plantilla no deja poner contraseña ni IP fija?** Porque una plantilla se copia a muchas máquinas:
+una contraseña o una IP fija se copiarían a todas. Esos datos se eligen **al clonar** (ver
+[Configuración inicial con cloud-init](#configuración-inicial-con-cloud-init)).
 
 **No veo las opciones ISO, disco existente o plantilla (están desactivadas).**
 Cada una dice debajo por qué. Lo más habitual es que falte un permiso (`VM.Config.Disk`, `VM.Clone`,
@@ -3010,7 +3989,9 @@ terminan solas. ProxLaunch no puede retomar el lote ni deshacerlo después. Busc
 **¿Puedo probar un lote sin crear nada?** Sí, con **Simular**. Solo lee del servidor.
 
 **¿Qué versiones de Proxmox funcionan?** De la 8.0 a la 9.2. Una versión más nueva se admite con un aviso. Descargar un ISO
-desde una dirección web pide 8.2 o superior; importar un disco existente, 8.4 o superior.
+desde una dirección web pide 8.2 o superior; importar un disco existente y el asistente **Crear plantilla desde imagen
+cloud**, 8.4 o superior. Los privilegios de cloud-init y de esperar la IP cambian entre la 8.x y la 9.x (ver
+[Privilegios opcionales](#privilegios-opcionales-no-forman-parte-del-rol)).
 
 **¿Qué diferencia hay entre un perfil de máquina y un lote guardado?** Un perfil guarda **solo el hardware** y no el nombre,
 el número ni el nodo. Un lote guardado recuerda **todo el lote**: hardware, cantidad, nombres, números y dónde crearlas. Los
@@ -3096,7 +4077,7 @@ ProxLaunch guarda sus datos en las carpetas de tu usuario que elige tu sistema o
 | `proxlaunch.log` (carpeta de registro) | Registro de lo que hace la aplicación, incluidos los errores no controlados. Se rota solo (hasta 5 copias de 1 MB). |
 | `fallo-nativo.txt` y `.1` (carpeta de registro) | Traza de un cierre interno (de Qt o del sistema). Se borra al cerrar ProxLaunch con normalidad; si queda, al abrir se guarda como `.1` (máximo 256 KB). Solo lleva nombres de archivos y funciones, pero esas rutas pueden incluir tu nombre de usuario. |
 | `informes/` (carpeta de datos) | Carpeta que **sugiere** ProxLaunch al guardar un informe de lote y donde deja el informe parcial (`parcial-<código>.txt`). Sin host, IP, usuario ni secretos, pero con nombres de máquinas y nodos. |
-| `lotes/` (carpeta de datos) | Carpeta que **sugiere** ProxLaunch al guardar un [lote](#guardar-y-abrir-lotes). Sin servidor, usuario ni secretos. Sí lleva el texto de tus **Notas** y tus etiquetas, así que no escribas ahí nada que no quieras compartir. |
+| `lotes/` (carpeta de datos) | Carpeta que **sugiere** ProxLaunch al guardar un [lote](#guardar-y-abrir-lotes). Sin servidor, usuario ni secretos. Sí lleva el texto de tus **Notas** y tus etiquetas y, desde la 0.7, tus **claves SSH públicas**, las **direcciones IP**, el usuario, los DNS y los identificadores de scripts de cloud-init, así que no escribas ahí nada que no quieras compartir. **Nunca** la contraseña de cloud-init. |
 
 En Linux y otros sistemas tipo Unix, el registro y todos los archivos que escribe ProxLaunch (perfiles, lotes, CSV e
 informes) se crean con permisos solo para tu usuario (0600), y sus carpetas propias, también (0700). Si compartes un
@@ -3114,6 +4095,26 @@ guarda en un lote, un perfil ni un CSV; si lo encuentra, te avisa **qué campo**
 - La contraseña no se conserva en memoria tras iniciar sesión: ProxLaunch usa un «ticket» temporal de Proxmox (dura 2 horas y
   se renueva solo antes de vencer). Los tokens no se renuevan.
 - El código de 2FA y las claves de recuperación **nunca** se guardan.
+
+### Las claves y la contraseña de cloud-init
+
+- **Clave SSH pública.** Es un dato que se puede compartir; **la clave privada nunca**. ProxLaunch **rechaza** una clave
+  privada pegada o elegida en un archivo, la borra del campo al instante y no la conserva. Las claves públicas que escribes
+  **se guardan** en los [lotes guardados](#qué-se-guarda), junto con las IP: si compartes el archivo, las compartes.
+- **Contraseña de cloud-init.** Es **opcional y la opción menos segura**: se envía a Proxmox y queda en la configuración de la
+  máquina, donde la verá quien tenga acceso a ella o a su consola. En ProxLaunch:
+  - Se escribe en campos enmascarados (con una casilla **Mostrar** que tú decides marcar), y hay que repetirla.
+  - **No se guarda nunca** en un archivo: ni en un lote guardado (solo una marca de «tenía contraseña»), ni en un perfil, ni en
+    un CSV, ni en el informe, ni en el registro. El resumen solo dice «definida (oculta)» y la simulación la muestra
+    enmascarada.
+  - Solo vive **en la memoria**, y solo mientras hace falta. Se **olvida** al descartar el lote, al desconectar y al salir.
+  - Si tu **CSV** tiene la columna `ci_contrasena`, las contraseñas están en claro en ese archivo: es tuyo y tienes que
+    cuidarlo y borrarlo. ProxLaunch las enmascara en pantalla y no las copia al CSV de «filas con error».
+  - Con una plantilla de **Windows** no se permite.
+  - Una **plantilla** creada con el asistente **nunca** lleva contraseña.
+- **Scripts (snippets).** ProxLaunch solo guarda su **identificador** (`almacén:snippets/archivo`), nunca su contenido.
+- **Direcciones IP de las máquinas.** El **informe** del lote y **Exportar IPs…** las incluyen (no incluyen el servidor, tu
+  usuario, claves ni la contraseña).
 
 ### Los registros no llevan secretos
 
@@ -3168,7 +4169,7 @@ administrador.
 | **Protección contra borrado** | Un ajuste de la máquina por el que Proxmox no deja eliminarla hasta que se quite. |
 | **Arranque con el servidor (`onboot`)** | Hace que la máquina se encienda sola cuando arranca el servidor Proxmox. El **orden** y la **espera** (`startup`) indican en qué orden y con qué retraso. |
 | **MTU** | El tamaño máximo de paquete de una tarjeta de red. **Igual al bridge** usa el del bridge. Solo se fija en tarjetas VirtIO. |
-| **Privilegio opcional** | Un privilegio que no forma parte del rol `ProxLaunchCreador` y que solo habilita una función concreta: `VM.PowerMgmt` (encender y apagar) y `Pool.Audit` (ver pools). |
+| **Privilegio opcional** | Un privilegio que no forma parte del rol `ProxLaunchCreador` y que solo habilita una función concreta: `VM.PowerMgmt` (encender y apagar), `Pool.Audit` (ver pools) y, desde la 0.7, `VM.Config.Cloudinit` (cloud-init), `VM.Monitor` o `VM.GuestAgent.Audit` (esperar la IP, según la versión) y los de los scripts. |
 | **Perfil de máquina** | Una configuración de hardware ya preparada que rellena el formulario. No es una plantilla de Proxmox ni un perfil de conexión. |
 | **Perfil de conexión** | Los datos para llegar a un servidor (sin secretos). No se exporta. |
 | **CSV** | Un archivo de texto con una tabla, que puedes crear y editar con Excel o LibreOffice Calc. Cada fila es una máquina. |
@@ -3178,3 +4179,18 @@ administrador.
 | **Clon enlazado y completo** | Un clon enlazado comparte el disco base con la plantilla (rápido, pero depende de ella). Un clon completo copia todo el disco y es independiente. |
 | **virtio-win** | Un CD de controladores (drivers) que Windows necesita para ver el disco y la red virtuales de Proxmox. |
 | **Huella de un archivo (SHA-256)** | Un código que identifica un archivo. Si dos copias tienen la misma huella, son idénticas. |
+| **Suma de verificación (SHA-256)** | La huella de un archivo, de 64 letras y números, que la distribución publica junto a su imagen (por ejemplo, en `SHA256SUMS`). Sirve para comprobar que lo descargado es exactamente lo publicado. Ver [La suma de verificación](#la-suma-de-verificación-sha-256). |
+| **Cloud-init** | El programa de las imágenes de servidores que configura la máquina en su primer arranque (usuario, claves, red) con datos que Proxmox le entrega. Ver [Configuración inicial con cloud-init](#configuración-inicial-con-cloud-init). |
+| **Imagen cloud** | Un disco ya instalado y mínimo (Ubuntu, Debian, Rocky…) que se publica para servidores. No trae instalador: se importa tal cual y cloud-init lo personaliza al arrancar. |
+| **Unidad cloud-init (CloudInit Drive)** | El pequeño disco virtual donde Proxmox deja los datos de cloud-init. Sin él, la máquina no recibe usuario ni red. |
+| **Clave SSH pública / privada** | Una pareja de claves para entrar a una máquina sin contraseña. La **pública** (archivo `.pub`) se puede repartir; la **privada** se queda en tu equipo y **nunca se comparte**. ProxLaunch rechaza una privada. |
+| **Agente invitado (QEMU guest agent)** | Un programa que corre dentro de la máquina y le cuenta a Proxmox su IP y otros datos. Las imágenes de Ubuntu y Debian no lo traen. Es lo que permite [Esperar la IP](#esperar-la-ip). |
+| **Script (snippet)** | Un archivo de texto (normalmente YAML) guardado en un almacenamiento con el contenido «Fragmentos» que cloud-init usa como guion. Lo crea el administrador; ProxLaunch solo lo elige. |
+| **DHCP** | La red le da a la máquina su IP automáticamente. |
+| **IP fija** | Una IP que eliges tú y que no cambia. Se escribe con su máscara: `192.168.1.50/24`. |
+| **IP en serie** | En un lote con IP fija, la primera máquina recibe la IP que escribas y cada una de las siguientes la siguiente (`.50`, `.51`, `.52`…). |
+| **Máscara de red (`/24`)** | Indica qué parte de la IP identifica la red. `/24` equivale a `255.255.255.0`. |
+| **Puerta de enlace** | La dirección del router por el que la máquina sale a otras redes e internet. |
+| **DNS** | Servidores que traducen nombres (`pve1.lab.local`) a direcciones IP. |
+| **Dominio de búsqueda** | Un sufijo que se añade a los nombres cortos: con `lab.local`, `srv01` equivale a `srv01.lab.local`. |
+| **Consola serie / xterm.js** | La consola de texto que esperan las imágenes cloud. Con ella, la consola gráfica (noVNC) de Proxmox se ve en negro: usa xterm.js. |

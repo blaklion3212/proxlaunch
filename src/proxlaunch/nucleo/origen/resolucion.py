@@ -10,9 +10,10 @@ from __future__ import annotations
 
 import copy
 import re
-from collections.abc import Sequence
+from collections.abc import Iterable, Sequence
 from dataclasses import dataclass
 
+from proxlaunch.nucleo.cloudinit.snippets import volid_snippet_valido
 from proxlaunch.nucleo.lote.modelos import FilaLote
 from proxlaunch.nucleo.lote.modelos import Problema as ProblemaLote
 from proxlaunch.nucleo.lote.modelos import Severidad as SeveridadLote
@@ -27,6 +28,7 @@ from proxlaunch.nucleo.modelos.origen import (
     RefVolumen,
 )
 from proxlaunch.nucleo.modelos.vm import ConfiguracionVM, OrigenSO
+from proxlaunch.nucleo.opciones.modelos import OpcionesLote
 from proxlaunch.nucleo.origen.asistente import TABLA_SO
 from proxlaunch.nucleo.origen.clon import modo_efectivo
 from proxlaunch.nucleo.origen.constantes import ESPERA_BASE_S, ESPERA_POR_GIB_S
@@ -50,17 +52,49 @@ class NecesidadesCatalogo:
     contenidos: frozenset[Contenido] = frozenset()  # listados de ``iso`` y/o ``import``
     plantillas: frozenset[str] = frozenset()  # nombres de plantilla a resolver
     formatos: bool = False  # ``GET …/storage?format=1`` (destino de importación y clon)
+    # Fase B (B4): ids de storage de los snippets elegidos; se listan solo esos (DT-B11).
+    snippets: frozenset[str] = frozenset()
 
     @property
     def vacias(self) -> bool:
-        return not self.contenidos and not self.plantillas and not self.formatos
+        return (
+            not self.contenidos and not self.plantillas and not self.formatos and not self.snippets
+        )
 
 
-def necesidades_catalogo(filas: Sequence[FilaLote]) -> NecesidadesCatalogo:
+def _storage_de_snippet(volid: str | None) -> str | None:
+    """Id del storage de un volid ``almacén:snippets/archivo`` válido; ``None`` si no lo es."""
+    if volid is None or not volid_snippet_valido(volid):
+        return None
+    return volid.partition(":")[0]
+
+
+def _storages_de_snippets(fila: FilaLote, opciones: OpcionesLote | None) -> Iterable[str]:
+    """Storages de los snippets que puede llevar la fila: los de su formulario, los de las
+    opciones del lote y los de su propia fila (``CloudInitParcial.snippets``)."""
+    volids: list[str | None] = []
+    if fila.cfg.cloudinit is not None:
+        volids.extend(fila.cfg.cloudinit.snippets.elegidos().values())
+    if opciones is not None and opciones.cloudinit is not None:
+        volids.extend(opciones.cloudinit.snippets.elegidos().values())
+    parcial = fila.opciones.cloudinit if fila.opciones is not None else None
+    if parcial is not None and parcial.snippets is not None:
+        volids.extend(parcial.snippets.elegidos().values())
+    return (a for a in (_storage_de_snippet(v) for v in volids) if a is not None)
+
+
+def necesidades_catalogo(
+    filas: Sequence[FilaLote], opciones: OpcionesLote | None = None
+) -> NecesidadesCatalogo:
     """Catálogo que necesitan las filas. Sin ningún origen distinto de ``disco_vacio`` es vacío:
-    el planificador no hace entonces ninguna lectura nueva (CA-O03.1)."""
+    el planificador no hace entonces ninguna lectura nueva (CA-O03.1).
+
+    Fase B: en una fila de clon, los snippets elegidos (en su formulario, en ``opciones`` del lote
+    o en su fila) añaden el storage de cada uno para listarlo (B4.2). Sin cloud-init no cambia.
+    """
     contenidos: set[Contenido] = set()
     plantillas: set[str] = set()
+    snippets: set[str] = set()
     formatos = False
     for fila in filas:
         det = fila.cfg.detalle_origen
@@ -73,7 +107,10 @@ def necesidades_catalogo(filas: Sequence[FilaLote]) -> NecesidadesCatalogo:
             if det.plantilla.nombre:
                 plantillas.add(det.plantilla.nombre)
             formatos = True
-    return NecesidadesCatalogo(frozenset(contenidos), frozenset(plantillas), formatos)
+            snippets.update(_storages_de_snippets(fila, opciones))
+    return NecesidadesCatalogo(
+        frozenset(contenidos), frozenset(plantillas), formatos, frozenset(snippets)
+    )
 
 
 # --- Utilidades de catálogo ---------------------------------------------------------------

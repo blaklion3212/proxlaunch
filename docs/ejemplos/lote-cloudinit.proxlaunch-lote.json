@@ -1,0 +1,84 @@
+{
+  "app_version": "0.7.0",
+  "formato": "proxlaunch.lote",
+  "homogeneo": {
+    "cantidad": 4,
+    "config": {
+      "ballooning": null,
+      "cloudinit": {
+        "claves": [
+          "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIAMKERgfJi00O0JJUFdeZWxzeoGIj5adpKuyucDHztXc ana@portatil"
+        ],
+        "dns": [
+          "192.0.2.2",
+          "192.0.2.3"
+        ],
+        "dominio": "demo.example.com",
+        "tarjetas": [
+          {
+            "indice": 0,
+            "ip": "192.0.2.50/24",
+            "modo": "fija",
+            "puerta": "192.0.2.1",
+            "serie": true
+          }
+        ],
+        "usuario": "ana"
+      },
+      "con_disco": true,
+      "controlador_scsi": "virtio-scsi-single",
+      "cores": 2,
+      "detalle_origen": {
+        "ajustes": {
+          "cores": null,
+          "disco_gib": null,
+          "memoria_mib": null,
+          "sockets": null,
+          "tipo_cpu": null
+        },
+        "modo": "automatico",
+        "plantilla": {
+          "nombre": "plantilla-debian12",
+          "vmid": null
+        },
+        "storage_destino": null
+      },
+      "discos": [],
+      "encender": true,
+      "esperar_ip": {
+        "activo": true,
+        "plazo_s": 120
+      },
+      "firmware": "seabios",
+      "memoria_mib": 2048,
+      "origen": "clonar_plantilla",
+      "redes": [
+        {
+          "bridge": "vmbr0",
+          "modelo": "virtio",
+          "vlan": null
+        }
+      ],
+      "sockets": 1,
+      "storage_efi": null,
+      "tipo_cpu": "x86-64-v2-AES"
+    },
+    "destino": {
+      "algoritmo": "equilibrado",
+      "modo": "automatico",
+      "nodos": []
+    },
+    "etiquetar": true,
+    "patron": {
+      "inicio": 1,
+      "prefijo": "srv-web",
+      "relleno": 2,
+      "separador": "-"
+    },
+    "vmid_inicial": null
+  },
+  "nombre": "Servidores con cloud-init",
+  "tipo": "homogeneo",
+  "version_formato": 4,
+  "version_proxmox": "9.2"
+}

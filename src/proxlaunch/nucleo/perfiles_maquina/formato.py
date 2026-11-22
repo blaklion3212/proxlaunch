@@ -15,8 +15,8 @@ from proxlaunch.nucleo.archivos.constantes import (
     LONG_DESCRIPCION,
     MAX_BYTES_PERFILES,
     MAX_PERFILES_ARCHIVO,
-    VERSION_FORMATO,
     VERSION_FORMATO_BASE,
+    VERSION_FORMATO_FASE_A,
     VERSION_FORMATO_MVP4,
 )
 from proxlaunch.nucleo.archivos.envoltura import (
@@ -95,7 +95,7 @@ def version_para(perfiles: Sequence[PerfilMaquina]) -> int:
     """3 si algún perfil usa algo de la fase A (arranque o MTU/límite, CA-A7.2.3); si no, 2 si usa
     algo del MVP 4 (DT-O15) y 1 en otro caso."""
     if any(requiere_version_3(p.config) for p in perfiles):
-        return VERSION_FORMATO
+        return VERSION_FORMATO_FASE_A
     usa = any(requiere_version_2(p.config) for p in perfiles)
     return VERSION_FORMATO_MVP4 if usa else VERSION_FORMATO_BASE
 

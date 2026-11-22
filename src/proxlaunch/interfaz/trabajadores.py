@@ -12,13 +12,17 @@ import dataclasses
 import logging
 import secrets
 import threading
-from collections.abc import Callable, Sequence
+import time
+from collections.abc import Callable, Collection, Iterable, Sequence
 from pathlib import Path
 from typing import Any
 
 from PySide6.QtCore import QObject, QRunnable, Qt, QThreadPool, Signal
 
+from proxlaunch.nucleo.agente.espera import EsperaIp
+from proxlaunch.nucleo.agente.exportacion import guardar_ips_csv
 from proxlaunch.nucleo.capacidades import Capacidades
+from proxlaunch.nucleo.cloudinit.modelos import ModoTarjeta
 from proxlaunch.nucleo.constructor_peticion import construir_parametros
 from proxlaunch.nucleo.csv_importacion.plantilla import escribir_plantilla
 from proxlaunch.nucleo.errores import CodigoError, ErrorProxLaunch
@@ -39,7 +43,7 @@ from proxlaunch.nucleo.lote.modelos import (
     ResultadoSimulacion,
     Severidad,
 )
-from proxlaunch.nucleo.lote.motor import ControlLote, MotorLote
+from proxlaunch.nucleo.lote.motor import ControlLote, MotorLote, enlazar_espera
 from proxlaunch.nucleo.lote.planificador import Planificador
 from proxlaunch.nucleo.lote.presupuesto import evaluar_espacio, uso_por_clave
 from proxlaunch.nucleo.lote.reconciliacion import config_en_creacion, tiene_etiqueta_del_lote
@@ -71,9 +75,14 @@ from proxlaunch.nucleo.perfiles_maquina.modelos import PerfilMaquina
 from proxlaunch.nucleo.persistencia.perfiles import RepositorioPerfiles
 from proxlaunch.nucleo.registro import enmascarar
 from proxlaunch.nucleo.reloj import Reloj
+from proxlaunch.nucleo.secreto import Secreto
 from proxlaunch.nucleo.servicios.catalogo import ServicioCatalogo
 from proxlaunch.nucleo.servicios.conexion import Sesion, permisos_faltantes
-from proxlaunch.nucleo.servicios.creacion import ServicioCreacion
+from proxlaunch.nucleo.servicios.creacion import (
+    AVISO_ENCENDIDO_FALLIDO,
+    AVISO_ENCENDIDO_OMITIDO,
+    ServicioCreacion,
+)
 from proxlaunch.nucleo.servicios.descubrimiento import (
     descubrir,
     descubrir_nodo_completo,
@@ -163,12 +172,73 @@ class Trabajador(QRunnable):
             self._emitir(self.senales.terminado, resultado)
 
 
+# Hilos de fondo que cancelan una ``EsperaIp``: ``cancelar`` bloquea hasta que termina la petición
+# en vuelo (hasta el tope HTTP), así que nunca se llama desde el hilo de la interfaz.
+_cancelaciones: list[threading.Thread] = []
+_cerrojo_cancelaciones = threading.Lock()
+
+
+def cancelar_espera_en_fondo(
+    espera: EsperaIp, vmids: Collection[int] | None = None
+) -> threading.Thread:
+    """Lanza ``espera.cancelar(vmids)`` en un hilo de fondo (fire and forget) y lo devuelve.
+
+    Se usa desde el hilo de la interfaz («Dejar de esperar la IP», desconectar, cerrar). Un hilo
+    propio (y no el grupo de la espera) evita que la cancelación espere turno detrás de las
+    esperas que debe cortar.
+    """
+
+    def _cancelar() -> None:
+        try:
+            espera.cancelar(vmids)
+        except Exception:  # nunca debe romper el hilo
+            _log.exception("Error al cancelar la espera de IP")
+
+    hilo = threading.Thread(target=_cancelar, name="cancelar-espera-ip", daemon=True)
+    with _cerrojo_cancelaciones:
+        _cancelaciones[:] = [h for h in _cancelaciones if h.is_alive()]
+        _cancelaciones.append(hilo)
+    hilo.start()
+    return hilo
+
+
+def esperar_cancelaciones(milisegundos: int) -> bool:
+    """Espera (con tope) a los hilos de cancelación en curso; ``True`` si ya no queda ninguno."""
+    limite = time.monotonic() + milisegundos / 1000
+    with _cerrojo_cancelaciones:
+        hilos = list(_cancelaciones)
+    for hilo in hilos:
+        hilo.join(max(0.0, limite - time.monotonic()))
+    return not any(h.is_alive() for h in hilos)
+
+
+class _TrabajadorEspera(Trabajador):
+    """Trabajador de la espera de IP (B3): ``ejecutar()`` en su propio hilo.
+
+    Cancelarlo («Dejar de esperar», cierre de la aplicación) cancela también la espera: así
+    ``EsperaIp.ejecutar`` vuelve enseguida y no se hacen más peticiones.
+    """
+
+    def __init__(self, espera: EsperaIp) -> None:
+        super().__init__(espera.ejecutar)
+        self._espera = espera
+
+    def cancelar(self) -> None:
+        super().cancelar()
+        cancelar_espera_en_fondo(self._espera)
+
+
 class Lanzador(QObject):
     """Lanza trabajadores en el ``QThreadPool`` global y gestiona su ciclo de vida."""
 
     def __init__(self, parent: QObject | None = None) -> None:
         super().__init__(parent)
         self._activos: set[Trabajador] = set()
+        # La espera de IP vive en un grupo propio: nunca compite con el motor del lote por un
+        # hilo del grupo global (con un solo procesador la espera no arrancaría hasta que el
+        # motor terminase y el plazo de las máquinas ya habría vencido).
+        self._pool_espera = QThreadPool(self)
+        self._pool_espera.setMaxThreadCount(4)
 
     @property
     def hay_activos(self) -> bool:
@@ -187,6 +257,44 @@ class Lanzador(QObject):
     ) -> Trabajador:
         """Lanza ``funcion`` en segundo plano y conecta los resultados en cola."""
         trabajador = Trabajador(funcion, *args, con_contexto=con_contexto, **kwargs)
+        self._arrancar(
+            trabajador,
+            QThreadPool.globalInstance(),
+            al_terminar=al_terminar,
+            al_fallar=al_fallar,
+            al_etapa=al_etapa,
+            al_upid=al_upid,
+        )
+        return trabajador
+
+    def lanzar_espera(
+        self,
+        espera: EsperaIp,
+        *,
+        al_terminar: Callable[[Any], None] | None = None,
+        al_fallar: Callable[[ErrorProxLaunch], None] | None = None,
+    ) -> Trabajador:
+        """Lanza ``espera.ejecutar()`` en su propio hilo (B3). El resultado de cada MV llega por
+        el ``al_resultado`` de la espera; ``al_terminar`` recibe el diccionario final."""
+        trabajador = _TrabajadorEspera(espera)
+        self._arrancar(
+            trabajador,
+            self._pool_espera,
+            al_terminar=al_terminar,
+            al_fallar=al_fallar,
+        )
+        return trabajador
+
+    def _arrancar(
+        self,
+        trabajador: Trabajador,
+        pool: QThreadPool,
+        *,
+        al_terminar: Callable[[Any], None] | None = None,
+        al_fallar: Callable[[ErrorProxLaunch], None] | None = None,
+        al_etapa: Callable[[Any], None] | None = None,
+        al_upid: Callable[[str], None] | None = None,
+    ) -> None:
         cola = Qt.ConnectionType.QueuedConnection
         senales = trabajador.senales
         if al_upid is not None:
@@ -199,8 +307,7 @@ class Lanzador(QObject):
         senales.fallo.connect(lambda e: self._finalizar_fallo(trabajador, al_fallar, e), cola)
         trabajador.conectadas.extend((senales.terminado, senales.fallo))
         self._activos.add(trabajador)
-        QThreadPool.globalInstance().start(trabajador)
-        return trabajador
+        pool.start(trabajador)
 
     @staticmethod
     def _desconectar(trabajador: Trabajador) -> None:
@@ -235,8 +342,13 @@ class Lanzador(QObject):
             t.cancelar()
 
     def esperar(self, milisegundos: int = 3000) -> bool:
-        """Espera a que el pool termine (al cerrar la aplicación)."""
-        return QThreadPool.globalInstance().waitForDone(milisegundos)
+        """Espera a que los grupos terminen (al cerrar la aplicación)."""
+        # Lo que aún no arrancó en el grupo de la espera no tiene sentido al cerrar (QA-B6).
+        self._pool_espera.clear()
+        global_ok = QThreadPool.globalInstance().waitForDone(milisegundos)
+        espera_ok = self._pool_espera.waitForDone(milisegundos)
+        cancelaciones_ok = esperar_cancelaciones(milisegundos)
+        return bool(global_ok and espera_ok and cancelaciones_ok)
 
 
 # --- Funciones de trabajo (se ejecutan en el pool, sin tocar widgets) -----------------
@@ -536,16 +648,18 @@ def ejecutar_lote(
     control: ControlLote,
     fabrica: Callable[[Sesion, Reloj], ServicioCreacion] | None = None,
     libro: Libro | None = None,
+    espera_ip: EsperaIp | None = None,
 ) -> Libro:
     """Ejecuta el plan con el motor; bloquea hasta que termine (hilo de trabajo).
 
     ``libro`` es el libro creado de antemano por la interfaz: así existe aunque el motor
-    falle y «Deshacer» y «Comprobar» siguen disponibles sobre lo ya creado.
+    falle y «Deshacer» y «Comprobar» siguen disponibles sobre lo ya creado. ``espera_ip`` (fase
+    B) es la espera de IP, que corre en otro hilo; el motor solo le entrega cada máquina.
     """
     motor = _motor(sesion, reloj, fabrica)
     if libro is None:
-        return motor.ejecutar(plan, inv, observador, control)
-    return motor.ejecutar(plan, inv, observador, control, libro=libro)
+        return motor.ejecutar(plan, inv, observador, control, espera_ip=espera_ip)
+    return motor.ejecutar(plan, inv, observador, control, libro=libro, espera_ip=espera_ip)
 
 
 def comprobar_dudosas_lote(
@@ -571,12 +685,13 @@ def continuar_lote(
     control: ControlLote,
     comprobar_antes: bool,
     fabrica: Callable[[Sesion, Reloj], ServicioCreacion] | None = None,
+    espera_ip: EsperaIp | None = None,
 ) -> Libro:
     """«Comprobar y continuar» / «Reconectar»: comprueba las dudosas y envía solo las pendientes."""
     motor = _motor(sesion, reloj, fabrica)
     if comprobar_antes:
         motor.comprobar_dudosas(libro, observador, control)
-    return motor.ejecutar_pendientes(libro, inv, observador, control)
+    return motor.ejecutar_pendientes(libro, inv, observador, control, espera_ip=espera_ip)
 
 
 def deshacer_lote(
@@ -651,8 +766,16 @@ def deshacer_lotes(
     forzar_apagado: frozenset[int] = frozenset(),
     forzar_desproteccion: frozenset[int] = frozenset(),
     permisos: PermisosEfectivos | None = None,
+    esperas_a_cancelar: Sequence[tuple[EsperaIp, frozenset[int]]] = (),
 ) -> list[ResultadoRollback]:
-    """Deshace las máquinas elegidas de uno o varios lotes de la sesión, lote por lote."""
+    """Deshace las máquinas elegidas de uno o varios lotes de la sesión, lote por lote.
+
+    ``esperas_a_cancelar`` (B3, DT-B14): ANTES del primer ``DELETE`` se deja de sondear la IP de
+    las máquinas elegidas. ``EsperaIp.cancelar`` bloquea hasta que termina la petición en vuelo,
+    por eso se hace aquí, en el hilo del trabajador, y de forma síncrona.
+    """
+    for espera, vmids in esperas_a_cancelar:
+        espera.cancelar(vmids)
     resultados: list[ResultadoRollback] = []
     for candidatos, id_lote, etiquetado in grupos:
         resultados.extend(
@@ -672,6 +795,95 @@ def deshacer_lotes(
         if control.cancelado.is_set():
             break
     return resultados
+
+
+def crear_espera_ip(
+    sesion: Sesion, reloj: Reloj, libro: Libro, observador: Callable[[EntradaLibro], None]
+) -> EsperaIp:
+    """Espera de IP de UNA ejecución del motor (B3).
+
+    Su ``al_resultado`` es ``enlazar_espera(libro, observador)``: anota el resultado en el libro
+    (con su aviso) y avisa al observador, que pasa a Qt por señales (``PuenteLote``). Para
+    ``ejecutar_pendientes`` se crea otra instancia.
+    """
+    return EsperaIp(sesion, reloj, enlazar_espera(libro, observador))
+
+
+def guardar_ips(ruta: Path, entradas: Sequence[EntradaLibro]) -> Path:
+    """Exporta «nombre → IP» a CSV (RF-B3.6): escritura atómica, sin datos de cloud-init."""
+    return guardar_ips_csv(ruta, entradas)
+
+
+def _secretos_de_config(cfg: ConfiguracionVM | None, vistos: dict[int, Secreto]) -> None:
+    ci = cfg.cloudinit if cfg is not None else None
+    if ci is not None and ci.contrasena is not None:
+        vistos[id(ci.contrasena)] = ci.contrasena
+
+
+def secretos_de_plan(plan: Plan) -> list[Secreto]:
+    """Las contraseñas (``Secreto``) que un plan mantiene en memoria, sin repetidas.
+
+    Un ``Secreto`` se copia por identidad (``deepcopy`` devuelve la misma instancia), así que
+    una sola llamada a ``olvidar()`` sirve para el plan, el libro y las filas (DT-B1).
+    """
+    vistos: dict[int, Secreto] = {}
+    for e in plan.elementos:
+        _secretos_de_config(e.cfg, vistos)
+    definicion = plan.definicion
+    _secretos_de_config(definicion.plantilla, vistos)
+    if definicion.opciones is not None and definicion.opciones.cloudinit is not None:
+        sec = definicion.opciones.cloudinit.contrasena
+        if sec is not None:
+            vistos[id(sec)] = sec
+    for fila in definicion.filas:
+        _secretos_de_config(fila.cfg, vistos)
+        parcial = fila.opciones.cloudinit if fila.opciones is not None else None
+        if parcial is not None and parcial.contrasena is not None:
+            vistos[id(parcial.contrasena)] = parcial.contrasena
+    return list(vistos.values())
+
+
+def olvidar_secretos_de_plan(plan: Plan) -> int:
+    """Olvida las contraseñas del plan (``Secreto.olvidar``, que también las quita del
+    registro de enmascarado). Devuelve cuántas se olvidaron."""
+    secretos = secretos_de_plan(plan)
+    for s in secretos:
+        s.olvidar()
+    return len(secretos)
+
+
+def secretos_de_filas(filas: Iterable[Any]) -> list[Secreto]:
+    """Las contraseñas de unas filas (``FilaLote`` o ``FilaInterpretada``: ``cfg`` y ``opciones``).
+
+    Sirve para olvidar las de la vista previa de un CSV o de un lote «por filas» (B6, QA-M4).
+    Sin repetidas: cada ``Secreto`` se cuenta una vez aunque lo compartan varias copias.
+    """
+    vistos: dict[int, Secreto] = {}
+    for fila in filas:
+        _secretos_de_config(fila.cfg, vistos)
+        parcial = fila.opciones.cloudinit if fila.opciones is not None else None
+        if parcial is not None and parcial.contrasena is not None:
+            vistos[id(parcial.contrasena)] = parcial.contrasena
+    return list(vistos.values())
+
+
+def olvidar_secretos_de_filas(filas: Iterable[Any], *, salvo: Collection[Secreto] = ()) -> int:
+    """Olvida las contraseñas de unas filas, menos las de ``salvo`` (por identidad).
+
+    Devuelve cuántas se olvidaron.
+    """
+    conservar = {id(x) for x in salvo}
+    olvidados = 0
+    for secreto in secretos_de_filas(filas):
+        if id(secreto) not in conservar:
+            secreto.olvidar()
+            olvidados += 1
+    return olvidados
+
+
+def hay_contrasena_pendiente(entradas: Iterable[EntradaLibro]) -> bool:
+    """¿Alguna máquina necesita aún reenviar su contraseña (``ajuste_pendiente:contrasena``)?"""
+    return any("ajuste_pendiente:contrasena" in e.avisos for e in entradas)
 
 
 def armar_reintento(
@@ -839,12 +1051,45 @@ def reintentar_ajustes_lote(
     observador: Callable[[EntradaLibro], None],
     control: ControlLote,
     fabrica: Callable[[Sesion, Reloj], ServicioCreacion] | None = None,
+    espera: EsperaIp | None = None,
 ) -> Libro:
-    """«Reintentar ajustes»: reenvía solo los ``PUT`` pendientes de los clones (CA-O22.6)."""
+    """«Reintentar ajustes»: reenvía solo los ``PUT`` pendientes de los clones (CA-O22.6).
+
+    El reintento del núcleo no devuelve nada (solo actualiza el libro); también enciende la MV si
+    procede. Con ``espera`` (QA-M6) las MVs que quedan bien y encendidas, y que pidieron esperar
+    su IP, se le entregan al terminar, igual que hace el motor al crear.
+    """
     if fabrica:
         reintentar_ajustes(
             libro, vmids, sesion, reloj, inv, observador, control, fabrica_creacion=fabrica
         )
     else:
         reintentar_ajustes(libro, vmids, sesion, reloj, inv, observador, control)
+    if espera is not None:
+        _entregar_a_espera_tras_reintento(libro, vmids, espera)
     return libro
+
+
+def _entregar_a_espera_tras_reintento(
+    libro: Libro, vmids: Collection[int], espera: EsperaIp
+) -> None:
+    """Entrega a la espera de IP las MVs reintentadas que ahora están bien y encendidas."""
+    pedidos = set(vmids)
+    for entrada in libro.instantanea():
+        cfg = entrada.elemento.cfg
+        if (
+            entrada.elemento.vmid not in pedidos
+            or not (cfg.encender and cfg.esperar_ip)
+            or entrada.estado not in (EstadoMV.OK, EstadoMV.CON_AVISOS)
+            or AVISO_ENCENDIDO_FALLIDO in entrada.avisos
+            or AVISO_ENCENDIDO_OMITIDO in entrada.avisos
+        ):
+            continue
+        tarjeta = cfg.cloudinit.tarjeta(0) if cfg.cloudinit is not None else None
+        ip_fija = tarjeta.ip if tarjeta is not None and tarjeta.modo == ModoTarjeta.FIJA else None
+        try:
+            espera.anadir(entrada.elemento.vmid, entrada.elemento.nodo, cfg.plazo_ip_s, ip_fija)
+        except Exception:  # nunca debe romper el reintento
+            _log.exception(
+                "Fallo al entregar la MV a la espera de IP (vmid=%s)", entrada.elemento.vmid
+            )

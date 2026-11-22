@@ -106,6 +106,23 @@ class CodigoError(StrEnum):
     ROLLBACK_SIN_OPCIONES = "rollback_sin_opciones"  # falta VM.Config.Options para desproteger
     ROLLBACK_APAGADO_FALLIDO = "rollback_apagado_fallido"
     ROLLBACK_DESPROTECCION_FALLIDA = "rollback_desproteccion_fallida"
+    # --- Fase B (0.7): cloud-init, snippets, espera de IP y plantilla desde imagen ---
+    CLOUDINIT_SIN_UNIDAD = "cloudinit_sin_unidad"  # la plantilla no tiene unidad cloud-init
+    CLAVE_SSH_RECHAZADA = "clave_ssh_rechazada"  # 500 «SSH public key validation error»
+    SNIPPET_NO_ENCONTRADO = "snippet_no_encontrado"  # params: snippet (opcional)
+    CONTRASENA_OLVIDADA = "contrasena_olvidada"  # el Secreto ya no está en memoria
+    ARCHIVO_CLAVES_NO_VALIDO = (
+        "archivo_claves_no_valido"  # params: motivo (tamano|binario|ilegible)
+    )
+    AGENTE_NO_CONFIGURADO = "agente_no_configurado"  # «No QEMU guest agent configured»
+    AGENTE_NO_RESPONDE = "agente_no_responde"  # el agente no contesta en el plazo
+    MV_NO_EN_MARCHA = "mv_no_en_marcha"  # «VM … is not running»
+    PLANTILLA_EN_MARCHA = "plantilla_en_marcha"
+    PLANTILLA_CON_SNAPSHOTS = "plantilla_con_snapshots"
+    PLANTILLA_NO_APAGADA = "plantilla_no_apagada"  # comprobación previa propia (sin POST)
+    IMAGEN_FORMATO_INCORRECTO = "imagen_formato_incorrecto"
+    SUMA_NO_COINCIDE = "suma_no_coincide"  # params: esperada, obtenida (12 caracteres)
+    PLANTILLA_IMAGEN_SIN_IMPORT = "plantilla_imagen_sin_import"
 
 
 class ErrorProxLaunch(Exception):

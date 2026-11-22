@@ -86,8 +86,8 @@ def test_inv_o4_ninguna_clase_del_cliente_expone_borrado_de_archivos_o_plantilla
     publicos = {n for n in dir(ClienteProxmox) if not n.startswith("_")}
     borrados = {n for n in publicos if "borrar" in n or "eliminar" in n or "delete" in n}
     assert borrados == {"eliminar_vm"}  # solo el rollback de MVs (D-21)
+    # ``convertir_en_plantilla`` ya no está prohibido: lo añade la fase B (B2, 0.7.0) a propósito.
     for prohibido in (
-        "convertir_en_plantilla",
         "activar_contenido",
         "borrar_iso",
         "borrar_volumen",

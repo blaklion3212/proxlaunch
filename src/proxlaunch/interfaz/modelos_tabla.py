@@ -35,6 +35,13 @@ from proxlaunch.interfaz.textos import (
     texto_origen_corto,
     texto_resumen_origen,
     texto_vmid_ocupado_en_lote,
+    tooltip_plano,
+)
+from proxlaunch.interfaz.textos_b import (
+    texto_aviso_b,
+    texto_celda_ip,
+    texto_detalle_ip,
+    token_color_ip,
 )
 from proxlaunch.nucleo.errores import CodigoError, ErrorProxLaunch
 from proxlaunch.nucleo.lote.modelos import (
@@ -294,7 +301,7 @@ class ModeloPlan(_ModeloBase):
             return celdas[col]
         if role == Qt.ItemDataRole.ToolTipRole and self._con_origen:
             if col == (8 if self._por_filas else 6):
-                return _texto_origen_celda(e.cfg)  # el texto completo de la columna recortada
+                return tooltip_plano(_texto_origen_celda(e.cfg))  # el texto completo, escapado (M3)
             return None
         numericas = (0, 2, 5, 6, 7) if self._por_filas else (0, 2, 5)
         if role == Qt.ItemDataRole.TextAlignmentRole and col in numericas:
@@ -425,6 +432,9 @@ def texto_aviso_entrada(codigo: str) -> str:
         return QCoreApplication.translate(
             "ModelosTabla", "Se creó aunque Proxmox tardó en responder."
         )
+    texto_b = texto_aviso_b(codigo)  # fase B: cloud-init, contraseña e IP
+    if texto_b:
+        return texto_b
     return texto_aviso_origen(codigo)  # MVP 4: ajustes pendientes u omitidos, discos sueltos
 
 
@@ -487,27 +497,63 @@ def detalle_entrada(entrada: EntradaLibro) -> str:
 
 
 class ModeloLibro(_ModeloBase):
-    """Estado de cada máquina del lote en ejecución; se refresca con instantáneas."""
+    """Estado de cada máquina del lote en ejecución; se refresca con instantáneas.
+
+    Fase B: si alguna máquina pidió esperar su IP, aparece la columna «IP» entre «Nodo» y
+    «Detalle». Sin esa opción el modelo es el de 0.6.0 (cinco columnas).
+    """
 
     def __init__(self, parent: QObject | None = None) -> None:
         super().__init__(parent)
         self._entradas: tuple[EntradaLibro, ...] = ()
+        self._con_ip = False
+        self._espera_activa = False
+
+    @property
+    def con_ip(self) -> bool:
+        """Hay columna «IP» (alguna máquina pidió esperar su IP)."""
+        return self._con_ip
+
+    @property
+    def columna_detalle(self) -> int:
+        return 5 if self._con_ip else 4
+
+    @property
+    def columna_ip(self) -> int | None:
+        return 4 if self._con_ip else None
 
     def _cabeceras(self) -> tuple[str, ...]:
-        return (
+        base: tuple[str, ...] = (
             QCoreApplication.translate("ModelosTabla", "Estado"),
             QCoreApplication.translate("ModelosTabla", "Nombre"),
             "VMID",
             QCoreApplication.translate("ModelosTabla", "Nodo"),
-            QCoreApplication.translate("ModelosTabla", "Detalle"),
         )
+        if self._con_ip:
+            base = (*base, QCoreApplication.translate("ModelosTabla", "IP"))
+        return (*base, QCoreApplication.translate("ModelosTabla", "Detalle"))
+
+    @staticmethod
+    def _pide_ip(entradas: Sequence[EntradaLibro]) -> bool:
+        return any(e.elemento.cfg.esperar_ip or e.ip is not None for e in entradas)
+
+    def establecer_espera_activa(self, activa: bool) -> None:
+        """Indica si la espera de IP sigue en marcha (cambia «Esperando…» por «—»)."""
+        if activa == self._espera_activa:
+            return
+        self._espera_activa = activa
+        if self._con_ip and self._entradas:
+            col = self.columna_ip or 0
+            self.dataChanged.emit(self.index(0, col), self.index(len(self._entradas) - 1, col))
 
     def establecer_entradas(self, entradas: Sequence[EntradaLibro]) -> None:
         """Refresca con una instantánea; solo se repintan las filas que cambiaron."""
         nuevas = tuple(entradas)
-        if len(nuevas) != len(self._entradas) or not self._entradas:
+        con_ip = self._pide_ip(nuevas)
+        if len(nuevas) != len(self._entradas) or not self._entradas or con_ip != self._con_ip:
             self.beginResetModel()
             self._entradas = nuevas
+            self._con_ip = con_ip
             self.endResetModel()
             return
         previas = self._entradas
@@ -542,24 +588,38 @@ class ModeloLibro(_ModeloBase):
             return None
         col = index.column()
         el = e.elemento
+        es_ip = self._con_ip and col == 4
+        es_detalle = col == self.columna_detalle
         if role == Qt.ItemDataRole.DisplayRole:
-            return (
+            celdas: tuple[str, ...] = (
                 self.texto_estado(e),
                 el.nombre,
                 str(el.vmid),
                 el.nodo,
-                detalle_entrada(e),
-            )[col]
+            )
+            if self._con_ip:
+                celdas = (*celdas, texto_celda_ip(e, espera_activa=self._espera_activa))
+            return (*celdas, detalle_entrada(e))[col]
         if role == Qt.ItemDataRole.ForegroundRole and col == 0:
             return self._color(_TOKEN_ESTADO.get(e.estado, "texto"))
+        if role == Qt.ItemDataRole.ForegroundRole and es_ip:
+            return self._color(token_color_ip(e))
         if role == Qt.ItemDataRole.TextAlignmentRole and col == 2:
             return int(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
-        if role == Qt.ItemDataRole.ToolTipRole and col == 4:
-            return detalle_entrada(e) or None
+        if role == Qt.ItemDataRole.ToolTipRole and es_detalle:
+            return tooltip_plano(detalle_entrada(e)) if detalle_entrada(e) else None
+        if role == Qt.ItemDataRole.ToolTipRole and es_ip:
+            return tooltip_plano(texto_detalle_ip(e.ip)) if e.ip is not None else None
         if role == Qt.ItemDataRole.AccessibleTextRole:
             texto = QCoreApplication.translate(
                 "ModelosTabla", "{nombre}, número {vmid}, nodo {nodo}: {estado}"
             ).format(nombre=el.nombre, vmid=el.vmid, nodo=el.nodo, estado=texto_estado_mv(e.estado))
+            if self._con_ip:
+                ip = texto_celda_ip(e, espera_activa=self._espera_activa)
+                if ip:
+                    texto += ". " + QCoreApplication.translate("ModelosTabla", "IP: {ip}").format(
+                        ip=ip
+                    )
             detalle = detalle_entrada(e)
             return f"{texto}. {detalle}" if detalle else texto
         return None

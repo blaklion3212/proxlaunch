@@ -261,8 +261,8 @@ def _almacen_futuro(tmp_path):
     futuro = _entrada("a" * 32, "De la versión nueva")
     futuro["campo_de_v2"] = {"algo": "nuevo"}
     datos = _escribir_almacen(
-        ruta, [futuro, _entrada("b" * 32, "Ilegible", cores=0)], version_formato=4
-    )  # fase A: la 3 ya se lee (CA-A7.1.4); la «futura» es la 4
+        ruta, [futuro, _entrada("b" * 32, "Ilegible", cores=0)], version_formato=5
+    )  # fase B: la 4 ya se lee (CA-B6.1.5); la «futura» es la 5
     a = _almacen(ruta)
     return ruta, datos, a, a.cargar()
 

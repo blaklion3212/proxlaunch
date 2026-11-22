@@ -6,12 +6,17 @@ el texto traducido; ``CAMPOS_AYUDA`` es la lista fija de campos que deben tenerl
 
 from __future__ import annotations
 
-from collections.abc import Callable
+from collections.abc import Callable, Sequence
 
 from PySide6.QtCore import QCoreApplication
 
+from proxlaunch.nucleo.capacidades import Capacidades
 from proxlaunch.nucleo.lote.constantes import MAX_LOTE
-from proxlaunch.nucleo.origen.permisos import PRIVILEGIOS_OPCIONALES, ROL_PROXLAUNCH
+from proxlaunch.nucleo.origen.permisos import (
+    ROL_PROXLAUNCH,
+    RUTA_STORAGE_SNIPPETS_DESCONOCIDO,
+    privilegios_opcionales,
+)
 
 # Privilegios del rol ProxLaunchCreador: los 10 de siempre y los 4 del MVP 4 (RF-O24). La lista
 # vive en el núcleo (única fuente); aquí solo se muestra.
@@ -390,7 +395,153 @@ _TEXTOS: dict[str, Callable[[], str]] = {
         "crearla. ProxLaunch nunca la vuelve a enviar sola, porque podría duplicarla: usa "
         "«Comprobar» para ver si existe.",
     ),
+    # --- Fase B (0.7): cloud-init, snippets, agente invitado y espera de IP (RF-B8.1) ---
+    "cloudinit": lambda: QCoreApplication.translate(
+        "Ayuda",
+        "Cloud-init es un programa que viene dentro de las imágenes de servidores en la nube. "
+        "En el primer arranque lee unos datos que Proxmox le entrega (usuario, claves, red) y "
+        "configura la máquina sola, sin que tengas que entrar a instalarla. Ejemplo: usuario "
+        "«deploy», tu clave SSH y la IP 192.168.1.50/24.",
+    ),
+    "ci_unidad": lambda: QCoreApplication.translate(
+        "Ayuda",
+        "La unidad cloud-init es un pequeño disco virtual donde Proxmox deja los datos de "
+        "cloud-init. Sin ella, la máquina no recibe usuario ni red. Se añade a la plantilla "
+        "desde Proxmox (Hardware, Añadir, «CloudInit Drive»).",
+    ),
+    "ci_usuario": lambda: QCoreApplication.translate(
+        "Ayuda",
+        "Nombre del usuario que se crea en la máquina, por ejemplo «deploy». Si lo dejas vacío "
+        "se usa el usuario por defecto de la imagen (en Ubuntu es «ubuntu»).",
+    ),
+    "ci_claves": lambda: QCoreApplication.translate(
+        "Ayuda",
+        "Una clave SSH pública (el archivo que termina en .pub) te deja entrar a la máquina "
+        "sin contraseña. Pega una clave por línea o añade los archivos .pub. La clave privada "
+        "nunca se comparte: ProxLaunch la rechaza si la pegas. Ejemplo de línea: "
+        "ssh-ed25519 AAAAC3Nza… ana@portatil",
+    ),
+    "ci_contrasena": lambda: QCoreApplication.translate(
+        "Ayuda",
+        "Opcional. Sirve para entrar por la consola de Proxmox si falla la red o las claves. "
+        "Es menos segura que una clave SSH: se envía a Proxmox y queda en su configuración. "
+        "No se guarda en lotes, perfiles ni archivos. Con una plantilla de Windows no se "
+        "permite.",
+    ),
+    "ci_red": lambda: QCoreApplication.translate(
+        "Ayuda",
+        "DHCP: la red asigna la dirección sola. IP fija: tú eliges la dirección (con su "
+        "máscara, por ejemplo 192.168.1.50/24) y la puerta de enlace. «Sin configurar» deja "
+        "lo que ya tenga la plantilla.",
+    ),
+    "ci_ip": lambda: QCoreApplication.translate(
+        "Ayuda",
+        "Dirección IPv4 con su máscara, por ejemplo 192.168.1.50/24 (el /24 equivale a la "
+        "máscara 255.255.255.0). ProxLaunch no puede comprobar si la IP ya está en uso en tu "
+        "red: eso lo tienes que saber tú.",
+    ),
+    "ci_puerta": lambda: QCoreApplication.translate(
+        "Ayuda",
+        "La puerta de enlace es la dirección del router por el que la máquina sale a otras "
+        "redes e internet, por ejemplo 192.168.1.1. Debe estar en la misma red que la IP.",
+    ),
+    "ci_serie": lambda: QCoreApplication.translate(
+        "Ayuda",
+        "En un lote, la primera máquina recibe la IP que escribas, la segunda la siguiente "
+        "(192.168.1.51), y así. Sin marcar, todas tendrían la misma IP y ProxLaunch no te "
+        "dejaría crear el lote.",
+    ),
+    "ci_dns": lambda: QCoreApplication.translate(
+        "Ayuda",
+        "Servidores DNS que usará la máquina para traducir nombres, separados por espacio o "
+        "coma, por ejemplo 1.1.1.1, 8.8.8.8. Vacío = los del servidor Proxmox.",
+    ),
+    "ci_dominio": lambda: QCoreApplication.translate(
+        "Ayuda",
+        "El dominio de búsqueda se añade a los nombres cortos: con «lab.local», escribir "
+        "«srv01» equivale a «srv01.lab.local». Vacío = el del servidor Proxmox.",
+    ),
+    "ci_actualizar": lambda: QCoreApplication.translate(
+        "Ayuda",
+        "Si está activado, en el primer arranque la máquina actualiza el sistema; puede tardar "
+        "varios minutos. «Como la plantilla» no cambia nada (si la plantilla no lo define, "
+        "Proxmox lo trata como «sí»).",
+    ),
+    "snippets": lambda: QCoreApplication.translate(
+        "Ayuda",
+        "Un snippet es un archivo de texto (normalmente YAML) guardado en el servidor que "
+        "cloud-init usa como guion de configuración. ProxLaunch no los crea ni los sube: los "
+        "deja un administrador en un almacenamiento con el contenido «Fragmentos» (snippets). "
+        "Con uno puedes, por ejemplo, instalar el agente invitado. Recomendación: usa «Datos "
+        "del proveedor»; «Datos de usuario» sustituye al usuario, las claves y la contraseña "
+        "de arriba.",
+    ),
+    "snippet_manual": lambda: QCoreApplication.translate(
+        "Ayuda",
+        "Escribe el identificador con la forma almacén:snippets/archivo, por ejemplo "
+        "local:snippets/agente.yaml. Sin la lista del servidor, ProxLaunch no puede comprobar "
+        "que el archivo exista.",
+    ),
+    "agente": lambda: QCoreApplication.translate(
+        "Ayuda",
+        "El agente invitado (qemu-guest-agent) es un programa que corre dentro de la máquina y "
+        "le cuenta a Proxmox cosas como su IP. Las imágenes de Ubuntu y Debian no lo traen; "
+        "Rocky y Alma sí. Sin él no podemos saber la IP.",
+    ),
+    "ci_activar_agente": lambda: QCoreApplication.translate(
+        "Ayuda",
+        "Activa la opción del agente invitado en la configuración de la máquina. El programa "
+        "también tiene que estar instalado dentro del sistema (las imágenes de Ubuntu y "
+        "Debian no lo traen; puedes instalarlo con un script de configuración).",
+    ),
+    "esperar_ip": lambda: QCoreApplication.translate(
+        "Ayuda",
+        "Tras encender cada máquina, ProxLaunch pregunta cada pocos segundos a Proxmox por su "
+        "IP hasta que la tenga o se acabe el plazo. Necesita el agente invitado instalado "
+        "dentro de la máquina. Si no hay IP, la máquina se crea igual y solo se avisa.",
+    ),
+    "imagen_cloud": lambda: QCoreApplication.translate(
+        "Ayuda",
+        "Una imagen cloud es un disco ya instalado y mínimo (Ubuntu, Debian, Rocky…) que se "
+        "publica para servidores. No trae instalador: se importa tal cual y cloud-init lo "
+        "personaliza al arrancar.",
+    ),
+    "plantilla_irreversible": lambda: QCoreApplication.translate(
+        "Ayuda",
+        "Una plantilla es una máquina «modelo» de la que se sacan copias (clones). No se "
+        "enciende ni se edita; cada copia nace con su propio disco. Convertir una máquina en "
+        "plantilla no se puede deshacer.",
+    ),
+    "consola_serie": lambda: QCoreApplication.translate(
+        "Ayuda",
+        "Con la consola serie, la consola gráfica de Proxmox se queda en negro: usa la consola "
+        "«xterm.js» (texto), que es la que muestran las imágenes cloud.",
+    ),
 }
+
+# Ayudas de la fase B (0.7) que deben tener texto (CA-B0.6.1, CA-B8.1.1).
+CAMPOS_AYUDA_FASE_B: tuple[str, ...] = (
+    "cloudinit",
+    "ci_unidad",
+    "ci_usuario",
+    "ci_claves",
+    "ci_contrasena",
+    "ci_red",
+    "ci_ip",
+    "ci_puerta",
+    "ci_serie",
+    "ci_dns",
+    "ci_dominio",
+    "ci_actualizar",
+    "snippets",
+    "snippet_manual",
+    "agente",
+    "ci_activar_agente",
+    "esperar_ip",
+    "imagen_cloud",
+    "plantilla_irreversible",
+    "consola_serie",
+)
 
 # Ayudas del lote que deben tener texto (CA-L22.4).
 CAMPOS_AYUDA_LOTE: tuple[str, ...] = (
@@ -711,17 +862,114 @@ def efecto_privilegio_opcional(privilegio: str) -> str:
             "permite ver la lista de pools para elegir uno. Sin él no se puede elegir pool, "
             "aunque existan.",
         )
+    if privilegio == "VM.Config.Cloudinit":
+        return QCoreApplication.translate(
+            "Ayuda",
+            "permite poner usuario, claves SSH, contraseña, red y scripts a las máquinas "
+            "clonadas con cloud-init. Sin él esa sección se desactiva (en Proxmox 8.x también "
+            "vale VM.Config.Network, que ya forma parte del rol).",
+        )
+    if privilegio == "VM.Monitor":
+        return QCoreApplication.translate(
+            "Ayuda",
+            "permite consultar al agente invitado para «Esperar la IP» de cada máquina. Sin él "
+            "esa casilla se desactiva.",
+        )
+    if privilegio == "VM.GuestAgent.Audit":
+        return QCoreApplication.translate(
+            "Ayuda",
+            "permite consultar al agente invitado para «Esperar la IP» de cada máquina. Sin él "
+            "esa casilla se desactiva.",
+        )
+    if privilegio == "Datastore.AllocateSpace":
+        return QCoreApplication.translate(
+            "Ayuda",
+            "en Proxmox 8.x hace falta para usar scripts de configuración (snippets). Ya forma "
+            "parte del rol; compruébalo también sobre el almacenamiento de snippets, que es "
+            "donde se guardan. Es la opción recomendada.",
+        )
+    if privilegio == "Datastore.Allocate":
+        return QCoreApplication.translate(
+            "Ayuda",
+            "en tu versión puede hacer falta (es un permiso de administrador del almacenamiento) "
+            "para elegir scripts de configuración (snippets); no está verificado. Sin él los "
+            "scripts pueden ser rechazados por Proxmox.",
+        )
     return ""
 
 
-def privilegios_opcionales_guia() -> list[str]:
-    """Una línea por privilegio opcional: «VM.PowerMgmt en «/vms»: permite…»."""
+def _ruta_legible(ruta: str) -> str:
+    """La ruta tal cual, salvo la genérica del almacén de snippets desconocido (texto propio)."""
+    if ruta == RUTA_STORAGE_SNIPPETS_DESCONOCIDO:
+        return QCoreApplication.translate("Ayuda", "/storage/(el almacenamiento de snippets)")
+    return ruta
+
+
+def privilegios_opcionales_guia(
+    caps: Capacidades | None = None, almacen_snippets: str | None = None
+) -> list[str]:
+    """Una línea por privilegio opcional: «VM.PowerMgmt en «/vms»: permite…».
+
+    Con ``caps`` (RF-B5.2) la lista se reduce a la versión conectada y suma los de la fase B;
+    sin ellas solo salen los de la fase A (los de la fase B no existen igual en 8.x y 9.x).
+    ``almacen_snippets`` (B3) es el almacenamiento de snippets del inventario: en 8.x los
+    privilegios de snippets se proponen solo sobre ``/storage/<almacén>``.
+    """
     return [
         QCoreApplication.translate("Ayuda", "{privilegio} en «{ruta}»: {efecto}").format(
-            privilegio=privilegio, ruta=ruta, efecto=efecto_privilegio_opcional(privilegio)
+            privilegio=p.privilegio,
+            ruta=_ruta_legible(p.ruta),
+            efecto=efecto_privilegio_opcional(p.privilegio),
         )
-        for privilegio, ruta in PRIVILEGIOS_OPCIONALES
+        for p in privilegios_opcionales(caps, almacen_snippets)
     ]
+
+
+def comando_agregar_privilegios(privilegios: Sequence[str], rol: str = NOMBRE_ROL) -> str:
+    """Orden ``pveum`` para añadir privilegios a un rol que ya existe, sin recrearlo (RF-B5.2)."""
+    return f'pveum role modify {rol} --privs "{",".join(privilegios)}" --append 1'
+
+
+def nota_comando_privilegios(caps: Capacidades | None = None) -> str:
+    """Cómo añadir al rol existente los privilegios opcionales de la fase B (de una versión)."""
+    nuevos = [
+        p.privilegio
+        for p in privilegios_opcionales(caps)
+        if p.privilegio.startswith(("VM.Config.Cloudinit", "VM.Monitor", "VM.GuestAgent"))
+    ]
+    if not nuevos:
+        return ""
+    return QCoreApplication.translate(
+        "Ayuda",
+        "Para añadir al rol que ya tienes los privilegios de cloud-init y de la espera de IP, "
+        "sin recrearlo, ejecuta en un nodo de Proxmox: {comando}",
+    ).format(comando=comando_agregar_privilegios(nuevos))
+
+
+def ejemplo_snippet_agente() -> str:
+    """Ejemplo de snippet «vendor» que instala y activa el agente invitado (RF-B4.7).
+
+    Es el mismo texto que figura en la guía de usuario. Es un archivo YAML: no se traduce.
+    """
+    return (
+        "#cloud-config\n"
+        "package_update: true\n"
+        "packages:\n"
+        "  - qemu-guest-agent\n"
+        "runcmd:\n"
+        "  - systemctl enable --now qemu-guest-agent\n"
+    )
+
+
+def instrucciones_snippet_agente() -> str:
+    """Cómo dejar el ejemplo en el servidor: ProxLaunch no sube snippets, lo hace el admin."""
+    return QCoreApplication.translate(
+        "Ayuda",
+        "ProxLaunch no puede subir este archivo. Pide a tu administrador que lo guarde, por "
+        "ejemplo como agente.yaml, en la carpeta de snippets de un almacenamiento con el "
+        "contenido «Fragmentos» (en el almacenamiento «local» suele ser /var/lib/vz/snippets) "
+        "de cada nodo. Después elígelo en «Datos del proveedor» (vendor).",
+    )
 
 
 def nota_sys_modify() -> str:
@@ -759,8 +1007,14 @@ def nota_archivos_subidos() -> str:
     )
 
 
-def texto_pedir_al_administrador() -> str:
-    """Texto listo para copiar y enviar al administrador de Proxmox (CA-O32.2)."""
+def texto_pedir_al_administrador(
+    caps: Capacidades | None = None, almacen_snippets: str | None = None
+) -> str:
+    """Texto listo para copiar y enviar al administrador de Proxmox (CA-O32.2).
+
+    Con ``caps`` (versión conectada) añade los privilegios opcionales de la fase B que existen en
+    esa versión (RF-B5.2).
+    """
     lineas = [
         QCoreApplication.translate(
             "Ayuda",
@@ -807,7 +1061,10 @@ def texto_pedir_al_administrador() -> str:
             "deshacer, el privilegio VM.PowerMgmt en «/vms»; para elegir un pool, Pool.Audit en "
             "«/pool». No forman parte del rol.",
         ),
-        *[f"   - {linea}" for linea in privilegios_opcionales_guia()],
+        *[f"   - {linea}" for linea in privilegios_opcionales_guia(caps, almacen_snippets)],
         "   - " + nota_etiquetas_administrador(),
     ]
+    comando = nota_comando_privilegios(caps)
+    if comando:
+        lineas.append("   - " + comando)
     return "\n".join(lineas)

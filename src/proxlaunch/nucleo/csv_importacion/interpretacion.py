@@ -8,13 +8,19 @@ Capa 1 (sin servidor) siempre; capa 2 de vista previa solo con inventario. Los p
 celda son ``ProblemaCelda`` (código y parámetros, nunca texto de interfaz). Las columnas de
 credenciales y las desconocidas no se leen jamás. Un problema de la tabla completa lanza
 ``ErrorProxLaunch`` (E-M10).
+
+Fase B (DT-B13): la columna ``ci_contrasena`` es la única credencial admitida. Su celda se valida
+con ``validar_contrasena`` ANTES de crear el ``Secreto``; en ``originales`` y en ``valor`` de los
+problemas se sustituye por ``MASCARA``, y nunca entra en los ``params`` de un problema.
 """
 
 import copy
+import re
 from collections.abc import Collection, Mapping, Sequence
 from dataclasses import dataclass, field
 
 from proxlaunch.nucleo.archivos.constantes import (
+    MAX_LONG_CLAVES,
     MAX_LONG_NOTAS,
     MAX_LONG_TEXTO,
     MAX_PROBLEMAS_FILA,
@@ -30,8 +36,20 @@ from proxlaunch.nucleo.archivos.texto import (
     texto_seguro,
 )
 from proxlaunch.nucleo.capacidades import capacidades_para
+from proxlaunch.nucleo.cloudinit.claves import MotivoClave, analizar_claves, contiene_clave_privada
+from proxlaunch.nucleo.cloudinit.modelos import (
+    NINGUNO,
+    CloudInitParcial,
+    ModoTarjeta,
+    SnippetsCloudInit,
+    TarjetaCloudInit,
+    combinar,
+)
+from proxlaunch.nucleo.cloudinit.red import normalizar_dns
+from proxlaunch.nucleo.cloudinit.validacion import validar_contrasena
 from proxlaunch.nucleo.csv_importacion import unidades
 from proxlaunch.nucleo.csv_importacion.columnas import (
+    COLUMNA_CONTRASENA,
     MAX_DISCOS_CSV,
     normalizar_encabezado,
     resolver_columnas,
@@ -80,6 +98,7 @@ from proxlaunch.nucleo.origen.nombres import (
 from proxlaunch.nucleo.origen.resolucion import resolver_origen
 from proxlaunch.nucleo.perfiles_maquina.aplicar import AvisoPista, aplicar_config
 from proxlaunch.nucleo.perfiles_maquina.modelos import PerfilMaquina
+from proxlaunch.nucleo.secreto import MASCARA, Secreto
 from proxlaunch.nucleo.transferencias.url import url_saneada
 from proxlaunch.nucleo.validacion import (
     VMID_MIN,
@@ -102,6 +121,28 @@ MAX_NODOS_MOTIVOS = 5  # nodos que se detallan en V-L11
 _CAPA2 = frozenset({"V-04", "V-09", "V-16", "V-16.sinredes", "V-17"})
 
 _REGLA_NO_ADMITIDO = "E-M11.valor_no_admitido"
+
+# Fase B: columnas de snippets (columna -> tipo de ``SnippetsCloudInit``) y columnas de texto cuyo
+# valor no se conserva si trae un token (INV-M2).
+_COLUMNAS_SNIPPET = (
+    ("ci_snippet_usuario", "user"),
+    ("ci_snippet_vendor", "vendor"),
+    ("ci_snippet_red", "network"),
+    ("ci_snippet_meta", "meta"),
+)
+_SNIPPET_A_COLUMNA = {tipo: columna for columna, tipo in _COLUMNAS_SNIPPET}
+TEXTOS_SIN_TOKEN = frozenset(
+    {
+        "pool",
+        "ci_usuario",
+        "ci_dominio",
+        "ci_ip",
+        "ci_puerta",
+        "ci_dns",
+        *(columna for columna, _tipo in _COLUMNAS_SNIPPET),
+    }
+)
+_SEPARADORES_DNS = re.compile(r"[\s,;]+")
 
 
 @dataclass
@@ -154,9 +195,12 @@ def _columna_de_campo(campo: str) -> str | None:
         "proteger": "proteger",
         "mtu": "mtu",
         "limite_red": "limite_red",
+        "esperar_ip": "esperar_ip",
     }
     if campo in fijos:
         return fijos[campo]
+    if campo.startswith("cloudinit."):
+        return _columna_de_cloudinit(campo[len("cloudinit.") :])
     if campo.startswith("etiquetas_usuario["):
         return "etiquetas"
     # MVP 4: campos del origen del SO.
@@ -200,6 +244,25 @@ def _columna_de_campo(campo: str) -> str | None:
     return None
 
 
+def _columna_de_cloudinit(resto: str) -> str | None:
+    """Columna del CSV de un campo ``cloudinit.<resto>`` de las reglas V-B (o ``None``)."""
+    simples = {
+        "usuario": "ci_usuario",
+        "claves": "ci_claves",
+        "contrasena": COLUMNA_CONTRASENA,
+        "dns": "ci_dns",
+        "dominio": "ci_dominio",
+        "actualizar": "ci_actualizar",
+    }
+    if resto in simples:
+        return simples[resto]
+    if resto.startswith("tarjetas["):  # el CSV solo llega a la tarjeta 1 (net0)
+        return "ci_puerta" if resto.endswith(".puerta") else "ci_ip"
+    if resto.startswith("snippets."):
+        return _SNIPPET_A_COLUMNA.get(resto.partition(".")[2])
+    return None
+
+
 def _orden(mapa: MapaColumnas, canonica: str | None) -> int:
     """Posición de la columna en el archivo (para ordenar); los de fila van primero."""
     return -1 if canonica is None else mapa.posiciones.get(canonica, -1)
@@ -215,8 +278,10 @@ class _Contexto:
         perfiles: Sequence[PerfilMaquina],
         inv: Inventario | None,
         nodo_referencia: str | None,
+        encender_base: bool | None = None,
     ) -> None:
         self.mapa = mapa
+        self.encender_base = encender_base
         self.base = perfil_base
         self.inv = inv
         self.nodo_referencia = nodo_referencia
@@ -326,8 +391,12 @@ class _Fila:
             valor = self.celda(canonica)
         if canonica == "fuente" and parece_url_o_credenciales(valor):
             valor = url_saneada(valor)  # INV-O6: la URL con credenciales no se conserva
-        if canonica == "pool" and contiene_token(valor):
-            valor = ""  # un token en el pool tampoco se conserva
+        if canonica == COLUMNA_CONTRASENA:
+            valor = MASCARA  # DT-B13: la contraseña nunca se muestra, ni en un error
+        elif canonica == "ci_claves":
+            valor = ""  # puede traer una clave privada pegada por error: no se conserva
+        elif canonica in TEXTOS_SIN_TOKEN and contiene_token(valor):
+            valor = ""  # un token en el pool o en cloud-init tampoco se conserva
         if canonica == "notas" and (regla == _REGLA_NO_ADMITIDO or contiene_token(valor)):
             # RNF-A2: un token en las notas no se conserva en el resultado; y una celda de
             # notas con error tampoco muestra su valor (pudo traer un token disfrazado).
@@ -434,6 +503,7 @@ class _Fila:
         # Capa 2 (solo con inventario y si la configuración se pudo construir).
         if ctx.inv is not None and not b.sin_cfg:
             self._capa2(cfg)
+        cfg.cloudinit = None  # la fuente de cloud-init de la fila es ``b.opciones.cloudinit``
 
         cfg.vmid = b.vmid if b.vmid is not None else 0
         cfg.nodo = b.nodo or ""
@@ -442,11 +512,17 @@ class _Fila:
             if pos < len(b.fila.celdas):
                 bruta = b.fila.celdas[pos]
                 original = sin_control(bruta).strip()
+                if canonica == COLUMNA_CONTRASENA:
+                    if bruta.strip():
+                        b.originales[canonica] = MASCARA  # DT-B13: nunca el texto
+                    continue
+                if canonica == "ci_claves" and contiene_clave_privada(bruta):
+                    continue  # una clave privada pegada por error no se conserva
                 if original:
                     if canonica == "fuente" and parece_url_o_credenciales(original):
                         original = url_saneada(original)  # INV-O6
-                    if canonica in ("notas", "pool") and contiene_token(bruta):
-                        continue  # RNF-A2: un token en las notas o el pool no se conserva
+                    if canonica in ("notas", *TEXTOS_SIN_TOKEN) and contiene_token(bruta):
+                        continue  # RNF-A2: un token en las notas, el pool o cloud-init
                     b.originales[canonica] = original
         return b
 
@@ -812,6 +888,126 @@ class _Fila:
             return None
         return pool
 
+    # -- cloud-init y espera de IP (fase B, RF-B6.3) --
+
+    def _texto_sin_token(self, canonica: str) -> str | None:
+        """Texto libre de cloud-init (``ci_usuario``, ``ci_dominio``) sin token (INV-M2)."""
+        texto = self.texto(canonica)
+        if texto is not None and contiene_token(texto):
+            self.b.sin_cfg = True
+            self.problema(canonica, _REGLA_NO_ADMITIDO, Severidad.ERROR, {"motivo": "token"})
+            return None
+        return texto
+
+    def _celda_sin_token(self, canonica: str) -> str:
+        """Celda de cloud-init (IP, DNS, snippets) sin token: con uno la celda se descarta y la
+        fila queda con error, como en ``ci_usuario`` (INV-M2). Devuelve ``""`` si se descartó."""
+        crudo = self.celda(canonica)
+        if crudo and contiene_token(crudo):
+            self.b.sin_cfg = True
+            self.problema(canonica, _REGLA_NO_ADMITIDO, Severidad.ERROR, {"motivo": "token"})
+            return ""
+        return crudo
+
+    def _claves(self) -> tuple[str, ...] | None:
+        """``ci_claves``: claves públicas separadas por salto de línea o ``;`` (hasta 8192).
+
+        Los problemas se describen por línea y motivo, nunca con el contenido de la celda."""
+        crudo = self.celda("ci_claves")
+        if not crudo:
+            return None
+        if len(crudo) > MAX_LONG_CLAVES:  # defensa: el lector ya impone el límite de la celda
+            self.b.sin_cfg = True
+            self.problema("ci_claves", _REGLA_NO_ADMITIDO, Severidad.ERROR, {"motivo": "longitud"})
+            return None
+        resultado = analizar_claves(crudo.replace(";", "\n"))
+        for p in resultado.problemas:
+            self.b.sin_cfg = True
+            if p.motivo == MotivoClave.CLAVE_PRIVADA:
+                self.problema("ci_claves", "V-B23", Severidad.ERROR)
+            elif p.motivo in (MotivoClave.DEMASIADAS, MotivoClave.DEMASIADO_TEXTO):
+                self.problema("ci_claves", "V-B24", Severidad.ERROR, {"motivo": p.motivo.value})
+            else:
+                self.problema(
+                    "ci_claves",
+                    "V-B22",
+                    Severidad.ERROR,
+                    {"linea": str(p.linea), "motivo": p.motivo.value},
+                )
+        if resultado.problemas:
+            return None
+        return resultado.claves or None  # solo comentarios o líneas vacías = celda vacía
+
+    def _contrasena(self) -> Secreto | None:
+        """``ci_contrasena``: se valida el texto en claro y solo entonces nace el ``Secreto``.
+
+        Se lee sin recortar (un espacio puede ser parte de la contraseña) y los problemas (V-B25)
+        solo llevan el motivo."""
+        pos = self.ctx.mapa.posiciones.get(COLUMNA_CONTRASENA)
+        if pos is None or pos >= len(self.b.fila.celdas):
+            return None
+        valor = self.b.fila.celdas[pos]
+        if not valor.strip():
+            return None
+        problemas = validar_contrasena(valor, valor, None)
+        for p in problemas:
+            self.problema(COLUMNA_CONTRASENA, p.codigo, p.severidad, p.params)
+        if any(p.severidad == Severidad.ERROR for p in problemas):
+            self.b.sin_cfg = True
+            return None
+        return Secreto(valor)
+
+    def _tarjeta0(self) -> TarjetaCloudInit | None:
+        """``ci_ip`` + ``ci_puerta`` -> tarjeta 1 (``net0``). ``heredar`` = sin configurar."""
+        crudo = self._celda_sin_token("ci_ip")
+        puerta = self._texto_sin_token("ci_puerta")
+        if not crudo and puerta is None:
+            return None
+        modo, ip = (ModoTarjeta.SIN_CONFIGURAR, None) if not crudo else unidades.modo_ip(crudo)
+        return TarjetaCloudInit(indice=0, modo=modo, ip=ip, serie=False, puerta=puerta)
+
+    def _dns(self) -> tuple[str, ...] | None:
+        """``ci_dns``: direcciones separadas por espacio, coma o ``;``. Su validez la
+        comprueba V-B32."""
+        if not self._celda_sin_token("ci_dns"):
+            return None
+        crudo = self.texto("ci_dns")
+        if not crudo:
+            return None
+        tokens = tuple(t for t in _SEPARADORES_DNS.split(crudo) if t)
+        if not tokens:
+            return None
+        normalizadas, motivo = normalizar_dns(" ".join(tokens))
+        return tokens if motivo is not None else normalizadas
+
+    def _snippets(self) -> SnippetsCloudInit | None:
+        """Un volid, ``ninguno`` o vacío (= como la plantilla) por tipo. V-B54 revisa el formato."""
+        valores: dict[str, str | None] = {}
+        for columna, tipo in _COLUMNAS_SNIPPET:
+            crudo = self._celda_sin_token(columna)
+            if not crudo:
+                valores[tipo] = None
+            elif unidades.es_ninguno(crudo):
+                valores[tipo] = NINGUNO
+            else:
+                valores[tipo] = self.texto(columna)
+        snippets = SnippetsCloudInit(**valores)
+        return None if snippets.como_la_plantilla else snippets
+
+    def _cloudinit(self) -> CloudInitParcial | None:
+        """Celdas de cloud-init de la fila (``None`` = hereda todo del formulario)."""
+        parcial = CloudInitParcial(
+            usuario=self._texto_sin_token("ci_usuario"),
+            claves=self._claves(),
+            contrasena=self._contrasena(),
+            tarjeta0=self._tarjeta0(),
+            dns=self._dns(),
+            dominio=self._texto_sin_token("ci_dominio"),
+            actualizar=self.booleano("ci_actualizar"),
+            snippets=self._snippets(),
+        )
+        return None if parcial.vacia else parcial
+
     def _opciones(self, cfg: ConfiguracionVM, perfil: PerfilMaquina) -> OpcionesParciales | None:
         """Lee las columnas de la fase A. Las celdas vacías heredan las del formulario (``None``).
 
@@ -831,6 +1027,8 @@ class _Fila:
             etiquetas_usuario=self._etiquetas(),
             pool=self._pool(),
             proteger=self.booleano("proteger"),
+            cloudinit=self._cloudinit(),
+            esperar_ip=self.booleano("esperar_ip"),
         )
         if op.encender is not None:
             cfg.encender = op.encender
@@ -844,6 +1042,15 @@ class _Fila:
             cfg.pool = op.pool or None
         if op.proteger is not None:
             cfg.proteger = op.proteger
+        # Fase B: cloud-init se copia a ``cfg`` solo para que las reglas V-B de capa 1 lo vean;
+        # ``interpretar`` lo retira después (la fuente es ``opciones.cloudinit``). V-B60 se evalúa
+        # aquí: ``cfg.encender`` no conoce el «Encender» del formulario.
+        if op.cloudinit is not None:
+            cfg.cloudinit = combinar(None, op.cloudinit)
+        if op.esperar_ip:
+            encender = op.encender if op.encender is not None else self.ctx.encender_base
+            if encender is False:
+                self.problema("esperar_ip", "V-B60", Severidad.ERROR)
         return op if op != OpcionesParciales() else None
 
     def _pistas(self, avisos: Sequence[AvisoPista], perfil: PerfilMaquina) -> None:
@@ -1006,24 +1213,32 @@ def interpretar(
     inv: Inventario | None,
     nodo_referencia: str | None,
     alias_extra: Mapping[str, str] | None = None,
+    encender_base: bool | None = None,
 ) -> ResultadoImportacion:
     """Interpreta y valida todas las filas (capa 1 y, con ``inv``, la capa 2 de vista previa).
 
     ``perfiles`` son los perfiles elegibles en la columna ``perfil`` (fábrica y usuario).
     ``nodo_referencia`` es el nodo en el que se resuelven las pistas de las filas sin nodo.
+    ``encender_base`` es el «Encender al terminar» del formulario (``None`` = se desconoce): sirve
+    para V-B60 (``esperar_ip`` en una fila sin encendido efectivo). Si se desconoce, esa regla la
+    evalúa el planificador con la configuración completa.
     Lanza ``ErrorProxLaunch`` ``CSV_COLUMNAS`` (E-M10) si el encabezado no sirve.
     """
     mapa, avisos_columnas = resolver_columnas(tabla.encabezado, alias_extra=alias_extra)
     _verificar_columnas_sin_encabezado(tabla, list(mapa.posiciones))
-    ctx = _Contexto(mapa, perfil_base, perfiles, inv, nodo_referencia)
+    ctx = _Contexto(mapa, perfil_base, perfiles, inv, nodo_referencia, encender_base)
     borradores = [_Fila(ctx, f).interpretar() for f in tabla.filas]
     _marcar_duplicados(borradores, mapa)
+    avisos_secretos: tuple[AvisoArchivo, ...] = ()
+    if any(COLUMNA_CONTRASENA in b.originales for b in borradores):
+        # RF-B6.5 (4): el CSV trae contraseñas en texto claro; se avisa una vez, sin valores.
+        avisos_secretos = (AvisoArchivo(CodigoAvisoArchivo.CSV_CON_CONTRASENAS),)
     return ResultadoImportacion(
         codificacion=tabla.codificacion,
         deteccion=tabla.deteccion,
         columnas=mapa,
         filas=tuple(_congelar(b) for b in borradores),
-        avisos=avisos_columnas + tuple(ctx.avisos_de_archivo()),
+        avisos=avisos_columnas + avisos_secretos + tuple(ctx.avisos_de_archivo()),
         perfil_base_id=perfil_base.id,
         con_inventario=inv is not None,
     )

@@ -8,14 +8,18 @@ from __future__ import annotations
 
 import re
 from collections.abc import Iterable, Mapping, Sequence
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
+from proxlaunch.nucleo.cloudinit.deteccion import es_windows, info_cloudinit
+from proxlaunch.nucleo.cloudinit.modelos import INFO_DESCONOCIDA
+from proxlaunch.nucleo.cloudinit.peticion import construir_put_cloudinit
 from proxlaunch.nucleo.constructor_peticion import valor_startup
 from proxlaunch.nucleo.errores import CodigoError, ErrorProxLaunch
 from proxlaunch.nucleo.modelos.catalogo import DetallePlantilla, DiscoPlantilla
 from proxlaunch.nucleo.modelos.inventario import Inventario, Storage
 from proxlaunch.nucleo.modelos.origen import DetalleClon, ModoClon
 from proxlaunch.nucleo.modelos.vm import ConfiguracionVM, pool_valido
+from proxlaunch.nucleo.secreto import Secreto
 from proxlaunch.nucleo.validacion import (
     DISCO_MAX_GIB,
     DISCO_MIN_GIB,
@@ -162,6 +166,8 @@ def detalle_de_config(config: Mapping[str, object]) -> DetallePlantilla:
         # Fase A: sin clave ``description`` la plantilla no tiene notas (None); un valor que
         # no sea texto se ignora.
         descripcion=descripcion if isinstance(descripcion, str) else None,
+        # Fase B: lo que la config dice de cloud-init, sin ninguna lectura nueva (DT-B2).
+        cloudinit=info_cloudinit(config),
     )
 
 
@@ -324,10 +330,17 @@ def construir_peticion_clon(cfg: ConfiguracionVM, inv: Inventario) -> PeticionCl
 
 @dataclass(frozen=True)
 class AjustesTrasClon:
-    """``config``: cuerpo del ``PUT …/config`` (vacío = no hay PUT). ``disco``: ``(clave, GiB)``."""
+    """``config``: cuerpo del ``PUT …/config`` (vacío = no hay PUT). ``disco``: ``(clave, GiB)``.
+
+    Fase B: ``cloudinit`` es el cuerpo del ``PUT`` de cloud-init (sin contraseña; vacío = no hay
+    PUT) y ``contrasena`` el ``Secreto`` que se envía en un ``PUT`` propio. Nunca entran en
+    ``repr`` ni en la comparación.
+    """
 
     config: dict[str, str]
     disco: tuple[str, int] | None
+    cloudinit: dict[str, str] = field(default_factory=dict)
+    contrasena: Secreto | None = field(default=None, repr=False, compare=False)
 
 
 def union_etiquetas(*grupos: Iterable[str]) -> str:
@@ -345,6 +358,11 @@ def construir_ajustes_clon(
     Fase A: ``onboot``, ``startup`` y ``protection`` (solo si difieren del defecto, pues el
     clon hereda lo de la plantilla); ``etiquetas_lote`` debe incluir las del usuario.
     El disco solo se amplía si el tamaño pedido supera el actual del disco principal.
+
+    Fase B: con ``cfg.cloudinit`` no vacía y una plantilla que no se sabe sin unidad cloud-init,
+    ``cloudinit`` lleva el cuerpo de su ``PUT`` (``construir_put_cloudinit`` sobre lo que la
+    plantilla ya trae) y ``contrasena`` el secreto (nunca en una plantilla Windows). Sin
+    cloud-init el resultado es el de 0.6.0.
     """
     detalle = cfg.detalle_origen
     if not isinstance(detalle, DetalleClon):
@@ -398,7 +416,29 @@ def construir_ajustes_clon(
             )
             if actual_gib is None or a.disco_gib > actual_gib:
                 disco = (principal.clave, a.disco_gib)
-    return AjustesTrasClon(config, disco)
+    cloudinit, contrasena = _ajustes_cloudinit(cfg, plantilla)
+    return AjustesTrasClon(config, disco, cloudinit, contrasena)
+
+
+def _ajustes_cloudinit(
+    cfg: ConfiguracionVM, plantilla: DetallePlantilla
+) -> tuple[dict[str, str], Secreto | None]:
+    """``(cuerpo del PUT de cloud-init, contraseña)`` de una MV clonada (DT-B7).
+
+    Sin unidad cloud-init en la plantilla (``unidad is False``) no se emite nada: quien envía
+    lo detecta y marca ``CLOUDINIT_SIN_UNIDAD``. ``unidad is None`` (config ilegible) sí envía.
+    """
+    ci = cfg.cloudinit
+    if ci is None or ci.sin_nada_que_aplicar:
+        return {}, None
+    info = plantilla.cloudinit if plantilla.cloudinit is not None else INFO_DESCONOCIDA
+    if info.unidad is False:
+        return {}, None
+    contrasena = ci.contrasena
+    # Un ``Secreto`` ya olvidado se conserva: quien envía lo marca pendiente (CONTRASENA_OLVIDADA).
+    if contrasena is None or info.es_windows or es_windows(info.ostype):
+        contrasena = None
+    return construir_put_cloudinit(ci, info), contrasena
 
 
 def parametros_ampliacion(clave_disco: str, tamano_gib: int) -> dict[str, str]:

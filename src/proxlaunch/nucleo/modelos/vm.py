@@ -5,6 +5,8 @@ from dataclasses import dataclass, field
 from enum import StrEnum
 from typing import Any
 
+from proxlaunch.nucleo.cloudinit import serializacion as _serial_cloudinit
+from proxlaunch.nucleo.cloudinit.modelos import ConfigCloudInit, InfoCloudInitPlantilla
 from proxlaunch.nucleo.errores import CodigoError, ErrorProxLaunch
 from proxlaunch.nucleo.modelos.origen import (
     AjustesClon,
@@ -72,6 +74,7 @@ class Disco:
 # Fase A (0.6): MTU y límite de velocidad por tarjeta.
 MTU_IGUAL_BRIDGE = 1  # mtu=1: la tarjeta usa el MTU del bridge
 MTU_MIN, MTU_MAX = 576, 65520
+PLAZO_IP_DEFECTO_S = 120  # plazo por defecto de la espera de IP (fase B)
 MAX_LIMITE_MB = 10**9  # tope compartido del límite de velocidad (MB/s): V-A06, CSV y archivos
 
 # Formato de un pool de Proxmox (``pve-poolid``): hasta 3 niveles separados por «/» (anidados).
@@ -234,6 +237,14 @@ class ConfiguracionVM:
     proteger: bool = False  # protection=1
     # CALCULADO por ``opciones.preparacion.preparar_elemento``; nunca se serializa.
     descripcion: str | None = None
+    # --- Fase B (0.7): al final y con el valor por defecto = comportamiento de 0.6.0 ---
+    # None = sin cloud-init; fuera del repr porque lleva datos sensibles (usuario, claves, IP)
+    cloudinit: ConfigCloudInit | None = field(default=None, repr=False)
+    esperar_ip: bool = False  # sondear la IP con el agente tras encender (B3)
+    plazo_ip_s: int = PLAZO_IP_DEFECTO_S
+    # CALCULADO por ``preparar_elemento`` con lo que trae la plantilla; nunca se serializa ni
+    # cuenta en la igualdad.
+    info_cloudinit: InfoCloudInitPlantilla | None = field(default=None, compare=False, repr=False)
 
     def __post_init__(self) -> None:
         # CA-18.2: cualquier origen distinto de "disco_vacio" es un error de validación.
@@ -311,6 +322,12 @@ class ConfiguracionVM:
             datos["pool"] = self.pool
         if self.proteger:
             datos["proteger"] = True
+        # Claves de la fase B: sin contraseña (solo el indicador ``con_acceso_local``).
+        # ``info_cloudinit`` es calculado y nunca se serializa.
+        if self.cloudinit is not None:
+            datos["cloudinit"] = _serial_cloudinit.a_dict(self.cloudinit)
+        if self.esperar_ip or self.plazo_ip_s != PLAZO_IP_DEFECTO_S:
+            datos["esperar_ip"] = {"activo": self.esperar_ip, "plazo_s": self.plazo_ip_s}
         return datos
 
     @classmethod
@@ -320,6 +337,10 @@ class ConfiguracionVM:
         origen = _enum(OrigenSO, d["origen"], "origen")
         tipo_so = d.get("tipo_so")
         detalle = d.get("detalle_origen")
+        cloudinit = d.get("cloudinit")
+        espera = d.get("esperar_ip") or {}
+        if not isinstance(espera, dict):
+            raise ErrorProxLaunch(CodigoError.PARAMETRO_INVALIDO, {"campo": "esperar_ip"})
         return cls(
             vmid=d["vmid"],
             nombre=d["nombre"],
@@ -371,4 +392,7 @@ class ConfiguracionVM:
             etiquetas_usuario=tuple(str(e) for e in d.get("etiquetas_usuario", ())),
             pool=d.get("pool"),
             proteger=bool(d.get("proteger", False)),
+            cloudinit=None if cloudinit is None else _serial_cloudinit.desde_dict(cloudinit),
+            esperar_ip=bool(espera.get("activo", False)),
+            plazo_ip_s=espera.get("plazo_s", PLAZO_IP_DEFECTO_S),
         )

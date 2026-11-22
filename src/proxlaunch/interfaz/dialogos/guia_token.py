@@ -33,13 +33,22 @@ from proxlaunch.interfaz.ayuda import (
     titulo_privilegios_opcionales,
 )
 from proxlaunch.interfaz.desplazable import limitar_a_pantalla
+from proxlaunch.nucleo.capacidades import Capacidades
 
 
 class DialogoGuiaToken(QDialog):
     """Pasos para crear un token con permisos mínimos (rol ProxLaunchCreador)."""
 
-    def __init__(self, parent: QWidget | None = None) -> None:
+    def __init__(
+        self,
+        parent: QWidget | None = None,
+        *,
+        caps: Capacidades | None = None,
+        almacen_snippets: str | None = None,
+    ) -> None:
         super().__init__(parent)
+        self._caps = caps
+        self._almacen_snippets = almacen_snippets
         self.setWindowTitle(titulo_guia_token())
         self.setMinimumSize(560, 480)
         contenido = QWidget()
@@ -88,7 +97,10 @@ class DialogoGuiaToken(QDialog):
         lbl_intro = QLabel(intro_privilegios_opcionales())
         lbl_intro.setWordWrap(True)
         capa.addWidget(lbl_intro)
-        for linea in [*privilegios_opcionales_guia(), *notas_opcionales_guia()]:
+        for linea in [
+            *privilegios_opcionales_guia(self._caps, self._almacen_snippets),
+            *notas_opcionales_guia(),
+        ]:
             lbl_opc = QLabel(f"• {linea}")
             lbl_opc.setWordWrap(True)
             lbl_opc.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse)
@@ -130,5 +142,7 @@ class DialogoGuiaToken(QDialog):
 
     def _copiar_para_administrador(self) -> None:
         """Deja en el portapapeles el texto «Qué pedirle a tu administrador» (CA-O32.2)."""
-        QApplication.clipboard().setText(texto_pedir_al_administrador())
+        QApplication.clipboard().setText(
+            texto_pedir_al_administrador(self._caps, self._almacen_snippets)
+        )
         self._estado.setText(self.tr("Texto copiado."))

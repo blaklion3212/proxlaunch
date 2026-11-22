@@ -9,12 +9,33 @@ Solutions GmbH. La aplicación solo se presenta como «Compatible con Proxmox VE
 
 ## Estado del proyecto
 
-**Versión `0.6.0`.** Hay instaladores para Ubuntu (`.deb`) y Windows
+**Versión `0.7.0`.** Hay instaladores para Ubuntu (`.deb`) y Windows
 (`-setup.exe`), además de poder ejecutarse desde el código fuente. Se apoya en el MVP 5 (instaladores), el MVP 4 (origen del
 sistema operativo), el MVP 3 (perfiles de máquina, lotes guardados e importación CSV), el MVP 2
 (creación por lotes) y el MVP 1. Las secciones «Qué hace/añade» de más abajo describen cada
 etapa; la del MVP 4 está en la [guía de usuario](docs/guia-usuario.md#elegir-el-origen-del-sistema-operativo).
 Las novedades de cada versión están en las [releases](https://github.com/blaklion3212/proxlaunch/releases).
+
+Novedades de la versión 0.7.0 (**configuración inicial de las máquinas y plantillas desde imágenes cloud**):
+
+- **Configuración inicial con cloud-init** al clonar una plantilla: usuario, **claves SSH públicas** (pegadas o desde un
+  archivo `.pub`; se rechazan las privadas), contraseña opcional (mínimo 8 caracteres, nunca se guarda en archivos ni
+  registros), red por tarjeta (DHCP, IP fija o **IP en serie** en un lote, con puerta de enlace), DNS, dominio de búsqueda,
+  actualizar paquetes y **scripts** (*snippets*) con un ejemplo para instalar el agente invitado. Ver la
+  [guía](docs/guia-usuario.md#configuración-inicial-con-cloud-init).
+- **Esperar la IP de cada máquina** (con el agente invitado): columna **IP** en el progreso, **Dejar de esperar la IP**,
+  **Copiar lista de IPs** y **Exportar IPs…**. Ver la [guía](docs/guia-usuario.md#esperar-la-ip).
+- **Crear plantilla desde imagen cloud** (menú Archivo, Proxmox 8.4 o superior): sube o descarga una imagen (`.qcow2`,
+  `.img`, `.raw` o `.vmdk`), crea la máquina, amplía el disco, guarda valores de cloud-init y la convierte en plantilla, con
+  suma SHA-256, reintentos y «Borrar la máquina a medio crear». Ver la
+  [guía](docs/guia-usuario.md#crear-una-plantilla-desde-una-imagen-cloud).
+- **CSV:** 13 columnas nuevas (`ci_usuario`, `ci_claves`, `ci_contrasena`, `ci_ip`, `ci_puerta`, `ci_dns`, `ci_dominio`,
+  `ci_actualizar`, `ci_snippet_usuario`, `ci_snippet_vendor`, `ci_snippet_red`, `ci_snippet_meta` y `esperar_ip`). La
+  contraseña se enmascara y no está en la plantilla CSV.
+- **Formato de archivo 4** para los lotes que usan cloud-init o esperar la IP. 0.7.0 abre los archivos de 0.5 y 0.6; **0.6.0
+  no abre los de formato 4** (ver [compatibilidad](docs/guia-usuario.md#compatibilidad-con-versiones-anteriores)).
+- Privilegios opcionales nuevos (el rol no cambia): `VM.Config.Cloudinit`, `VM.Monitor` (Proxmox 8) o
+  `VM.GuestAgent.Audit` (Proxmox 9) y los de los scripts.
 
 Novedades de la versión 0.6.0 (**opciones de la máquina**, todas explicadas en la
 [guía de usuario](docs/guia-usuario.md#opciones-de-la-máquina)):
@@ -102,7 +123,7 @@ editar o borrar MV que no creó un lote, instaladores (MVP 5), interfaz en otros
 
 ### Permisos de Proxmox
 
-El **rol mínimo no cambia** en la versión 0.6.0: son los mismos 10 privilegios del MVP 1 (`VM.Allocate`, `VM.Audit`,
+El **rol mínimo no cambia** en la versión 0.7.0: son los mismos 10 privilegios del MVP 1 (`VM.Allocate`, `VM.Audit`,
 `VM.Config.Options`, `VM.Config.HWType`, `VM.Config.CPU`, `VM.Config.Memory`,
 `VM.Config.Network`, `Datastore.AllocateSpace`, `SDN.Use` y `Sys.Audit`) más los 4 de orígenes del MVP 4 (`VM.Config.Disk`,
 `VM.Clone`, `Datastore.AllocateTemplate` y `Sys.AccessNetwork`); lista y pasos en la
@@ -125,8 +146,13 @@ opción afectada, explicando qué falta:
 |---|---|---|
 | `VM.PowerMgmt` | `/vms` | **Encender al terminar**, y que **Deshacer** apague a la fuerza las máquinas encendidas del lote. |
 | `Pool.Audit` | `/pool` | Ver la lista de pools para elegir uno. |
+| `VM.Config.Cloudinit` | `/vms` | La sección de cloud-init (en Proxmox 8.x basta `VM.Config.Network`, que ya está en el rol). |
+| `VM.Monitor` (Proxmox 8.x) o `VM.GuestAgent.Audit` (Proxmox 9.x) | `/vms` | **Esperar la IP** de cada máquina. |
+| `Datastore.AllocateSpace` (Proxmox 8.x) | `/storage/<almacén de snippets>` | Elegir scripts (*snippets*); ya está en el rol, pero hay que tenerlo también sobre ese almacén. |
 
-`Sys.Modify` y `Pool.Allocate` nunca se piden.
+`Sys.Modify` y `Pool.Allocate` nunca se piden. El asistente **Crear plantilla desde imagen cloud** usa solo privilegios que
+ya están en el rol; detalles por versión en la
+[guía](docs/guia-usuario.md#privilegios-opcionales-no-forman-parte-del-rol).
 
 ## Requisitos
 
@@ -159,8 +185,8 @@ Los artefactos están en `dist/` (se generan con los scripts de [`empaquetado/`]
 
 | Sistema | Archivo |
 |---|---|
-| Ubuntu 22.04 / 24.04 (64 bits) | `proxlaunch_0.6.0_amd64.deb` |
-| Windows 10 / 11 (64 bits) | `proxlaunch-0.6.0-windows-x64-setup.exe` |
+| Ubuntu 22.04 / 24.04 (64 bits) | `proxlaunch_0.7.0_amd64.deb` |
+| Windows 10 / 11 (64 bits) | `proxlaunch-0.7.0-windows-x64-setup.exe` |
 | Comprobación | `SHA256SUMS` (suma SHA-256 de cada instalador) |
 
 Comprueba la descarga y luego instala:
@@ -168,12 +194,12 @@ Comprueba la descarga y luego instala:
 ```bash
 # Ubuntu
 sha256sum -c SHA256SUMS --ignore-missing
-sudo apt install ./proxlaunch_0.6.0_amd64.deb
+sudo apt install ./proxlaunch_0.7.0_amd64.deb
 ```
 
 ```powershell
 # Windows (PowerShell): compara el Hash con la línea de SHA256SUMS y ejecuta el instalador
-Get-FileHash -Algorithm SHA256 .\proxlaunch-0.6.0-windows-x64-setup.exe
+Get-FileHash -Algorithm SHA256 .\proxlaunch-0.7.0-windows-x64-setup.exe
 ```
 
 Los instaladores incluyen su propio Python: no hace falta instalar nada más (en Ubuntu, `apt` instala las
@@ -291,10 +317,14 @@ recursos/marca/  Logos originales y el generador (generador/generar_logo.py)
   [perfiles de máquina](docs/guia-usuario.md#perfiles-de-máquina), los
   [lotes guardados](docs/guia-usuario.md#guardar-y-abrir-lotes), la
   [importación CSV](docs/guia-usuario.md#importar-máquinas-desde-un-csv), el
-  [lote por filas](docs/guia-usuario.md#lote-por-filas) y las
-  [opciones de la máquina](docs/guia-usuario.md#opciones-de-la-máquina)).
+  [lote por filas](docs/guia-usuario.md#lote-por-filas), las
+  [opciones de la máquina](docs/guia-usuario.md#opciones-de-la-máquina), la
+  [configuración inicial con cloud-init](docs/guia-usuario.md#configuración-inicial-con-cloud-init), la
+  [espera de la IP](docs/guia-usuario.md#esperar-la-ip) y el
+  [asistente de plantillas desde imágenes cloud](docs/guia-usuario.md#crear-una-plantilla-desde-una-imagen-cloud)).
 - [Archivos de ejemplo](docs/ejemplos/LEEME.md): CSV, lotes y perfiles listos para abrir (incluidos `mvs-opciones.csv` y
-  `lote-con-opciones.proxlaunch-lote.json`, con las opciones de la versión 0.6.0).
+  `lote-con-opciones.proxlaunch-lote.json`, con las opciones de la versión 0.6.0, y `mvs-cloudinit.csv` y
+  `lote-cloudinit.proxlaunch-lote.json`, con cloud-init y esperar la IP de la versión 0.7.0).
 - [Instalar y desinstalar](docs/guia-usuario.md#instalar-y-desinstalar-proxlaunch): `.deb` y
   `-setup.exe`, SmartScreen, datos y verificación de `SHA256SUMS`.
 - [Empaquetado](docs/empaquetado.md): construcción y verificación de los instaladores

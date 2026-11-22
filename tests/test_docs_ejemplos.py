@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import ast
 import ipaddress
+import json
 import re
 import subprocess
 import sys
@@ -46,11 +47,13 @@ CSV_VALIDOS = {
     "mvs-multidisco-cluster.csv": 3,
     "mvs-escrito-a-mano.csv": 3,
     "mvs-opciones.csv": 4,
+    "mvs-cloudinit.csv": 4,
 }
 LOTES = (
     "lote-homogeneo.proxlaunch-lote.json",
     "lote-por-filas.proxlaunch-lote.json",
     "lote-con-opciones.proxlaunch-lote.json",
+    "lote-cloudinit.proxlaunch-lote.json",
 )
 PERFILES = "perfiles-ejemplo.proxlaunch-perfiles.json"
 
@@ -182,6 +185,34 @@ def test_lote_homogeneo_son_tres_mvs_srv_web() -> None:
     assert lote.definicion.cantidad == 3
 
 
+def test_lote_cloudinit_es_formato_4_con_ip_en_serie_y_espera_de_ip() -> None:
+    leido = leer_archivo_lote(EJEMPLOS / "lote-cloudinit.proxlaunch-lote.json")
+    assert leido.avisos == ()
+    cfg = leido.lote.definicion.plantilla
+    assert leido.lote.definicion.cantidad == 4
+    assert cfg.cloudinit is not None
+    (tarjeta,) = cfg.cloudinit.tarjetas
+    assert (tarjeta.ip, tarjeta.serie) == ("192.0.2.50/24", True)
+    assert cfg.cloudinit.contrasena is None
+    assert (cfg.encender, cfg.esperar_ip, cfg.plazo_ip_s) == (True, True, 120)
+    datos = json.loads((EJEMPLOS / "lote-cloudinit.proxlaunch-lote.json").read_text("utf-8"))
+    assert datos["version_formato"] == 4
+
+
+def test_csv_cloudinit_no_trae_contrasenas_y_usa_las_columnas_de_la_fase_b() -> None:
+    res = _importar("mvs-cloudinit.csv")
+    assert [a.codigo.value for a in res.avisos] == []  # sin «csv_con_contrasenas» ni otros avisos
+    assert "ci_contrasena" not in res.columnas.posiciones
+    for columna in ("ci_usuario", "ci_claves", "ci_ip", "ci_puerta", "ci_dns", "esperar_ip"):
+        assert columna in res.columnas.posiciones, columna
+    parciales = {f.nombre: f.opciones.cloudinit for f in res.filas}
+    assert parciales["app-01"].tarjeta0.modo.value == "dhcp"
+    assert parciales["app-02"].tarjeta0.ip == "192.0.2.51/24"
+    assert all(c.usuario == "ana" and c.contrasena is None for c in parciales.values())
+    esperas = {f.nombre: f.opciones.esperar_ip for f in res.filas}
+    assert esperas == {"app-01": True, "app-02": True, "app-03": True, "bd-01": False}
+
+
 def test_lote_por_filas_son_tres_filas() -> None:
     lote = leer_archivo_lote(EJEMPLOS / LOTES[1]).lote
     assert len(lote.definicion.filas) == 3
@@ -231,7 +262,7 @@ def _archivos_ejemplo() -> list[Path]:
     return sorted(p for p in EJEMPLOS.iterdir() if p.is_file())
 
 
-def test_hay_los_once_archivos_esperados() -> None:
+def test_hay_los_trece_archivos_esperados() -> None:
     nombres = {p.name for p in _archivos_ejemplo()}
     assert nombres == {"LEEME.md", "mvs-con-errores.csv", *CSV_VALIDOS, *LOTES, PERFILES}
 

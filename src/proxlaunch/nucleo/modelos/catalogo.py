@@ -8,6 +8,7 @@ from collections.abc import Mapping
 from dataclasses import dataclass, field
 from enum import StrEnum
 
+from proxlaunch.nucleo.cloudinit.modelos import InfoCloudInitPlantilla
 from proxlaunch.nucleo.errores import ErrorProxLaunch
 from proxlaunch.nucleo.opciones.modelos import EstadoPools, PoliticaEtiquetas, PoolsServidor
 
@@ -45,6 +46,27 @@ class ListadoStorage:
 
 
 @dataclass(frozen=True)
+class Snippet:
+    """Archivo de un almacenamiento con contenido «snippets» (fase B, B4)."""
+
+    volid: str
+    nombre: str  # parte tras «snippets/»
+    tamano: int | None
+    admitido: bool  # el volid tiene el formato admitido (V-B54)
+
+
+@dataclass(frozen=True)
+class ListadoSnippets:
+    """Resultado de listar los snippets de UN storage en UN nodo."""
+
+    nodo: str
+    storage: str
+    compartido: bool
+    snippets: tuple[Snippet, ...] = ()
+    error: ErrorProxLaunch | None = None  # el listado falló: se pasa a entrada manual
+
+
+@dataclass(frozen=True)
 class DiscoPlantilla:
     """Disco de una plantilla (sin CD-ROM; incluye efidisk0/tpmstate0)."""
 
@@ -75,6 +97,8 @@ class DetallePlantilla:
     # el GET falló por permiso (no se pisan sus notas, P-10).
     descripcion: str | None = None
     descripcion_legible: bool = True
+    # Fase B: lo que la config dice de cloud-init (None = aún no interpretada).
+    cloudinit: InfoCloudInitPlantilla | None = None
 
 
 @dataclass(frozen=True)
@@ -129,6 +153,16 @@ class CatalogoServidor:
     # True si se intentó leer ``/cluster/options`` y falló (403/5xx/cuerpo inesperado): con la
     # política en ``None`` distingue «no se pudo comprobar» (aviso V-A09) de «aún no leída».
     politica_etiquetas_fallida: bool = False
+    # Fase B: snippets por (nodo, storage); un storage compartido se lista una vez (DT-B11).
+    snippets: tuple[ListadoSnippets, ...] = ()
+
+    def snippets_en(self, nodo: str, storage: str) -> ListadoSnippets | None:
+        """Listado de snippets del storage en ese nodo. Un storage compartido leído en otro nodo
+        vale para todos; ``None`` si no se leyó."""
+        for lst in self.snippets:
+            if lst.storage == storage and (lst.nodo == nodo or lst.compartido):
+                return lst
+        return None
 
     def volumenes(self, nodo: str, contenido: Contenido) -> tuple[Volumen, ...]:
         """Volúmenes listados del nodo con ese contenido (todos los storages leídos)."""
