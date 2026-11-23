@@ -7,7 +7,7 @@ name = "proxlaunch"
 dynamic = ["version"]
 description = "Asistente de escritorio para crear máquinas virtuales en Proxmox VE"
 requires-python = ">=3.11"
-license = "LicenseRef-Proprietary"
+license = "MIT"
 license-files = ["LICENSE"]
 classifiers = ["Private :: Do Not Upload"]
 dependencies = [

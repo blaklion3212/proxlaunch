@@ -379,6 +379,9 @@ Detalles para usuarios en la [guía](docs/guia-usuario.md#privacidad-y-seguridad
 
 ## Licencia del proyecto
 
-Uso interno, todos los derechos reservados. Ver [`LICENSE`](LICENSE).
+ProxLaunch es software libre bajo la [licencia MIT](LICENSE): puedes usarlo, modificarlo y
+redistribuirlo, también con fines comerciales, siempre que conserves el aviso de copyright.
+Se entrega sin garantía.
+
 Las bibliotecas y fuentes de terceros conservan sus licencias (PySide6/Qt bajo LGPL-3.0;
 fuentes bajo OFL).

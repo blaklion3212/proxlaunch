@@ -1,12 +1,22 @@
-ProxLaunch
-Copyright (c) 2026 Los autores de ProxLaunch. Todos los derechos reservados.
+MIT License
 
-Este software es de uso interno. No se concede ninguna licencia para copiarlo,
-modificarlo, distribuirlo ni publicarlo fuera de la organización propietaria sin
-autorización previa y por escrito.
+Copyright (c) 2026 blaklion3212
 
-Los componentes de terceros conservan sus propias licencias:
-- Fuentes Open Sans, JetBrains Mono y Montserrat: SIL Open Font License 1.1
-  (textos en src/proxlaunch/recursos/fuentes/ y recursos/marca/generador/).
-- PySide6 / Qt: LGPL-3.0 (se usa como biblioteca dinámica, sin modificar).
-- requests, urllib3, keyring y platformdirs: licencias de sus respectivos proyectos.
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
+
