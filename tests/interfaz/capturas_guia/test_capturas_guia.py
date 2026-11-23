@@ -17,6 +17,7 @@ from PySide6.QtGui import QPainter, QPixmap, QTextCursor
 from PySide6.QtWidgets import QGroupBox, QMessageBox, QScrollArea
 
 from proxlaunch.interfaz import controlador_origen
+from proxlaunch.interfaz import ventana_principal as ventana_principal_modulo
 from proxlaunch.interfaz.dialogos import plantilla_imagen as plantilla_imagen_modulo
 from proxlaunch.interfaz.dialogos.acerca_de import DialogoAcercaDe
 from proxlaunch.interfaz.dialogos.capacidades import DialogoCapacidades
@@ -52,6 +53,14 @@ from proxlaunch.nucleo.cloudinit.modelos import (
 )
 from proxlaunch.nucleo.csv_importacion.modelos import OpcionesCsv
 from proxlaunch.nucleo.errores import CodigoError, ErrorProxLaunch
+from proxlaunch.nucleo.firewall.modelos import (
+    FirewallMV,
+    GrupoSeguridad,
+    InfoFirewall,
+    LecturaGrupos,
+    Politica,
+    ReglaFirewall,
+)
 from proxlaunch.nucleo.lote.modelos import (
     CandidatoRollback,
     MetadatosInforme,
@@ -65,6 +74,7 @@ from proxlaunch.nucleo.modelos.catalogo import (
     ListadoStorage,
     PermisosEfectivos,
 )
+from proxlaunch.nucleo.modelos.inventario import RedVirtual
 from proxlaunch.nucleo.modelos.origen import ModoClon, TipoSO
 from proxlaunch.nucleo.modelos.tarea import Desenlace
 from proxlaunch.nucleo.modelos.vm import (
@@ -82,6 +92,8 @@ from proxlaunch.nucleo.perfiles_maquina.aplicar import config_desde_configuracio
 from proxlaunch.nucleo.perfiles_maquina.formato import leer_perfiles, perfiles_a_bytes
 from proxlaunch.nucleo.perfiles_maquina.modelos import ID_PREDETERMINADO
 from proxlaunch.nucleo.persistencia.preferencias import Modo
+from proxlaunch.nucleo.red.redes_nodo import RedesNodo
+from proxlaunch.nucleo.red.tarjetas import tarjetas_de_config
 from proxlaunch.nucleo.reloj import RelojSimulado
 from proxlaunch.nucleo.servicios.conexion import DesafioTFA, EstadoHuella
 from proxlaunch.nucleo.transferencias.archivo_local import DESPLAZAMIENTO_ISO9660
@@ -1689,3 +1701,320 @@ def test_75_importar_csv_cloudinit(qtbot, tmp_path, lanzador, guardar):
 def test_76_menu_archivo_plantilla(qtbot, qapp, entorno, guardar):  # noqa: F811
     v = conectado(qtbot, entorno, _inventario_fase_b(inventario_guia_cluster()))
     captura_menu(qapp, qtbot, v, 0, "76-menu-archivo-plantilla", guardar)
+
+
+# --- 11. Fase C (0.8.0): lotes en el servidor, redes con VNets, firewall y red del clon -------
+
+MAC_GUIA = "BC:24:11:00:00:0A"
+
+
+def _mundo_lotes():
+    """Servidor ficticio con tres lotes (datos inventados): uno con IPs, otro y otro más viejo."""
+    from nucleo.apoyo_fase_c_inventario import Mundo, nota_origen
+    from nucleo.apoyo_lote import respuesta_agente
+
+    m = Mundo(("pve1",))
+    lotes = (
+        ("ab12cd34", "2026-11-20T10:00:00+00:00", "web", (101, 102, 103), "running"),
+        ("e5f60718", "2026-11-18T15:30:00+00:00", "db", (110, 111, 112), "stopped"),
+        ("0a1b2c3d", "2026-11-10T09:15:00+00:00", "lab", (120,), "stopped"),
+    )
+    for codigo, fecha, prefijo, vmids, estado in lotes:
+        for vmid in vmids:
+            m.cluster.agregar_mv(
+                vmid,
+                f"{prefijo}-{vmid}",
+                lote=codigo,
+                nota=nota_origen(codigo, fecha),
+                status=estado,
+                agent=1,
+                net0=f"virtio={MAC_GUIA[:-2]}{vmid % 100:02X},bridge=vmbr0",
+            )
+    for n, vmid in enumerate((101, 102, 103)):
+        mac = f"{MAC_GUIA[:-2]}{vmid % 100:02X}"
+        m.cluster.guion_agente(vmid, respuesta_agente(("eth0", mac, (f"192.0.2.{50 + n}",))))
+    return m
+
+
+def _dialogo_inventario(qtbot):
+    from proxlaunch.interfaz.dialogos.inventario_lotes import DialogoInventarioLotes
+
+    m = _mundo_lotes()
+    lz = Lanzador()
+    d = DialogoInventarioLotes(
+        sesion=m.sesion,
+        reloj=m.reloj,
+        lanzador=lz,
+        permisos=None,
+        lotes_de_sesion=lambda: frozenset(),
+        estado_ip=None,
+    )
+    qtbot.addWidget(d)
+    d.resize(1200, 640)
+    d.show()
+    qtbot.waitExposed(d)
+
+    def esperar():
+        qtbot.waitUntil(
+            lambda: (
+                not d.boton_cancelar_lectura.isVisibleTo(d)
+                and not d.hay_trabajo
+                and not lz.hay_activos
+            ),
+            timeout=8000,
+        )
+
+    d.iniciar()
+    esperar()
+    return d, esperar, lz
+
+
+def _elegir_lote(d, esperar, codigo):
+    tabla = d.tabla_lotes
+    fila = next(f for f in range(tabla.rowCount()) if tabla.item(f, 0).text() == codigo)
+    tabla.selectRow(fila)
+    esperar()
+
+
+def test_77_inventario_lotes(qtbot, guardar):
+    d, esperar, lz = _dialogo_inventario(qtbot)
+    qtbot.wait(100)
+    guardar(d, "77-inventario-lotes")
+    lz.esperar(2000)
+
+
+def test_78_inventario_detalle(qtbot, guardar):
+    d, esperar, lz = _dialogo_inventario(qtbot)
+    _elegir_lote(d, esperar, "ab12cd34")
+    d.boton_ip.click()
+    esperar()
+    qtbot.wait(100)
+    guardar(d, "78-inventario-detalle")
+    lz.esperar(2000)
+
+
+def test_79_inventario_deshacer_codigo(qtbot, guardar):
+    from proxlaunch.interfaz.dialogos.inventario_lotes import DialogoConfirmarCodigoLote
+
+    d, esperar, lz = _dialogo_inventario(qtbot)
+    _elegir_lote(d, esperar, "e5f60718")  # apagadas: sin la confirmación previa de encendidas
+    d.boton_deshacer.click()
+    qtbot.waitUntil(lambda: bool(d.findChildren(DialogoConfirmarCodigoLote)), timeout=8000)
+    c = d.findChildren(DialogoConfirmarCodigoLote)[-1]
+    qtbot.wait(150)
+    # Se compone el diálogo del código sobre el de «Lotes en el servidor» (la lista con casillas).
+    fondo = d.grab()
+    frente = c.grab()
+    lienzo = QPixmap(fondo)
+    pintor = QPainter(lienzo)
+    x = (lienzo.width() - frente.width()) // 2
+    y = 450  # bajo las filas del lote, para que se vea la lista con sus casillas
+    pintor.fillRect(x - 3, y - 3, frente.width() + 6, frente.height() + 6, Qt.GlobalColor.gray)
+    pintor.drawPixmap(x, y, frente)
+    pintor.end()
+    guardar_imagen(lienzo, "79-inventario-deshacer-codigo")
+    c.reject()
+    lz.esperar(2000)
+
+
+def test_85_menu_lotes_servidor(qtbot, qapp, entorno, guardar):  # noqa: F811
+    v = conectado(qtbot, entorno, _inventario_fase_b(inventario_guia_cluster()))
+    captura_menu(qapp, qtbot, v, 0, "85-menu-lotes-servidor", guardar)
+
+
+VNETS_GUIA = (
+    RedVirtual("prod", "Producción", True),
+    RedVirtual("lab", "Pruebas", False),
+    RedVirtual("dmz", None, False),
+)
+TARJETAS_GUIA = tarjetas_de_config(
+    {
+        "net0": f"virtio={MAC_GUIA},bridge=vmbr0",
+        "net1": "virtio=BC:24:11:00:00:0B,bridge=vmbr0,tag=20,mtu=1400",
+    }
+)
+GRUPOS_GUIA = LecturaGrupos((GrupoSeguridad("web", "Servidores web"), GrupoSeguridad("ssh-admin")))
+PRIVILEGIOS_FASE_C = ("VM.Config.Network", "Sys.Audit", "SDN.Use", "VM.Audit")
+
+
+def _inventario_fase_c(inv):
+    """Inventario de la fase B más las VNets de SDN de cada nodo y los privilegios de la C."""
+    inv = _inventario_fase_b(inv)
+    permisos = inv.catalogo.permisos
+    rutas = {r: {**p, **dict.fromkeys(PRIVILEGIOS_FASE_C, 1)} for r, p in permisos.rutas.items()}
+    inv = _inventario_fase_a_con(inv, PermisosEfectivos(rutas=rutas))
+    # Lo que «Comprobar» lee del firewall: grupos, firewall general encendido y entrada bloqueada.
+    info = InfoFirewall(
+        grupos=GRUPOS_GUIA.grupos,
+        general_activo=True,
+        entrada_por_grupo={"web": True, "ssh-admin": True},
+    )
+    inv.catalogo = replace(inv.catalogo, firewall=info)
+    return replace(inv, redes_sdn={n: VNETS_GUIA for n in inv.bridges})
+
+
+@pytest.fixture(autouse=True)
+def _grupos_del_servidor(monkeypatch):
+    """La lectura de grupos de seguridad devuelve los del escenario (nada toca la red)."""
+    monkeypatch.setattr(
+        ventana_principal_modulo, "leer_grupos_firewall", lambda sesion: GRUPOS_GUIA
+    )
+
+
+@pytest.fixture
+def plantillas_con_red(monkeypatch):
+    """Las plantillas del escenario traen dos tarjetas de red y cloud-init (fase C)."""
+
+    def con_info(plantillas):
+        return tuple(
+            replace(
+                p,
+                detalle=replace(p.detalle, cloudinit=INFO_PLANTILLA_CI, tarjetas=TARJETAS_GUIA),
+            )
+            for p in plantillas
+        )
+
+    original_catalogo = controlador_origen.leer_catalogo_para
+    original_plantillas = controlador_origen.leer_plantillas
+
+    def catalogo(*args, **kw):
+        cat = original_catalogo(*args, **kw)
+        if cat.plantillas is None:
+            return cat
+        return replace(cat, plantillas=con_info(cat.plantillas))
+
+    def plantillas(*args, **kw):
+        return con_info(original_plantillas(*args, **kw))
+
+    monkeypatch.setattr(controlador_origen, "leer_catalogo_para", catalogo)
+    monkeypatch.setattr(controlador_origen, "leer_plantillas", plantillas)
+
+
+def test_80_redes_con_vnets(qtbot, entorno, guardar):  # noqa: F811
+    v = conectado(qtbot, entorno, _inventario_fase_c(inventario_guia_individual()), 1900)
+    v.establecer_modo(Modo.AVANZADO)
+    cfg = configuracion_guia(
+        nodo="pve", redes=[InterfazRed("vmbr0"), InterfazRed("prod", vlan=30), InterfazRed("lab")]
+    )
+    v.formulario.aplicar_configuracion(cfg)
+    qtbot.wait(150)
+    guardar(v.formulario.tabla_redes, "80-redes-con-vnets")
+
+
+def _firewall_en_ventana(qtbot, entorno, fw, alto=1900):
+    v = conectado(qtbot, entorno, _inventario_fase_c(inventario_guia_individual()), alto)
+    v.establecer_modo(Modo.AVANZADO)
+    poner_nombre(qtbot, v, "srv-web-01")
+    s = v.formulario.seccion_firewall
+    s.chk_activar.setChecked(True)
+    v.formulario.establecer_grupos_firewall(GRUPOS_GUIA)
+    s.aplicar(fw)
+    qtbot.wait(300)
+    return v, s
+
+
+def test_81_seccion_firewall(qtbot, entorno, guardar):  # noqa: F811
+    v, s = _firewall_en_ventana(
+        qtbot, entorno, FirewallMV(activo=True, grupo="web", politica_entrada=Politica.BLOQUEAR)
+    )
+    guardar(s, "81-seccion-firewall")
+
+
+def test_82_firewall_aviso_aislada(qtbot, entorno, guardar):  # noqa: F811
+    v, s = _firewall_en_ventana(
+        qtbot,
+        entorno,
+        FirewallMV(activo=True, grupo=None, politica_entrada=Politica.BLOQUEAR),
+    )
+    guardar(s, "82-firewall-aviso-aislada")
+
+
+def _clonando_fase_c(qtbot, entorno, alto=2400):
+    v = conectado(qtbot, entorno, _inventario_fase_c(inventario_guia_cluster()), alto)
+    v.establecer_modo(Modo.AVANZADO)
+    poner_nombre(qtbot, v, "srv-web-01")
+    _marcar(v, OrigenSO.CLONAR_PLANTILLA)
+    v.formulario.selector_origen.aplicar(cfg_clon("plantilla-debian12", 9000, nodo="pve1"))
+    qtbot.waitUntil(lambda: v.formulario.seccion_red_clon.isVisibleTo(v.formulario), timeout=4000)
+    return v
+
+
+def test_83_seccion_red_clon(qtbot, entorno, plantillas_con_red, guardar):  # noqa: F811
+    v = _clonando_fase_c(qtbot, entorno)
+    s = v.formulario.seccion_red_clon
+    s.radio_personalizar.setChecked(True)
+    qtbot.waitUntil(lambda: len(s._filas) == 2, timeout=4000)
+    f1 = next(f for f in s._filas if f.indice == 1)
+    f1.red.setCurrentIndex(
+        f1.red.findData("prod")
+    )  # net1 pasa a la VNet «prod»; su MAC se conserva
+    f0 = next(f for f in s._filas if f.indice == 0)
+    f0.mtu.setText("1500")
+    s._al_agregar()  # tarjeta nueva (net2)
+    qtbot.wait(300)
+    guardar(s, "83-seccion-red-clon")
+
+
+class ClienteGuiaFaseC(ClienteGuiaFalso):
+    """Además sirve lo que el lote lee del firewall (grupos, firewall general y plantillas)."""
+
+    def __init__(self):
+        super().__init__()
+        for vmid in (9000, 9001):
+            self.configs[vmid]["net1"] = "virtio=BC:24:11:00:00:0B,bridge=vmbr0,tag=20,mtu=1400"
+
+    def grupos_firewall(self):
+        return list(GRUPOS_GUIA.grupos)
+
+    def reglas_grupo_firewall(self, grupo):
+        return [ReglaFirewall("in", "ACCEPT", True, "SSH y web")]
+
+    def opciones_firewall_cluster(self):
+        return {"enable": 1}
+
+    def opciones_firewall_vm(self, nodo, vmid):
+        return {"enable": 0}
+
+    def reglas_firewall_vm(self, nodo, vmid):
+        return []
+
+
+def test_84_resumen_red_firewall(qtbot, monkeypatch, entorno, plantillas_con_red, guardar):  # noqa: F811
+    # Al elegir el nodo del lote la ventana relee sus redes: el servidor falso devuelve las VNets.
+    anterior = ventana_principal_modulo.recargar_nodo
+
+    def recargar(sesion, nodo):
+        r = anterior(sesion, nodo)
+        return (*r[:4], RedesNodo(vnets=VNETS_GUIA))
+
+    monkeypatch.setattr(ventana_principal_modulo, "recargar_nodo", recargar)
+    entorno.inv = _inventario_fase_c(inventario_guia_cluster())
+    preparar_lote(
+        qtbot,
+        entorno,
+        cantidad=3,
+        prefijo="srv-web",
+        nodo="pve1",
+        cliente=ClienteGuiaFaseC(),
+        perfil_=perfil(*PERFIL),
+    )
+    v = entorno.ventana
+    preparar(qtbot, v, 1000, 1900)
+    v.establecer_modo(Modo.AVANZADO)
+    _marcar(v, OrigenSO.CLONAR_PLANTILLA)
+    v.formulario.selector_origen.aplicar(cfg_clon("plantilla-debian12", 9000, nodo="pve1"))
+    qtbot.waitUntil(lambda: v.formulario.seccion_red_clon.isVisibleTo(v.formulario), timeout=4000)
+    red = v.formulario.seccion_red_clon
+    red.radio_personalizar.setChecked(True)
+    qtbot.waitUntil(lambda: len(red._filas) == 2, timeout=4000)
+    f1 = next(f for f in red._filas if f.indice == 1)
+    f1.red.setCurrentIndex(f1.red.findData("prod"))
+    fw = v.formulario.seccion_firewall
+    fw.chk_activar.setChecked(True)
+    fw.aplicar(FirewallMV(activo=True, grupo="web", politica_entrada=Politica.BLOQUEAR))
+    esperar_validacion(qtbot, v)
+    ver_resumen(qtbot, v)
+    qtbot.wait(100)
+    v.resumen_lote.setMinimumWidth(760)
+    qtbot.wait(100)
+    guardar(v.resumen_lote, "84-resumen-red-firewall")

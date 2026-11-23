@@ -10,7 +10,9 @@ from enum import StrEnum
 
 from proxlaunch.nucleo.cloudinit.modelos import InfoCloudInitPlantilla
 from proxlaunch.nucleo.errores import ErrorProxLaunch
+from proxlaunch.nucleo.firewall.modelos import InfoFirewall
 from proxlaunch.nucleo.opciones.modelos import EstadoPools, PoliticaEtiquetas, PoolsServidor
+from proxlaunch.nucleo.red.modelos import TarjetaPlantilla
 
 
 class Contenido(StrEnum):
@@ -99,6 +101,8 @@ class DetallePlantilla:
     descripcion_legible: bool = True
     # Fase B: lo que la config dice de cloud-init (None = aún no interpretada).
     cloudinit: InfoCloudInitPlantilla | None = None
+    # Fase C: ``net0..net31`` de la misma config, interpretadas (DT-C5); () = no leídas.
+    tarjetas: tuple[TarjetaPlantilla, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -155,6 +159,8 @@ class CatalogoServidor:
     politica_etiquetas_fallida: bool = False
     # Fase B: snippets por (nodo, storage); un storage compartido se lista una vez (DT-B11).
     snippets: tuple[ListadoSnippets, ...] = ()
+    # Fase C: lecturas del firewall de «Comprobar» (None = sin lecturas, DT-C11).
+    firewall: InfoFirewall | None = None
 
     def snippets_en(self, nodo: str, storage: str) -> ListadoSnippets | None:
         """Listado de snippets del storage en ese nodo. Un storage compartido leído en otro nodo

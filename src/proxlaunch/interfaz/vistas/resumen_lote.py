@@ -37,6 +37,11 @@ from proxlaunch.interfaz.textos import (
     texto_tarjeta_cloudinit,
     texto_tipo_snippet,
 )
+from proxlaunch.interfaz.textos_c import (
+    lineas_red_clon,
+    texto_aviso_simulacion,
+    texto_firewall_resumen,
+)
 from proxlaunch.interfaz.vistas.campos import etiqueta, mensaje, poner_mensaje
 from proxlaunch.interfaz.vistas.detalles_tecnicos import DetallesTecnicos
 from proxlaunch.nucleo.cloudinit.modelos import TIPOS_SNIPPET, ConfigCloudInit, ModoTarjeta
@@ -50,6 +55,8 @@ from proxlaunch.nucleo.lote.modelos import (
     ResultadoSimulacion,
     Severidad,
 )
+from proxlaunch.nucleo.lote.simulacion import avisos_de_simulacion
+from proxlaunch.nucleo.modelos.inventario import Inventario
 from proxlaunch.nucleo.modelos.origen import DetalleClon, DetalleImportacion, ModoClon
 from proxlaunch.nucleo.modelos.vm import ConfiguracionVM, OrigenSO
 
@@ -115,6 +122,14 @@ def _ruta_de_peticion(accion: AccionPeticion, nodo: str, vmid: int, e: ElementoP
         return f"PUT /nodes/{nodo}/qemu/{vmid}/resize"
     if accion in (AccionPeticion.CLOUDINIT, AccionPeticion.CONTRASENA):  # fase B: PUT de config
         return f"PUT /nodes/{nodo}/qemu/{vmid}/config"
+    if accion == AccionPeticion.LEER_CONFIG:  # fase C: lectura de la config del clon (simulada)
+        return f"GET /nodes/{nodo}/qemu/{vmid}/config"
+    if accion == AccionPeticion.RED:  # fase C: PUT de config con netN/delete
+        return f"PUT /nodes/{nodo}/qemu/{vmid}/config"
+    if accion == AccionPeticion.FIREWALL_OPCIONES:
+        return f"PUT /nodes/{nodo}/qemu/{vmid}/firewall/options"
+    if accion == AccionPeticion.FIREWALL_REGLA:
+        return f"POST /nodes/{nodo}/qemu/{vmid}/firewall/rules"
     if accion == AccionPeticion.ENCENDER:  # fase A: siempre la última petición de la máquina
         return f"POST /nodes/{nodo}/qemu/{vmid}/status/start"
     if accion == AccionPeticion.SONDEAR_IP:  # fase B: espera de la IP (solo lectura)
@@ -260,7 +275,38 @@ def texto_opciones_del_plan(plan: Plan) -> str:
                 _valores_o_varia(t("ResumenLote", "Límite de net{i}").format(i=i), limites)
             )
     lineas.extend(_lineas_fase_b_del_plan(cfgs))
+    lineas.extend(_lineas_fase_c_del_plan(cfgs))
     return "\n".join(x for x in lineas if x)
+
+
+def _lineas_fase_c_del_plan(cfgs: list[ConfiguracionVM]) -> list[str | None]:
+    """Firewall y red de las copias del lote (RF-C0.1): solo si alguna máquina los usa."""
+    lineas: list[str | None] = []
+    lineas.append(
+        _valores_o_varia(
+            QCoreApplication.translate("ResumenLote", "Firewall"),
+            [texto_firewall_resumen(c) or None for c in cfgs],
+        )
+    )
+    lineas.append(
+        _valores_o_varia(
+            QCoreApplication.translate("ResumenLote", "Red de la copia"),
+            [("; ".join(v for _n, v in lineas_red_clon(c.red_clon))) or None for c in cfgs],
+        )
+    )
+    return lineas
+
+
+def texto_avisos_de_simulacion(sim: ResultadoSimulacion, inv: Inventario) -> list[str]:
+    """Avisos previos de la fase C de la simulación (§9): tarjeta ilegible sin firewall, MTU
+    ignorada, MAC nueva, firewall heredado… Un texto igual en varias máquinas sale una vez."""
+    textos: dict[str, None] = {}
+    for e in sim.plan.elementos:
+        for codigo in avisos_de_simulacion(sim, inv, e.vmid):
+            texto = texto_aviso_simulacion(codigo)
+            if texto:
+                textos[texto] = None
+    return list(textos)
 
 
 def _texto_tarjeta_del_plan(ci: ConfigCloudInit | None, indice: int) -> str | None:
@@ -777,8 +823,12 @@ class ResumenLote(QWidget):
         bloqueo_crear: str | None = None,
         simulacion: ResultadoSimulacion | None = None,
         diferencia: str | None = None,
+        inventario: Inventario | None = None,
     ) -> None:
-        """Dibuja el plan (o el resultado de la simulación)."""
+        """Dibuja el plan (o el resultado de la simulación).
+
+        Con ``inventario`` la simulación suma los avisos previos de la fase C (§9).
+        """
         self._plan = plan
         self._simulacion = simulacion
         self._bloqueo_crear = bloqueo_crear
@@ -804,6 +854,9 @@ class ResumenLote(QWidget):
                 ErrorProxLaunch(CodigoError.LOTE_PLAN_CAMBIO, {"diferencia": diferencia})
             )
             textos_avisos = f"⚠ {cambio}\n{textos_avisos}".strip()
+        if simulacion is not None and inventario is not None:
+            extra = "\n".join(f"⚠ {t}" for t in texto_avisos_de_simulacion(simulacion, inventario))
+            textos_avisos = f"{textos_avisos}\n{extra}".strip()
         poner_mensaje(self._avisos, textos_avisos, aviso=True)
         hay_calificado = any(p.regla == "V-L06" for p in avisos)
         self._nota_nombres.setText(

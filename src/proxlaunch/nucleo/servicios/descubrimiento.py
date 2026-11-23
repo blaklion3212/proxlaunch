@@ -4,11 +4,20 @@ from __future__ import annotations
 
 import dataclasses
 import logging
+from collections.abc import Collection
 from concurrent.futures import ThreadPoolExecutor
 
 from proxlaunch.nucleo.errores import CodigoError, ErrorProxLaunch
 from proxlaunch.nucleo.modelos.catalogo import CatalogoServidor
-from proxlaunch.nucleo.modelos.inventario import Bridge, Inventario, Nodo, Storage, Topologia
+from proxlaunch.nucleo.modelos.inventario import (
+    Bridge,
+    Inventario,
+    Nodo,
+    RedVirtual,
+    Storage,
+    Topologia,
+)
+from proxlaunch.nucleo.red.redes_nodo import RedesNodo, filtrar_vnets
 from proxlaunch.nucleo.servicios.catalogo import leer_politica_etiquetas, leer_pools
 from proxlaunch.nucleo.servicios.conexion import Aviso, CodigoAviso, Sesion, leer_permisos
 from proxlaunch.nucleo.validacion import TIPOS_BRIDGE
@@ -38,6 +47,42 @@ def descubrir_nodo_completo(
     todos = list(sesion.cliente.storages(nodo))
     bridges = [b for b in sesion.cliente.bridges(nodo) if b.tipo in TIPOS_BRIDGE]
     return [s for s in todos if "images" in s.contenido], todos, bridges
+
+
+def descubrir_redes_sdn(sesion: Sesion, nodo: str, interfaces: Collection[str]) -> RedesNodo:
+    """VNets de SDN de UN nodo con ``GET /nodes/{n}/network?type=any_bridge`` (C2, DT-C3).
+
+    ``interfaces`` son los nombres de la lista normal de redes del nodo: una entrada sin ``type``
+    que ya esté ahí es un bridge conocido, no una VNet. Nunca lanza: un fallo (400/403/500/red)
+    queda en ``RedesNodo.error`` y no afecta al resto del descubrimiento (CA-C2.1.3).
+    """
+    try:
+        entradas = sesion.cliente.redes_any_bridge(nodo)
+    except ErrorProxLaunch as e:
+        _log.warning("Sin lectura de VNets en el nodo %s: %s", nodo, e.codigo)
+        return RedesNodo(vnets=(), error=e)
+    except Exception as e:  # el descubrimiento no debe romperse por una lectura opcional
+        _log.warning("Fallo inesperado leyendo las VNets del nodo %s: %s", nodo, type(e).__name__)
+        return RedesNodo(
+            vnets=(), error=ErrorProxLaunch(CodigoError.DESCONOCIDO, {}, type(e).__name__)
+        )
+    return RedesNodo(vnets=filtrar_vnets(entradas, interfaces))
+
+
+def descubrir_nodo_c(
+    sesion: Sesion, nodo: str
+) -> tuple[list[Storage], list[Storage], list[Bridge], RedesNodo]:
+    """``(con_images, todos, bridges, redes)`` de UN nodo, con las VNets de la fase C.
+
+    Mismas peticiones que ``descubrir_nodo_completo`` pero con la lista de redes leída UNA vez
+    (todas las interfaces, que además sirven de filtro para las VNets) y la consulta nueva
+    ``?type=any_bridge``, tolerante a errores.
+    """
+    todos = list(sesion.cliente.storages(nodo))
+    interfaces = list(sesion.cliente.bridges(nodo))
+    bridges = [b for b in interfaces if b.tipo in TIPOS_BRIDGE]
+    redes = descubrir_redes_sdn(sesion, nodo, {b.nombre for b in interfaces})
+    return [s for s in todos if "images" in s.contenido], todos, bridges, redes
 
 
 def descubrir_nodo(sesion: Sesion, nodo: str) -> tuple[list[Storage], list[Bridge]]:
@@ -85,16 +130,17 @@ def descubrir(sesion: Sesion) -> Inventario:
     storages_todos: dict[str, tuple[Storage, ...]] = {n.nombre: () for n in topologia.nodos}
     bridges: dict[str, tuple[Bridge, ...]] = {n.nombre: () for n in topologia.nodos}
     errores: dict[str, ErrorProxLaunch] = {}
+    redes_sdn: dict[str, tuple[RedVirtual, ...]] = {}
+    errores_sdn: dict[str, ErrorProxLaunch] = {}
 
     if consultables:
         with ThreadPoolExecutor(max_workers=min(len(consultables), MAX_HILOS)) as pool:
             futuros = {
-                nombre: pool.submit(descubrir_nodo_completo, sesion, nombre)
-                for nombre in consultables
+                nombre: pool.submit(descubrir_nodo_c, sesion, nombre) for nombre in consultables
             }
             for nombre, futuro in futuros.items():
                 try:
-                    st, todos, br = futuro.result()
+                    st, todos, br, redes = futuro.result()
                 except ErrorProxLaunch as e:
                     if e.codigo not in _CODIGOS_DE_NODO:
                         # Un error de sesión o de permisos no es un nodo caído: se propaga.
@@ -105,6 +151,10 @@ def descubrir(sesion: Sesion) -> Inventario:
                     storages[nombre] = tuple(st)
                     storages_todos[nombre] = tuple(todos)
                     bridges[nombre] = tuple(br)
+                    if redes.error is not None:
+                        errores_sdn[nombre] = redes.error
+                    else:
+                        redes_sdn[nombre] = redes.vnets
 
     if errores and len(errores) == len(consultables):
         permiso = [e for e in errores.values() if e.codigo == CodigoError.PERMISO_INSUFICIENTE]
@@ -134,6 +184,8 @@ def descubrir(sesion: Sesion) -> Inventario:
         storages=storages,
         bridges=bridges,
         errores_por_nodo=errores,
+        redes_sdn=redes_sdn,
+        errores_sdn=errores_sdn,
         storages_todos=storages_todos,
         catalogo=CatalogoServidor(
             permisos=permisos,

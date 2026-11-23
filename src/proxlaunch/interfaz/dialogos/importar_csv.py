@@ -223,7 +223,6 @@ class DialogoImportarCsv(QDialog):
                 secundario=True,
             )
         )
-
         # Archivo.
         fila_archivo = QHBoxLayout()
         self.etiqueta_archivo = QLabel(self.tr("Todavía no elegiste un archivo."))
@@ -237,6 +236,19 @@ class DialogoImportarCsv(QDialog):
         fila_archivo.addWidget(self.etiqueta_archivo, 1)
         fila_archivo.addWidget(self.boton_elegir)
         fila_archivo.addWidget(self.boton_plantilla)
+        # Fase C (RF-C6.3): firewall y red del clon, en una ayuda «?» para no alargar el diálogo.
+        fila_archivo.addWidget(
+            boton_ayuda_texto(
+                self.tr(
+                    "Para poner firewall usa «cortafuegos» (sí o no) y «grupo_seguridad» (el "
+                    "nombre de un grupo que ya exista en Proxmox). Para cambiar la red de una "
+                    "copia al clonar, pon «reescribir_red» en sí: se aplican «red», «vlan», "
+                    "«modelo_red», «mtu» y «limite_red» a la tarjeta net0 de la copia. «red» "
+                    "puede ser un bridge o una red virtual (VNet). Una celda vacía usa el valor "
+                    "del formulario."
+                )
+            )
+        )
         capa.addLayout(fila_archivo)
 
         # Perfil base, codificación y separador.

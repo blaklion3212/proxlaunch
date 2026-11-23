@@ -1,0 +1,51 @@
+{
+  "homogeneo": {
+    "cantidad": 3,
+    "config": {
+      "ballooning": null,
+      "con_disco": true,
+      "controlador_scsi": "virtio-scsi-single",
+      "cores": 2,
+      "discos": [
+        {
+          "bus": "scsi",
+          "discard": true,
+          "formato": "auto",
+          "iothread": true,
+          "ssd": true,
+          "storage": "datos",
+          "tamano_gib": 32
+        }
+      ],
+      "firmware": "seabios",
+      "memoria_mib": 4096,
+      "origen": "disco_vacio",
+      "redes": [
+        {
+          "bridge": "vmbr0",
+          "modelo": "virtio",
+          "vlan": null
+        }
+      ],
+      "sockets": 1,
+      "storage_efi": null,
+      "tipo_cpu": "x86-64-v2-AES"
+    },
+    "destino": {
+      "algoritmo": "equilibrado",
+      "modo": "automatico",
+      "nodos": []
+    },
+    "etiquetar": true,
+    "patron": {
+      "inicio": 1,
+      "prefijo": "web",
+      "relleno": 2,
+      "separador": "-"
+    },
+    "vmid_inicial": null
+  },
+  "nombre": "Simple v1",
+  "tipo": "homogeneo",
+  "version_proxmox": "9.2"
+}

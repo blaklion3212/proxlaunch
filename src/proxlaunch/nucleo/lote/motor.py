@@ -44,6 +44,7 @@ from proxlaunch.nucleo.lote.reconciliacion import reconciliar_incierta
 from proxlaunch.nucleo.modelos.inventario import Inventario
 from proxlaunch.nucleo.modelos.tarea import Desenlace, Etapa, ResultadoCreacion
 from proxlaunch.nucleo.modelos.vm import ConfiguracionVM, OrigenSO
+from proxlaunch.nucleo.red.modelos import usa_red_clon
 from proxlaunch.nucleo.registro import enmascarar
 from proxlaunch.nucleo.reloj import Reloj
 from proxlaunch.nucleo.servicios.catalogo import con_catalogo
@@ -638,6 +639,13 @@ class MotorLote:
             self._emitir(c, libro.registrar_upid(el.vmid, upid))
 
         try:
+            # Solo con red personalizada se pasan las MAC originales (el resto, igual que en 0.7.0).
+            extra_c: dict[str, Any] = {}
+            if usa_red_clon(el.cfg.red_clon):
+                extra_c = {
+                    "macs_originales": dict(libro.entrada(el.vmid).macs_originales),
+                    "al_leer_macs": lambda m: libro.registrar_macs_originales(el.vmid, m),
+                }
             resultado = servicio.crear(
                 el.cfg,
                 c.inv,
@@ -645,6 +653,7 @@ class MotorLote:
                 c.control.evento_abandono,
                 al_enviar=al_enviar,
                 puede_enviar=puede_enviar,
+                **extra_c,
             )
         except AssertionError:
             raise
@@ -748,6 +757,7 @@ class MotorLote:
             error=error,
             log=res.log_tarea,
             avisos=avisos,
+            red_final=res.red_final,
         )
         self._registrar(libro, entrada)
         self._emitir(c, entrada)
@@ -865,6 +875,7 @@ class MotorLote:
                     error=res.error,
                     log=res.log_tarea,
                     avisos=_avisos_con_encendido(elemento.cfg, estado, tuple(res.avisos)),
+                    red_final=res.red_final,
                 )
             else:
                 estado, aviso, error = reconciliar_incierta(

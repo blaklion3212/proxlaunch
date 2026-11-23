@@ -9,12 +9,31 @@ Solutions GmbH. La aplicación solo se presenta como «Compatible con Proxmox VE
 
 ## Estado del proyecto
 
-**Versión `0.7.0`.** Hay instaladores para Ubuntu (`.deb`) y Windows
+**Versión `0.8.0`.** Hay instaladores para Ubuntu (`.deb`) y Windows
 (`-setup.exe`), además de poder ejecutarse desde el código fuente. Se apoya en el MVP 5 (instaladores), el MVP 4 (origen del
 sistema operativo), el MVP 3 (perfiles de máquina, lotes guardados e importación CSV), el MVP 2
 (creación por lotes) y el MVP 1. Las secciones «Qué hace/añade» de más abajo describen cada
 etapa; la del MVP 4 está en la [guía de usuario](docs/guia-usuario.md#elegir-el-origen-del-sistema-operativo).
 Las novedades de cada versión están en las [releases](https://github.com/blaklion3212/proxlaunch/releases).
+
+Novedades de la versión 0.8.0 (**lotes en el servidor, redes virtuales, firewall y red del clon**):
+
+- **Lotes en el servidor** (**Archivo > Lotes en el servidor…**): vuelve a encontrar los lotes que ProxLaunch creó (por sus
+  etiquetas `proxlaunch` y `lote-<código>`), ver su detalle, **exportarlos a CSV** (con la IP si quieres) y **deshacerlos**
+  con doble control: etiquetas y nota del mismo lote, lista desmarcable y escribir el código del lote. Borra sin «purge».
+  Ver la [guía](docs/guia-usuario.md#lotes-en-el-servidor-inventario).
+- **Redes virtuales (SDN):** las VNets aparecen en la lista **Red** junto a los bridges (necesitan `SDN.Use` en su zona; rol
+  `PVESDNUser`). Ver la [guía](docs/guia-usuario.md#redes-virtuales-sdn).
+- **Firewall de la máquina:** activarlo con un **grupo de seguridad**, política de entrada (Bloquear por defecto) y de salida
+  (Permitir por defecto) y DHCP; avisa si el firewall general está apagado y no enciende una máquina con una tarjeta sin
+  firewall. Ver la [guía](docs/guia-usuario.md#firewall-de-la-máquina).
+- **Red del clon:** cambiar la red, VLAN, tarjeta, MTU y límite de las copias de una plantilla, y añadir o quitar tarjetas,
+  conservando la MAC (o pidiendo una nueva). Ver la [guía](docs/guia-usuario.md#red-del-clon).
+- **CSV:** 5 columnas nuevas (`reescribir_red`, `cortafuegos`, `grupo_seguridad`, `politica_entrada` y `politica_salida`).
+- **Formato de archivo 5** para los lotes que usan la red del clon o el firewall. 0.8.0 abre los archivos de 0.5 a 0.7;
+  **0.7.0 no abre los de formato 5** (ver [compatibilidad](docs/guia-usuario.md#compatibilidad-con-versiones-anteriores)).
+- El rol no cambia. Para usar VNets fuera de la zona local hace falta `SDN.Use` en la zona o la red (opcional con la
+  asignación acotada).
 
 Novedades de la versión 0.7.0 (**configuración inicial de las máquinas y plantillas desde imágenes cloud**):
 
@@ -123,7 +142,7 @@ editar o borrar MV que no creó un lote, instaladores (MVP 5), interfaz en otros
 
 ### Permisos de Proxmox
 
-El **rol mínimo no cambia** en la versión 0.7.0: son los mismos 10 privilegios del MVP 1 (`VM.Allocate`, `VM.Audit`,
+El **rol mínimo no cambia** en la versión 0.8.0: son los mismos 10 privilegios del MVP 1 (`VM.Allocate`, `VM.Audit`,
 `VM.Config.Options`, `VM.Config.HWType`, `VM.Config.CPU`, `VM.Config.Memory`,
 `VM.Config.Network`, `Datastore.AllocateSpace`, `SDN.Use` y `Sys.Audit`) más los 4 de orígenes del MVP 4 (`VM.Config.Disk`,
 `VM.Clone`, `Datastore.AllocateTemplate` y `Sys.AccessNetwork`); lista y pasos en la
@@ -149,6 +168,7 @@ opción afectada, explicando qué falta:
 | `VM.Config.Cloudinit` | `/vms` | La sección de cloud-init (en Proxmox 8.x basta `VM.Config.Network`, que ya está en el rol). |
 | `VM.Monitor` (Proxmox 8.x) o `VM.GuestAgent.Audit` (Proxmox 9.x) | `/vms` | **Esperar la IP** de cada máquina. |
 | `Datastore.AllocateSpace` (Proxmox 8.x) | `/storage/<almacén de snippets>` | Elegir scripts (*snippets*); ya está en el rol, pero hay que tenerlo también sobre ese almacén. |
+| `SDN.Use` | `/sdn/zones/<zona>` o `/sdn/zones/<zona>/<red>` | Usar redes virtuales (VNets) de esa zona; con la asignación acotada solo cubre `localnetwork`. `SDN.Audit` (opcional) muestra su alias y estado. |
 
 `Sys.Modify` y `Pool.Allocate` nunca se piden. El asistente **Crear plantilla desde imagen cloud** usa solo privilegios que
 ya están en el rol; detalles por versión en la
@@ -185,8 +205,8 @@ Los artefactos están en `dist/` (se generan con los scripts de [`empaquetado/`]
 
 | Sistema | Archivo |
 |---|---|
-| Ubuntu 22.04 / 24.04 (64 bits) | `proxlaunch_0.7.0_amd64.deb` |
-| Windows 10 / 11 (64 bits) | `proxlaunch-0.7.0-windows-x64-setup.exe` |
+| Ubuntu 22.04 / 24.04 (64 bits) | `proxlaunch_0.8.0_amd64.deb` |
+| Windows 10 / 11 (64 bits) | `proxlaunch-0.8.0-windows-x64-setup.exe` |
 | Comprobación | `SHA256SUMS` (suma SHA-256 de cada instalador) |
 
 Comprueba la descarga y luego instala:
@@ -194,12 +214,12 @@ Comprueba la descarga y luego instala:
 ```bash
 # Ubuntu
 sha256sum -c SHA256SUMS --ignore-missing
-sudo apt install ./proxlaunch_0.7.0_amd64.deb
+sudo apt install ./proxlaunch_0.8.0_amd64.deb
 ```
 
 ```powershell
 # Windows (PowerShell): compara el Hash con la línea de SHA256SUMS y ejecuta el instalador
-Get-FileHash -Algorithm SHA256 .\proxlaunch-0.7.0-windows-x64-setup.exe
+Get-FileHash -Algorithm SHA256 .\proxlaunch-0.8.0-windows-x64-setup.exe
 ```
 
 Los instaladores incluyen su propio Python: no hace falta instalar nada más (en Ubuntu, `apt` instala las
@@ -324,7 +344,8 @@ recursos/marca/  Logos originales y el generador (generador/generar_logo.py)
   [asistente de plantillas desde imágenes cloud](docs/guia-usuario.md#crear-una-plantilla-desde-una-imagen-cloud)).
 - [Archivos de ejemplo](docs/ejemplos/LEEME.md): CSV, lotes y perfiles listos para abrir (incluidos `mvs-opciones.csv` y
   `lote-con-opciones.proxlaunch-lote.json`, con las opciones de la versión 0.6.0, y `mvs-cloudinit.csv` y
-  `lote-cloudinit.proxlaunch-lote.json`, con cloud-init y esperar la IP de la versión 0.7.0).
+  `lote-cloudinit.proxlaunch-lote.json`, con cloud-init y esperar la IP de la versión 0.7.0, y `mvs-red-firewall.csv` y
+  `lote-red-firewall.proxlaunch-lote.json`, con la red del clon y el firewall de la versión 0.8.0).
 - [Instalar y desinstalar](docs/guia-usuario.md#instalar-y-desinstalar-proxlaunch): `.deb` y
   `-setup.exe`, SmartScreen, datos y verificación de `SHA256SUMS`.
 - [Empaquetado](docs/empaquetado.md): construcción y verificación de los instaladores

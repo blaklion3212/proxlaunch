@@ -9,6 +9,7 @@ from __future__ import annotations
 
 from collections.abc import Mapping
 from dataclasses import dataclass
+from typing import Final
 
 from proxlaunch.nucleo.capacidades import Capacidades, Funcion
 from proxlaunch.nucleo.modelos.catalogo import PermisosEfectivos
@@ -58,6 +59,17 @@ class PrivilegioOpcional:
     no_verificado: bool = False
 
 
+# Fase C (0.8): SDN. La zona de una VNet no se conoce de antemano (solo por el texto de un 403),
+# así que la guía usa la ruta genérica con un marcador y los privilegios van como no verificados.
+ZONA_LOCAL: Final = "localnetwork"
+RUTA_ZONA_GENERICA: Final = "/sdn/zones/<zona>"
+# ``PRIVILEGIOS_OPCIONALES`` conserva su forma de la fase A (pares); estos dos se suman en
+# ``privilegios_opcionales`` cuando se conocen las capacidades.
+PRIVILEGIOS_SDN_OPCIONALES: tuple[PrivilegioOpcional, ...] = (
+    PrivilegioOpcional("SDN.Use", RUTA_ZONA_GENERICA, no_verificado=True),
+    PrivilegioOpcional("SDN.Audit", RUTA_ZONA_GENERICA, no_verificado=True),
+)
+
 # Ruta que se muestra cuando se desconoce el almacén de snippets (la guía lo indica con texto).
 RUTA_STORAGE_SNIPPETS_DESCONOCIDO = "/storage/<almacén de snippets>"
 
@@ -93,6 +105,7 @@ def privilegios_opcionales(
     if caps is None:
         return tuple(lista)
     lista.append(PrivilegioOpcional("VM.Config.Cloudinit", "/vms"))
+    lista.extend(PRIVILEGIOS_SDN_OPCIONALES)
     if caps.tiene(Funcion.PRIVILEGIOS_GUEST_AGENT):
         lista.append(PrivilegioOpcional("VM.GuestAgent.Audit", "/vms"))
     else:
@@ -100,6 +113,38 @@ def privilegios_opcionales(
     if not caps.tiene(Funcion.CICUSTOM_CON_ALLOCATESPACE):
         lista.extend(privilegios_snippets_8x(almacen_snippets))
     return tuple(lista)
+
+
+def ruta_sdn(zona: str, red: str | None = None, vlan: int | None = None) -> str:
+    """Ruta de ACL de SDN: ``/sdn/zones/<zona>[/<red>[/<vlan>]]`` (la VLAN solo cuenta con red)."""
+    ruta = f"/sdn/zones/{zona}"
+    if red is not None:
+        ruta += f"/{red}"
+        if vlan is not None:
+            ruta += f"/{vlan}"
+    return ruta
+
+
+def estado_sdn_fuera_de_local(permisos: PermisosEfectivos | None) -> bool | None:
+    """¿Tiene ``SDN.Use`` para alguna zona distinta de ``localnetwork``? (DT-C19).
+
+    ``True`` si lo hay en ``/sdn/zones/<z>[/…]`` con ``z`` ≠ ``localnetwork`` o heredado de ``/``,
+    ``/sdn`` o ``/sdn/zones`` con propagate; ``None`` si los permisos se desconocen.
+    """
+    if permisos is None:
+        return None
+    prefijo = "/sdn/zones/"
+    for ruta, privs in permisos.rutas.items():
+        if "SDN.Use" not in privs:
+            continue
+        if ruta.rstrip("/") in ("", "/sdn", "/sdn/zones"):
+            if privs["SDN.Use"]:
+                return True
+        elif ruta.startswith(prefijo):
+            zona = ruta[len(prefijo) :].split("/", 1)[0]
+            if zona and zona != ZONA_LOCAL:
+                return True
+    return False
 
 
 def privilegios_agente(caps: Capacidades) -> tuple[str, ...]:

@@ -58,6 +58,8 @@ GUION = textwrap.dedent(
     NUEVOS_M4.update({
         "cloudinit": None, "esperar_ip": False, "plazo_ip_s": 120, "info_cloudinit": None,
     })
+    # Campos nuevos de la fase C (0.8): ídem.
+    NUEVOS_M4.update({"red_clon": None, "firewall": None})
 
     def norm(o):
         if isinstance(o, Enum):

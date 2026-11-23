@@ -260,6 +260,9 @@ def aplicar_config(
         cloudinit=actual.cloudinit,
         esperar_ip=actual.esperar_ip,
         plazo_ip_s=actual.plazo_ip_s,
+        # Fase C: la red del clon y el firewall tampoco son del perfil (RF-C6.2).
+        red_clon=actual.red_clon,
+        firewall=actual.firewall,
     )
     return ResultadoAplicacion(cfg, tuple(avisos))
 

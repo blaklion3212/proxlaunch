@@ -17,13 +17,17 @@ from proxlaunch.nucleo.api.autenticacion import Autenticador
 from proxlaunch.nucleo.api.multipart import CuerpoMultipart, ParteArchivo
 from proxlaunch.nucleo.api.solo_lectura import TransporteSoloLectura
 from proxlaunch.nucleo.api.transporte import Transporte, TransporteSubida, limitar_respuesta
+from proxlaunch.nucleo.archivos.texto import es_formato_invisible
 from proxlaunch.nucleo.capacidades import interpretar_version
 from proxlaunch.nucleo.cloudinit.snippets import nombre_de_snippet, volid_snippet_valido
 from proxlaunch.nucleo.errores import CodigoError, ErrorProxLaunch
+from proxlaunch.nucleo.firewall.modelos import RE_GRUPO, GrupoSeguridad, ReglaFirewall
 from proxlaunch.nucleo.modelos.catalogo import Contenido, Plantilla, Snippet, Volumen
 from proxlaunch.nucleo.modelos.inventario import (
     Bridge,
     Nodo,
+    RecursoVM,
+    RedVirtual,
     Storage,
     Topologia,
     Version,
@@ -32,6 +36,7 @@ from proxlaunch.nucleo.modelos.inventario import (
 from proxlaunch.nucleo.modelos.tarea import EstadoTarea
 from proxlaunch.nucleo.origen.constantes import PARO_SIN_PROGRESO_S
 from proxlaunch.nucleo.origen.nombres import validar_volid
+from proxlaunch.nucleo.red.modelos import RE_NOMBRE_RED
 from proxlaunch.nucleo.reloj import Reloj
 from proxlaunch.nucleo.secreto import Secreto
 from proxlaunch.nucleo.transferencias.url import ChecksumTransferencia, UrlDescarga, ocultar_url
@@ -53,6 +58,28 @@ MAX_RESPUESTA_AGENTE: Final = 4 * 1024 * 1024
 def _seg(valor: object) -> str:
     """Codifica un segmento de ruta (evita que un valor altere la ruta)."""
     return quote(str(valor), safe="")
+
+
+MAX_ALIAS_RED: Final = 64  # alias (comments) de una VNet
+MAX_COMENTARIO_GRUPO: Final = 128  # comentario de un grupo de seguridad
+MAX_NOMBRE_VM: Final = 256  # nombre de MV mostrado
+MAX_BLOQUEO_VM: Final = 64  # lock mostrado
+MAX_REGLAS_FIREWALL: Final = 200  # tope de reglas leídas de un grupo o de una MV
+MAX_ETIQUETAS_VM: Final = 1024  # cadena de etiquetas
+_RE_ETIQUETAS = re.compile(r"[;, ]+")
+
+
+def _texto_saneado(valor: Any, maximo: int) -> str:
+    """Texto del servidor apto para mostrar: sin control, formato invisible ni marcado
+    (``<``, ``>``, ``&``), recortado y sin espacios en los extremos (no confiable, RNF-C6)."""
+    if not isinstance(valor, str):
+        return ""
+    limpio = "".join(
+        c
+        for c in valor
+        if c not in "<>&" and not es_formato_invisible(c) and (c.isprintable() or c == " ")
+    )
+    return limpio.strip()[:maximo].strip()
 
 
 def _entero(valor: Any) -> int | None:
@@ -293,6 +320,38 @@ class ClienteProxmox:
                     nombre=str(e["iface"]),
                     tipo=str(e.get("type", "")),
                     vlan_aware=_como_bool(e.get("bridge_vlan_aware")),
+                    mtu=_entero(e.get("mtu")),
+                )
+            )
+        return resultado
+
+    def redes_any_bridge(self, nodo: str) -> list[RedVirtual]:
+        """``GET /nodes/{n}/network?type=any_bridge``: VNets de SDN utilizables en el nodo.
+
+        Solo entradas con ``type == "vnet"`` (``tipo_declarado=True``) o sin ``type``
+        (``tipo_declarado=False``, la filtra quien consume); se descartan las demás y las de
+        ``iface`` que no cumple ``RE_NOMBRE_RED``. Texto no confiable: el alias va saneado.
+        """
+        data = self._llamar("GET", f"/nodes/{_seg(nodo)}/network", params={"type": "any_bridge"})
+        resultado: list[RedVirtual] = []
+        for e in data if isinstance(data, list) else []:
+            if not isinstance(e, dict):
+                continue
+            iface = e.get("iface")
+            if not isinstance(iface, str) or not RE_NOMBRE_RED.fullmatch(iface):
+                continue
+            tipo = e.get("type")
+            if tipo not in (None, "vnet"):
+                continue
+            alias = _texto_saneado(e.get("comments"), MAX_ALIAS_RED)
+            ipam = e.get("ipam")
+            resultado.append(
+                RedVirtual(
+                    nombre=iface,
+                    alias=alias or None,
+                    vlan_aware=_como_bool(e.get("vlanaware", e.get("bridge_vlan_aware"))),
+                    ipam=ipam if isinstance(ipam, str) and ipam else None,
+                    tipo_declarado=tipo == "vnet",
                 )
             )
         return resultado
@@ -338,6 +397,46 @@ class ClienteProxmox:
                     nombre=str(e.get("name", "")),
                     nodo=str(e.get("node", "")),
                     tipo=str(e.get("type", "")),
+                )
+            )
+        return resultado
+
+    def recursos_vm(self) -> list[RecursoVM]:
+        """``GET /cluster/resources?type=vm`` interpretado con tolerancia (RF-C1.4).
+
+        Ignora las filas sin ``vmid`` entero; nunca lanza por tipos raros en los demás campos.
+        """
+        data = self._llamar("GET", "/cluster/resources", params={"type": "vm"})
+        resultado: list[RecursoVM] = []
+        for e in data if isinstance(data, list) else []:
+            if not isinstance(e, dict):
+                continue
+            vmid = _entero(e.get("vmid"))
+            if vmid is None:
+                continue
+            nombre, nodo, estado, bloqueo = (e.get(c) for c in ("name", "node", "status", "lock"))
+            # Textos del servidor no confiables: sin controles ni marcas bidi y acotados (RNF-C6.2).
+            nombre = _texto_saneado(nombre, MAX_NOMBRE_VM) if isinstance(nombre, str) else None
+            bloqueo = _texto_saneado(bloqueo, MAX_BLOQUEO_VM) if isinstance(bloqueo, str) else None
+            nodo = _texto_saneado(nodo, 64) if isinstance(nodo, str) else None
+            etiquetas = e.get("tags")
+            if isinstance(etiquetas, str):
+                etiquetas = _texto_saneado(etiquetas, MAX_ETIQUETAS_VM)
+            plantilla = e.get("template")
+            resultado.append(
+                RecursoVM(
+                    vmid=vmid,
+                    nombre=nombre if isinstance(nombre, str) else None,
+                    nodo=nodo if isinstance(nodo, str) else None,
+                    tipo=str(e.get("type", "")),
+                    estado=estado if isinstance(estado, str) else None,
+                    bloqueo=bloqueo if isinstance(bloqueo, str) and bloqueo else None,
+                    plantilla=None if plantilla is None else _como_bool(plantilla),
+                    etiquetas=(
+                        tuple(t for t in _RE_ETIQUETAS.split(etiquetas.lower()) if t)
+                        if isinstance(etiquetas, str)
+                        else ()
+                    ),
                 )
             )
         return resultado
@@ -483,6 +582,21 @@ class ClienteProxmox:
             raise
         return data if isinstance(data, dict) else None
 
+    def config_vm_legible(self, nodo: str, vmid: int) -> dict[str, Any] | None:
+        """Como ``config_vm``, pero un cuerpo que no es un diccionario lanza ``DESCONOCIDO``.
+
+        Así el inventario distingue «ilegible» de «ya no existe» (``None``).
+        """
+        try:
+            data = self._llamar("GET", f"/nodes/{_seg(nodo)}/qemu/{_seg(vmid)}/config")
+        except ErrorProxLaunch as e:
+            if e.codigo == CodigoError.RECURSO_INEXISTENTE:
+                return None
+            raise
+        if not isinstance(data, dict):
+            raise ErrorProxLaunch(CodigoError.DESCONOCIDO, {}, "configuración ilegible")
+        return data
+
     def estado_nodo(self, nodo: str) -> dict[str, Any]:
         """``GET /nodes/{n}/status``: sonda barata de que el nodo responde (595/596 si cayó)."""
         data = self._llamar("GET", f"/nodes/{_seg(nodo)}/status")
@@ -570,6 +684,83 @@ class ClienteProxmox:
     def configurar_vm(self, nodo: str, vmid: int, parametros: dict[str, str]) -> None:
         """``PUT /nodes/{n}/qemu/{vmid}/config`` (ajustes tras un clon)."""
         self._llamar("PUT", f"/nodes/{_seg(nodo)}/qemu/{_seg(vmid)}/config", datos=parametros)
+
+    # --- Firewall (fase C) ------------------------------------------------------------
+
+    def grupos_firewall(self) -> list[GrupoSeguridad]:
+        """``GET /cluster/firewall/groups``: grupos de seguridad (no exige privilegio).
+
+        Se omiten los nombres que no cumplen ``RE_GRUPO``; el comentario va saneado.
+        """
+        data = self._llamar("GET", "/cluster/firewall/groups")
+        resultado: list[GrupoSeguridad] = []
+        for e in data if isinstance(data, list) else []:
+            nombre = e.get("group") if isinstance(e, dict) else None
+            if not isinstance(nombre, str) or not RE_GRUPO.fullmatch(nombre):
+                continue
+            resultado.append(
+                GrupoSeguridad(nombre, _texto_saneado(e.get("comment"), MAX_COMENTARIO_GRUPO))
+            )
+        return resultado
+
+    @staticmethod
+    def _reglas(data: Any) -> list[ReglaFirewall]:
+        resultado: list[ReglaFirewall] = []
+        for e in data if isinstance(data, list) else []:
+            if len(resultado) >= MAX_REGLAS_FIREWALL:
+                break
+            if not isinstance(e, dict):
+                continue
+            tipo, accion = e.get("type"), e.get("action")
+            if not isinstance(tipo, str) or not isinstance(accion, str):
+                continue
+            resultado.append(
+                ReglaFirewall(
+                    tipo=_texto_saneado(tipo, 64),
+                    accion=_texto_saneado(accion, 64),
+                    activa=_como_bool(e.get("enable")),
+                    comentario=_texto_saneado(e.get("comment"), MAX_COMENTARIO_GRUPO),
+                )
+            )
+        return resultado
+
+    def reglas_grupo_firewall(self, grupo: str) -> list[ReglaFirewall]:
+        """``GET /cluster/firewall/groups/{g}``: reglas del grupo (exige ``Sys.Audit`` en ``/``).
+
+        Raises:
+            ValueError: si ``grupo`` no cumple ``RE_GRUPO`` (no se envía nada).
+        """
+        if not RE_GRUPO.fullmatch(grupo):
+            raise ValueError("nombre de grupo de seguridad no válido")
+        return self._reglas(self._llamar("GET", f"/cluster/firewall/groups/{_seg(grupo)}"))
+
+    def opciones_firewall_cluster(self) -> dict[str, Any]:
+        """``GET /cluster/firewall/options`` (exige ``Sys.Audit`` en ``/``)."""
+        data = self._llamar("GET", "/cluster/firewall/options")
+        return data if isinstance(data, dict) else {}
+
+    def opciones_firewall_vm(self, nodo: str, vmid: int) -> dict[str, Any]:
+        """``GET /nodes/{n}/qemu/{vmid}/firewall/options`` (``VM.Audit``)."""
+        data = self._llamar("GET", f"/nodes/{_seg(nodo)}/qemu/{_seg(vmid)}/firewall/options")
+        return data if isinstance(data, dict) else {}
+
+    def reglas_firewall_vm(self, nodo: str, vmid: int) -> list[ReglaFirewall]:
+        """``GET /nodes/{n}/qemu/{vmid}/firewall/rules`` (``VM.Audit``)."""
+        return self._reglas(
+            self._llamar("GET", f"/nodes/{_seg(nodo)}/qemu/{_seg(vmid)}/firewall/rules")
+        )
+
+    def configurar_firewall_vm(self, nodo: str, vmid: int, parametros: dict[str, str]) -> None:
+        """``PUT /nodes/{n}/qemu/{vmid}/firewall/options`` (``VM.Config.Network``)."""
+        self._llamar(
+            "PUT", f"/nodes/{_seg(nodo)}/qemu/{_seg(vmid)}/firewall/options", datos=parametros
+        )
+
+    def crear_regla_firewall_vm(self, nodo: str, vmid: int, parametros: dict[str, str]) -> None:
+        """``POST /nodes/{n}/qemu/{vmid}/firewall/rules`` (``VM.Config.Network``)."""
+        self._llamar(
+            "POST", f"/nodes/{_seg(nodo)}/qemu/{_seg(vmid)}/firewall/rules", datos=parametros
+        )
 
     def configurar_contrasena(self, nodo: str, vmid: int, contrasena: Secreto) -> None:
         """``PUT /nodes/{n}/qemu/{vmid}/config`` con SOLO ``cipassword`` (RF-B1.17, R-B5).

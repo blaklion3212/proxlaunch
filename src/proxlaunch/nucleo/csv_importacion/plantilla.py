@@ -48,6 +48,12 @@ ENCABEZADO_PLANTILLA: tuple[str, ...] = (
     "ci_snippet_red",
     "ci_snippet_meta",
     "esperar_ip",
+    # Fase C (CA-C6.3.7): red del clon y firewall; una celda vacía hereda las del formulario.
+    "reescribir_red",
+    "cortafuegos",
+    "grupo_seguridad",
+    "politica_entrada",
+    "politica_salida",
 )
 SEPARADORES_PLANTILLA = (";", ",")  # «;» Excel en español (por defecto), «,» Excel en inglés
 
@@ -93,9 +99,16 @@ def filas_plantilla() -> list[list[str | int]]:
     vacias: list[str | int] = [""] * 12
     cloudinit: list[list[str | int]] = [list(vacias) for _ in filas]
     cloudinit[4] = ["ubuntu", "", "dhcp", "", "", "", "", "", "", "", "", ""]
+    # Fase C: ``grupo_seguridad`` queda vacío (el grupo depende del servidor). La fila que clona
+    # fija «como la plantilla» y un firewall que permite el tráfico (válido sin grupo, V-C36).
+    fase_c: list[list[str | int]] = [["", "", "", "", ""] for _ in filas]
+    fase_c[1] = ["", "no", "", "", ""]
+    fase_c[4] = ["no", "si", "", "permitir", "permitir"]
     return [
-        fila + extra + ops + ci
-        for fila, extra, ops, ci in zip(filas, origenes, opciones, cloudinit, strict=True)
+        fila + extra + ops + ci + fc
+        for fila, extra, ops, ci, fc in zip(
+            filas, origenes, opciones, cloudinit, fase_c, strict=True
+        )
     ]
 
 

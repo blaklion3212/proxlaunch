@@ -235,14 +235,31 @@ class MundoB:
         assert problemas == [], problemas
         return dataclasses.replace(cfg, cloudinit=cloudinit)
 
+    @property
+    def macs_libro(self) -> dict[int, str]:
+        """Hace de libro: MAC original de cada tarjeta del clon (QA-C-M1), entre llamadas."""
+        return self.__dict__.setdefault("_macs_libro", {})
+
     def crear(self, cfg: ConfiguracionVM) -> ResultadoCreacion:
-        return self.servicio().crear(cfg, self.inv, self.etapas.append, threading.Event())
+        return self.servicio().crear(
+            cfg,
+            self.inv,
+            self.etapas.append,
+            threading.Event(),
+            macs_originales=self.macs_libro,
+            al_leer_macs=self.macs_libro.update,
+        )
 
     def reintentar(
         self, cfg: ConfiguracionVM, pendientes: frozenset[str] | None = None
     ) -> ResultadoCreacion:
         return self.servicio().reintentar_ajustes(
-            cfg, self.inv, threading.Event(), pendientes=pendientes
+            cfg,
+            self.inv,
+            threading.Event(),
+            pendientes=pendientes,
+            macs_originales=self.macs_libro,
+            al_leer_macs=self.macs_libro.update,
         )
 
     # --- Lotes ---------------------------------------------------------------------------------

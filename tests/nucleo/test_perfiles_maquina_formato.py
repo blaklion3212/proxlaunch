@@ -472,7 +472,7 @@ def test_un_lote_abierto_como_perfiles_da_e_m02_con_la_pista():
 
 def test_version_futura_es_e_m03_y_version_invalida_e_m02():
     with pytest.raises(ErrorProxLaunch) as exc:
-        leer_perfiles(archivo_perfiles(version_formato=5))  # fase B: la 4 ya se lee (CA-B6.1.5)
+        leer_perfiles(archivo_perfiles(version_formato=6))  # fase C: la 5 ya se lee (CA-C6.1.5)
     assert exc.value.codigo == CodigoError.ARCHIVO_VERSION_FUTURA
     for malo in (0, -1, True, "1", 1.0):
         with pytest.raises(ErrorProxLaunch) as exc:

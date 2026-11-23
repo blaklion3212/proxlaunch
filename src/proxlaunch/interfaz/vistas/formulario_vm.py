@@ -43,15 +43,23 @@ from proxlaunch.interfaz.vistas.campos import (
     poner_mensaje,
 )
 from proxlaunch.interfaz.vistas.seccion_cloudinit import SeccionCloudInit
+from proxlaunch.interfaz.vistas.seccion_firewall import SeccionFirewall
+from proxlaunch.interfaz.vistas.seccion_red_clon import SeccionRedClon
 from proxlaunch.interfaz.vistas.selector_origen import SelectorOrigen
 from proxlaunch.interfaz.vistas.tabla_discos import TablaDiscos, entero_o_cero, texto_ausente
 from proxlaunch.interfaz.vistas.tabla_redes import TablaRedes
+from proxlaunch.nucleo.capacidades import Capacidades, Funcion
 from proxlaunch.nucleo.cloudinit.disponibilidad import OpcionB
-from proxlaunch.nucleo.cloudinit.modelos import ConfigCloudInit, InfoCloudInitPlantilla
+from proxlaunch.nucleo.cloudinit.modelos import (
+    ConfigCloudInit,
+    InfoCloudInitPlantilla,
+    ModoTarjeta,
+)
 from proxlaunch.nucleo.errores import ErrorProxLaunch
-from proxlaunch.nucleo.modelos.catalogo import ListadoSnippets
-from proxlaunch.nucleo.modelos.inventario import Inventario
-from proxlaunch.nucleo.modelos.origen import TipoSO
+from proxlaunch.nucleo.firewall.modelos import LecturaGrupos, ReglaFirewall
+from proxlaunch.nucleo.modelos.catalogo import ListadoSnippets, Plantilla
+from proxlaunch.nucleo.modelos.inventario import Inventario, RedVirtual
+from proxlaunch.nucleo.modelos.origen import DetalleClon, TipoSO
 from proxlaunch.nucleo.modelos.vm import (
     Ballooning,
     ConfiguracionVM,
@@ -64,11 +72,15 @@ from proxlaunch.nucleo.opciones.modelos import (
     EstadoOpcion,
     EstadoPools,
     OpcionA,
+    OpcionC,
     OpcionesLote,
     PoolsServidor,
 )
 from proxlaunch.nucleo.origen.asistente import aplicar_asistente
 from proxlaunch.nucleo.origen.capacidades_origen import Disponibilidad
+from proxlaunch.nucleo.red.modelos import RedClon
+from proxlaunch.nucleo.red.redes_nodo import RedesNodo, interseccion_redes
+from proxlaunch.nucleo.red.tarjetas import tarjetas_finales
 from proxlaunch.nucleo.seleccion_nodo import MotivoNodo, elegir_nodo
 from proxlaunch.nucleo.validacion import Problema, Severidad
 from proxlaunch.nucleo.valores_defecto import (
@@ -129,6 +141,10 @@ class FormularioVM(QWidget):
     cambiado = Signal()  # el usuario cambió algo: hay que revalidar
     nodo_elegido = Signal(str)  # cambio manual de nodo: recargar sus recursos (CA-11.7)
     vmid_confirmado = Signal(int)  # el usuario terminó de escribir un VMID (V-03)
+    # Fase C: la ventana lee en un trabajador y responde con ``establecer_grupos_firewall`` y
+    # ``establecer_reglas_grupo``.
+    pide_grupos_firewall = Signal()  # al activar «Activar el firewall» o pulsar «Recargar»
+    pide_reglas_grupo = Signal(str)  # «Ver reglas» (RF-C3.11)
 
     def __init__(self, parent: QWidget | None = None) -> None:
         super().__init__(parent)
@@ -161,6 +177,10 @@ class FormularioVM(QWidget):
         self._grupos_opciones: list[_GrupoOpcion] = []
         # Fase B: disponibilidad de «Esperar la IP» y texto de por qué no se puede marcar.
         self._estados_b: dict[OpcionB, EstadoOpcion] = {}
+        # Fase C: disponibilidad (privilegios y versión), capacidades y nodos destino del lote.
+        self._estados_c: dict[OpcionC, EstadoOpcion] = {}
+        self._caps_c: Capacidades | None = None
+        self._nodos_destino: tuple[str, ...] = ()
 
         capa = QVBoxLayout(self)
         capa.setContentsMargins(0, 0, 0, 0)
@@ -175,6 +195,8 @@ class FormularioVM(QWidget):
         self._caja_discos = self._ultima_caja
         self._construir_red(capa)
         self._caja_red = self._ultima_caja
+        self._construir_red_clon(capa)
+        self._construir_firewall(capa)
         self._construir_cloudinit(capa)
         capa.addStretch(1)
         self._aplicar_modo()
@@ -596,6 +618,21 @@ class FormularioVM(QWidget):
         g.addWidget(self.tabla_redes)
         self.tabla_redes.cambiado.connect(self._al_cambiar_tabla)
 
+    def _construir_red_clon(self, capa: QVBoxLayout) -> None:
+        """«Red de las copias»: solo al clonar una plantilla (RF-C4.1)."""
+        self.seccion_red_clon = SeccionRedClon()
+        self.seccion_red_clon.hide()
+        capa.addWidget(self.seccion_red_clon)
+        self.seccion_red_clon.cambiado.connect(self._al_cambiar_red_clon)
+
+    def _construir_firewall(self, capa: QVBoxLayout) -> None:
+        """«Firewall de la máquina»: plegada y apagada, con cualquier origen (RF-C3.1)."""
+        self.seccion_firewall = SeccionFirewall()
+        capa.addWidget(self.seccion_firewall)
+        self.seccion_firewall.cambiado.connect(self._al_editar)
+        self.seccion_firewall.pide_grupos.connect(self.pide_grupos_firewall)
+        self.seccion_firewall.pide_reglas.connect(self.pide_reglas_grupo)
+
     def _construir_cloudinit(self, capa: QVBoxLayout) -> None:
         """«Configuración inicial (cloud-init)»: solo con origen «Clonar plantilla» (RF-B1.2)."""
         self.seccion_cloudinit = SeccionCloudInit()
@@ -611,6 +648,7 @@ class FormularioVM(QWidget):
         self._avanzado = avanzado
         self.selector_origen.establecer_modo(avanzado)
         self.seccion_cloudinit.establecer_modo(avanzado)
+        self.seccion_red_clon.establecer_modo_avanzado(avanzado)
         self._aplicar_modo()
 
     def _aplicar_modo(self) -> None:
@@ -693,7 +731,12 @@ class FormularioVM(QWidget):
         self.cambiado.emit()
 
     def aplicar_hardware(
-        self, cfg: ConfiguracionVM, *, origen: bool = True, asistente: bool = False
+        self,
+        cfg: ConfiguracionVM,
+        *,
+        origen: bool = True,
+        asistente: bool = False,
+        conservar_fase_c: bool = False,
     ) -> None:
         """Aplica SOLO el hardware de ``cfg`` (perfil de máquina o lote guardado) y sus opciones.
 
@@ -706,6 +749,8 @@ class FormularioVM(QWidget):
         origen del SO de ``cfg`` y su detalle (un lote guardado, un perfil con origen sugerido).
         Con ``asistente`` (perfil con ``tipo_so``) se aplica además, una vez, el asistente de SO
         sobre lo cargado; un lote guardado ya trae lo que el usuario dejó y no se toca.
+        Con ``conservar_fase_c`` (perfiles: no guardan red del clon ni firewall, RF-C6.2) no se
+        tocan esas dos secciones; sin él (lote guardado) se cargan las de ``cfg``.
         """
         self._base_asistente = None
         self._ocupado = True
@@ -734,7 +779,7 @@ class FormularioVM(QWidget):
             self.tabla_discos.establecer_controlador(cfg.controlador_scsi)
             self.tabla_discos.establecer_discos(cfg.discos, conservar_ausentes=True)
             self.tabla_redes.establecer_redes(cfg.redes, conservar_ausentes=True)
-            self._escribir_opciones(cfg)
+            self._escribir_opciones(cfg, fase_c=not conservar_fase_c)
             self._efi_ausente = None
             self._poblar_efi(cfg.storage_efi, conservar_ausente=True)
             self._actualizar_total_cpu()
@@ -870,7 +915,15 @@ class FormularioVM(QWidget):
             cloudinit=self._cloudinit_actual(),
             esperar_ip=self.chk_esperar_ip.isChecked(),
             plazo_ip_s=self._plazo_ip(),
+            red_clon=self._red_clon_actual(),
+            firewall=self.seccion_firewall.firewall(),
         )
+
+    def _red_clon_actual(self) -> RedClon | None:
+        """La red del clon solo existe al clonar una plantilla (V-C51); si no, no se envía."""
+        if self.selector_origen.origen != OrigenSO.CLONAR_PLANTILLA:
+            return None
+        return self.seccion_red_clon.red_clon()
 
     def _cloudinit_actual(self) -> ConfigCloudInit | None:
         """Cloud-init solo existe al clonar una plantilla; con otro origen no se envía (V-B39)."""
@@ -892,8 +945,11 @@ class FormularioVM(QWidget):
 
     # --- Opciones de la fase A -------------------------------------------------------------
 
-    def _escribir_opciones(self, cfg: ConfiguracionVM) -> None:
-        """Vuelca en los widgets las opciones de la fase A de ``cfg`` y aplica la disponibilidad."""
+    def _escribir_opciones(self, cfg: ConfiguracionVM, *, fase_c: bool = True) -> None:
+        """Vuelca en los widgets las opciones de la fase A de ``cfg`` y aplica la disponibilidad.
+
+        Con ``fase_c`` ``False`` no toca el firewall ni la red del clon (perfiles).
+        """
         previo, self._ocupado = self._ocupado, True
         try:
             self.txt_orden.setText("" if cfg.arranque_orden is None else str(cfg.arranque_orden))
@@ -911,12 +967,15 @@ class FormularioVM(QWidget):
                     cloudinit=cfg.cloudinit,
                     esperar_ip=cfg.esperar_ip,
                     plazo_ip_s=cfg.plazo_ip_s,
-                )
+                    firewall=cfg.firewall,
+                    red_clon=cfg.red_clon,
+                ),
+                fase_c=fase_c,
             )
         finally:
             self._ocupado = previo
 
-    def _escribir_opciones_lote(self, o: OpcionesLote) -> None:
+    def _escribir_opciones_lote(self, o: OpcionesLote, *, fase_c: bool = True) -> None:
         self.chk_encender.setChecked(o.encender)
         self.chk_arranque_auto.setChecked(o.arranque_auto)
         self.chk_notas_origen.setChecked(o.notas_origen)
@@ -929,6 +988,10 @@ class FormularioVM(QWidget):
         self.seccion_cloudinit.aplicar(o.cloudinit)
         self.chk_esperar_ip.setChecked(o.esperar_ip)
         self.txt_plazo_ip.setText(str(o.plazo_ip_s))
+        if fase_c:
+            # Fase C: firewall de la máquina y red del clon (``None`` = apagados).
+            self.seccion_firewall.aplicar(o.firewall)
+            self.seccion_red_clon.aplicar(o.red_clon)
         self._notas_forzadas_off = False
         self._actualizar_notas_usuario()
         self._reaplicar_disponibilidad()
@@ -1053,6 +1116,90 @@ class FormularioVM(QWidget):
         self.seccion_cloudinit.establecer_snippets(listados, pendientes=pendientes)
         self.seccion_cloudinit.establecer_info(info, disponibilidad)
         self._actualizar_esperar_ip()
+        self._sincronizar_fase_c()
+
+    # --- Fase C: red del clon, firewall y VNets ---------------------------------------------
+
+    def establecer_disponibilidad_c(
+        self, estados: Mapping[OpcionC, EstadoOpcion], caps: Capacidades | None = None
+    ) -> None:
+        """Habilita o deshabilita las opciones de la fase C según privilegios y versión
+        (``disponibilidad_fase_c``) y guarda las capacidades para el texto de V-C13. Es barato:
+        se puede llamar en cada revalidación (ignora lo que no cambió)."""
+        if dict(estados) == self._estados_c and caps == self._caps_c:
+            return
+        cambio_caps = caps != self._caps_c
+        self._estados_c = dict(estados)
+        self._caps_c = caps
+        self.seccion_red_clon.establecer_disponibilidad(estados.get(OpcionC.RED_CLON))
+        self.seccion_firewall.establecer_disponibilidad(
+            estados.get(OpcionC.FIREWALL), estados.get(OpcionC.FIREWALL_GENERAL)
+        )
+        if cambio_caps and self._inv is not None and self._nodo_actual:
+            self._ocupado = True
+            try:
+                self._cargar_recursos_nodo(self._nodo_actual)
+            finally:
+                self._ocupado = False
+
+    def establecer_grupos_firewall(self, lectura: LecturaGrupos) -> None:
+        """Resultado de leer los grupos de seguridad (lo pidió ``pide_grupos_firewall``)."""
+        self.seccion_firewall.establecer_grupos(lectura)
+
+    def establecer_reglas_grupo(
+        self,
+        grupo: str,
+        reglas: tuple[ReglaFirewall, ...] | None,
+        error: ErrorProxLaunch | None,
+    ) -> None:
+        """Contenido de un grupo (lo pidió ``pide_reglas_grupo``); solo lectura."""
+        self.seccion_firewall.establecer_reglas(grupo, reglas, error)
+
+    def _plantilla_elegida(self) -> Plantilla | None:
+        """La plantilla del clon que ya está en el catálogo (por VMID o por nombre único)."""
+        inv = self._inv
+        if (
+            inv is None
+            or inv.catalogo is None
+            or self.selector_origen.origen != OrigenSO.CLONAR_PLANTILLA
+        ):
+            return None
+        det = self.configuracion().detalle_origen
+        if not isinstance(det, DetalleClon):
+            return None
+        ref = det.plantilla
+        plantillas = inv.catalogo.plantillas or ()
+        if ref.vmid is not None:
+            return next((p for p in plantillas if p.vmid == ref.vmid), None)
+        por_nombre = [p for p in plantillas if ref.nombre and p.nombre == ref.nombre]
+        return por_nombre[0] if len(por_nombre) == 1 else None
+
+    def _sincronizar_fase_c(self) -> None:
+        """Reparte lo que une las secciones: las tarjetas de la plantilla a «Red de las copias»,
+        las tarjetas finales a cloud-init (B1) y si hay DHCP al firewall. Es idempotente: solo
+        emite ``cambiado`` si alguna sección lo hace."""
+        plantilla = self._plantilla_elegida()
+        detalle = plantilla.detalle if plantilla is not None else None
+        self.seccion_red_clon.establecer_tarjetas(detalle.tarjetas if detalle is not None else None)
+        red = self.seccion_red_clon.red_clon()
+        clon = self.selector_origen.origen == OrigenSO.CLONAR_PLANTILLA
+        if clon and red is not None and detalle is not None:
+            finales: tuple[int, ...] | None = tarjetas_finales(
+                self.seccion_red_clon.indices_actuales(), red
+            )
+        else:
+            finales = None
+        self.seccion_cloudinit.establecer_tarjetas_finales(finales)
+        ci = self._cloudinit_actual()
+        self.seccion_firewall.establecer_hay_dhcp(
+            ci is not None and any(t.modo == ModoTarjeta.DHCP for t in ci.tarjetas)
+        )
+
+    def _al_cambiar_red_clon(self) -> None:
+        if self._ocupado:
+            return
+        self._sincronizar_fase_c()
+        self._al_editar()
 
     def ceder_secreto(self) -> None:
         """Al lanzar un lote: su ``Secreto`` pasa al lote (no se olvida) y los campos se vacían."""
@@ -1338,7 +1485,7 @@ class FormularioVM(QWidget):
                 ).format(recurso=sid, nodo=nodo)
             )
         self.tabla_discos.mostrar_aviso_nodo("\n".join(avisos))
-        perdidas = self.tabla_redes.establecer_bridges(redes)
+        perdidas = self._establecer_redes_disponibles(nodo, redes)
         self.tabla_redes.mostrar_aviso_nodo(
             "\n".join(
                 self.tr("La red «{recurso}» no existe en el nodo «{nodo}». Elige otra.").format(
@@ -1350,12 +1497,76 @@ class FormularioVM(QWidget):
         self._poblar_efi(self.combo_efi.currentData())
         self._actualizar_sin_disco()
 
-    def actualizar_recursos_nodo(self, nodo: str, storages: Sequence, bridges: Sequence) -> None:
-        """Guarda los recursos releídos de un nodo y los recarga si es el efectivo."""
+    def _establecer_redes_disponibles(self, nodo: str, bridges: Sequence) -> list[str]:
+        """Bridges y VNets del nodo (o la intersección de los nodos del lote, RF-C2.3) para la
+        tabla de redes y para la red del clon. Devuelve las redes elegidas que ya no existen."""
+        inv = self._inv
+        vnets: tuple[RedVirtual, ...] = ()
+        ocultas = 0
+        sin_leer: tuple[str, ...] = ()
+        sdn_leido = False
+        sdn_fallido: str | None = None
+        if inv is not None:
+            if len(self._nodos_destino) > 1:
+                inter = interseccion_redes(inv, self._nodos_destino)
+                bridges, vnets = inter.bridges, inter.vnets
+                ocultas, sin_leer = inter.ocultas, inter.sin_leer
+                sdn_leido = not sin_leer
+            else:
+                vnets = tuple(inv.redes_sdn.get(nodo, ()))
+                sdn_leido = nodo in inv.redes_sdn and nodo not in inv.errores_sdn
+                if nodo in inv.errores_sdn:
+                    sdn_fallido = nodo
+        caps = self._caps_c
+        incluido = caps.tiene(Funcion.SDN_INCLUIDO) if caps is not None else True
+        perdidas = self.tabla_redes.establecer_bridges(
+            bridges,
+            vnets,
+            sdn_leido=sdn_leido,
+            sdn_incluido=incluido,
+            ocultas=ocultas,
+            sin_leer=sin_leer,
+            sdn_fallido=sdn_fallido,
+        )
+        self.seccion_red_clon.establecer_redes(bridges, vnets)
+        return perdidas
+
+    def establecer_nodos_destino(self, nodos: Sequence[str]) -> None:
+        """Nodos destino del lote (un lote repartido entre varios nodos solo ofrece las redes que
+        existen en todos, RF-C2.3). Con uno o ninguno se usa el nodo de referencia."""
+        nuevos = tuple(sorted(set(nodos)))
+        if nuevos == self._nodos_destino:
+            return
+        self._nodos_destino = nuevos
+        if self._inv is not None and self._nodo_actual:
+            self._ocupado = True
+            try:
+                self._cargar_recursos_nodo(self._nodo_actual)
+            finally:
+                self._ocupado = False
+            self.cambiado.emit()
+
+    def actualizar_recursos_nodo(
+        self,
+        nodo: str,
+        storages: Sequence,
+        bridges: Sequence,
+        redes: RedesNodo | None = None,
+    ) -> None:
+        """Guarda los recursos releídos de un nodo y los recarga si es el efectivo.
+
+        ``redes`` (fase C) trae las VNets leídas con «Recargar nodo»; ``None`` deja las que había.
+        """
         if self._inv is None:
             return
         self._inv.storages[nodo] = tuple(storages)
         self._inv.bridges[nodo] = tuple(bridges)
+        if redes is not None:
+            self._inv.redes_sdn[nodo] = redes.vnets
+            if redes.error is not None:
+                self._inv.errores_sdn[nodo] = redes.error
+            else:
+                self._inv.errores_sdn.pop(nodo, None)
         if nodo == self._nodo_actual:
             self._ocupado = True
             try:
@@ -1510,6 +1721,8 @@ class FormularioVM(QWidget):
         for caja in (self._caja_firmware, self._caja_computo, self._caja_discos, self._caja_red):
             caja.setVisible(not clon)
         self._caja_cloudinit.setVisible(clon)  # cloud-init solo al clonar (RF-B1.2)
+        self.seccion_red_clon.setVisible(clon)  # red del clon solo al clonar (RF-C4.1)
+        self._sincronizar_fase_c()
         self._nota_clon.setVisible(clon)
         self._nota_importar.setVisible(importar)
         if importar and self.chk_sin_disco.isChecked():
@@ -1638,6 +1851,8 @@ class FormularioVM(QWidget):
         self.fila_ctrl.mostrar_error(texto("controlador_scsi"))
         self._aplicar_problemas_opciones(problemas)
         self.seccion_cloudinit.mostrar_problemas(problemas)
+        self.seccion_red_clon.mostrar_problemas(problemas)
+        self.seccion_firewall.mostrar_problemas(problemas)
         self.fila_efi.marcar_tocado()
         self.fila_efi.mostrar_error(texto("storage_efi"))
         self.tabla_discos.aplicar_problemas(problemas)

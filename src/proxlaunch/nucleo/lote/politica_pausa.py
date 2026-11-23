@@ -23,9 +23,11 @@ CODIGOS_GLOBALES = frozenset(
     }
 )
 PRIVILEGIO_CREAR = "VM.Allocate"
-# Pasos B (``params["ajuste"]``) cuyo fallo deja la MV PARCIAL sin pausar el lote, ni siquiera por
-# repetición (arquitectura §9.7, QA-M2): cloud-init y la contraseña.
-AJUSTES_SIN_PAUSA = frozenset({"cloudinit", "contrasena"})
+# Pasos B y C (``params["ajuste"]``) cuyo fallo deja la MV PARCIAL sin pausar el lote, ni siquiera
+# por repetición (arquitectura §9.7, QA-M2, DT-C8): cloud-init, contraseña, red del clon y firewall.
+AJUSTES_SIN_PAUSA = frozenset(
+    {"cloudinit", "contrasena", "red", "firewall_opciones", "firewall_regla"}
+)
 
 
 def es_error_global(error: ErrorProxLaunch) -> bool:

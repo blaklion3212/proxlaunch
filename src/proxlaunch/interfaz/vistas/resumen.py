@@ -22,6 +22,7 @@ from proxlaunch.interfaz.textos import (
     texto_resumen_origen,
     texto_tipo_so,
 )
+from proxlaunch.interfaz.textos_c import lineas_opciones_fase_c
 from proxlaunch.interfaz.vistas.campos import mensaje, poner_mensaje
 from proxlaunch.interfaz.vistas.formulario_vm import mib_a_texto_gib
 from proxlaunch.nucleo.modelos.catalogo import PermisosEfectivos
@@ -260,6 +261,10 @@ class ResumenVM(QGroupBox):
             lineas.append(f"<b>{e(nombre)}:</b> {e(valor)}")
         # Fase B: cloud-init y espera de IP (la contraseña sale como «definida», nunca su valor).
         for nombre, valor in lineas_opciones_fase_b(cfg, avanzado=avanzado):
+            lineas.append(f"<b>{e(nombre)}:</b> {e(valor)}")
+        # Fase C: red de la copia y firewall (solo si valen algo distinto del predeterminado). La
+        # tarjeta ilegible sin firewall sale matizada: nunca «activado» a secas (§9).
+        for nombre, valor in lineas_opciones_fase_c(cfg, problemas):
             lineas.append(f"<b>{e(nombre)}:</b> {e(valor)}")
         if not avanzado:
             ocultas = (

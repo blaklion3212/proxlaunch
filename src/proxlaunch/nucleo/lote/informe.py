@@ -16,6 +16,7 @@ from urllib.parse import quote
 
 from proxlaunch.nucleo.agente.modelos import EstadoIp, ResultadoIp
 from proxlaunch.nucleo.errores import ErrorProxLaunch
+from proxlaunch.nucleo.firewall.modelos import usa_firewall
 from proxlaunch.nucleo.lote.constantes import LINEAS_LOG_TAREA
 from proxlaunch.nucleo.lote.libro import Libro
 from proxlaunch.nucleo.lote.modelos import (
@@ -29,6 +30,13 @@ from proxlaunch.nucleo.lote.modelos import (
 )
 from proxlaunch.nucleo.modelos.vm import ConfiguracionVM
 from proxlaunch.nucleo.reloj import Reloj
+from proxlaunch.nucleo.servicios.creacion import (
+    AJUSTE_FIREWALL_OPCIONES,
+    AJUSTE_FIREWALL_REGLA,
+    AJUSTE_RED,
+    AVISO_AJUSTE_PENDIENTE,
+    ajustes_planeados,
+)
 from proxlaunch.nucleo.transferencias.modelos import RegistroTransferencia
 
 _CON_PROBLEMA = frozenset({EstadoMV.CON_AVISOS, EstadoMV.ERROR, EstadoMV.PARCIAL})
@@ -292,3 +300,37 @@ def resumen_ips(entradas: Sequence[EntradaLibro]) -> ResumenIps:
         else:
             sin_ip += 1
     return ResumenIps(con_ip, sin_ip, no_aplicable)
+
+
+def ajustes_pendientes_de(entrada: EntradaLibro) -> frozenset[str]:
+    """Nombres de ajuste de los avisos ``ajuste_pendiente:*`` de la entrada."""
+    prefijo = f"{AVISO_AJUSTE_PENDIENTE}:"
+    return frozenset(a.removeprefix(prefijo) for a in entrada.avisos if a.startswith(prefijo))
+
+
+def ajustes_aplicados(entrada: EntradaLibro) -> tuple[str, ...]:
+    """Ajustes de B y C que el plan de la MV pedía y que ya constan aplicados (CA-C0.7.2).
+
+    ``ajustes_planeados(cfg)`` menos los ``ajuste_pendiente:*``, en el orden de aplicación. Solo
+    tiene sentido con la MV creada (``post_intentado``); si no se envió nada, es ``()``.
+    """
+    if not entrada.post_intentado:
+        return ()
+    pendientes = ajustes_pendientes_de(entrada)
+    return tuple(a for a in ajustes_planeados(entrada.elemento.cfg) if a not in pendientes)
+
+
+def riesgo_firewall_parcial(entrada: EntradaLibro) -> bool:
+    """``True`` si la MV quedó ``PARCIAL`` con el firewall a medias (CA-C3.8.5).
+
+    Con ``firewall=1`` ya puesto en las tarjetas pero sin las opciones o la regla aplicadas, la MV
+    usa las políticas por defecto de Proxmox y puede quedar sin conexión entrante: la interfaz
+    añade el texto de riesgo en llano. También si lo pendiente es la red (el ``firewall=1`` puede
+    no estar en todas las tarjetas).
+    """
+    if entrada.estado != EstadoMV.PARCIAL or not usa_firewall(entrada.elemento.cfg.firewall):
+        return False
+    return bool(
+        ajustes_pendientes_de(entrada)
+        & {AJUSTE_RED, AJUSTE_FIREWALL_OPCIONES, AJUSTE_FIREWALL_REGLA}
+    )

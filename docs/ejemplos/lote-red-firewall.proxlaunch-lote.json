@@ -1,0 +1,83 @@
+{
+  "app_version": "0.8.0",
+  "formato": "proxlaunch.lote",
+  "homogeneo": {
+    "cantidad": 4,
+    "config": {
+      "ballooning": null,
+      "con_disco": true,
+      "controlador_scsi": "virtio-scsi-single",
+      "cores": 2,
+      "detalle_origen": {
+        "ajustes": {
+          "cores": null,
+          "disco_gib": null,
+          "memoria_mib": null,
+          "sockets": null,
+          "tipo_cpu": null
+        },
+        "modo": "automatico",
+        "plantilla": {
+          "nombre": "plantilla-debian12",
+          "vmid": null
+        },
+        "storage_destino": null
+      },
+      "discos": [],
+      "firewall": {
+        "activo": true,
+        "dhcp": "auto",
+        "grupo": "web",
+        "politica_entrada": "bloquear",
+        "politica_salida": "permitir"
+      },
+      "firmware": "seabios",
+      "memoria_mib": 2048,
+      "origen": "clonar_plantilla",
+      "red_clon": {
+        "modo": "personalizar",
+        "tarjetas": [
+          {
+            "accion": "cambiar",
+            "bridge": "vmbr1",
+            "indice": 0,
+            "vlan": 20
+          },
+          {
+            "accion": "añadir",
+            "bridge": "vmbr0",
+            "indice": 1,
+            "modelo": "virtio"
+          }
+        ]
+      },
+      "redes": [
+        {
+          "bridge": "vmbr0",
+          "modelo": "virtio",
+          "vlan": null
+        }
+      ],
+      "sockets": 1,
+      "storage_efi": null,
+      "tipo_cpu": "x86-64-v2-AES"
+    },
+    "destino": {
+      "algoritmo": "equilibrado",
+      "modo": "automatico",
+      "nodos": []
+    },
+    "etiquetar": true,
+    "patron": {
+      "inicio": 1,
+      "prefijo": "srv-web",
+      "relleno": 2,
+      "separador": "-"
+    },
+    "vmid_inicial": null
+  },
+  "nombre": "Servidores web con red y firewall",
+  "tipo": "homogeneo",
+  "version_formato": 5,
+  "version_proxmox": "9.2"
+}

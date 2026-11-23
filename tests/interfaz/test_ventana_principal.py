@@ -17,6 +17,7 @@ from proxlaunch.interfaz.ventana_principal import VentanaPrincipal
 from proxlaunch.nucleo.errores import CodigoError, ErrorProxLaunch
 from proxlaunch.nucleo.modelos.tarea import Desenlace
 from proxlaunch.nucleo.persistencia.preferencias import Modo
+from proxlaunch.nucleo.red.redes_nodo import RedesNodo
 from proxlaunch.nucleo.servicios.conexion import Aviso, CodigoAviso
 
 from .apoyo import UPID, CreacionFalsa, perfil, resultado, sesion_falsa
@@ -49,7 +50,14 @@ def entorno(qtbot, deps, inv_cluster, monkeypatch):
     def recargar(sesion, nodo):
         env_holder["env"].llamadas.append(("recargar", nodo))
         inv = env_holder["env"].inv
-        return nodo, list(inv.storages[nodo]), list(inv.bridges[nodo])
+        # Fase C: (nodo, con_images, bridges, todos, redes)
+        return (
+            nodo,
+            list(inv.storages[nodo]),
+            list(inv.bridges[nodo]),
+            list(inv.storages[nodo]),
+            RedesNodo(vnets=()),
+        )
 
     def comprobar(sesion, vmid):
         env = env_holder["env"]
@@ -59,7 +67,16 @@ def entorno(qtbot, deps, inv_cluster, monkeypatch):
     def reintentar(sesion, nodos):
         env = env_holder["env"]
         env.llamadas.append(("reintentar", tuple(nodos)))
-        return {n: (list(env.inv.storages[n]), list(env.inv.bridges[n])) for n in nodos}, {}
+        # Fase C: cada nodo recuperado trae (con_images, bridges, todos, redes).
+        return {
+            n: (
+                list(env.inv.storages[n]),
+                list(env.inv.bridges[n]),
+                list(env.inv.storages[n]),
+                RedesNodo(vnets=()),
+            )
+            for n in nodos
+        }, {}
 
     monkeypatch.setattr(vp, "descubrir_y_comprobar_permisos", descubrir)
     monkeypatch.setattr(vp, "recargar_nodo", recargar)

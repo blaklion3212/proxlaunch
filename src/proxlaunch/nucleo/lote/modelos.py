@@ -12,6 +12,7 @@ from proxlaunch.nucleo.errores import ErrorProxLaunch
 from proxlaunch.nucleo.modelos.catalogo import CatalogoServidor
 from proxlaunch.nucleo.modelos.vm import ConfiguracionVM
 from proxlaunch.nucleo.opciones.modelos import OpcionesLote, OpcionesParciales
+from proxlaunch.nucleo.red.modelos import TarjetaFinal
 from proxlaunch.nucleo.transferencias.modelos import RegistroTransferencia
 
 
@@ -233,6 +234,10 @@ class EntradaLibro:
     log_tarea: tuple[str, ...] = ()
     avisos: tuple[str, ...] = ()  # códigos de aviso (p. ej. "creada_tras_comprobar")
     ip: ResultadoIp | None = None  # fase B: resultado de la espera de IP (None = no aplica)
+    red_final: tuple[TarjetaFinal, ...] = ()  # fase C: resultado por tarjeta de red del clon
+    # Fase C: MAC original de cada tarjeta del clon, leída antes de tocar su red ((índice, MAC)).
+    # Hace idempotente «MAC nueva» al reintentar los ajustes (QA-C-M1).
+    macs_originales: tuple[tuple[int, str], ...] = ()
 
 
 class MotivoPausa(StrEnum):
@@ -284,6 +289,10 @@ class AccionPeticion(StrEnum):
     CLOUDINIT = "cloudinit"  # fase B: PUT …/config con los parámetros de cloud-init
     CONTRASENA = "contrasena"  # fase B: PUT …/config con solo cipassword (simulado: enmascarado)
     SONDEAR_IP = "sondear_ip"  # fase B: espera de IP con el agente (simulado)
+    LEER_CONFIG = "leer_config"  # fase C: GET …/config del clon antes de la red (simulado)
+    RED = "red"  # fase C: PUT …/config con netN/delete
+    FIREWALL_OPCIONES = "firewall_opciones"  # fase C: PUT …/firewall/options
+    FIREWALL_REGLA = "firewall_regla"  # fase C: POST …/firewall/rules
 
 
 @dataclass(frozen=True)

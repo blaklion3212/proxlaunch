@@ -31,6 +31,11 @@ from proxlaunch.interfaz.modelos_tabla_origen import (
 )
 from proxlaunch.interfaz.tema.paleta import TOKENS_CLARO, TOKENS_OSCURO
 from proxlaunch.interfaz.textos import texto_disponibilidad, texto_via
+from proxlaunch.interfaz.textos_c import (
+    VIAS_FASE_C,
+    texto_estado_fila_c,
+    texto_explicacion_fila_c,
+)
 from proxlaunch.nucleo.capacidades import Capacidades
 from proxlaunch.nucleo.origen.capacidades_origen import (
     CapacidadesOrigen,
@@ -49,6 +54,8 @@ _ORDEN_VIAS: tuple[Via, ...] = (
     Via.CLONAR,
     Via.ORDEN_ARRANQUE,
     Via.AMPLIAR_DISCO,
+    # Fase C (0.8): lotes en el servidor, redes virtuales, firewall y red de las copias.
+    *VIAS_FASE_C,
 )
 _TOKEN_DISPONIBILIDAD = {
     Disponibilidad.SI: "exito",
@@ -68,7 +75,10 @@ def texto_faltante_para_administrador(caps: CapacidadesOrigen) -> str:
         estado = caps.vias.get(via)
         if estado is None or estado.disponibilidad != Disponibilidad.NO:
             continue
-        lineas.append(f"- {texto_via(via)}: {texto_explicacion_via(estado)}")
+        explicacion = (
+            texto_explicacion_fila_c(via, estado) if via in VIAS_FASE_C else ""
+        ) or texto_explicacion_via(estado)
+        lineas.append(f"- {texto_via(via)}: {explicacion}")
     return "\n".join(lineas)
 
 
@@ -211,12 +221,19 @@ class DialogoCapacidades(QDialog):
         estado = caps.vias[via]
         disp = estado.disponibilidad
         simbolo = simbolo_disponibilidad(disp)
-        item_estado = QTableWidgetItem(f"{simbolo} {texto_disponibilidad(disp)}")
+        es_c = via in VIAS_FASE_C
+        # Las filas de la fase C dicen «Sí», «No» o «No se pudo comprobar» (RF-C5.2).
+        texto_estado = texto_estado_fila_c(estado) if es_c else texto_disponibilidad(disp)
+        if es_c and estado.codigo is not None and disp == Disponibilidad.CON_AVISO:
+            simbolo = simbolo_disponibilidad(Disponibilidad.NO)
+        item_estado = QTableWidgetItem(f"{simbolo} {texto_estado}")
         item_estado.setForeground(QColor(self._tokens[_TOKEN_DISPONIBILIDAD[disp]]))
-        motivo = texto_explicacion_via(estado)
+        motivo = (texto_explicacion_fila_c(via, estado) if es_c else "") or texto_explicacion_via(
+            estado
+        )
         item_via = QTableWidgetItem(texto_via(via))
         item_motivo = QTableWidgetItem(motivo)
-        accesible = f"{texto_via(via)}: {texto_disponibilidad(disp)}"
+        accesible = f"{texto_via(via)}: {texto_estado}"
         if motivo:
             accesible += f". {motivo}"
         for item in (item_via, item_estado, item_motivo):

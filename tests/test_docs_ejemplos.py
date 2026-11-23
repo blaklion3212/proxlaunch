@@ -48,12 +48,14 @@ CSV_VALIDOS = {
     "mvs-escrito-a-mano.csv": 3,
     "mvs-opciones.csv": 4,
     "mvs-cloudinit.csv": 4,
+    "mvs-red-firewall.csv": 4,
 }
 LOTES = (
     "lote-homogeneo.proxlaunch-lote.json",
     "lote-por-filas.proxlaunch-lote.json",
     "lote-con-opciones.proxlaunch-lote.json",
     "lote-cloudinit.proxlaunch-lote.json",
+    "lote-red-firewall.proxlaunch-lote.json",
 )
 PERFILES = "perfiles-ejemplo.proxlaunch-perfiles.json"
 
@@ -262,7 +264,7 @@ def _archivos_ejemplo() -> list[Path]:
     return sorted(p for p in EJEMPLOS.iterdir() if p.is_file())
 
 
-def test_hay_los_trece_archivos_esperados() -> None:
+def test_hay_los_quince_archivos_esperados() -> None:
     nombres = {p.name for p in _archivos_ejemplo()}
     assert nombres == {"LEEME.md", "mvs-con-errores.csv", *CSV_VALIDOS, *LOTES, PERFILES}
 
@@ -355,3 +357,21 @@ def test_recoleccion_por_defecto_deselecciona_todo_el_generador() -> None:
     por_defecto = _pytest_recolectar(str(CAPTURAS))
     assert "test_capturas_guia.py::" not in por_defecto.stdout
     assert f"no tests collected ({total} deselected)" in por_defecto.stdout
+
+
+def test_lote_red_firewall_es_formato_5_con_firewall_y_red_del_clon() -> None:
+    leido = leer_archivo_lote(EJEMPLOS / "lote-red-firewall.proxlaunch-lote.json")
+    assert leido.avisos == ()
+    cfg = leido.lote.definicion.plantilla
+    assert cfg.firewall is not None and cfg.firewall.activo
+    assert cfg.red_clon is not None
+    datos = json.loads((EJEMPLOS / "lote-red-firewall.proxlaunch-lote.json").read_text("utf-8"))
+    assert datos["version_formato"] == 5
+
+
+def test_csv_red_firewall_usa_las_columnas_de_la_fase_c() -> None:
+    res = _importar("mvs-red-firewall.csv")
+    assert [f.nombre for f in res.filas if f.estado.value == "con_error"] == []
+    fw = {f.nombre: f.opciones.firewall for f in res.filas if f.opciones is not None}
+    assert fw["lab-01"] is not None and fw["lab-01"].activo is False
+    assert fw["web-01"] is not None and fw["web-01"].grupo == "web"

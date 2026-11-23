@@ -17,6 +17,7 @@ from typing import TYPE_CHECKING, Any, TypeVar
 from proxlaunch.nucleo.api.cliente import ClienteProxmox
 from proxlaunch.nucleo.api.traductor_errores import CODIGOS_DE_RED
 from proxlaunch.nucleo.errores import CodigoError, ErrorProxLaunch
+from proxlaunch.nucleo.firewall.lectura import leer_info_firewall
 from proxlaunch.nucleo.lote.constantes import MAX_CONSULTAS_SIMULTANEAS
 from proxlaunch.nucleo.modelos.catalogo import (
     CatalogoServidor,
@@ -270,7 +271,9 @@ class ServicioCatalogo:
         Con ``necesidades.vacias`` y sin ``opciones`` no hace ninguna petición. Los permisos se
         reutilizan de ``inv.catalogo`` (sin GET nuevo). Con ``opciones=True`` (fase A) lee además
         ``GET /pools`` y ``GET /cluster/options`` (dos GET por lectura, no por MV); sin ello se
-        conservan los pools y la política que ya traía ``inv.catalogo``.
+        conservan los pools y la política que ya traía ``inv.catalogo``. Fase C: con
+        ``necesidades.firewall`` lee además los grupos, el firewall general, el contenido de los
+        grupos elegidos y el firewall de cada plantilla usada; sin él conserva el anterior.
         """
         permisos = inv.catalogo.permisos if inv.catalogo is not None else None
         listados: list[ListadoStorage] = []
@@ -306,6 +309,15 @@ class ServicioCatalogo:
                 "politica_etiquetas": previo.politica_etiquetas,
                 "politica_etiquetas_fallida": previo.politica_etiquetas_fallida,
             }
+        # Fase C (DT-C11): lecturas del firewall solo si alguna fila usa C3; sin C3, cero GET y se
+        # conserva lo que ya hubiera.
+        if necesidades.firewall:
+            elegidas = [p for p in plantillas or () if p.nombre in necesidades.firewall_plantillas]
+            extra["firewall"] = leer_info_firewall(
+                self._cliente, permisos, necesidades.grupos_firewall, elegidas
+            )
+        elif previo is not None:
+            extra["firewall"] = previo.firewall
         return CatalogoServidor(
             permisos=permisos,
             listados=tuple(listados),

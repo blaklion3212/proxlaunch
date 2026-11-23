@@ -62,6 +62,12 @@ ALIAS = {
     "ci_snippet_red": ["cicustom_network", "snippet_network"],
     "ci_snippet_meta": ["cicustom_meta", "snippet_meta"],
     "esperar_ip": ["wait_ip", "wait_for_ip"],
+    # fase C (RF-C6.3)
+    "reescribir_red": ["rewrite_net", "red_clon"],
+    "cortafuegos": ["firewall"],
+    "grupo_seguridad": ["security_group", "firewall_group"],
+    "politica_entrada": ["policy_in"],
+    "politica_salida": ["policy_out"],
     **{f"disco{n}": [] for n in range(2, 9)},
     **{f"almacenamiento{n}": [f"storage{n}"] for n in range(2, 9)},
 }
@@ -95,6 +101,10 @@ def test_la_tabla_de_columnas_es_la_de_los_requisitos():
         "ci_snippet_vendor",
         "ci_snippet_red",
         "ci_snippet_meta",
+        # fase C (RF-C6.3)
+        "reescribir_red",
+        "politica_entrada",
+        "politica_salida",
     }
     assert len(canonicas) == len(COLUMNAS)  # sin duplicados
 
@@ -109,6 +119,8 @@ def test_el_encabezado_de_la_plantilla_usa_nombres_canonicos():
         # Fase B (CA-B6.3.8): cloud-init y espera de IP; sin ``ci_contrasena``.
         "ci_usuario", "ci_claves", "ci_ip", "ci_puerta", "ci_dns", "ci_dominio", "ci_actualizar",  # noqa: E501
         "ci_snippet_usuario", "ci_snippet_vendor", "ci_snippet_red", "ci_snippet_meta", "esperar_ip",  # noqa: E501
+        # Fase C (CA-C6.3.7): red del clon y firewall.
+        "reescribir_red", "cortafuegos", "grupo_seguridad", "politica_entrada", "politica_salida",  # noqa: E501
     )  # fmt: skip
     assert "ci_contrasena" not in ENCABEZADO_PLANTILLA
 

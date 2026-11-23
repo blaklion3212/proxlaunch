@@ -36,8 +36,8 @@ from proxlaunch.interfaz.textos_b import (
     texto_detalle_ip,
     texto_esperando_ips,
     texto_resumen_ips,
-    texto_tooltip_reintentar_ajustes,
 )
+from proxlaunch.interfaz.textos_c import texto_tooltip_reintentar_ajustes_c
 from proxlaunch.interfaz.vistas.campos import mensaje, poner_mensaje
 from proxlaunch.interfaz.vistas.detalles_tecnicos import DetallesTecnicos
 from proxlaunch.nucleo.agente.exportacion import lista_ips_texto
@@ -300,7 +300,7 @@ class ProgresoLote(QWidget):
         self.boton_reintentar_ajustes = QPushButton(
             QCoreApplication.translate("ProgresoLote", "Reintentar ajustes")
         )
-        self.boton_reintentar_ajustes.setToolTip(texto_tooltip_reintentar_ajustes())
+        self.boton_reintentar_ajustes.setToolTip(texto_tooltip_reintentar_ajustes_c())
         self.boton_informe = QPushButton(QCoreApplication.translate("ProgresoLote", "Informe"))
         self.boton_volver = QPushButton(
             QCoreApplication.translate("ProgresoLote", "Volver al formulario")

@@ -8,6 +8,7 @@ from typing import Any
 from proxlaunch.nucleo.cloudinit import serializacion as _serial_cloudinit
 from proxlaunch.nucleo.cloudinit.modelos import ConfigCloudInit, InfoCloudInitPlantilla
 from proxlaunch.nucleo.errores import CodigoError, ErrorProxLaunch
+from proxlaunch.nucleo.firewall.modelos import FirewallMV, firewall_a_dict, firewall_desde_dict
 from proxlaunch.nucleo.modelos.origen import (
     AjustesClon,
     DetalleClon,
@@ -19,6 +20,7 @@ from proxlaunch.nucleo.modelos.origen import (
     RefVolumen,
     TipoSO,
 )
+from proxlaunch.nucleo.red.modelos import RedClon, red_clon_a_dict, red_clon_desde_dict
 
 
 class Firmware(StrEnum):
@@ -245,6 +247,9 @@ class ConfiguracionVM:
     # CALCULADO por ``preparar_elemento`` con lo que trae la plantilla; nunca se serializa ni
     # cuenta en la igualdad.
     info_cloudinit: InfoCloudInitPlantilla | None = field(default=None, compare=False, repr=False)
+    # --- Fase C (0.8): al final; ``None`` = comportamiento de 0.7.0 ---
+    red_clon: RedClon | None = None  # red del clon (C4); solo con origen clonar
+    firewall: FirewallMV | None = None  # firewall de la máquina (C3)
 
     def __post_init__(self) -> None:
         # CA-18.2: cualquier origen distinto de "disco_vacio" es un error de validación.
@@ -328,6 +333,11 @@ class ConfiguracionVM:
             datos["cloudinit"] = _serial_cloudinit.a_dict(self.cloudinit)
         if self.esperar_ip or self.plazo_ip_s != PLAZO_IP_DEFECTO_S:
             datos["esperar_ip"] = {"activo": self.esperar_ip, "plazo_s": self.plazo_ip_s}
+        # Claves de la fase C: solo si existen (el formato de 0.7.0 no cambia).
+        if self.red_clon is not None:
+            datos["red_clon"] = red_clon_a_dict(self.red_clon)
+        if self.firewall is not None:
+            datos["firewall"] = firewall_a_dict(self.firewall)
         return datos
 
     @classmethod
@@ -339,6 +349,8 @@ class ConfiguracionVM:
         detalle = d.get("detalle_origen")
         cloudinit = d.get("cloudinit")
         espera = d.get("esperar_ip") or {}
+        red_clon = d.get("red_clon")
+        firewall = d.get("firewall")
         if not isinstance(espera, dict):
             raise ErrorProxLaunch(CodigoError.PARAMETRO_INVALIDO, {"campo": "esperar_ip"})
         return cls(
@@ -395,4 +407,6 @@ class ConfiguracionVM:
             cloudinit=None if cloudinit is None else _serial_cloudinit.desde_dict(cloudinit),
             esperar_ip=bool(espera.get("activo", False)),
             plazo_ip_s=espera.get("plazo_s", PLAZO_IP_DEFECTO_S),
+            red_clon=None if red_clon is None else red_clon_desde_dict(red_clon),
+            firewall=None if firewall is None else firewall_desde_dict(firewall),
         )

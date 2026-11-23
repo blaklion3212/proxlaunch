@@ -40,6 +40,7 @@ from proxlaunch.interfaz.trabajadores import (
 from proxlaunch.interfaz.vistas.selector_origen import PeticionFuente, SelectorOrigen
 from proxlaunch.nucleo.cloudinit.modelos import InfoCloudInitPlantilla
 from proxlaunch.nucleo.errores import CodigoError, ErrorProxLaunch
+from proxlaunch.nucleo.firewall.modelos import InfoFirewall
 from proxlaunch.nucleo.lote.filas import filas_efectivas
 from proxlaunch.nucleo.lote.modelos import DefinicionLote
 from proxlaunch.nucleo.modelos.catalogo import (
@@ -154,6 +155,8 @@ class ControladorOrigen(QObject):
         self._pools = PoolsServidor(EstadoPools.NO_LEIDO)
         self._politica_etiquetas: PoliticaEtiquetas | None = None
         self._politica_etiquetas_fallida = False
+        # Fase C: lecturas del firewall de «Comprobar» (DT-C11); se conservan al reconstruir.
+        self._firewall: InfoFirewall | None = None
         self._en_curso: set[object] = set()  # lecturas lanzadas y aún sin respuesta
         self._fallidas: set[object] = set()  # lecturas que fallaron: no se repiten solas
         self._necesidades_hechas: set[NecesidadesCatalogo] = set()
@@ -254,6 +257,9 @@ class ControladorOrigen(QObject):
             self._pools = previo.pools
             self._politica_etiquetas = previo.politica_etiquetas
             self._politica_etiquetas_fallida = previo.politica_etiquetas_fallida
+            self._firewall = previo.firewall
+        else:
+            self._firewall = None
         self._reiniciar_lecturas()
         self._reconstruir()
         self._recalcular_capacidades(self._nodo_caps)
@@ -286,6 +292,7 @@ class ControladorOrigen(QObject):
             politica_etiquetas=self._politica_etiquetas,
             politica_etiquetas_fallida=self._politica_etiquetas_fallida,
             snippets=tuple(self._snippets[k] for k in sorted(self._snippets)),
+            firewall=self._firewall,
         )
         inv.catalogo = catalogo
         return catalogo
@@ -546,6 +553,8 @@ class ControladorOrigen(QObject):
         self._pools = catalogo.pools
         self._politica_etiquetas = catalogo.politica_etiquetas
         self._politica_etiquetas_fallida = catalogo.politica_etiquetas_fallida
+        # Fase C: ``leer_para`` conserva lo previo si ninguna fila usa C3.
+        self._firewall = catalogo.firewall
         self._publicar()
 
     def _fallo_lectura(self, gen: int, clave: object, error: ErrorProxLaunch) -> None:

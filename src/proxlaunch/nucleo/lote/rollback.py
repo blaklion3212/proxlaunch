@@ -67,6 +67,8 @@ PRIVILEGIO_ENCENDIDO = "VM.PowerMgmt"
 PRIVILEGIO_OPCIONES = "VM.Config.Options"
 
 ObservadorRollback = Callable[[ResultadoRollback], None]
+# Regla de propiedad previa al borrado: ``(config, entrada, id_lote, etiquetado) -> bool``.
+ReglaPropiedad = Callable[[Mapping[str, Any], EntradaLibro, str, bool], bool]
 
 
 @dataclass(frozen=True)
@@ -158,7 +160,13 @@ class ServicioRollback:
         intervalo_s: float = INTERVALO_SONDEO_S,
         max_espera_s: float = MAX_ESPERA_S,
         tolerancia_red_s: float = TOLERANCIA_RED_S,
+        regla_propiedad: ReglaPropiedad = es_propia,
+        estados_conocidos: frozenset[str] | None = None,
     ) -> None:
+        self._regla_propiedad = regla_propiedad
+        # Con valor, solo esos estados cuentan como «conocidos» en la relectura previa al
+        # DELETE (inventario, BUG-C-P1-3); ``None`` mantiene el comportamiento de sesión.
+        self._estados_conocidos = estados_conocidos
         self._sesion = sesion
         self._reloj = reloj
         self._max_nodos = max(1, max_nodos)
@@ -231,7 +239,9 @@ class ServicioRollback:
             el = c.entrada.elemento
             try:
                 config = cliente.config_vm(el.nodo, el.vmid)
-                if config is None or not es_propia(config, c.entrada, id_lote, etiquetado):
+                if config is None or not self._regla_propiedad(
+                    config, c.entrada, id_lote, etiquetado
+                ):
                     continue
                 if config.get("lock"):
                     continue
@@ -420,6 +430,12 @@ class ServicioRollback:
             if omision is None:
                 estado_vm = cliente.estado_actual_vm(el.nodo, el.vmid)
                 omision = self._motivo_omision_lock(estado_vm, entrada)
+                if (
+                    omision is None
+                    and self._estados_conocidos is not None
+                    and str(estado_vm.get("status", "")).lower() not in self._estados_conocidos
+                ):
+                    omision = self._error(CodigoError.ROLLBACK_NO_PROPIA, entrada)
                 encendida = str(estado_vm.get("status", "")).lower() == "running"
             protegida = _verdadero(config.get("protection", 0))
             if omision is None:
@@ -658,7 +674,7 @@ class ServicioRollback:
         self, config: dict[str, Any], entrada: EntradaLibro, id_lote: str, etiquetado: bool
     ) -> ErrorProxLaunch | None:
         """Propiedad y ``lock`` (este último nunca se fuerza)."""
-        if not es_propia(config, entrada, id_lote, etiquetado):
+        if not self._regla_propiedad(config, entrada, id_lote, etiquetado):
             return self._error(CodigoError.ROLLBACK_NO_PROPIA, entrada)
         if config.get("lock"):
             return self._error(CodigoError.ROLLBACK_BLOQUEADA, entrada)

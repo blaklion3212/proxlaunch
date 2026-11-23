@@ -55,6 +55,7 @@ from proxlaunch.interfaz.dialogos.guardar_perfil import DialogoGuardarPerfil
 from proxlaunch.interfaz.dialogos.guia_token import DialogoGuiaToken
 from proxlaunch.interfaz.dialogos.importar_csv import DialogoImportarCsv
 from proxlaunch.interfaz.dialogos.informe import DialogoInforme
+from proxlaunch.interfaz.dialogos.inventario_lotes import DialogoInventarioLotes
 from proxlaunch.interfaz.dialogos.lote_no_encaja import PanelLoteNoEncaja
 from proxlaunch.interfaz.dialogos.pausa_lote import AccionPausa, DialogoPausaLote
 from proxlaunch.interfaz.dialogos.perfiles_maquina import DialogoPerfilesMaquina
@@ -89,6 +90,11 @@ from proxlaunch.interfaz.textos_b import (
     texto_espera_ip_en_uno,
     texto_ip_en_uno,
 )
+from proxlaunch.interfaz.textos_inventario import (
+    texto_lote_en_deshacer_inventario,
+    texto_sin_conexion_inventario,
+    texto_sin_version_inventario,
+)
 from proxlaunch.interfaz.trabajadores import (
     Lanzador,
     PuenteLote,
@@ -108,7 +114,9 @@ from proxlaunch.interfaz.trabajadores import (
     guardar_lote_guardado,
     hay_contrasena_pendiente,
     inspeccionar_lotes,
+    leer_grupos_firewall,
     leer_lote_guardado,
+    leer_reglas_grupo,
     olvidar_secretos_de_filas,
     olvidar_secretos_de_plan,
     planificar_lote,
@@ -134,11 +142,12 @@ from proxlaunch.interfaz.vistas.resumen import ResumenVM, nombre_campo
 from proxlaunch.interfaz.vistas.resumen_lote import ResumenLote
 from proxlaunch.interfaz.vistas.selector_perfil import PanelAvisos, SelectorPerfil
 from proxlaunch.nucleo.agente.espera import EsperaIp
-from proxlaunch.nucleo.capacidades import Capacidades, asistente_plantilla_disponible
+from proxlaunch.nucleo.capacidades import Capacidades, Funcion, asistente_plantilla_disponible
 from proxlaunch.nucleo.cloudinit.disponibilidad import disponibilidad_fase_b
 from proxlaunch.nucleo.csv_importacion.interpretacion import filas_lote, interpretar
 from proxlaunch.nucleo.csv_importacion.modelos import ResultadoImportacion, TablaCsv
 from proxlaunch.nucleo.errores import CodigoError, ErrorProxLaunch
+from proxlaunch.nucleo.firewall.modelos import LecturaGrupos, ReglaFirewall
 from proxlaunch.nucleo.lote.ajustes import tiene_ajustes_pendientes
 from proxlaunch.nucleo.lote.constantes import (
     ACTUALIZACIONES_POR_S,
@@ -195,11 +204,13 @@ from proxlaunch.nucleo.modelos.origen import DetalleClon
 from proxlaunch.nucleo.modelos.tarea import Desenlace, Etapa, ResultadoCreacion
 from proxlaunch.nucleo.modelos.vm import ConfiguracionVM, OrigenSO
 from proxlaunch.nucleo.opciones.disponibilidad import disponibilidad_opciones
+from proxlaunch.nucleo.opciones.disponibilidad_c import disponibilidad_fase_c
 from proxlaunch.nucleo.opciones.modelos import (
     ContextoNotas,
     EstadoOpcion,
     EstadoPools,
     OpcionA,
+    OpcionC,
     PoolsServidor,
 )
 from proxlaunch.nucleo.opciones.notas import usuario_para_notas
@@ -434,6 +445,9 @@ class VentanaPrincipal(QMainWindow):
         # máquina (para sustituirla cuando llega el resultado de la espera).
         self._dialogo_b2: DialogoPlantillaImagen | None = None
         self._linea_ip_uno = ""
+        # Fase C (C1): diálogo «Lotes en el servidor» y códigos de lote que está borrando (DT-C16).
+        self._dialogo_inventario: DialogoInventarioLotes | None = None
+        self._codigos_en_deshacer_inventario: set[str] = set()
 
         self._construir()
         self._crear_menus()
@@ -456,6 +470,9 @@ class VentanaPrincipal(QMainWindow):
         self.resumen_lote.quitar_excedentes_solicitado.connect(self._quitar_filas_que_no_caben)
         self.resumen_lote.asignar_automatico_solicitado.connect(self._asignar_automaticamente)
         self.formulario.nodo_elegido.connect(self._al_elegir_nodo)
+        # Fase C (RF-C3.2, RF-C3.11): las lecturas de grupos y reglas se hacen en trabajadores.
+        self.formulario.pide_grupos_firewall.connect(self._al_pedir_grupos_firewall)
+        self.formulario.pide_reglas_grupo.connect(self._al_pedir_reglas_grupo)
         self.formulario.vmid_confirmado.connect(self._al_confirmar_vmid)
         self.resumen.crear_solicitado.connect(self._crear)
         self.bloque_lote.cambiado.connect(self._timer_validar.start)
@@ -631,6 +648,9 @@ class VentanaPrincipal(QMainWindow):
         self._accion_ultimo_lote.triggered.connect(self._ver_ultimo_lote)
         self._accion_archivos_subidos = QAction(self.tr("Archivos subidos en esta sesión…"), self)
         self._accion_archivos_subidos.triggered.connect(self._ver_archivos_subidos)
+        self._accion_inventario = QAction(self.tr("Lotes en el servidor…"), self)
+        self._accion_inventario.triggered.connect(self._abrir_inventario)
+        self._accion_inventario.setEnabled(False)
         self._accion_plantilla_imagen = QAction(
             self.tr("Crear plantilla desde imagen cloud…"), self
         )
@@ -642,6 +662,7 @@ class VentanaPrincipal(QMainWindow):
                 a_cerrar,
                 self._accion_ultimo_lote,
                 self._accion_archivos_subidos,
+                self._accion_inventario,
                 self._accion_plantilla_imagen,
             ]
         )
@@ -871,6 +892,8 @@ class VentanaPrincipal(QMainWindow):
         self._paginas.setCurrentIndex(1)
         lote = self._lote
         continuar = lote is not None and lote.esperando_reconexion and not cambio_perfil
+        if cambio_perfil:
+            self._cerrar_inventario_por_cambio_de_servidor()  # CA-C1.14.1
         if cambio_perfil and lote is not None:
             self._cerrar_lote_por_cambio_de_perfil(lote)
         if cambio_perfil:
@@ -932,6 +955,7 @@ class VentanaPrincipal(QMainWindow):
             self._cancelar_esperas(lt)
             self._olvidar_secretos(lt)
         self._olvidar_filas_en_pantalla()  # QA-M4: las de un lote importado o «por filas»
+        self._cerrar_inventario_por_cambio_de_servidor()
         sesion = self._sesion
         if sesion is not None:
             try:
@@ -1142,6 +1166,13 @@ class VentanaPrincipal(QMainWindow):
             inv.bridges[nodo] = tuple(bridges)
             if resto:  # ``storages_todos`` sale de la misma respuesta (origen del SO)
                 inv.storages_todos[nodo] = tuple(resto[0])
+            if len(resto) > 1:  # fase C: VNets de SDN del nodo (lectura tolerante)
+                redes = resto[1]
+                inv.redes_sdn[nodo] = redes.vnets
+                if redes.error is not None:
+                    inv.errores_sdn[nodo] = redes.error
+                else:
+                    inv.errores_sdn.pop(nodo, None)
             inv.errores_por_nodo.pop(nodo, None)
         if recuperados:
             nodos = tuple(
@@ -1170,7 +1201,8 @@ class VentanaPrincipal(QMainWindow):
     def _tras_recargar_nodo(self, r: tuple[Any, ...]) -> None:
         if self._inv is not None and len(r) > 3:
             self._inv.storages_todos[r[0]] = tuple(r[3])
-        self.formulario.actualizar_recursos_nodo(r[0], r[1], r[2])
+        # Fase C: «Recargar nodo» trae también las VNets (RedesNodo) del nodo.
+        self.formulario.actualizar_recursos_nodo(r[0], r[1], r[2], r[4] if len(r) > 4 else None)
 
     def _al_confirmar_vmid(self, vmid: int) -> None:
         """V-03: comprueba en segundo plano que el VMID escrito está libre (CA-13.2)."""
@@ -1200,6 +1232,7 @@ class VentanaPrincipal(QMainWindow):
         if sesion is None or inv is None:
             return
         self._actualizar_disponibilidad_opciones(sesion, inv)
+        self._actualizar_disponibilidad_c(sesion, inv)
         if self.bloque_lote.es_por_filas:
             self._revalidar_por_filas()
             return
@@ -1208,6 +1241,7 @@ class VentanaPrincipal(QMainWindow):
             self.formulario.establecer_lote(en_lote)
             self.resumen.establecer_modo_lote(en_lote)
         cfg = self.formulario.configuracion()
+        self.formulario.establecer_nodos_destino(self._nodos_destino_lote(cfg))
         self.origen.sincronizar(cfg)
         cfg, problemas_origen = self.origen.resolver(cfg)
         self._actualizar_info_cloudinit(cfg, sesion, inv)
@@ -1349,6 +1383,31 @@ class VentanaPrincipal(QMainWindow):
             return
         self._opciones_aplicadas = (estados, pools)
         self.formulario.establecer_disponibilidad(estados, pools)
+
+    def _actualizar_disponibilidad_c(self, sesion: Sesion, inv: Inventario) -> None:
+        """Fase C: habilita o no la red del clon, el firewall y las VNets (RF-C0.3, RF-C0.4).
+
+        Es puro y barato y el formulario ignora lo que no cambió: va en cada revalidación.
+        """
+        catalogo = inv.catalogo
+        permisos = catalogo.permisos if catalogo is not None else None
+        caps = sesion.capacidades
+        self.formulario.establecer_disponibilidad_c(disponibilidad_fase_c(permisos, caps), caps)
+
+    def _nodos_destino_lote(self, cfg: ConfiguracionVM) -> tuple[str, ...]:
+        """Nodos elegidos del lote: con varios, la tabla de redes ofrece solo las comunes (C2.3).
+
+        Con destino automático o un solo nodo no hay restricción: se usa el nodo de referencia.
+        """
+        if not self.bloque_lote.es_lote or self.bloque_lote.es_por_filas or self._inv is None:
+            return ()
+        destino = self.bloque_lote.definicion(cfg).destino
+        if destino.modo != ModoDestino.NODOS_ELEGIDOS:
+            return ()
+        # Un nodo que el servidor no tiene ya lo avisa el desajuste de nodos (CA-G04.3): no
+        # entra en la intersección, para no vaciar la tabla de redes ni perder la elegida.
+        existentes = {n.nombre for n in self._inv.topologia.nodos}
+        return tuple(n for n in destino.nodos if n in existentes)
 
     def _id_lote_de_uno(self) -> str:
         """Código de lote de la máquina individual en preparación (estable hasta crearla)."""
@@ -1760,6 +1819,50 @@ class VentanaPrincipal(QMainWindow):
             self.formulario.usar_nodo_manual(self.bloque_lote.nodo_elegido)
         else:
             self.formulario.usar_nodo_automatico()
+        self.formulario.establecer_nodos_destino(
+            self._nodos_destino_lote(self.formulario.configuracion())
+        )
+
+    # --- Fase C: lecturas del firewall (solo GET, en trabajadores) ---
+
+    def _al_pedir_grupos_firewall(self) -> None:
+        sesion = self._sesion
+        if sesion is None:
+            return
+        self._lanzador.lanzar(
+            leer_grupos_firewall,
+            sesion,
+            al_terminar=lambda r: self._grupos_firewall_leidos(sesion, r),
+            al_fallar=lambda e: self._grupos_firewall_leidos(sesion, LecturaGrupos(None, e)),
+        )
+
+    def _grupos_firewall_leidos(self, sesion: Sesion, lectura: LecturaGrupos) -> None:
+        if sesion is not self._sesion:
+            return  # llegó tras cambiar de servidor: no se muestra (QA-C-B4)
+        self.formulario.establecer_grupos_firewall(lectura)
+
+    def _al_pedir_reglas_grupo(self, grupo: str) -> None:
+        sesion = self._sesion
+        if sesion is None:
+            return
+        self._lanzador.lanzar(
+            leer_reglas_grupo,
+            sesion,
+            grupo,
+            al_terminar=lambda r: self._reglas_grupo_leidas(sesion, r[0], r[1], r[2]),
+            al_fallar=lambda e: self._reglas_grupo_leidas(sesion, grupo, None, e),
+        )
+
+    def _reglas_grupo_leidas(
+        self,
+        sesion: Sesion,
+        grupo: str,
+        reglas: tuple[ReglaFirewall, ...] | None,
+        error: ErrorProxLaunch | None,
+    ) -> None:
+        if sesion is not self._sesion:
+            return  # llegó tras cambiar de servidor: no se muestra (QA-C-B4)
+        self.formulario.establecer_reglas_grupo(grupo, reglas, error)
 
     # --- Resumen y simulación ---
 
@@ -1847,7 +1950,9 @@ class VentanaPrincipal(QMainWindow):
     def _al_planificado(self, plan: Plan) -> None:
         self._planificando = False
         self._plan_mostrado = plan
-        self.resumen_lote.mostrar_plan(plan, bloqueo_crear=self._bloqueo_permiso)
+        self.resumen_lote.mostrar_plan(
+            plan, bloqueo_crear=self._bloqueo_permiso, inventario=self._inv
+        )
         self._timer_validar.start()
 
     def _al_reintento_armado(self, resultado: tuple[Inventario, Plan]) -> None:
@@ -1878,7 +1983,10 @@ class VentanaPrincipal(QMainWindow):
         self._planificando = False
         self._plan_mostrado = resultado.plan
         self.resumen_lote.mostrar_plan(
-            resultado.plan, bloqueo_crear=self._bloqueo_permiso, simulacion=resultado
+            resultado.plan,
+            bloqueo_crear=self._bloqueo_permiso,
+            simulacion=resultado,
+            inventario=self._inv,
         )
         self._timer_validar.start()
 
@@ -1979,7 +2087,10 @@ class VentanaPrincipal(QMainWindow):
             self._iniciando_lote = False
             self._plan_mostrado = nuevo
             self.resumen_lote.mostrar_plan(
-                nuevo, bloqueo_crear=self._bloqueo_permiso, diferencia=diferencia or None
+                nuevo,
+                bloqueo_crear=self._bloqueo_permiso,
+                diferencia=diferencia or None,
+                inventario=self._inv,
             )
             return
         self._confirmar_e_iniciar(nuevo)
@@ -2606,7 +2717,13 @@ class VentanaPrincipal(QMainWindow):
         servicio = ServicioRollback(self._sesion, self._deps.reloj)
         candidatos: list[CandidatoRollback] = []
         duenos: dict[int, _Lote] = {}  # id del candidato -> lote al que pertenece
+        # RF-C1.10: un lote que «Lotes en el servidor» está borrando no se deshace por aquí.
+        bloqueados = self._codigos_en_deshacer_inventario
+        if any(lt.plan.id_lote in bloqueados for lt in self._lotes_deshacibles()):
+            self.statusBar().showMessage(texto_lote_en_deshacer_inventario())
         for lt in self._lotes_deshacibles():
+            if lt.plan.id_lote in bloqueados:
+                continue
             assert lt.libro is not None
             for c in servicio.elegibles(
                 lt.libro,
@@ -2615,6 +2732,8 @@ class VentanaPrincipal(QMainWindow):
             ):
                 candidatos.append(c)
                 duenos[id(c)] = lt
+        if not candidatos and bloqueados:
+            return
         hay_espera = any(lt.esperas_vivas > 0 for lt in self._lotes_deshacibles())
         dialogo = DialogoDeshacer(candidatos, self, hay_espera_ip=hay_espera)
         dialogo.finished.connect(lambda r: self._tras_dialogo_deshacer(lote, dialogo, r, duenos))
@@ -3050,6 +3169,7 @@ class VentanaPrincipal(QMainWindow):
         self.origen.establecer_ocupado(not libre or not sin_plan)
         self._accion_capacidades.setEnabled(listo)
         self._actualizar_accion_plantilla_imagen(listo and libre and sin_plan)
+        self._actualizar_accion_inventario()
         self._accion_recordados.setEnabled(
             listo and self.origen.hay_recordado_no_disponible(self.formulario.nodo_efectivo())
         )
@@ -3059,6 +3179,82 @@ class VentanaPrincipal(QMainWindow):
         self._mostrar_y_borrar(
             DialogoTransferenciasSesion(self.origen.registro, self, lanzador=self._lanzador)
         )
+
+    # --- Fase C (C1): «Lotes en el servidor» ---
+
+    def _actualizar_accion_inventario(self) -> None:
+        """Habilitada con conexión y una versión que lo permita (RF-C1.1); si no, dice por qué."""
+        sesion = self._sesion
+        motivo = ""
+        if sesion is None or self._inv is None:
+            motivo = texto_sin_conexion_inventario()
+        elif not sesion.capacidades.tiene(Funcion.INVENTARIO_LOTES):
+            mayor, menor = sesion.capacidades.requisito(Funcion.INVENTARIO_LOTES)
+            motivo = texto_sin_version_inventario(f"{mayor}.{menor}")
+        self._accion_inventario.setEnabled(not motivo)
+        self._accion_inventario.setStatusTip(motivo)
+        self._accion_inventario.setToolTip(motivo)
+
+    def _codigos_de_lotes_de_sesion(self) -> frozenset[str]:
+        """Códigos de los lotes abiertos en esta sesión y servidor (V-C07, RF-C1.10)."""
+        return frozenset(lt.plan.id_lote for lt in self._lotes_deshacibles())
+
+    def _abrir_inventario(self) -> None:
+        sesion, inv = self._sesion, self._inv
+        if sesion is None or inv is None or not self._accion_inventario.isEnabled():
+            return
+        existente = self._dialogo_inventario
+        if existente is not None:
+            existente.raise_()
+            existente.activateWindow()
+            return
+        catalogo = inv.catalogo
+        permisos = catalogo.permisos if catalogo is not None else None
+        estados = disponibilidad_fase_c(permisos, sesion.capacidades)
+        dialogo = DialogoInventarioLotes(
+            sesion=sesion,
+            reloj=self._deps.reloj,
+            lanzador=self._lanzador,
+            permisos=permisos,
+            lotes_de_sesion=self._codigos_de_lotes_de_sesion,
+            estado_ip=estados.get(OpcionC.IP_INVENTARIO),
+            parent=self,
+        )
+        self._dialogo_inventario = dialogo
+        dialogo.deshacer_empezado.connect(self._codigos_en_deshacer_inventario.add)
+        dialogo.deshacer_terminado.connect(
+            lambda codigo: self._al_terminar_deshacer_inventario(codigo, sesion)
+        )
+        dialogo.sesion_expirada.connect(
+            lambda e: self._manejar_fallo(e, durante="en el inventario")
+        )
+        dialogo.finished.connect(lambda _r: self._cerrar_dialogo_inventario(dialogo))
+        dialogo.show()
+        dialogo.iniciar()
+
+    def _al_terminar_deshacer_inventario(self, codigo: str, sesion: Sesion | None = None) -> None:
+        """Terminó (o falló) el borrado del inventario: «Lote > Deshacer» vuelve a poder usarlo."""
+        self._codigos_en_deshacer_inventario.discard(codigo)
+        # Un lote de la sesión pudo perder máquinas: se refrescan VMIDs y espacio libre.
+        if sesion is not None and sesion is not self._sesion:
+            return  # el servidor cambió desde que empezó el borrado: no se relee el nuevo (QA-C-B5)
+        if self._sesion is not None and not self._lote_en_curso and not self._creando:
+            self._descubrir()
+
+    def _cerrar_dialogo_inventario(self, dialogo: DialogoInventarioLotes) -> None:
+        if self._dialogo_inventario is dialogo:
+            self._dialogo_inventario = None
+        if dialogo.hay_trabajo:
+            # Un borrado sigue en vuelo (cierre forzado): el diálogo se destruye cuando termine.
+            dialogo.deshacer_terminado.connect(lambda _c: dialogo.deleteLater())
+        else:
+            dialogo.deleteLater()
+
+    def _cerrar_inventario_por_cambio_de_servidor(self) -> None:
+        """Otro perfil o sesión cerrada: el inventario anterior no sigue (CA-C1.14.1)."""
+        dialogo = self._dialogo_inventario
+        if dialogo is not None:
+            dialogo.cerrar_por_cambio_de_servidor()
 
     # --- Fase B: cloud-init de la plantilla elegida ---
 
@@ -3422,7 +3618,7 @@ class VentanaPrincipal(QMainWindow):
             )
         self._aplicando = True
         try:
-            self.formulario.aplicar_hardware(resultado.cfg, asistente=True)
+            self.formulario.aplicar_hardware(resultado.cfg, asistente=True, conservar_fase_c=True)
         finally:
             self._aplicando = False
         self._cfg_ultima_aplicada = self.formulario.configuracion()
@@ -4212,6 +4408,23 @@ class VentanaPrincipal(QMainWindow):
         ):
             ev.ignore()
             return
+        dialogo_inv = self._dialogo_inventario
+        if dialogo_inv is not None and dialogo_inv.hay_trabajo:
+            if not confirmar(
+                self,
+                QCoreApplication.translate("VentanaPrincipal", "Hay un «Deshacer» en curso"),
+                QCoreApplication.translate(
+                    "VentanaPrincipal",
+                    "Se están eliminando máquinas desde «Lotes en el servidor». Si cierras, "
+                    "ProxLaunch dejará de esperar: las eliminaciones ya enviadas seguirán en "
+                    "Proxmox y el resto no se hará.",
+                ),
+                QCoreApplication.translate("VentanaPrincipal", "Cerrar de todos modos"),
+                QCoreApplication.translate("VentanaPrincipal", "Seguir en ProxLaunch"),
+            ):
+                ev.ignore()
+                return
+            dialogo_inv.cancelar_borrado()
         dialogo_b2 = self._dialogo_b2
         if dialogo_b2 is not None and dialogo_b2.en_curso:
             if not confirmar(

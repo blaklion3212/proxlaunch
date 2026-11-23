@@ -9,6 +9,7 @@ import pytest
 from proxlaunch.interfaz import trabajadores as tr
 from proxlaunch.nucleo.errores import CodigoError, ErrorProxLaunch
 from proxlaunch.nucleo.modelos.tarea import Desenlace, Etapa
+from proxlaunch.nucleo.red.redes_nodo import RedesNodo
 
 from .apoyo import UPID, CreacionFalsa, resultado, sesion_falsa
 
@@ -172,22 +173,24 @@ def test_descubrir_y_comprobar_permisos_combina_ambos(monkeypatch, inv_cluster):
 
 
 def test_recargar_nodo_devuelve_nodo_storages_y_bridges(monkeypatch):
-    # Enmienda aprobada (MVP 4, RF-O04): usa descubrir_nodo_completo -> (con_images, todos, bridges)
-    # y devuelve (nodo, con_images, bridges, todos) para mantener Inventario.storages_todos.
-    monkeypatch.setattr(tr, "descubrir_nodo_completo", lambda s, n: (["s"], ["t"], ["b"]))
-    assert tr.recargar_nodo(sesion_falsa(), "pve1") == ("pve1", ["s"], ["b"], ["t"])
+    # Fase C (RF-C2.1): usa descubrir_nodo_c -> (con_images, todos, bridges, redes) y devuelve
+    # (nodo, con_images, bridges, todos, redes) para mantener storages_todos y las VNets.
+    redes = RedesNodo(vnets=())
+    monkeypatch.setattr(tr, "descubrir_nodo_c", lambda s, n: (["s"], ["t"], ["b"], redes))
+    assert tr.recargar_nodo(sesion_falsa(), "pve1") == ("pve1", ["s"], ["b"], ["t"], redes)
 
 
 def test_reintentar_nodos_separa_recuperados_y_fallidos(monkeypatch):
     def descubrir_nodo(sesion, nodo):
         if nodo == "pve2":
             raise ErrorProxLaunch(CodigoError.NODO_NO_DISPONIBLE, {"nodo": nodo})
-        return (["s"], ["t"], ["b"])
+        return (["s"], ["t"], ["b"], redes)
 
-    # Enmienda aprobada (MVP 4, RF-O04): cada nodo recuperado trae (con_images, bridges, todos).
-    monkeypatch.setattr(tr, "descubrir_nodo_completo", descubrir_nodo)
+    # Fase C: cada nodo recuperado trae (con_images, bridges, todos, redes).
+    redes = RedesNodo(vnets=())
+    monkeypatch.setattr(tr, "descubrir_nodo_c", descubrir_nodo)
     recuperados, fallidos = tr.reintentar_nodos(sesion_falsa(), ["pve1", "pve2"])
-    assert recuperados == {"pve1": (["s"], ["b"], ["t"])}
+    assert recuperados == {"pve1": (["s"], ["b"], ["t"], redes)}
     assert list(fallidos) == ["pve2"]
 
 

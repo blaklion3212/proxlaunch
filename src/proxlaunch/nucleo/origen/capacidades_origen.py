@@ -18,7 +18,11 @@ from proxlaunch.nucleo.errores import CodigoError
 from proxlaunch.nucleo.modelos.catalogo import Contenido, PermisosEfectivos
 from proxlaunch.nucleo.modelos.inventario import Inventario
 from proxlaunch.nucleo.modelos.vm import OrigenSO
-from proxlaunch.nucleo.origen.permisos import estado_privilegio
+from proxlaunch.nucleo.origen.permisos import (
+    RUTA_ZONA_GENERICA,
+    estado_privilegio,
+    estado_sdn_fuera_de_local,
+)
 from proxlaunch.nucleo.origen.storages import candidatos, candidatos_servidor, podria_admitir
 
 
@@ -32,6 +36,13 @@ class Via(StrEnum):
     CLONAR = "clonar"
     ORDEN_ARRANQUE = "orden_arranque"
     AMPLIAR_DISCO = "ampliar_disco"
+    # Fase C (0.8): filas de «Qué puedo hacer» (RF-C5.2). No son vías de origen: no entran en
+    # ``vias_de_origen``.
+    LOTES_SERVIDOR = "lotes_servidor"  # VM.Audit + VM.Allocate en /vms
+    VNETS_SDN = "vnets_sdn"  # SDN.Use fuera de localnetwork
+    FIREWALL = "firewall"  # VM.Config.Network en /vms
+    FIREWALL_GENERAL = "firewall_general"  # Sys.Audit en /
+    RED_CLON = "red_clon"  # VM.Config.Network en /vms
 
 
 class Disponibilidad(StrEnum):
@@ -86,6 +97,11 @@ _AYUDA = {
     Via.CLONAR: "plantilla",
     Via.ORDEN_ARRANQUE: "permisos_rol_ampliado",
     Via.AMPLIAR_DISCO: "permisos_rol_ampliado",
+    Via.LOTES_SERVIDOR: "permisos_rol_ampliado",
+    Via.VNETS_SDN: "permisos_rol_ampliado",
+    Via.FIREWALL: "permisos_rol_ampliado",
+    Via.FIREWALL_GENERAL: "permisos_rol_ampliado",
+    Via.RED_CLON: "permisos_rol_ampliado",
 }
 
 
@@ -94,8 +110,8 @@ def _version(caps: Capacidades) -> str:
 
 
 def calcular_capacidades(caps: Capacidades, inv: Inventario, nodo: str | None) -> CapacidadesOrigen:
-    """Estado de las nueve vías para la versión efectiva, el inventario y el nodo (o todo el
-    servidor si ``nodo`` es ``None``)."""
+    """Estado de las vías (nueve de origen y cinco de la fase C) para la versión efectiva, el
+    inventario y el nodo (o todo el servidor si ``nodo`` es ``None``)."""
     permisos: PermisosEfectivos | None = None if inv.catalogo is None else inv.catalogo.permisos
     nodos = [n.nombre for n in inv.topologia.nodos] if nodo is None else [nodo]
     vias: dict[Via, EstadoVia] = {}
@@ -296,4 +312,61 @@ def calcular_capacidades(caps: Capacidades, inv: Inventario, nodo: str | None) -
                 via=via.value,
                 desconocido="1" if estado is None else "0",
             )
+
+    # --- Fase C (0.8): filas de «Qué puedo hacer» (RF-C5.2) ---
+    def sin_version(via: Via, funcion: Funcion) -> bool:
+        """Deja la vía en ``NO`` si la versión no tiene la función; ``True`` si la deja puesta."""
+        if caps.tiene(funcion):
+            return False
+        minima = caps.requisito(funcion)
+        poner(
+            via,
+            Disponibilidad.NO,
+            CodigoError.OPCION_SIN_VERSION,
+            version=f"{minima[0]}.{minima[1]}",
+            via=via.value,
+        )
+        return True
+
+    def con_privilegios(via: Via, ruta: str, privilegios: tuple[str, ...]) -> None:
+        estados = [estado_privilegio(permisos, p, ruta) for p in privilegios]
+        if all(estados):
+            poner(via, Disponibilidad.SI)
+        elif any(e is None for e in estados):
+            poner(via, Disponibilidad.CON_AVISO, motivo="permisos_desconocidos")
+        else:
+            falta = privilegios[estados.index(False)]
+            falta_permiso(via, falta, ruta, CodigoError.PERMISO_INSUFICIENTE)
+
+    if not sin_version(Via.LOTES_SERVIDOR, Funcion.INVENTARIO_LOTES):
+        con_privilegios(Via.LOTES_SERVIDOR, "/vms", ("VM.Audit", "VM.Allocate"))
+    if not sin_version(Via.VNETS_SDN, Funcion.VNETS_SDN):
+        fuera_de_local = estado_sdn_fuera_de_local(permisos)
+        if fuera_de_local is None:
+            poner(Via.VNETS_SDN, Disponibilidad.CON_AVISO, motivo="permisos_desconocidos")
+        elif fuera_de_local:
+            poner(Via.VNETS_SDN, Disponibilidad.SI)
+        else:
+            falta_permiso(
+                Via.VNETS_SDN, "SDN.Use", RUTA_ZONA_GENERICA, CodigoError.PERMISO_INSUFICIENTE
+            )
+    if not sin_version(Via.FIREWALL, Funcion.FIREWALL_GRUPO):
+        con_privilegios(Via.FIREWALL, "/vms", ("VM.Config.Network",))
+    # Leer el firewall general exige Sys.Audit; sin él solo se pierde un aviso: nunca ``NO``.
+    general = estado_privilegio(permisos, "Sys.Audit", "/")
+    if general:
+        poner(Via.FIREWALL_GENERAL, Disponibilidad.SI)
+    elif general is None:
+        poner(Via.FIREWALL_GENERAL, Disponibilidad.CON_AVISO, motivo="permisos_desconocidos")
+    else:
+        poner(
+            Via.FIREWALL_GENERAL,
+            Disponibilidad.CON_AVISO,
+            CodigoError.PERMISO_INSUFICIENTE,
+            privilegio="Sys.Audit",
+            ruta="/",
+            via=Via.FIREWALL_GENERAL.value,
+        )
+    if not sin_version(Via.RED_CLON, Funcion.REESCRIBIR_RED_CLON):
+        con_privilegios(Via.RED_CLON, "/vms", ("VM.Config.Network",))
     return CapacidadesOrigen(caps.version, caps.forzada, nodo, vias)

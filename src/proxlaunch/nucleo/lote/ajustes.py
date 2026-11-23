@@ -10,12 +10,15 @@ from __future__ import annotations
 
 import logging
 from collections.abc import Collection
+from typing import Any
 
+from proxlaunch.nucleo.firewall.modelos import usa_firewall
 from proxlaunch.nucleo.lote.libro import Libro
 from proxlaunch.nucleo.lote.modelos import EntradaLibro, EstadoMV
 from proxlaunch.nucleo.lote.motor import ControlLote, FabricaCreacion, Observador
 from proxlaunch.nucleo.modelos.inventario import Inventario
 from proxlaunch.nucleo.modelos.tarea import Desenlace
+from proxlaunch.nucleo.red.modelos import usa_red_clon
 from proxlaunch.nucleo.reloj import Reloj
 from proxlaunch.nucleo.servicios.catalogo import con_catalogo
 from proxlaunch.nucleo.servicios.conexion import Sesion
@@ -69,6 +72,10 @@ def reintentar_ajustes(
     fallo de red o un error de la comprobación deja la MV como estaba. Se detiene si el
     control se cancela o suspende.
 
+    Fase C: lo mismo si la MV usa red del clon o firewall: los pasos ``red``, ``firewall_opciones``
+    y ``firewall_regla`` se repiten solo si constan como pendientes (la red se recalcula sobre la
+    config actual del clon; la regla no se duplica).
+
     Fase B: si la MV lleva cloud-init, solo se reenvían los pasos que constan como pendientes
     (``cloudinit``, ``contrasena``…); la contraseña únicamente si el ``Secreto`` del plan sigue
     definido (si no, la MV sigue ``PARCIAL`` con ``CONTRASENA_OLVIDADA``). Sin cloud-init el
@@ -86,11 +93,26 @@ def reintentar_ajustes(
             continue
         try:
             cfg = entrada.elemento.cfg
-            if cfg.cloudinit is None:  # sin fase B: exactamente el comportamiento de 0.6.0
+            # Sin fase B ni C el reintento es exactamente el de 0.6.0.
+            if (
+                cfg.cloudinit is None
+                and not usa_red_clon(cfg.red_clon)
+                and not usa_firewall(cfg.firewall)
+            ):
                 res = servicio.reintentar_ajustes(cfg, inv, control.evento_abandono)
             else:
+                extra_c: dict[str, Any] = {}
+                if usa_red_clon(cfg.red_clon):
+                    extra_c = {
+                        "macs_originales": dict(entrada.macs_originales),
+                        "al_leer_macs": lambda m, v=vmid: libro.registrar_macs_originales(v, m),
+                    }
                 res = servicio.reintentar_ajustes(
-                    cfg, inv, control.evento_abandono, pendientes=ajustes_pendientes(entrada)
+                    cfg,
+                    inv,
+                    control.evento_abandono,
+                    pendientes=ajustes_pendientes(entrada),
+                    **extra_c,
                 )
         except Exception:
             _log.exception("Fallo inesperado al reintentar los ajustes (vmid=%s)", vmid)
@@ -106,6 +128,7 @@ def reintentar_ajustes(
             t_fin=reloj.ahora(),
             error=res.error,
             avisos=avisos,
+            red_final=res.red_final,
         )
         try:
             observador(nueva)

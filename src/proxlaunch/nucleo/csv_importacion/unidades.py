@@ -14,6 +14,7 @@ from typing import TypeVar
 
 from proxlaunch.nucleo.archivos.esquema import CodigoAvisoArchivo
 from proxlaunch.nucleo.cloudinit.modelos import ModoTarjeta
+from proxlaunch.nucleo.firewall.modelos import Politica
 from proxlaunch.nucleo.modelos.origen import ModoClon, TipoSO
 from proxlaunch.nucleo.modelos.vm import MAX_LIMITE_MB, Firmware, ModeloRed, OrigenSO
 
@@ -295,6 +296,22 @@ _NINGUNO = frozenset({"ninguno", "ninguna", "sin pool", "none"})
 def es_ninguno(texto: str) -> bool:
     """``ninguno``/``ninguna``/``sin pool``: el «sin nada» explícito de ``pool`` (CA-A4.6.2)."""
     return _clave_enum(texto) in _NINGUNO
+
+
+_POLITICAS = {
+    "bloquear": Politica.BLOQUEAR,
+    "drop": Politica.BLOQUEAR,
+    "permitir": Politica.PERMITIR,
+    "accept": Politica.PERMITIR,
+}
+
+
+def politica(texto: str) -> Politica:
+    """Política del firewall: ``bloquear``/``drop`` o ``permitir``/``accept`` (V-C39 si no)."""
+    clave = _clave_enum(texto)
+    if clave in _POLITICAS:
+        return _POLITICAS[clave]
+    raise ValorInvalido("V-C39", {"validos": "bloquear, permitir", "ejemplo": "bloquear"})
 
 
 def modo_clon(texto: str) -> ModoClon:

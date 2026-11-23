@@ -34,7 +34,8 @@ from proxlaunch.nucleo.lote.presupuesto import libre_de_clave, libres_iniciales,
 from proxlaunch.nucleo.modelos.inventario import Inventario, Nodo
 from proxlaunch.nucleo.modelos.vm import ConfiguracionVM, Firmware, OrigenSO
 from proxlaunch.nucleo.origen.resolucion import firma_origen, motivos_nodo_origen
-from proxlaunch.nucleo.validacion import TIPOS_BRIDGE, storage_efi_efectivo
+from proxlaunch.nucleo.red.redes_nodo import redes_de_nodo
+from proxlaunch.nucleo.validacion import storage_efi_efectivo
 
 
 def _nodos_candidatos(inv: Inventario, destino: Destino) -> list[str]:
@@ -88,7 +89,7 @@ def _motivos_nodo(plantilla: ConfiguracionVM, inv: Inventario, nombre: str) -> l
         id_efi = storage_efi_efectivo(cfg, inv, discos)
         if id_efi not in vistos and not apto(id_efi):
             falta("efidisk", storage=id_efi or "")
-    bridges = {b.nombre for b in inv.bridges.get(nombre, ()) if b.tipo in TIPOS_BRIDGE}
+    bridges = set(redes_de_nodo(inv, nombre))  # bridges y VNets del nodo
     for r in cfg.redes:
         if r.bridge not in bridges:
             falta("bridge", bridge=str(r.bridge))

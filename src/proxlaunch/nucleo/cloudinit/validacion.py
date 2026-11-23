@@ -44,6 +44,8 @@ from proxlaunch.nucleo.modelos.inventario import Inventario
 from proxlaunch.nucleo.modelos.vm import ConfiguracionVM, DetalleClon, OrigenSO
 from proxlaunch.nucleo.opciones.modelos import EstadoOpcion
 from proxlaunch.nucleo.origen.capacidades_origen import Disponibilidad
+from proxlaunch.nucleo.red.modelos import AccionTarjeta, RedClon, usa_red_clon
+from proxlaunch.nucleo.red.tarjetas import tarjetas_finales
 from proxlaunch.nucleo.validacion import Problema, Severidad
 
 __all__ = [
@@ -137,9 +139,24 @@ def _validar_claves(ci: ConfigCloudInit, p: list[Problema]) -> None:
         p.append(_aviso(campo, "V-B24", motivo="duplicadas", cantidad=str(resultado.duplicadas)))
 
 
+def _se_quita(red_clon: RedClon | None, indice: int) -> bool:
+    """``True`` si la red del clon quita la tarjeta ``indice`` (el aviso es V-C16)."""
+    if red_clon is None or not usa_red_clon(red_clon):
+        return False
+    pedido = red_clon.tarjeta(indice)
+    return pedido is not None and pedido.accion == AccionTarjeta.QUITAR
+
+
 def _validar_tarjetas(
-    ci: ConfigCloudInit, info: InfoCloudInitPlantilla, es_clon: bool, p: list[Problema]
+    ci: ConfigCloudInit,
+    info: InfoCloudInitPlantilla,
+    es_clon: bool,
+    p: list[Problema],
+    red_clon: RedClon | None = None,
 ) -> None:
+    # Con la red del clon personalizada (C4) las tarjetas que existirán son las finales: las
+    # AÑADIR cuentan y las QUITAR no (en estas últimas el problema es V-C16, no V-B34).
+    finales = set(tarjetas_finales(info.tarjetas, red_clon))
     vistos: set[int] = set()
     for t in ci.tarjetas:
         campo = f"cloudinit.tarjetas[{t.indice}]"
@@ -158,7 +175,8 @@ def _validar_tarjetas(
             es_clon
             and t.modo != ModoTarjeta.SIN_CONFIGURAR
             and info.unidad is not None
-            and t.indice not in info.tarjetas
+            and t.indice not in finales
+            and not _se_quita(red_clon, t.indice)
         ):
             p.append(_error(campo, "V-B34", tarjeta=tarjeta, motivo="inexistente"))
         if t.puerta and t.modo != ModoTarjeta.FIJA:
@@ -246,7 +264,7 @@ def validar_cloudinit(cfg: ConfiguracionVM, inv: Inventario, caps: Capacidades) 
     # Contenido (no depende del servidor).
     _validar_usuario(ci, p)
     _validar_claves(ci, p)
-    _validar_tarjetas(ci, info, es_clon, p)
+    _validar_tarjetas(ci, info, es_clon, p, cfg.red_clon)
     _validar_red_general(ci, p)
     _validar_snippets(ci, p)
     tiene_contrasena = ci.contrasena is not None and ci.contrasena.definido

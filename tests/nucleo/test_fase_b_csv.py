@@ -146,10 +146,11 @@ def plantilla_con(vmid: int, nombre: str, info: InfoCloudInitPlantilla):
 # --- RF-B6.3: las 13 columnas, sus alias y su posición -------------------------------------------
 
 
-def test_rf_b6_3_las_trece_columnas_canonicas_existen_y_son_54_en_total():
+def test_rf_b6_3_las_trece_columnas_canonicas_existen_y_son_59_en_total():
+    # Fase C (RF-C6.3): 5 columnas nuevas (54 → 59).
     canonicas = [c.canonica for c in COLUMNAS]
     assert set(COLUMNAS_B) <= set(canonicas)
-    assert len(canonicas) == 54 and len(set(canonicas)) == 54
+    assert len(canonicas) == 59 and len(set(canonicas)) == 59
 
 
 def test_rf_b6_3_las_marcadas_avanzadas_son_las_de_la_tabla():
@@ -432,14 +433,14 @@ def test_v_b39_una_fila_que_no_clona_y_sin_celdas_de_cloudinit_no_tiene_problema
 # --- CA-B6.3.5 / CA-B6.3.6: columnas y límites ---------------------------------------------------
 
 
-def test_ca_b6_3_5_un_csv_con_las_54_columnas_canonicas_se_acepta():
-    assert MAX_COLUMNAS_CSV == 60
+def test_ca_b6_3_5_un_csv_con_todas_las_columnas_canonicas_se_acepta():
+    assert MAX_COLUMNAS_CSV == 70
     cabecera = [c.canonica for c in COLUMNAS]
     datos = csv_bytes(
         [";".join(cabecera), ";".join("a" if c == "nombre" else "" for c in cabecera)]
     )
     tabla = leer_tabla(datos)
-    assert len(tabla.encabezado) == 54
+    assert len(tabla.encabezado) == 59
     r = interpretar(
         tabla,
         perfil_base=perfil_base(),
@@ -450,12 +451,12 @@ def test_ca_b6_3_5_un_csv_con_las_54_columnas_canonicas_se_acepta():
     assert fila(r, 2).estado == EstadoFila.CORRECTA
 
 
-def test_ca_b6_3_5_mas_de_60_columnas_se_rechazan_con_el_valor_real():
-    cabecera = ["nombre", *(f"extra{i}" for i in range(60))]
+def test_ca_b6_3_5_mas_de_70_columnas_se_rechazan_con_el_valor_real():
+    cabecera = ["nombre", *(f"extra{i}" for i in range(70))]
     with pytest.raises(ErrorProxLaunch) as exc:
         leer_tabla(csv_bytes([";".join(cabecera), ";".join("a" for _ in cabecera)]))
     assert exc.value.codigo == CodigoError.ARCHIVO_DEMASIADAS_FILAS
-    assert exc.value.params["tipo"] == "columnas" and exc.value.params["columnas"] == "61"
+    assert exc.value.params["tipo"] == "columnas" and exc.value.params["columnas"] == "71"
 
 
 def _clave_de(n: int) -> str:
@@ -641,7 +642,7 @@ def test_ca_b6_3_8_la_plantilla_incluye_las_columnas_nuevas_salvo_la_contrasena(
     assert all(c in ENCABEZADO_PLANTILLA for c in nuevas)
     assert COLUMNA_CONTRASENA not in ENCABEZADO_PLANTILLA
     assert "cipassword" not in ENCABEZADO_PLANTILLA and "ci_password" not in ENCABEZADO_PLANTILLA
-    assert len(ENCABEZADO_PLANTILLA) == 35
+    assert len(ENCABEZADO_PLANTILLA) == 40  # fase C: 5 columnas más
 
 
 @pytest.mark.parametrize("separador", [";", ","])

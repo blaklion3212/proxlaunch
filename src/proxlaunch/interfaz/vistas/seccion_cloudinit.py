@@ -427,6 +427,8 @@ class SeccionCloudInit(QGroupBox):
         self._listados: Sequence[ListadoSnippets] = ()
         self._snippets_pendientes = False
         self._tarjetas: dict[int, BloqueTarjeta] = {}
+        # Fase C (C4): índices de las tarjetas que tendrá el clon (``None`` = las de la plantilla).
+        self._finales: tuple[int, ...] | None = None
         self._avanzados: list[QWidget] = []
         self._grupos: list[_Grupo] = []
         self._texto_estado: dict[int, str] = {}
@@ -846,7 +848,7 @@ class SeccionCloudInit(QGroupBox):
         y lo que quedó deshabilitado con un valor, vuelven a su valor por defecto con un aviso
         (CA-B1.2.4). Es barato: si nada cambió desde la última llamada no hace nada.
         """
-        estado = (info, dict(disponibilidad), self._snippets_clave())
+        estado = (info, dict(disponibilidad), self._snippets_clave(), self._finales)
         if estado == self._ultimo_estado:
             return
         self._ultimo_estado = estado
@@ -876,7 +878,21 @@ class SeccionCloudInit(QGroupBox):
             ],
         )
 
+    def establecer_tarjetas_finales(self, indices: tuple[int, ...] | None) -> None:
+        """Con la red del clon personalizada (C4), B1 ofrece una fila por tarjeta FINAL: las de la
+        plantilla que se conservan y las añadidas (RF-C4.7). ``None`` = las de la plantilla.
+
+        Una tarjeta que se quita pero ya tiene IP configurada se conserva en pantalla para que
+        V-C16 la señale; no se borra el valor del usuario en silencio.
+        """
+        if indices == self._finales:
+            return
+        self._finales = indices
+        self.establecer_info(self._info, self._disp)
+
     def _indices_de(self, info: InfoCloudInitPlantilla | None) -> tuple[int, ...]:
+        if self._finales is not None:
+            return self._finales
         return tuple(sorted(set(info.tarjetas))) if info is not None and info.tarjetas else (0,)
 
     def _reconstruir_tarjetas(
@@ -890,8 +906,8 @@ class SeccionCloudInit(QGroupBox):
             bloque = self._tarjetas[idx]
             if idx in nuevas:
                 continue
-            if bloque.hay_valor() and idx not in tenia:
-                continue  # valor cargado de un archivo: V-B34 lo señalará
+            if bloque.hay_valor() and (idx not in tenia or self._finales is not None):
+                continue  # valor cargado de un archivo, o tarjeta que se quita: V-B34 / V-C16
             if bloque.hay_valor():
                 avisos.append(
                     QCoreApplication.translate(

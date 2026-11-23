@@ -203,6 +203,7 @@ def validar_vm(cfg: ConfiguracionVM, inv: Inventario, caps: Capacidades) -> list
         _validar_origen(cfg, inv, caps, p)
         _validar_opciones(cfg, inv, caps, p)
         _validar_fase_b(cfg, inv, caps, p)
+        _validar_fase_c(cfg, inv, caps, p)
         return p
     discos = cfg.discos if cfg.con_disco else []
     _validar_discos(cfg, inv, discos, p)
@@ -211,7 +212,30 @@ def validar_vm(cfg: ConfiguracionVM, inv: Inventario, caps: Capacidades) -> list
     _validar_origen(cfg, inv, caps, p)
     _validar_opciones(cfg, inv, caps, p)
     _validar_fase_b(cfg, inv, caps, p)
+    _validar_fase_c(cfg, inv, caps, p)
     return p
+
+
+def _validar_fase_c(
+    cfg: ConfiguracionVM, inv: Inventario, caps: Capacidades, p: list[Problema]
+) -> None:
+    """Reglas V-C de la fase C: red (VNets y red del clon) y firewall (importación diferida:
+    esos módulos importan este)."""
+    from proxlaunch.nucleo.firewall.validacion import validar_firewall
+    from proxlaunch.nucleo.red.validacion import (
+        detalle_de_plantilla,
+        validar_red_clon,
+        validar_redes_c,
+    )
+
+    if cfg.origen == OrigenSO.CLONAR_PLANTILLA:
+        p.extend(validar_red_clon(cfg, inv, caps, detalle_de_plantilla(cfg, inv)))
+    else:
+        p.extend(validar_redes_c(cfg, inv, caps))
+        if cfg.red_clon is not None:
+            # V-C51 con un origen que no clona: validar_red_clon lo detecta sin más datos.
+            p.extend(validar_red_clon(cfg, inv, caps, None))
+    p.extend(validar_firewall(cfg, inv, caps))
 
 
 def _validar_fase_b(
@@ -294,6 +318,12 @@ CODIGOS_SIN_SERVIDOR = (
             "V-22",
             "V-23",
             "V-24",
+            # Fase C: reglas de la red del clon que solo miran el contenido.
+            "V-C15",
+            "V-C16",
+            "V-C17",
+            "V-C18",
+            "V-C51",
             # Fase A: reglas de la propia configuración (las que usan el catálogo se omiten solas
             # porque el inventario vacío no lo trae).
             "V-A01",
@@ -458,7 +488,11 @@ def storage_efi_efectivo(
 
 
 def _validar_redes(cfg: ConfiguracionVM, inv: Inventario, p: list[Problema]) -> None:
-    bridges = {b.nombre for b in inv.bridges.get(cfg.nodo, ()) if b.tipo in TIPOS_BRIDGE}
+    from proxlaunch.nucleo.red.redes_nodo import redes_de_nodo
+    from proxlaunch.nucleo.red.validacion import vnet_solo_en_otro_nodo
+
+    # Bridges y VNets (DT-C4): una VNet es un nombre de bridge para Proxmox.
+    bridges = redes_de_nodo(inv, cfg.nodo)
     if not bridges:
         # El nodo no tiene bridges (CA-17.1): no se puede crear una interfaz de red.
         p.append(Problema("redes", "V-16.sinredes", Severidad.ERROR, {"nodo": cfg.nodo}))
@@ -470,7 +504,10 @@ def _validar_redes(cfg: ConfiguracionVM, inv: Inventario, p: list[Problema]) -> 
         if r.vlan is not None and (not _es_entero(r.vlan) or not VLAN_MIN <= r.vlan <= VLAN_MAX):
             p.append(Problema(f"{ruta}.vlan", "V-15", Severidad.ERROR, {}))
         # V-16 bridge
-        if r.bridge not in bridges or _id_con_caracteres_prohibidos(r.bridge):
+        # Una VNet que solo existe en otro nodo no es V-16: la explica V-C11 (validar_redes_c).
+        if (
+            r.bridge not in bridges or _id_con_caracteres_prohibidos(r.bridge)
+        ) and not vnet_solo_en_otro_nodo(inv, cfg.nodo, str(r.bridge)):
             p.append(
                 Problema(
                     f"{ruta}.bridge",

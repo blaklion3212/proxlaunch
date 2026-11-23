@@ -123,6 +123,12 @@ class CodigoError(StrEnum):
     IMAGEN_FORMATO_INCORRECTO = "imagen_formato_incorrecto"
     SUMA_NO_COINCIDE = "suma_no_coincide"  # params: esperada, obtenida (12 caracteres)
     PLANTILLA_IMAGEN_SIN_IMPORT = "plantilla_imagen_sin_import"
+    # --- Fase C (0.8): lotes del servidor, VNets de SDN, firewall y red del clon ---
+    RED_CONFIG_ILEGIBLE = "red_config_ilegible"  # V-C21 (GET config del clon falló)
+    RED_PLANTILLA_CAMBIADA = "red_plantilla_cambiada"  # índice de AÑADIR ocupado al ejecutar
+    RED_CONFIG_CAMBIADA = "red_config_cambiada"  # digest distinto dos veces
+    RED_SIN_DIRECCIONES = "red_sin_direcciones"  # IPAM: «can't find any free ip in zone…»
+    FIREWALL_GRUPO_INEXISTENTE = "firewall_grupo_inexistente"  # el grupo desapareció
 
 
 class ErrorProxLaunch(Exception):

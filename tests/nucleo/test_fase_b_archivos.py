@@ -24,6 +24,7 @@ from proxlaunch.nucleo.archivos.constantes import (
     MAX_BYTES_LOTE,
     VERSION_FORMATO,
     VERSION_FORMATO_FASE_A,
+    VERSION_FORMATO_FASE_B,
 )
 from proxlaunch.nucleo.archivos.envoltura import FORMATO_LOTE, abrir_envoltura
 from proxlaunch.nucleo.archivos.esquema import (
@@ -141,8 +142,9 @@ def claves_json(obj) -> list[str]:
 # --- RF-B6.1: versión escrita --------------------------------------------------------------------
 
 
-def test_rf_b6_1_la_version_maxima_que_se_lee_es_4_y_la_de_la_fase_a_3():
-    assert VERSION_FORMATO == 4 and VERSION_FORMATO_FASE_A == 3
+def test_rf_b6_1_la_version_maxima_que_se_lee_es_5_y_la_de_las_fases_b_y_a_son_4_y_3():
+    # Fase C (RF-C6.1): la máxima sube a 5; el escalón de la fase B queda explícito en 4.
+    assert VERSION_FORMATO == 5 and VERSION_FORMATO_FASE_B == 4 and VERSION_FORMATO_FASE_A == 3
 
 
 def test_ca_b6_1_3_un_lote_que_no_usa_nada_de_b_se_escribe_con_la_version_minima():
@@ -223,11 +225,11 @@ def test_ca_b6_1_4_un_lector_de_0_6_0_rechaza_la_v4_como_version_futura():
 
 
 def test_ca_b6_1_5_una_version_futura_se_rechaza_sin_leer_nada():
-    datos = mutar(lote_b(), lambda d: d.__setitem__("version_formato", 5))
+    datos = mutar(lote_b(), lambda d: d.__setitem__("version_formato", 6))
     with pytest.raises(ErrorProxLaunch) as exc:
         leer_lote(datos)
     assert exc.value.codigo == CodigoError.ARCHIVO_VERSION_FUTURA
-    assert exc.value.params == {"version_archivo": "5", "version_soportada": "4"}
+    assert exc.value.params == {"version_archivo": "6", "version_soportada": "5"}
 
 
 # --- CA-B6.1.1 / CA-B6.1.2 / CA-B6.4.1: archivos de 0.5.1 y 0.6.0 --------------------------------

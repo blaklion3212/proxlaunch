@@ -1,0 +1,98 @@
+{
+  "app_version": "0.7.0",
+  "formato": "proxlaunch.lote",
+  "homogeneo": {
+    "cantidad": 3,
+    "config": {
+      "ballooning": null,
+      "cloudinit": {
+        "dns": [
+          "1.1.1.1"
+        ],
+        "dominio": "lab.local",
+        "tarjetas": [
+          {
+            "indice": 0,
+            "ip": "10.0.0.50/24",
+            "modo": "fija",
+            "puerta": "10.0.0.1"
+          }
+        ],
+        "usuario": "deploy"
+      },
+      "con_disco": true,
+      "controlador_scsi": "virtio-scsi-single",
+      "cores": 2,
+      "discos": [
+        {
+          "bus": "scsi",
+          "discard": true,
+          "formato": "auto",
+          "iothread": true,
+          "ssd": true,
+          "storage": "datos",
+          "tamano_gib": 32
+        }
+      ],
+      "encender": true,
+      "esperar_ip": {
+        "activo": true,
+        "plazo_s": 90
+      },
+      "firmware": "seabios",
+      "memoria_mib": 4096,
+      "origen": "disco_vacio",
+      "redes": [
+        {
+          "bridge": "vmbr0",
+          "limite_mb": 100.0,
+          "modelo": "virtio",
+          "mtu": 1500,
+          "vlan": 20
+        }
+      ],
+      "sockets": 1,
+      "storage_efi": null,
+      "tipo_cpu": "x86-64-v2-AES"
+    },
+    "destino": {
+      "algoritmo": "equilibrado",
+      "modo": "automatico",
+      "nodos": []
+    },
+    "etiquetar": true,
+    "opciones": {
+      "cloudinit": {
+        "dns": [
+          "1.1.1.1"
+        ],
+        "dominio": "lab.local",
+        "tarjetas": [
+          {
+            "indice": 0,
+            "ip": "10.0.0.50/24",
+            "modo": "fija",
+            "puerta": "10.0.0.1"
+          }
+        ],
+        "usuario": "deploy"
+      },
+      "encender": true,
+      "esperar_ip": {
+        "activo": true,
+        "plazo_s": 90
+      }
+    },
+    "patron": {
+      "inicio": 1,
+      "prefijo": "srv",
+      "relleno": 2,
+      "separador": "-"
+    },
+    "vmid_inicial": null
+  },
+  "nombre": "Con B v4",
+  "tipo": "homogeneo",
+  "version_formato": 4,
+  "version_proxmox": "9.2"
+}

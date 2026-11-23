@@ -14,6 +14,7 @@ from collections.abc import Iterable, Sequence
 from dataclasses import dataclass
 
 from proxlaunch.nucleo.cloudinit.snippets import volid_snippet_valido
+from proxlaunch.nucleo.firewall.modelos import RE_GRUPO, FirewallMV, FirewallParcial
 from proxlaunch.nucleo.lote.modelos import FilaLote
 from proxlaunch.nucleo.lote.modelos import Problema as ProblemaLote
 from proxlaunch.nucleo.lote.modelos import Severidad as SeveridadLote
@@ -38,7 +39,10 @@ from proxlaunch.nucleo.origen.nombres import (
     partes_volid,
     validar_volid,
 )
-from proxlaunch.nucleo.validacion import TIPOS_BRIDGE, Problema, Severidad
+from proxlaunch.nucleo.red.modelos import RedClon
+from proxlaunch.nucleo.red.redes_nodo import redes_de_nodo
+from proxlaunch.nucleo.red.tarjetas import bridges_finales
+from proxlaunch.nucleo.validacion import Problema, Severidad
 
 MAX_ALTERNATIVAS = 5  # alternativas que se listan en un «no encontrado» (CA-O28.3)
 _GIB = 1024**3
@@ -54,12 +58,34 @@ class NecesidadesCatalogo:
     formatos: bool = False  # ``GET …/storage?format=1`` (destino de importación y clon)
     # Fase B (B4): ids de storage de los snippets elegidos; se listan solo esos (DT-B11).
     snippets: frozenset[str] = frozenset()
+    # Fase C (C3): alguna fila usa el firewall; grupos elegidos y plantillas de las filas de clon.
+    firewall: bool = False
+    grupos_firewall: frozenset[str] = frozenset()
+    firewall_plantillas: frozenset[str] = frozenset()  # nombres de plantilla de filas con C3
 
     @property
     def vacias(self) -> bool:
         return (
-            not self.contenidos and not self.plantillas and not self.formatos and not self.snippets
+            not self.contenidos
+            and not self.plantillas
+            and not self.formatos
+            and not self.snippets
+            and not self.firewall
         )
+
+
+def _firewall_de_fila(fila: FilaLote, opciones: OpcionesLote | None) -> tuple[bool, str | None]:
+    """``(usa C3, grupo)`` de una fila: el firewall del lote (``opciones`` o el de su propia
+    configuración) con las celdas de la fila encima (``None`` = hereda). Mismo criterio que el
+    plan, para leer solo lo que hará falta."""
+    base: FirewallMV | None = opciones.firewall if opciones is not None else fila.cfg.firewall
+    parcial: FirewallParcial | None = fila.opciones.firewall if fila.opciones is not None else None
+    activo = base.activo if base is not None else False
+    grupo = base.grupo if base is not None else None
+    if parcial is not None:
+        activo = activo if parcial.activo is None else parcial.activo
+        grupo = grupo if parcial.grupo is None else parcial.grupo
+    return activo, grupo
 
 
 def _storage_de_snippet(volid: str | None) -> str | None:
@@ -95,9 +121,17 @@ def necesidades_catalogo(
     contenidos: set[Contenido] = set()
     plantillas: set[str] = set()
     snippets: set[str] = set()
+    grupos: set[str] = set()
+    plantillas_fw: set[str] = set()
     formatos = False
+    usa_fw = False
     for fila in filas:
         det = fila.cfg.detalle_origen
+        fw_activo, fw_grupo = _firewall_de_fila(fila, opciones)
+        if fw_activo:
+            usa_fw = True
+            if fw_grupo is not None and RE_GRUPO.fullmatch(fw_grupo):
+                grupos.add(fw_grupo)
         if fila.cfg.origen == OrigenSO.ISO and isinstance(det, DetalleIso):
             contenidos.add(Contenido.ISO)
         elif fila.cfg.origen == OrigenSO.IMPORTAR_DISCO and isinstance(det, DetalleImportacion):
@@ -106,10 +140,18 @@ def necesidades_catalogo(
         elif fila.cfg.origen == OrigenSO.CLONAR_PLANTILLA and isinstance(det, DetalleClon):
             if det.plantilla.nombre:
                 plantillas.add(det.plantilla.nombre)
+                if fw_activo:
+                    plantillas_fw.add(det.plantilla.nombre)
             formatos = True
             snippets.update(_storages_de_snippets(fila, opciones))
     return NecesidadesCatalogo(
-        frozenset(contenidos), frozenset(plantillas), formatos, frozenset(snippets)
+        frozenset(contenidos),
+        frozenset(plantillas),
+        formatos,
+        frozenset(snippets),
+        usa_fw,
+        frozenset(grupos),
+        frozenset(plantillas_fw),
     )
 
 
@@ -449,7 +491,9 @@ def _falta_archivo(inv: Inventario, nodo: str, ref: RefVolumen, contenido: Conte
     return None if presente else nombre
 
 
-def _motivos_clon(inv: Inventario, nodo: str, det: DetalleClon) -> list[ProblemaLote]:
+def _motivos_clon(
+    inv: Inventario, nodo: str, det: DetalleClon, red: RedClon | None = None
+) -> list[ProblemaLote]:
     cat = inv.catalogo
     if cat is None or cat.plantillas is None or not det.plantilla.nombre:
         return []
@@ -471,15 +515,19 @@ def _motivos_clon(inv: Inventario, nodo: str, det: DetalleClon) -> list[Problema
                 storage=faltan[0] if faltan else "",
             )
         ]
-    bridges = {b.nombre for b in inv.bridges.get(nodo, ()) if b.tipo in TIPOS_BRIDGE}
-    # Los bridges de la plantilla deben existir en el nodo (CA-O22.9, rama «sin cambiar la red»).
+    # Una VNet de SDN es, para Proxmox, un nombre de bridge (DT-C4).
+    bridges = redes_de_nodo(inv, nodo)
+    # Los bridges FINALES del clon (los de la plantilla tras CAMBIAR/AÑADIR/QUITAR) deben existir
+    # en el nodo (CA-O22.9; sin red personalizada son los de la plantilla).
+    finales: list[tuple[str, ...]] = []
     for p in elegible:
         if p.detalle is None:
             return []
-        faltantes = [b for b in p.detalle.bridges if b not in bridges]
-        if not faltantes:
+        exigidos = bridges_finales(p.detalle.bridges, p.detalle.tarjetas, red)
+        if not [b for b in exigidos if b not in bridges]:
             return []
-    primero = next(b for b in elegible[0].detalle.bridges if b not in bridges)  # type: ignore[union-attr]
+        finales.append(exigidos)
+    primero = next(b for b in finales[0] if b not in bridges)
     return [_motivo(nodo, "bridge", bridge=primero, plantilla=det.plantilla.nombre)]
 
 
@@ -513,7 +561,7 @@ def motivos_nodo_origen(cfg: ConfiguracionVM, inv: Inventario, nodo: str) -> lis
         falta = _falta_archivo(inv, nodo, det.imagen, Contenido.IMPORT)
         return [] if falta is None else [_motivo(nodo, "fuente", fuente=falta, tipo="imagen")]
     if cfg.origen == OrigenSO.CLONAR_PLANTILLA and isinstance(det, DetalleClon):
-        return _motivos_clon(inv, nodo, det)
+        return _motivos_clon(inv, nodo, det, cfg.red_clon)
     return []
 
 

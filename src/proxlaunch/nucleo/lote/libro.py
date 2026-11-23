@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import dataclasses
 import threading
+from collections.abc import Mapping
 
 from proxlaunch.nucleo.agente.modelos import SIN_IP_UTIL, EstadoIp, ResultadoIp
 from proxlaunch.nucleo.errores import ErrorProxLaunch
@@ -21,6 +22,7 @@ from proxlaunch.nucleo.lote.modelos import (
     MotivoNoEnviada,
     Plan,
 )
+from proxlaunch.nucleo.red.modelos import TarjetaFinal
 
 # Avisos de la espera de IP (RF-B3.5): nunca hacen fallar la MV ni pausan el lote.
 AVISO_IP_NO_OBTENIDA = "ip_no_obtenida"
@@ -133,6 +135,17 @@ class Libro:
             self._entradas[vmid] = actual
             return actual
 
+    def registrar_macs_originales(self, vmid: int, macs: Mapping[int, str]) -> EntradaLibro:
+        """Guarda la MAC original de las tarjetas del clon; la primera lectura de cada una manda."""
+        with self._cerrojo:
+            actual = self._entradas[vmid]
+            previas = dict(actual.macs_originales)
+            for indice, mac in macs.items():
+                previas.setdefault(indice, mac)
+            nueva = dataclasses.replace(actual, macs_originales=tuple(sorted(previas.items())))
+            self._entradas[vmid] = nueva
+            return nueva
+
     def registrar_log(self, vmid: int, log: list[str] | tuple[str, ...]) -> EntradaLibro:
         with self._cerrojo:
             actual = dataclasses.replace(
@@ -151,6 +164,7 @@ class Libro:
         error: ErrorProxLaunch | None = None,
         log: list[str] | tuple[str, ...] = (),
         avisos: tuple[str, ...] = (),
+        red_final: tuple[TarjetaFinal, ...] = (),
     ) -> EntradaLibro:
         """Fija el estado final de una MV. Ignora la llamada si ya estaba en estado final."""
         assert estado not in ESTADOS_EN_CURSO, "finalizar exige un estado final"
@@ -158,7 +172,7 @@ class Libro:
             actual = self._entradas[vmid]
             if actual.estado not in ESTADOS_EN_CURSO:
                 return actual
-            return self._escribir(actual, estado, t_fin, upid, error, log, avisos)
+            return self._escribir(actual, estado, t_fin, upid, error, log, avisos, red_final)
 
     def resolver(
         self,
@@ -170,6 +184,7 @@ class Libro:
         error: ErrorProxLaunch | None = None,
         log: list[str] | tuple[str, ...] = (),
         avisos: tuple[str, ...] = (),
+        red_final: tuple[TarjetaFinal, ...] = (),
     ) -> EntradaLibro:
         """Reemplaza el estado de una MV *ya intentada* tras una comprobación (CA-L15.7).
 
@@ -188,6 +203,7 @@ class Libro:
                 error,
                 log if log else actual.log_tarea,
                 avisos if avisos else actual.avisos,
+                red_final,
             )
 
     def registrar_ip(self, vmid: int, resultado: ResultadoIp) -> EntradaLibro | None:
@@ -241,6 +257,7 @@ class Libro:
         error: ErrorProxLaunch | None,
         log: list[str] | tuple[str, ...],
         avisos: tuple[str, ...],
+        red_final: tuple[TarjetaFinal, ...] = (),
     ) -> EntradaLibro:
         nueva = dataclasses.replace(
             actual,
@@ -250,6 +267,7 @@ class Libro:
             error=error,
             log_tarea=tuple(log)[-LINEAS_LOG_TAREA:] if log else actual.log_tarea,
             avisos=avisos if avisos else actual.avisos,
+            red_final=red_final if red_final else actual.red_final,
             motivo_no_enviada=None,
         )
         self._entradas[actual.elemento.vmid] = nueva

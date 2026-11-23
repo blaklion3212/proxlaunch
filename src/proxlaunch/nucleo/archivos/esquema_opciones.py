@@ -2,8 +2,9 @@
 
 Cubre ``encender``, ``arranque_auto``, ``arranque_orden``, ``arranque_espera``, ``notas_origen``,
 ``notas_usuario``, ``notas``, ``etiquetas_usuario``, ``pool``, ``proteger`` y, por tarjeta de red,
-``mtu`` y ``limite_mb``; y, de la fase B (0.7), ``cloudinit`` y ``esperar_ip`` (ver
-``esquema_cloudinit``). Las claves nuevas se escriben SOLO si difieren de su valor por defecto
+``mtu`` y ``limite_mb``; de la fase B (0.7), ``cloudinit`` y ``esperar_ip`` (ver
+``esquema_cloudinit``); y, de la fase C (0.8), ``red_clon`` y ``firewall`` (ver
+``esquema_fase_c``). Las claves nuevas se escriben SOLO si difieren de su valor por defecto
 (un archivo sin opciones nuevas queda idéntico al de 0.5.1), salvo ``notas_origen`` que se escribe
 cuando es ``True`` aunque el archivo siga siendo v1/v2 (P-4). La lectura valida tipo y rango
 (CA-A7.1.7); los textos libres pasan por ``exigir_sin_credencial`` al escribir (CA-A7.1.9).
@@ -27,6 +28,17 @@ from proxlaunch.nucleo.archivos.esquema_cloudinit import (
     leer_espera_ip,
     parcial_requiere_v4,
 )
+from proxlaunch.nucleo.archivos.esquema_fase_c import (
+    fase_c_a_dict,
+    firewall_parcial_a_dict,
+    firewall_parcial_requiere_v5,
+    firewall_requiere_v5,
+    leer_firewall,
+    leer_firewall_parcial,
+    leer_red_clon,
+    red_clon_para_escribir,
+    red_clon_requiere_v5,
+)
 from proxlaunch.nucleo.archivos.texto import (
     MOTIVO_CARACTERES,
     MOTIVO_LONGITUD,
@@ -36,6 +48,7 @@ from proxlaunch.nucleo.archivos.texto import (
 )
 from proxlaunch.nucleo.cloudinit.modelos import ConfigCloudInit
 from proxlaunch.nucleo.errores import CodigoError, ErrorProxLaunch
+from proxlaunch.nucleo.firewall.modelos import FirewallMV, FirewallParcial
 from proxlaunch.nucleo.modelos.vm import (
     MAX_LIMITE_MB,
     MTU_IGUAL_BRIDGE,
@@ -47,6 +60,7 @@ from proxlaunch.nucleo.modelos.vm import (
 )
 from proxlaunch.nucleo.opciones.modelos import OpcionesLote, OpcionesParciales
 from proxlaunch.nucleo.opciones.validacion import ENTERO_MAX, MAX_LONG_ETIQUETA
+from proxlaunch.nucleo.red.modelos import RedClon
 from proxlaunch.nucleo.validacion import etiqueta_valida
 
 _MAX_ETIQUETAS = 256  # tope de cordura de la lista de etiquetas del usuario
@@ -65,6 +79,8 @@ CLAVES_OPCIONES_CFG = frozenset(
         "proteger",
         "cloudinit",
         "esperar_ip",
+        "red_clon",
+        "firewall",
     }
 )
 CLAVES_OPCIONES_LOTE = frozenset(
@@ -79,6 +95,8 @@ CLAVES_OPCIONES_LOTE = frozenset(
         "notas_usuario",
         "cloudinit",
         "esperar_ip",
+        "red_clon",
+        "firewall",
     }
 )
 CLAVES_OPCIONES_FILA = frozenset(
@@ -91,6 +109,8 @@ CLAVES_OPCIONES_FILA = frozenset(
         "proteger",
         "cloudinit",
         "esperar_ip",
+        "red_clon",
+        "firewall",
     }
 )
 
@@ -179,6 +199,7 @@ def opciones_cfg_a_dict(cfg: ConfiguracionVM) -> dict[str, object]:
     if cfg.proteger:
         datos["proteger"] = True
     datos.update(_fase_b_a_dict(cfg.cloudinit, cfg.esperar_ip, cfg.plazo_ip_s, ""))
+    datos.update(fase_c_a_dict(cfg.red_clon, cfg.firewall, ""))
     return datos
 
 
@@ -216,6 +237,7 @@ def opciones_lote_a_dict(op: OpcionesLote) -> dict[str, object]:
     if op.notas_usuario:
         datos["notas_usuario"] = True
     datos.update(_fase_b_a_dict(op.cloudinit, op.esperar_ip, op.plazo_ip_s, "opciones."))
+    datos.update(fase_c_a_dict(op.red_clon, op.firewall, "opciones."))
     return datos
 
 
@@ -242,6 +264,11 @@ def opciones_parciales_a_dict(op: OpcionesParciales) -> dict[str, object]:
         datos["cloudinit"] = cloudinit_parcial_a_dict(op.cloudinit, "fila.opciones.cloudinit")
     if op.esperar_ip is not None:
         datos["esperar_ip"] = op.esperar_ip
+    if op.firewall is not None and firewall_parcial_requiere_v5(op.firewall):
+        datos["firewall"] = firewall_parcial_a_dict(op.firewall, "fila.opciones.firewall")
+    if op.red_clon is not None:
+        # Una fila fija su red del clon aunque sea «como la plantilla» (anula la del lote).
+        datos["red_clon"] = red_clon_para_escribir(op.red_clon, "fila.opciones.red_clon")
     return datos
 
 
@@ -283,6 +310,17 @@ def opciones_lote_requieren_v4(op: OpcionesLote) -> bool:
 def opciones_parciales_requieren_v4(op: OpcionesParciales) -> bool:
     """¿Alguna sobrescritura de fila es de la fase B?"""
     return parcial_requiere_v4(op.cloudinit) or op.esperar_ip is not None
+
+
+def opciones_lote_requieren_v5(o: OpcionesLote) -> bool:
+    """¿Las opciones de lote usan algo de la fase C (red del clon personalizada o firewall)?"""
+    return red_clon_requiere_v5(o.red_clon) or firewall_requiere_v5(o.firewall)
+
+
+def opciones_parciales_requieren_v5(o: OpcionesParciales) -> bool:
+    """¿Alguna sobrescritura de fila es de la fase C? Cualquier ``red_clon`` de la fila cuenta
+    (también «como la plantilla»: es una elección explícita que anula la del lote)."""
+    return o.red_clon is not None or firewall_parcial_requiere_v5(o.firewall)
 
 
 # --- Lectura ------------------------------------------------------------------------------
@@ -394,6 +432,30 @@ class OpcionesCfgLeidas:
     cloudinit: ConfigCloudInit | None = None
     esperar_ip: bool = False
     plazo_ip_s: int = PLAZO_IP_DEFECTO_S
+    red_clon: RedClon | None = None
+    firewall: FirewallMV | None = None
+
+
+@dataclass
+class _FaseCLeida:
+    """``red_clon`` y ``firewall`` de un objeto de opciones, ya validados."""
+
+    red_clon: RedClon | None = None
+    firewall: FirewallMV | None = None
+
+
+def _leer_fase_c(lector: LectorEsquema, obj: dict[str, object], ruta: str) -> _FaseCLeida | None:
+    """Lee las claves de la fase C (``null`` = ausente)."""
+    n0 = len(lector.errores)
+    red_clon: RedClon | None = None
+    if obj.get("red_clon") is not None:
+        red_clon = leer_red_clon(lector, obj["red_clon"], _ruta(ruta, "red_clon"))
+    firewall: FirewallMV | None = None
+    if obj.get("firewall") is not None:
+        firewall = leer_firewall(lector, obj["firewall"], _ruta(ruta, "firewall"))
+    if len(lector.errores) > n0:
+        return None
+    return _FaseCLeida(red_clon, firewall)
 
 
 @dataclass
@@ -446,6 +508,7 @@ def leer_opciones_cfg(
     pool = leer_pool(lector, obj, ruta, nulo=True)
     proteger = lector.booleano(obj, "proteger", ruta, requerido=False, defecto=False)
     fase_b = _leer_fase_b(lector, obj, ruta)
+    fase_c = _leer_fase_c(lector, obj, ruta)
     if (
         len(lector.errores) > n0
         or encender is None
@@ -456,6 +519,7 @@ def leer_opciones_cfg(
         or etiquetas is None
         or proteger is None
         or fase_b is None
+        or fase_c is None
     ):
         return None
     return OpcionesCfgLeidas(
@@ -472,6 +536,8 @@ def leer_opciones_cfg(
         cloudinit=fase_b.cloudinit,
         esperar_ip=fase_b.esperar_ip,
         plazo_ip_s=fase_b.plazo_ip_s,
+        red_clon=fase_c.red_clon,
+        firewall=fase_c.firewall,
     )
 
 
@@ -490,6 +556,7 @@ def leer_opciones_lote(lector: LectorEsquema, valor: object, ruta: str) -> Opcio
     notas_origen = lector.booleano(obj, "notas_origen", ruta, requerido=False, defecto=False)
     notas_usuario = lector.booleano(obj, "notas_usuario", ruta, requerido=False, defecto=False)
     fase_b = _leer_fase_b(lector, obj, ruta)
+    fase_c = _leer_fase_c(lector, obj, ruta)
     if (
         len(lector.errores) > n0
         or encender is None
@@ -500,6 +567,7 @@ def leer_opciones_lote(lector: LectorEsquema, valor: object, ruta: str) -> Opcio
         or notas_origen is None
         or notas_usuario is None
         or fase_b is None
+        or fase_c is None
     ):
         return None
     return OpcionesLote(
@@ -514,6 +582,8 @@ def leer_opciones_lote(lector: LectorEsquema, valor: object, ruta: str) -> Opcio
         cloudinit=fase_b.cloudinit,
         esperar_ip=fase_b.esperar_ip,
         plazo_ip_s=fase_b.plazo_ip_s,
+        red_clon=fase_c.red_clon,
+        firewall=fase_c.firewall,
     )
 
 
@@ -551,10 +621,22 @@ def leer_opciones_parciales(
     esperar_ip = (
         lector.booleano(obj, "esperar_ip", ruta, requerido=False) if "esperar_ip" in obj else None
     )
+    firewall = (
+        leer_firewall_parcial(lector, obj["firewall"], _ruta(ruta, "firewall"))
+        if obj.get("firewall") is not None
+        else None
+    )
+    red_clon = (
+        leer_red_clon(lector, obj["red_clon"], _ruta(ruta, "red_clon"))
+        if obj.get("red_clon") is not None
+        else None
+    )
     if len(lector.errores) > n0:
         return None
     if cloudinit is not None and cloudinit.vacia:
         cloudinit = None
+    if firewall == FirewallParcial():
+        firewall = None
     return OpcionesParciales(
         encender=encender,
         arranque_auto=arranque_auto,
@@ -564,4 +646,6 @@ def leer_opciones_parciales(
         proteger=proteger,
         cloudinit=cloudinit,
         esperar_ip=esperar_ip,
+        firewall=firewall,
+        red_clon=red_clon,
     )

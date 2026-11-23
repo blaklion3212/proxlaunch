@@ -1,0 +1,227 @@
+[
+  {
+    "cfg": {
+      "ballooning": null,
+      "con_disco": true,
+      "controlador_scsi": "virtio-scsi-single",
+      "cores": 2,
+      "detalle_origen": {
+        "ajustes": {
+          "cores": 2,
+          "disco_gib": null,
+          "memoria_mib": 4096,
+          "sockets": null,
+          "tipo_cpu": null
+        },
+        "modo": "automatico",
+        "modo_efectivo": null,
+        "plantilla": {
+          "nodo": null,
+          "nombre": "base",
+          "vmid": null
+        },
+        "storage_destino": null
+      },
+      "discos": [
+        {
+          "bus": "scsi",
+          "discard": true,
+          "formato": "auto",
+          "iothread": true,
+          "ssd": true,
+          "storage": "",
+          "tamano_gib": 32
+        }
+      ],
+      "encender": true,
+      "firmware": "seabios",
+      "memoria_mib": 2048,
+      "nodo": "",
+      "nombre": "web-01",
+      "origen": "clonar_plantilla",
+      "redes": [
+        {
+          "bridge": "",
+          "modelo": "virtio",
+          "vlan": null
+        }
+      ],
+      "sockets": 1,
+      "storage_efi": null,
+      "tipo_cpu": "x86-64-v2-AES",
+      "vmid": 0
+    },
+    "estado": "correcta",
+    "nombre": "web-01",
+    "numero": 2,
+    "opciones": {
+      "cloudinit": {
+        "tarjeta0": {
+          "indice": 0,
+          "ip": "10.0.0.5/24",
+          "modo": "fija"
+        },
+        "usuario": "deploy"
+      },
+      "encender": true,
+      "esperar_ip": true
+    },
+    "problemas": []
+  },
+  {
+    "cfg": {
+      "ballooning": null,
+      "con_disco": true,
+      "controlador_scsi": "virtio-scsi-single",
+      "cores": 2,
+      "detalle_origen": {
+        "ajustes": {
+          "cores": 4,
+          "disco_gib": null,
+          "memoria_mib": 8192,
+          "sockets": null,
+          "tipo_cpu": null
+        },
+        "modo": "automatico",
+        "modo_efectivo": null,
+        "plantilla": {
+          "nodo": null,
+          "nombre": "base",
+          "vmid": null
+        },
+        "storage_destino": null
+      },
+      "discos": [
+        {
+          "bus": "scsi",
+          "discard": true,
+          "formato": "auto",
+          "iothread": true,
+          "ssd": true,
+          "storage": "",
+          "tamano_gib": 32
+        }
+      ],
+      "firmware": "seabios",
+      "memoria_mib": 2048,
+      "nodo": "",
+      "nombre": "web-02",
+      "origen": "clonar_plantilla",
+      "redes": [
+        {
+          "bridge": "",
+          "modelo": "virtio",
+          "vlan": null
+        }
+      ],
+      "sockets": 1,
+      "storage_efi": null,
+      "tipo_cpu": "x86-64-v2-AES",
+      "vmid": 0
+    },
+    "estado": "correcta",
+    "nombre": "web-02",
+    "numero": 3,
+    "opciones": {
+      "encender": false
+    },
+    "problemas": []
+  },
+  {
+    "cfg": {
+      "ballooning": null,
+      "con_disco": true,
+      "controlador_scsi": "virtio-scsi-single",
+      "cores": 2,
+      "discos": [
+        {
+          "bus": "scsi",
+          "discard": true,
+          "formato": "auto",
+          "iothread": true,
+          "ssd": true,
+          "storage": "",
+          "tamano_gib": 32
+        }
+      ],
+      "firmware": "seabios",
+      "memoria_mib": 4096,
+      "nodo": "",
+      "nombre": "web-03",
+      "origen": "disco_vacio",
+      "redes": [
+        {
+          "bridge": "vmbr0",
+          "modelo": "e1000",
+          "vlan": 20
+        }
+      ],
+      "sockets": 1,
+      "storage_efi": null,
+      "tipo_cpu": "x86-64-v2-AES",
+      "vmid": 0
+    },
+    "estado": "correcta",
+    "nombre": "web-03",
+    "numero": 4,
+    "opciones": null,
+    "problemas": []
+  },
+  {
+    "cfg": {
+      "ballooning": null,
+      "con_disco": true,
+      "controlador_scsi": "virtio-scsi-single",
+      "cores": 2,
+      "detalle_origen": {
+        "ajustes": {
+          "cores": 2,
+          "disco_gib": null,
+          "memoria_mib": 4096,
+          "sockets": null,
+          "tipo_cpu": null
+        },
+        "modo": "automatico",
+        "modo_efectivo": null,
+        "plantilla": {
+          "nodo": null,
+          "nombre": "base",
+          "vmid": null
+        },
+        "storage_destino": null
+      },
+      "discos": [
+        {
+          "bus": "scsi",
+          "discard": true,
+          "formato": "auto",
+          "iothread": true,
+          "ssd": true,
+          "storage": "",
+          "tamano_gib": 32
+        }
+      ],
+      "firmware": "seabios",
+      "memoria_mib": 2048,
+      "nodo": "",
+      "nombre": "web-04",
+      "origen": "clonar_plantilla",
+      "redes": [
+        {
+          "bridge": "",
+          "modelo": "virtio",
+          "vlan": null
+        }
+      ],
+      "sockets": 1,
+      "storage_efi": null,
+      "tipo_cpu": "x86-64-v2-AES",
+      "vmid": 0
+    },
+    "estado": "correcta",
+    "nombre": "web-04",
+    "numero": 5,
+    "opciones": null,
+    "problemas": []
+  }
+]

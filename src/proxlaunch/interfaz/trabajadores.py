@@ -26,6 +26,11 @@ from proxlaunch.nucleo.cloudinit.modelos import ModoTarjeta
 from proxlaunch.nucleo.constructor_peticion import construir_parametros
 from proxlaunch.nucleo.csv_importacion.plantilla import escribir_plantilla
 from proxlaunch.nucleo.errores import CodigoError, ErrorProxLaunch
+from proxlaunch.nucleo.firewall import lectura as lectura_firewall
+from proxlaunch.nucleo.firewall.modelos import LecturaGrupos, ReglaFirewall
+from proxlaunch.nucleo.inventario.exportacion import exportar_csv
+from proxlaunch.nucleo.inventario.modelos import DetalleLote, IpInventario, ListaLotes, LoteServidor
+from proxlaunch.nucleo.inventario.servicio import ServicioInventario
 from proxlaunch.nucleo.lote.ajustes import reintentar_ajustes
 from proxlaunch.nucleo.lote.constantes import ETIQUETA_APP, PREFIJO_ETIQUETA_LOTE
 from proxlaunch.nucleo.lote.libro import Libro
@@ -73,6 +78,7 @@ from proxlaunch.nucleo.perfiles_maquina.formato import (
 )
 from proxlaunch.nucleo.perfiles_maquina.modelos import PerfilMaquina
 from proxlaunch.nucleo.persistencia.perfiles import RepositorioPerfiles
+from proxlaunch.nucleo.red.redes_nodo import RedesNodo
 from proxlaunch.nucleo.registro import enmascarar
 from proxlaunch.nucleo.reloj import Reloj
 from proxlaunch.nucleo.secreto import Secreto
@@ -85,7 +91,7 @@ from proxlaunch.nucleo.servicios.creacion import (
 )
 from proxlaunch.nucleo.servicios.descubrimiento import (
     descubrir,
-    descubrir_nodo_completo,
+    descubrir_nodo_c,
 )
 from proxlaunch.nucleo.validacion import Severidad as SeveridadM1
 from proxlaunch.nucleo.validacion import validar_vm
@@ -372,34 +378,167 @@ def descubrir_y_comprobar_permisos(sesion: Sesion) -> tuple[Inventario, list[str
 
 def recargar_nodo(
     sesion: Sesion, nodo: str
-) -> tuple[str, list[Storage], list[Bridge], list[Storage]]:
-    """Relee storages y bridges de un nodo (CA-11.7).
+) -> tuple[str, list[Storage], list[Bridge], list[Storage], RedesNodo]:
+    """Relee storages, bridges y VNets de un nodo (CA-11.7, CA-C2.1.3).
 
-    Devuelve ``(nodo, con_images, bridges, todos)``: ``todos`` (de la misma respuesta, sin GET
-    extra) mantiene al día ``Inventario.storages_todos`` para el origen del SO.
+    Devuelve ``(nodo, con_images, bridges, todos, redes)``: ``todos`` (de la misma respuesta, sin
+    GET extra) mantiene al día ``Inventario.storages_todos`` para el origen del SO y ``redes``
+    trae las VNets de SDN (la lectura es tolerante: un fallo queda en ``RedesNodo.error``).
     """
-    con_images, todos, bridges = descubrir_nodo_completo(sesion, nodo)
-    return nodo, con_images, bridges, todos
+    con_images, todos, bridges, redes = descubrir_nodo_c(sesion, nodo)
+    return nodo, con_images, bridges, todos, redes
 
 
 def reintentar_nodos(
     sesion: Sesion, nodos: list[str]
 ) -> tuple[
-    dict[str, tuple[list[Storage], list[Bridge], list[Storage]]], dict[str, ErrorProxLaunch]
+    dict[str, tuple[list[Storage], list[Bridge], list[Storage], RedesNodo]],
+    dict[str, ErrorProxLaunch],
 ]:
     """Reintenta el descubrimiento de los nodos que fallaron (CA-11.8).
 
-    Cada nodo recuperado trae ``(con_images, bridges, todos)``.
+    Cada nodo recuperado trae ``(con_images, bridges, todos, redes)``.
     """
-    recuperados: dict[str, tuple[list[Storage], list[Bridge], list[Storage]]] = {}
+    recuperados: dict[str, tuple[list[Storage], list[Bridge], list[Storage], RedesNodo]] = {}
     fallidos: dict[str, ErrorProxLaunch] = {}
     for nodo in nodos:
         try:
-            con_images, todos, bridges = descubrir_nodo_completo(sesion, nodo)
-            recuperados[nodo] = (con_images, bridges, todos)
+            con_images, todos, bridges, redes = descubrir_nodo_c(sesion, nodo)
+            recuperados[nodo] = (con_images, bridges, todos, redes)
         except ErrorProxLaunch as e:
             fallidos[nodo] = e
     return recuperados, fallidos
+
+
+# --- Fase C: lecturas del firewall (solo GET) ---------------------------------------------------
+
+
+def leer_grupos_firewall(sesion: Sesion) -> LecturaGrupos:
+    """Grupos de seguridad del clúster para el selector del formulario (RF-C3.2)."""
+    return lectura_firewall.leer_grupos(sesion.cliente)
+
+
+def leer_reglas_grupo(
+    sesion: Sesion, grupo: str
+) -> tuple[str, tuple[ReglaFirewall, ...] | None, ErrorProxLaunch | None]:
+    """Reglas de un grupo para «Ver reglas» (RF-C3.11); solo lectura."""
+    reglas, error = lectura_firewall.leer_reglas_grupo(sesion.cliente, grupo)
+    return grupo, reglas, error
+
+
+# --- Fase C: inventario de lotes del servidor (C1) ------------------------------------------------
+# Todo es lectura salvo ``deshacer_inventario`` (el Deshacer confirmado, con doble control).
+
+
+def leer_lotes_servidor(sesion: Sesion, reloj: Reloj) -> ListaLotes:
+    """Una sola petición (``/cluster/resources``) agrupada por lote (RF-C1.2)."""
+    return ServicioInventario(sesion, reloj).listar()
+
+
+def detallar_lote_servidor(
+    sesion: Sesion,
+    reloj: Reloj,
+    lote: LoteServidor,
+    permisos: PermisosEfectivos | None,
+    *,
+    al_cambiar_etapa: Callable[[Any], None],
+    al_enviar: Callable[[str], None],
+    cancelado: threading.Event,
+) -> DetalleLote:
+    """Lee la config de cada máquina del lote (≤ 4 a la vez); con ``cancelado`` corta (RF-C1.12)."""
+    del al_cambiar_etapa, al_enviar  # el trabajador con contexto los pasa siempre
+    return ServicioInventario(sesion, reloj).detallar(lote, cancelado, permisos)
+
+
+def obtener_ips_inventario(
+    sesion: Sesion,
+    reloj: Reloj,
+    detalle: DetalleLote,
+    vmids: Collection[int],
+    permisos: PermisosEfectivos | None,
+    *,
+    al_cambiar_etapa: Callable[[Any], None],
+    al_enviar: Callable[[str], None],
+    cancelado: threading.Event,
+) -> dict[int, IpInventario]:
+    """Una sonda del agente por máquina, sin esperar (RF-C1.7); solo lectura."""
+    del al_cambiar_etapa, al_enviar
+    return ServicioInventario(sesion, reloj).obtener_ips(detalle, vmids, cancelado, permisos)
+
+
+def exportar_inventario_csv(
+    sesion: Sesion,
+    reloj: Reloj,
+    ruta: Path,
+    detalles: Sequence[DetalleLote],
+    pendientes: Sequence[LoteServidor],
+    ips_previas: dict[int, IpInventario],
+    con_ip: bool,
+    permisos: PermisosEfectivos | None,
+    *,
+    al_cambiar_etapa: Callable[[Any], None],
+    al_enviar: Callable[[str], None],
+    cancelado: threading.Event,
+) -> tuple[Path | None, list[DetalleLote], dict[int, IpInventario]]:
+    """Lee lo que falte (lotes sin detalle, IP) y escribe el CSV de exportación (RF-C1.6).
+
+    Solo hace GET y escribe el archivo local ``ruta``. Devuelve la ruta (``None`` si se canceló
+    antes de escribir), los detalles y las IP leídas, para que el diálogo los conserve.
+    """
+    del al_cambiar_etapa, al_enviar
+    servicio = ServicioInventario(sesion, reloj)
+    todos = list(detalles)
+    for lote in pendientes:
+        if cancelado.is_set():
+            break
+        todos.append(servicio.detallar(lote, cancelado, permisos))
+    ips = dict(ips_previas)
+    if con_ip:
+        for detalle in todos:
+            faltan = [m.recurso.vmid for m in detalle.maquinas if m.recurso.vmid not in ips]
+            if faltan and not cancelado.is_set():
+                ips.update(servicio.obtener_ips(detalle, faltan, cancelado, permisos))
+    if cancelado.is_set():
+        return None, todos, ips
+    exportar_csv(ruta, todos, ips if con_ip else None)
+    return ruta, todos, ips
+
+
+def inspeccionar_inventario(
+    sesion: Sesion,
+    reloj: Reloj,
+    detalle: DetalleLote,
+    marcadas: Collection[int],
+    permisos: PermisosEfectivos | None,
+) -> InspeccionRollback:
+    """Solo lectura: encendidas, protegidas e ilegibles entre las marcadas (RF-C1.8 paso 2)."""
+    return ServicioInventario(sesion, reloj).inspeccionar(detalle, marcadas, permisos)
+
+
+def deshacer_inventario(
+    sesion: Sesion,
+    reloj: Reloj,
+    detalle: DetalleLote,
+    marcadas: Collection[int],
+    observador: Callable[[ResultadoRollback], None],
+    control: ControlLote,
+    forzar_apagado: frozenset[int],
+    forzar_desproteccion: frozenset[int],
+    permisos: PermisosEfectivos | None,
+) -> list[ResultadoRollback]:
+    """Borra las máquinas marcadas del lote tras la confirmación con el código (RF-C1.8).
+
+    La UI deshabilita el botón con más de 100 marcadas: ``deshacer`` lanzaría ``ValueError``.
+    """
+    return ServicioInventario(sesion, reloj).deshacer(
+        detalle,
+        marcadas,
+        observador,
+        control,
+        forzar_apagado=forzar_apagado,
+        forzar_desproteccion=forzar_desproteccion,
+        permisos=permisos,
+    )
 
 
 def comprobar_vmid(sesion: Sesion, vmid: int) -> tuple[int, str | None]:

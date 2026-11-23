@@ -37,8 +37,9 @@ def _dialogo(qtbot, caps):
 
 def test_ca_o02_9_la_tabla_lista_las_nueve_vias_con_estado_en_texto_y_simbolo(qtbot):
     d = _dialogo(qtbot, caps_origen())
-    assert d.tabla.rowCount() == 9
-    for fila in range(9):
+    # Las nueve vías de origen y las cinco filas de la fase C (RF-C5.2).
+    assert d.tabla.rowCount() == 14
+    for fila in range(14):
         estado = d.tabla.item(fila, d.COL_ESTADO).text()
         assert estado[0] in "✔!✖" and len(estado) > 2  # símbolo + texto: no solo color
 

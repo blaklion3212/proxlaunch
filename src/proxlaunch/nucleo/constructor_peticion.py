@@ -8,6 +8,7 @@ from decimal import Decimal
 
 from proxlaunch.nucleo.capacidades import admite_etiquetas
 from proxlaunch.nucleo.errores import CodigoError, ErrorProxLaunch
+from proxlaunch.nucleo.firewall.modelos import usa_firewall
 from proxlaunch.nucleo.modelos.catalogo import Contenido
 from proxlaunch.nucleo.modelos.inventario import Inventario
 from proxlaunch.nucleo.modelos.origen import DetalleImportacion, DetalleIso, TipoSO
@@ -200,8 +201,9 @@ def construir_parametros(
     elif cfg.origen == OrigenSO.IMPORTAR_DISCO and cfg.tpm:
         params["tpmstate0"] = _valor_tpm(cfg, inv, discos)
 
+    con_firewall = usa_firewall(cfg.firewall)
     for i, r in enumerate(cfg.redes):
-        params[f"net{i}"] = valor_red(r)
+        params[f"net{i}"] = valor_red(r, firewall=con_firewall)
     if con_origen and cfg.agente_qemu and cfg.tipo_so != TipoSO.OTRO:
         params["agent"] = "1"
     etiquetas = etiquetas_finales(cfg)
@@ -230,10 +232,11 @@ def formato_limite(mb: float) -> str:
     return format(Decimal(repr(mb)), "f").rstrip("0").rstrip(".")
 
 
-def valor_red(r: InterfazRed) -> str:
-    """Valor de ``netN``: ``<modelo>,bridge=…[,tag=…][,mtu=…][,rate=…]``.
+def valor_red(r: InterfazRed, *, firewall: bool = False) -> str:
+    """Valor de ``netN``: ``<modelo>,bridge=…[,tag=…][,mtu=…][,rate=…][,firewall=1]``.
 
-    ``mtu`` solo se envía con VirtIO (el resto de modelos no lo admite).
+    ``mtu`` solo se envía con VirtIO (el resto de modelos no lo admite). ``firewall=1`` va al
+    final y solo si ``firewall`` es ``True`` (C3); por defecto el texto es el de 0.7.0.
     """
     valor = f"{r.modelo.value},bridge={r.bridge}"
     if r.vlan is not None:
@@ -242,6 +245,8 @@ def valor_red(r: InterfazRed) -> str:
         valor += f",mtu={r.mtu}"
     if r.limite_mb is not None:
         valor += f",rate={formato_limite(r.limite_mb)}"
+    if firewall:
+        valor += ",firewall=1"
     return valor
 
 

@@ -30,6 +30,7 @@ from proxlaunch.nucleo.archivos.esquema_cloudinit import (
     cloudinit_requiere_v4,
     espera_ip_requiere_v4,
 )
+from proxlaunch.nucleo.archivos.esquema_fase_c import firewall_requiere_v5, red_clon_requiere_v5
 from proxlaunch.nucleo.archivos.esquema_opciones import (
     CLAVES_OPCIONES_CFG,
     leer_limite,
@@ -182,6 +183,17 @@ def requiere_version_4(cfg: ConfiguracionVM | ConfigPerfil) -> bool:
     return cloudinit_requiere_v4(cfg.cloudinit) or espera_ip_requiere_v4(
         cfg.esperar_ip, cfg.plazo_ip_s
     )
+
+
+def requiere_version_5(cfg: ConfiguracionVM | ConfigPerfil) -> bool:
+    """¿La configuración usa algo de la fase C? Entonces el lote se escribe como v5 (RF-C6.1).
+
+    Cuenta la red del clon personalizada y el firewall distinto del defecto. Un perfil nunca lo
+    usa: no guarda nada de la fase C (RF-C6.2).
+    """
+    if isinstance(cfg, ConfigPerfil):
+        return False
+    return red_clon_requiere_v5(cfg.red_clon) or firewall_requiere_v5(cfg.firewall)
 
 
 def _no_guardable(campo: str) -> ErrorProxLaunch:
@@ -1038,4 +1050,6 @@ def leer_configuracion(lector: LectorEsquema, valor: object, ruta: str) -> Confi
         cloudinit=opciones.cloudinit,
         esperar_ip=opciones.esperar_ip,
         plazo_ip_s=opciones.plazo_ip_s,
+        red_clon=opciones.red_clon,
+        firewall=opciones.firewall,
     )

@@ -43,7 +43,9 @@ from proxlaunch.interfaz.textos_b import (
     texto_detalle_ip,
     token_color_ip,
 )
+from proxlaunch.interfaz.textos_c import texto_riesgo_firewall_parcial
 from proxlaunch.nucleo.errores import CodigoError, ErrorProxLaunch
+from proxlaunch.nucleo.lote.informe import riesgo_firewall_parcial
 from proxlaunch.nucleo.lote.modelos import (
     ESTADOS_EN_CURSO,
     ElementoPlan,
@@ -473,13 +475,16 @@ def detalle_entrada(entrada: EntradaLibro) -> str:
         )
     if estado == EstadoMV.PARCIAL:
         avisos = " ".join(t for t in (texto_aviso_entrada(a) for a in entrada.avisos) if t)
+        # Fase C (CA-C3.8.5): con el firewall a medias se añade el riesgo de quedar sin conexión.
+        riesgo = texto_riesgo_firewall_parcial() if riesgo_firewall_parcial(entrada) else ""
         if any(a.startswith("ajuste_pendiente:") for a in entrada.avisos):
             # Clon creado al que le faltan ajustes: se puede reintentar o deshacer (E-O24).
-            return texto_error(error) if error is not None else avisos
+            base = texto_error(error) if error is not None else avisos
+            return f"{base} {riesgo}" if riesgo else base
         base = QCoreApplication.translate(
             "ModelosTabla", "Quedó a medias; elimínala con «Deshacer…» o desde Proxmox."
         )
-        return f"{base} {avisos}" if avisos else base
+        return " ".join(t for t in (base, avisos, riesgo) if t)
     if estado == EstadoMV.CONEXION_PERDIDA and error is None:
         return texto_error(
             ErrorProxLaunch(

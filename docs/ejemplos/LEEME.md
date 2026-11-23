@@ -1,6 +1,6 @@
 # Archivos de ejemplo de ProxLaunch
 
-Esta carpeta reúne archivos listos para abrir en ProxLaunch y usarlos como modelo (layout)
+Esta carpeta reúne archivos listos para abrir en ProxLaunch y usarlos como modelo (estructura)
 al crear tus propias máquinas virtuales (MVs): CSV de máquinas, lotes guardados y perfiles
 de máquina.
 
@@ -26,6 +26,8 @@ aplicación escribe y acepta.
 | `mvs-escrito-a-mano.csv` | Lo mismo que un CSV hecho en Excel, LibreOffice o un editor de texto: sin comillas, sin BOM y con saltos de línea simples. Demuestra que no hace falta usar la plantilla de la aplicación. | **Lote > Importar desde CSV…** |
 | `mvs-opciones.csv` | 4 MVs que usan las columnas de opciones de la versión 0.6: `encender`, `arranque_auto`, `notas`, `etiquetas`, `pool`, `proteger`, `mtu` y `limite_red`. Una fila lo fija todo, otra no fija nada (hereda lo del formulario) y las demás mezclan valores. | **Lote > Importar desde CSV…** |
 | `mvs-cloudinit.csv` | 4 MVs que **clonan una plantilla** y la configuran en su primer arranque con las columnas de la versión 0.7: `ci_usuario`, `ci_claves`, `ci_ip` (`dhcp` o una IP fija), `ci_puerta`, `ci_dns` y `esperar_ip`. No lleva la columna `ci_contrasena` a propósito. | **Lote > Importar desde CSV…** |
+| `mvs-red-firewall.csv` | 4 MVs con las columnas de la versión 0.8: `reescribir_red`, `cortafuegos`, `grupo_seguridad`, `politica_entrada` y `politica_salida`. Dos filas clonan una plantilla y cambian la red de la primera tarjeta, una clona sin cambiar la red y otra (disco vacío) deja el firewall apagado. | **Lote > Importar desde CSV…** |
+| `lote-red-firewall.proxlaunch-lote.json` | Lote guardado de 4 MVs que clonan `plantilla-debian12`: cambian `net0` a `vmbr1` con VLAN 20, añaden una tarjeta `net1` en `vmbr0` (VirtIO) y activan el firewall con el grupo `web` (entrada Bloquear, salida Permitir). Es un archivo de **formato 5**: ProxLaunch 0.7.0 y anteriores no lo abren. | **Lote > Abrir lote…** (`Ctrl+O`) |
 | `lote-homogeneo.proxlaunch-lote.json` | Lote guardado de 3 MVs iguales (`srv-web-01`...`srv-web-03`; 2 núcleos, 2 GiB, disco de 32 GiB). | **Lote > Abrir lote…** (`Ctrl+O`) |
 | `lote-con-opciones.proxlaunch-lote.json` | El mismo lote de 3 servidores web, pero con las opciones de la versión 0.6 (encender, arrancar con el servidor con orden y espera, notas, etiquetas, pool, protección, MTU y límite de red). Es un archivo de **formato 3**: ProxLaunch 0.5.1 no lo abre. | **Lote > Abrir lote…** (`Ctrl+O`) |
 | `lote-cloudinit.proxlaunch-lote.json` | Lote guardado de 4 MVs iguales (`srv-web-01`...`srv-web-04`) que clonan `plantilla-debian12` con cloud-init: usuario, una clave SSH, IP fija **en serie** (`192.0.2.50/24` sumando 1 a cada máquina), puerta de enlace, DNS y dominio; se enciende al terminar y espera la IP de cada máquina (plazo de 120 s). Es un archivo de **formato 4**: ProxLaunch 0.6.0 y anteriores no lo abren. | **Lote > Abrir lote…** (`Ctrl+O`) |
@@ -56,7 +58,7 @@ Reglas generales:
 - Una celda vacía significa «usa el valor del perfil». Precedencia: valores por defecto,
   luego el perfil de la fila (columna `perfil`) o el **Perfil base** del diálogo, luego las
   columnas del CSV.
-- Límites: hasta 100 filas, 60 columnas, 256 caracteres por celda (la columna `notas` admite
+- Límites: hasta 100 filas, 70 columnas, 256 caracteres por celda (la columna `notas` admite
   hasta 8192) y 1 MiB.
 - Las filas se numeran como en Excel: el encabezado es la fila 1.
 - Memoria en GiB si no pones unidad (admite `M`, `MiB`, `G`, `GiB`, `T`, `TiB`...). Disco en
@@ -108,6 +110,11 @@ Solo `nombre` es obligatoria. Las demás son opcionales.
 | `ci_actualizar` (`ciupgrade`) | No | `si` o `no` | `no` | Actualizar paquetes en el primer arranque. Uso avanzado. |
 | `ci_snippet_usuario`, `ci_snippet_vendor`, `ci_snippet_red`, `ci_snippet_meta` | No | Un volid `almacenamiento:snippets/archivo.yaml` o `ninguno` | `local:snippets/agente.yaml` | Scripts de configuración ya guardados en el servidor. Uso avanzado. |
 | `esperar_ip` (`wait_ip`, `wait_for_ip`) | No | `si` o `no` | `si` | Tras encender la MV, espera su IP por el agente invitado. Necesita `encender` en `si` (en la fila o en el formulario); si no, la fila da error. |
+| `reescribir_red` (`rewrite_net`, `red_clon`) | No | `si` o `no` | `si` | Solo con `clonar`. `si` aplica `red`, `vlan`, `modelo_red`, `mtu` y `limite_red` a la primera tarjeta de la copia conservando su MAC; `no` la deja como la plantilla. Vacío = lo del formulario. Uso avanzado. |
+| `cortafuegos` (`firewall`) | No | `si` o `no` | `si` | Activa el firewall de la MV. Vacío = lo del formulario. |
+| `grupo_seguridad` (`security_group`, `firewall_group`) | No | Nombre de un grupo de seguridad (2 a 18 caracteres, empieza por letra; letras, números, `-` y `_`) | `web` | Debe existir en el servidor. Solo con `cortafuegos` en `si`. |
+| `politica_entrada` (`policy_in`) | No | `bloquear` (`drop`) o `permitir` (`accept`) | `bloquear` | Qué pasa con la entrada que ninguna regla menciona. Uso avanzado. |
+| `politica_salida` (`policy_out`) | No | `bloquear` (`drop`) o `permitir` (`accept`) | `permitir` | Igual, para la salida. Uso avanzado. |
 
 ### Equivalencias que enseñan los ejemplos
 
@@ -193,6 +200,42 @@ Es el lote `lote-homogeneo` con cloud-init y la espera de IP, escrito por el pro
   habrá que volver a escribirla.
 
 Las IPs, la clave y los nombres son inventados; sustitúyelos por los de tu red.
+
+## `mvs-red-firewall.csv`: red del clon y firewall
+
+```text
+"nombre";"origen";"fuente";"reescribir_red";"red";"vlan";"cortafuegos";"grupo_seguridad";"politica_entrada";"politica_salida"
+"web-01";"clonar";"plantilla-debian12";"si";"vmbr1";"20";"si";"web";"bloquear";"permitir"
+"web-02";"clonar";"plantilla-debian12";"no";"";"";"si";"ssh";"bloquear";"permitir"
+"bd-01";"clonar";"plantilla-ubuntu";"si";"prod";"";"si";"bd";"bloquear";"bloquear"
+"lab-01";"vacio";"";"";"vmbr0";"";"no";"";"";""
+```
+
+Qué enseña cada fila:
+
+- `web-01` cambia `net0` a `vmbr1` con VLAN 20 (conserva la MAC) y activa el firewall con el grupo `web`.
+- `web-02` deja la red **como la plantilla** (`reescribir_red` = `no`: las columnas de red de un clon no se aplican) y activa
+  el firewall con el grupo `ssh`.
+- `bd-01` mueve `net0` a la red virtual `prod` y bloquea también el tráfico de salida.
+- `lab-01` no clona (disco vacío), usa `vmbr0` como siempre y deja el firewall apagado.
+
+Los grupos `web`, `ssh` y `bd`, la red virtual `prod` y las plantillas son inventados: los grupos de seguridad los crea tu
+administrador en Proxmox y deben existir en tu servidor (la validación avisa si no). Una fila con firewall activo, **sin
+grupo** y con la entrada en Bloquear deja la máquina sin acceso por la red y da error: elige siempre un grupo o pon
+`politica_entrada` en `permitir`.
+
+## `lote-red-firewall.proxlaunch-lote.json`: un lote guardado de formato 5
+
+Es un lote de cuatro servidores que clonan `plantilla-debian12`. Fíjate en:
+
+- `"version_formato": 5`: un archivo que usa la red del clon personalizada o el firewall se escribe en formato 5.
+- `red_clon`: `modo` `personalizar` y una lista de `tarjetas`. La tarjeta 0 es de acción `cambiar`: solo las claves presentes
+  (`bridge`, `vlan`) se cambian y lo demás se conserva, MAC incluida. La tarjeta 1 es de acción `añadir` y lleva todos sus
+  valores.
+- `firewall`: `activo`, `grupo`, `politica_entrada`, `politica_salida` y `dhcp` (`auto`: se permite el DHCP si alguna tarjeta
+  usa DHCP en cloud-init). **Nunca se guarda** la confirmación «Entiendo que la máquina no aceptará conexiones por la red».
+
+Los nombres de red, de grupo y de plantilla son inventados; sustitúyelos por los de tu servidor.
 
 ## `mvs-con-errores.csv`: lo que verás en la vista previa
 

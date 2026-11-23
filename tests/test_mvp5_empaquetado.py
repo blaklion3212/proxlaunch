@@ -133,7 +133,7 @@ def version_simulada(version, tmp_path, monkeypatch):
 def test_version_del_codigo_coincide_con_el_paquete(version):
     import proxlaunch
 
-    assert version.version_del_codigo() == proxlaunch.__version__ == "0.7.0"
+    assert version.version_del_codigo() == proxlaunch.__version__ == "0.8.0"
 
 
 def test_comprobar_acepta_pyproject_dinamico_sin_etiqueta(version_simulada):
@@ -207,7 +207,7 @@ def test_cli_imprime_version_y_formato_windows(version_simulada, capsys):
 def test_repositorio_real_es_coherente(version, monkeypatch):
     """CA-E10.1 sobre el repo real (sin depender de si HEAD está etiquetado)."""
     monkeypatch.setattr(version, "etiqueta_de_head", lambda: None)
-    assert version.comprobar() == "0.7.0"
+    assert version.comprobar() == "0.8.0"
 
 
 # =============================================================================================

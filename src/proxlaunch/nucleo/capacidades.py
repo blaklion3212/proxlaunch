@@ -49,6 +49,12 @@ class Funcion(StrEnum):
     CLOUDINIT_PRIVILEGIO_INCIERTO = "cloudinit_privilegio_incierto"  # zona 9.0–9.1 (aviso)
     CLOUDINIT_PRIVILEGIO_PROPIO = "cloudinit_privilegio_propio"  # solo VM.Config.Cloudinit (9.2)
     CICUSTOM_CON_ALLOCATESPACE = "cicustom_con_allocatespace"  # Datastore.Allocate -> AllocateSpace
+    # Fase C (0.8)
+    INVENTARIO_LOTES = "inventario_lotes"  # C1: lotes del servidor (etiquetas y notas)
+    VNETS_SDN = "vnets_sdn"  # C2: VNets de SDN con ``type=any_bridge``
+    FIREWALL_GRUPO = "firewall_grupo"  # C3: grupos de seguridad del firewall
+    REESCRIBIR_RED_CLON = "reescribir_red_clon"  # C4: reescribir ``netN`` del clon
+    SDN_INCLUIDO = "sdn_incluido"  # SDN instalado por defecto (8.1): solo elige el texto de RF-C2.4
 
 
 # Única tabla: función -> (mayor, menor) desde la que está disponible.
@@ -67,6 +73,11 @@ TABLA: dict[Funcion, tuple[int, int]] = {
     Funcion.CLOUDINIT_PRIVILEGIO_INCIERTO: (9, 0),
     Funcion.CLOUDINIT_PRIVILEGIO_PROPIO: (9, 2),
     Funcion.CICUSTOM_CON_ALLOCATESPACE: (9, 0),
+    Funcion.INVENTARIO_LOTES: (8, 0),
+    Funcion.VNETS_SDN: (8, 0),
+    Funcion.FIREWALL_GRUPO: (8, 0),
+    Funcion.REESCRIBIR_RED_CLON: (8, 0),
+    Funcion.SDN_INCLUIDO: (8, 1),
 }
 
 

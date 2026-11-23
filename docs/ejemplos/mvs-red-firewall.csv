@@ -1,0 +1,5 @@
+"nombre";"origen";"fuente";"reescribir_red";"red";"vlan";"cortafuegos";"grupo_seguridad";"politica_entrada";"politica_salida"
+"web-01";"clonar";"plantilla-debian12";"si";"vmbr1";"20";"si";"web";"bloquear";"permitir"
+"web-02";"clonar";"plantilla-debian12";"no";"";"";"si";"ssh";"bloquear";"permitir"
+"bd-01";"clonar";"plantilla-ubuntu";"si";"prod";"";"si";"bd";"bloquear";"bloquear"
+"lab-01";"vacio";"";"";"vmbr0";"";"no";"";"";""

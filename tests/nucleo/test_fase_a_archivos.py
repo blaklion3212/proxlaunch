@@ -171,15 +171,15 @@ def test_ca_a7_1_3_el_lote_migrado_no_añade_ningun_parametro_nuevo_a_la_peticio
 # --- CA-A7.1.4 / A7.1.6: versión futura y versión 3 en el archivo -----------------------------
 
 
-def test_ca_a7_1_4_version_5_se_rechaza_con_version_futura():
-    # Con la fase B (CA-B6.1.5) la máxima legible es 4: la 5 es la primera «futura».
+def test_ca_a7_1_4_version_6_se_rechaza_con_version_futura():
+    # Con la fase C (CA-C6.1.5) la máxima legible es 5: la 6 es la primera «futura».
     datos = json.loads(archivo_lote())
     datos["version_formato"] = VERSION_FORMATO + 1
     with pytest.raises(ErrorProxLaunch) as exc:
         leer_lote(json.dumps(datos).encode())
     assert exc.value.codigo == CodigoError.ARCHIVO_VERSION_FUTURA
-    assert exc.value.params["version_archivo"] == "5"
-    assert exc.value.params["version_soportada"] == "4"
+    assert exc.value.params["version_archivo"] == "6"
+    assert exc.value.params["version_soportada"] == "5"
 
 
 def test_ca_a7_1_6_un_lote_con_opciones_nuevas_declara_version_formato_3():

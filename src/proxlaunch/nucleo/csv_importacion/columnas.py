@@ -82,6 +82,14 @@ COLUMNAS: tuple[DefColumna, ...] = (
     DefColumna("ci_snippet_red", ("cicustom_network", "snippet_network"), avanzada=True),
     DefColumna("ci_snippet_meta", ("cicustom_meta", "snippet_meta"), avanzada=True),
     DefColumna("esperar_ip", ("wait_ip", "wait_for_ip")),
+    # Fase C (RF-C6.3): red del clon y firewall. Celda vacía = la del formulario. ``reescribir_red``
+    # activa la reescritura de ``net0`` del clon con ``red``, ``vlan``, ``modelo_red``, ``mtu`` y
+    # ``limite_red`` (P-C7); sin ella esas columnas no tocan la tarjeta de un clon (como en 0.7.0).
+    DefColumna("reescribir_red", ("rewrite_net", "red_clon"), avanzada=True),
+    DefColumna("cortafuegos", ("firewall",)),
+    DefColumna("grupo_seguridad", ("security_group", "firewall_group")),
+    DefColumna("politica_entrada", ("policy_in",), avanzada=True),
+    DefColumna("politica_salida", ("policy_out",), avanzada=True),
 )
 
 _SEPARADORES = re.compile(r"[\s\-_]+")
@@ -137,6 +145,17 @@ def _error(
     )
 
 
+# Columnas propias del CSV que exporta el inventario (no es un CSV de importación, CA-C6.4.2).
+_COLUMNAS_INVENTARIO: frozenset[str] = frozenset(
+    {"lote", "fecha", "estado", "bloqueo", "protegida", "nota_origen", "deshacible", "motivo"}
+)
+
+
+def es_csv_de_inventario(encabezado: Sequence[str]) -> bool:
+    """¿El encabezado es el de la exportación del inventario? (lleva todas sus columnas propias)."""
+    return {normalizar_encabezado(c) for c in encabezado} >= _COLUMNAS_INVENTARIO
+
+
 def posiciones_de_columna(
     encabezado: Sequence[str], canonica: str, alias_extra: Mapping[str, str] | None = None
 ) -> frozenset[int]:
@@ -160,8 +179,11 @@ def resolver_columnas(
     ``alias_extra`` (alias -> canónica) lo aporta la interfaz con los nombres del idioma activo.
     Avisos: ``COLUMNA_NO_USADA`` por cada columna desconocida y un único
     ``CREDENCIAL_IGNORADA`` (``n``) si alguna parece una credencial. Lanza ``ErrorProxLaunch``
-    ``CSV_COLUMNAS`` (E-M10) con ``motivo`` ``vacia``, ``duplicada`` o ``falta_nombre``.
+    ``CSV_COLUMNAS`` (E-M10) con ``motivo`` ``vacia``, ``duplicada``, ``falta_nombre`` o
+    ``inventario`` (es el CSV exportado por el inventario, no uno de importación).
     """
+    if es_csv_de_inventario(encabezado):
+        raise _error("inventario", "", [], [])
     tabla = _tabla_alias(alias_extra)
     posiciones: dict[str, int] = {}
     textos: dict[str, str] = {}

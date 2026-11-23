@@ -11,6 +11,8 @@ from typing import TYPE_CHECKING, Any, Literal
 
 from proxlaunch.nucleo.cloudinit.modelos import CloudInitParcial, ConfigCloudInit
 from proxlaunch.nucleo.errores import CodigoError
+from proxlaunch.nucleo.firewall.modelos import FirewallMV, FirewallParcial
+from proxlaunch.nucleo.red.modelos import RedClon
 
 if TYPE_CHECKING:  # solo para anotaciones: evita ciclos con ``catalogo`` y ``capacidades_origen``
     from proxlaunch.nucleo.cloudinit.disponibilidad import OpcionB
@@ -32,12 +34,23 @@ class OpcionA(StrEnum):
     PROTEGER = "proteger"
 
 
+class OpcionC(StrEnum):
+    """Opciones de la fase C cuya disponibilidad depende de permisos o versión."""
+
+    INVENTARIO = "inventario"
+    VNETS = "vnets"
+    FIREWALL = "firewall"
+    FIREWALL_GENERAL = "firewall_general"
+    RED_CLON = "red_clon"
+    IP_INVENTARIO = "ip_inventario"
+
+
 @dataclass(frozen=True)
 class EstadoOpcion:
     """Estado de una opción. ``codigo``: ``OPCION_SIN_PRIVILEGIO``, ``OPCION_SIN_VERSION`` o
     ``POOLS_*``. ``params``: privilegio, ruta, version, opcion, motivo."""
 
-    opcion: OpcionA | OpcionB
+    opcion: OpcionA | OpcionB | OpcionC
     disponibilidad: Disponibilidad
     codigo: CodigoError | None = None
     params: dict[str, str] = field(default_factory=dict)
@@ -155,6 +168,9 @@ class OpcionesParciales:
     # Fase B: celdas de cloud-init de la fila y «esperar IP» (None = hereda del lote).
     cloudinit: CloudInitParcial | None = None
     esperar_ip: bool | None = None
+    # Fase C: celdas de firewall de la fila y ``reescribir_red`` (sí → PERSONALIZAR, no → PLANTILLA)
+    firewall: FirewallParcial | None = None
+    red_clon: RedClon | None = None
 
 
 @dataclass(frozen=True)
@@ -173,6 +189,9 @@ class OpcionesLote:
     cloudinit: ConfigCloudInit | None = None
     esperar_ip: bool = False
     plazo_ip_s: int = 120
+    # Fase C: firewall y red del clon del lote (``None`` = comportamiento de 0.7.0).
+    firewall: FirewallMV | None = None
+    red_clon: RedClon | None = None
 
     @classmethod
     def desde_config(cls, cfg: ConfiguracionVM) -> OpcionesLote:
@@ -189,4 +208,6 @@ class OpcionesLote:
             cloudinit=cfg.cloudinit,
             esperar_ip=cfg.esperar_ip,
             plazo_ip_s=cfg.plazo_ip_s,
+            firewall=cfg.firewall,
+            red_clon=cfg.red_clon,
         )

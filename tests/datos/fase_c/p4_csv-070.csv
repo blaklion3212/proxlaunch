@@ -1,0 +1,5 @@
+nombre;origen;fuente;cpu;memoria;red;vlan;modelo_red;mtu;encender;ci_usuario;ci_ip;esperar_ip
+web-01;clonar;base;2;4;vmbr1;30;virtio;1500;si;deploy;10.0.0.5/24;si
+web-02;clonar;base;4;8;;;;;no;;;
+web-03;;;2;4;vmbr0;20;e1000;;;;;
+web-04;clonar;base;2;4;vmbr0;5000;;;;;;

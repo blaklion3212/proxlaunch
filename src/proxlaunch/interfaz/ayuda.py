@@ -517,6 +517,69 @@ _TEXTOS: dict[str, Callable[[], str]] = {
         "Con la consola serie, la consola gráfica de Proxmox se queda en negro: usa la consola "
         "«xterm.js» (texto), que es la que muestran las imágenes cloud.",
     ),
+    # --- Fase C (0.8): redes virtuales, firewall de la máquina y red del clon (RF-C7.1) ---
+    "etiqueta": lambda: QCoreApplication.translate(
+        "Ayuda",
+        "Una marca de texto que Proxmox pega a una máquina, como una pegatina. ProxLaunch usa "
+        "«proxlaunch» y «lote-ab12cd34» para reconocer lo que creó.",
+    ),
+    "lote_codigo": lambda: QCoreApplication.translate(
+        "Ayuda",
+        "Un grupo de máquinas creadas a la vez. El código identifica el grupo, por ejemplo "
+        "«ab12cd34».",
+    ),
+    "vnet": lambda: QCoreApplication.translate(
+        "Ayuda",
+        "Una zona es un área de red definida por el administrador y una VNet (red virtual) es "
+        "una red dentro de ella; por ejemplo, la VNet «prod» de la zona «dc1». Conectas la "
+        "máquina a la VNet igual que a un bridge.",
+    ),
+    "vlan_sdn": lambda: QCoreApplication.translate(
+        "Ayuda",
+        "Una VLAN es una subdivisión de la red identificada por un número (1–4094); por "
+        "ejemplo, la VLAN 20 para la oficina. Solo se puede poner si la red lo permite "
+        "(«vlanaware»).",
+    ),
+    "firewall": lambda: QCoreApplication.translate(
+        "Ayuda",
+        "El firewall de Proxmox filtra el tráfico que entra y sale de la máquina virtual. Se "
+        "activa por máquina y solo funciona si el administrador encendió también el firewall "
+        "general (Centro de datos > Firewall).",
+    ),
+    "grupo_seguridad": lambda: QCoreApplication.translate(
+        "Ayuda",
+        "Un grupo de seguridad es un paquete de reglas del firewall con un nombre; por ejemplo "
+        "«web» permite los puertos 80 y 443 y «ssh» permite el 22. Los crea el administrador.",
+    ),
+    "politica_entrada": lambda: QCoreApplication.translate(
+        "Ayuda",
+        "Qué hace el firewall con lo que ninguna regla menciona. Entrada: Bloquear = nadie "
+        "entra salvo lo permitido por el grupo (recomendado); Permitir = entra todo lo que no "
+        "esté prohibido.",
+    ),
+    "politica_salida": lambda: QCoreApplication.translate(
+        "Ayuda",
+        "Qué hace el firewall con el tráfico que sale de la máquina y ninguna regla menciona. "
+        "Permitir = la máquina puede conectarse a donde quiera (lo habitual); Bloquear = solo "
+        "sale lo que el grupo permita.",
+    ),
+    "mac": lambda: QCoreApplication.translate(
+        "Ayuda",
+        "La dirección MAC es la «matrícula» de una tarjeta de red. ProxLaunch la conserva al "
+        "cambiar la red de una copia; solo se genera otra si marcas «Generar una MAC nueva».",
+    ),
+    "dhcp_firewall": lambda: QCoreApplication.translate(
+        "Ayuda",
+        "DHCP es el servicio que reparte IP automáticamente. Con la entrada en Bloquear, su "
+        "respuesta no llegaría a la máquina; marcar esta casilla lo permite. Se marca sola "
+        "si alguna tarjeta usa DHCP en la configuración inicial (cloud-init).",
+    ),
+    "red_clon": lambda: QCoreApplication.translate(
+        "Ayuda",
+        "Al clonar, cada copia hereda las tarjetas de red de la plantilla. Con «Personalizar» "
+        "puedes cambiar su red, VLAN, tarjeta, MTU y límite, y añadir o quitar tarjetas; la "
+        "MAC se conserva.",
+    ),
 }
 
 # Ayudas de la fase B (0.7) que deben tener texto (CA-B0.6.1, CA-B8.1.1).
@@ -541,6 +604,21 @@ CAMPOS_AYUDA_FASE_B: tuple[str, ...] = (
     "imagen_cloud",
     "plantilla_irreversible",
     "consola_serie",
+)
+
+# Ayudas de la fase C (0.8) que deben tener texto (CA-C0.6.1, CA-C7.1.1).
+CAMPOS_AYUDA_FASE_C: tuple[str, ...] = (
+    "etiqueta",
+    "lote_codigo",
+    "vnet",
+    "vlan_sdn",
+    "firewall",
+    "grupo_seguridad",
+    "politica_entrada",
+    "politica_salida",
+    "mac",
+    "dhcp_firewall",
+    "red_clon",
 )
 
 # Ayudas del lote que deben tener texto (CA-L22.4).
@@ -880,6 +958,20 @@ def efecto_privilegio_opcional(privilegio: str) -> str:
             "Ayuda",
             "permite consultar al agente invitado para «Esperar la IP» de cada máquina. Sin él "
             "esa casilla se desactiva.",
+        )
+    if privilegio == "SDN.Use":
+        return QCoreApplication.translate(
+            "Ayuda",
+            "permite conectar las máquinas a una red virtual (SDN) de esa zona. Sin él solo "
+            "puedes usar los bridges del servidor. Para la red «prod» de la zona «z1»: "
+            "pveum acl modify /sdn/zones/z1/prod --roles PVESDNUser --users <usuario>. Para "
+            "toda la zona: /sdn/zones/z1. No está verificado en todas las versiones.",
+        )
+    if privilegio == "SDN.Audit":
+        return QCoreApplication.translate(
+            "Ayuda",
+            "permite ver el alias y el estado de las redes virtuales. Es opcional: sin él las "
+            "redes se usan igual, solo sin esa información.",
         )
     if privilegio == "Datastore.AllocateSpace":
         return QCoreApplication.translate(

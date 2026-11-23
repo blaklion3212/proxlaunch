@@ -35,9 +35,9 @@ def _error(dato, formato=FORMATO_PERFILES, **kw) -> ErrorProxLaunch:
     return exc.value
 
 
-def test_la_version_maxima_que_se_lee_es_4_y_la_base_que_se_escribe_es_1():
-    # DT-B12 (fase B): se lee hasta 4; se escribe 1 salvo origen (2), fase A (3) o fase B (4).
-    assert VERSION_FORMATO == 4
+def test_la_version_maxima_que_se_lee_es_5_y_la_base_que_se_escribe_es_1():
+    # RF-C6.1 (fase C): se lee hasta 5; se escribe 1 salvo origen (2), fase A (3), B (4) o C (5).
+    assert VERSION_FORMATO == 5
 
 
 def test_una_envoltura_valida_devuelve_el_contenido_sin_las_claves_de_la_envoltura():
@@ -97,12 +97,12 @@ def test_version_ausente_da_e_m02():
 # --- CA-X01.4: versión futura (E-M03) -------------------------------------------------------------
 
 
-@pytest.mark.parametrize("version", [5, 6, 99, 10**9])
+@pytest.mark.parametrize("version", [6, 7, 99, 10**9])
 def test_version_mayor_da_e_m03_sin_lectura_parcial(version):
-    # Con la fase B la máxima soportada es 4 (CA-B6.1.5); la 4 ya no es «futura».
+    # Con la fase C la máxima soportada es 5 (CA-C6.1.5); la 5 ya no es «futura».
     e = _error(_raiz(version_formato=version))
     assert e.codigo == CodigoError.ARCHIVO_VERSION_FUTURA
-    assert e.params == {"version_archivo": str(version), "version_soportada": "4"}
+    assert e.params == {"version_archivo": str(version), "version_soportada": "5"}
 
 
 def test_una_app_del_mvp3_abre_un_archivo_v2_con_e_m03_ca_o26_8():
@@ -125,15 +125,15 @@ def test_v2_se_lee_tal_cual():
 # --- CA-X01.3: migraciones -----------------------------------------------------------------------
 
 
-def test_las_migraciones_registradas_son_identidad_hasta_v4_y_se_leen_sin_aviso():
-    """CA-X01.3 + CA-O27.5 + CA-A7.1.1: v1→v2, v2→v3 y v3→v4 son la identidad y no avisan."""
+def test_las_migraciones_registradas_son_identidad_hasta_v5_y_se_leen_sin_aviso():
+    """CA-X01.3 + CA-O27.5 + CA-A7.1.1 + CA-C6.1.1: v1→v2 … v4→v5 son la identidad y no avisan."""
     assert set(MIGRACIONES) == {FORMATO_PERFILES, FORMATO_LOTE}
     for tabla in MIGRACIONES.values():
-        assert set(tabla) == {1, 2, 3}
+        assert set(tabla) == {1, 2, 3, 4}
         muestra = {"a": 1, "b": [2]}
-        assert all(tabla[v](muestra) == muestra for v in (1, 2, 3))
+        assert all(tabla[v](muestra) == muestra for v in (1, 2, 3, 4))
     for formato in (FORMATO_PERFILES, FORMATO_LOTE):
-        for version in (1, 2, 3):
+        for version in (1, 2, 3, 4):
             e = abrir_envoltura(_raiz(formato=formato, version_formato=version), formato)
             assert e.avisos == () and e.version_original == version
 

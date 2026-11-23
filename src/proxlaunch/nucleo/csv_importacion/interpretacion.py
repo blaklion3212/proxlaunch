@@ -65,6 +65,7 @@ from proxlaunch.nucleo.csv_importacion.modelos import (
 )
 from proxlaunch.nucleo.csv_importacion.saneado import sin_control, texto_visible
 from proxlaunch.nucleo.errores import CodigoError, ErrorProxLaunch
+from proxlaunch.nucleo.firewall.modelos import RE_GRUPO, FirewallParcial, Politica
 from proxlaunch.nucleo.lote.modelos import Destino, FilaLote
 from proxlaunch.nucleo.lote.reparto import nodos_elegibles
 from proxlaunch.nucleo.modelos.catalogo import Contenido
@@ -98,6 +99,7 @@ from proxlaunch.nucleo.origen.nombres import (
 from proxlaunch.nucleo.origen.resolucion import resolver_origen
 from proxlaunch.nucleo.perfiles_maquina.aplicar import AvisoPista, aplicar_config
 from proxlaunch.nucleo.perfiles_maquina.modelos import PerfilMaquina
+from proxlaunch.nucleo.red.modelos import AccionTarjeta, CampoRed, ModoRedClon, RedClon, TarjetaClon
 from proxlaunch.nucleo.secreto import MASCARA, Secreto
 from proxlaunch.nucleo.transferencias.url import url_saneada
 from proxlaunch.nucleo.validacion import (
@@ -139,6 +141,7 @@ TEXTOS_SIN_TOKEN = frozenset(
         "ci_ip",
         "ci_puerta",
         "ci_dns",
+        "grupo_seguridad",
         *(columna for columna, _tipo in _COLUMNAS_SNIPPET),
     }
 )
@@ -203,6 +206,15 @@ def _columna_de_campo(campo: str) -> str | None:
         return _columna_de_cloudinit(campo[len("cloudinit.") :])
     if campo.startswith("etiquetas_usuario["):
         return "etiquetas"
+    # Fase C: campos del firewall y de la red del clon (V-C) que tienen columna.
+    if campo.startswith("firewall"):
+        return {
+            "grupo": "grupo_seguridad",
+            "politica_entrada": "politica_entrada",
+            "politica_salida": "politica_salida",
+        }.get(campo.partition(".")[2], "cortafuegos")
+    if campo.startswith("red_clon"):
+        return "reescribir_red"
     # MVP 4: campos del origen del SO.
     if campo == "detalle_origen":
         return "origen"
@@ -353,6 +365,18 @@ class _Contexto:
         return avisos
 
 
+@dataclass(frozen=True)
+class _CeldasRed:
+    """Columnas de la tarjeta 1 ya leídas (``None`` = celda vacía o inválida)."""
+
+    bridge: str | None
+    vlan: int | None
+    modelo: ModeloRed | None
+    mtu_fijado: bool  # «heredar» también es una elección explícita (``mtu`` = ``None``)
+    mtu: int | None
+    limite: float | None
+
+
 # --- Una fila -------------------------------------------------------------------------------
 
 
@@ -364,6 +388,7 @@ class _Fila:
         self.b = _Borrador(fila)
         self._ajustes: AjustesClon | None = None  # clon: ajustes leídos de las columnas
         self._ampliar: int | None = None  # importación: columna ``disco`` = ampliar a
+        self._red_clon: RedClon | None = None  # fase C: ``reescribir_red`` de la fila
 
     # -- lectura de celdas (solo columnas conocidas y no credenciales) --
 
@@ -488,9 +513,11 @@ class _Fila:
                 cfg.sockets = sockets
             self._memoria(cfg)
         self._firmware_y_cpu(cfg, aplicar_tipo_cpu=not clon)
+        reescribir = self.booleano("reescribir_red")
         if not clon:
             self._discos(cfg, nodo_ef)
             self._red(cfg, nodo_ef)
+        self._reescribir_red(reescribir, clon)
         self._detalle_origen(cfg)
         b.opciones = self._opciones(cfg, perfil)
         self._pistas(resultado.avisos, perfil)
@@ -798,7 +825,9 @@ class _Fila:
             return ""
         return storage_por_defecto(inv.storages.get(nodo_ef, ())) or ""
 
-    def _red(self, cfg: ConfiguracionVM, nodo_ef: str) -> None:
+    def _celdas_red(self) -> _CeldasRed:
+        """Lee y valida las columnas de la tarjeta 1 (``red``, ``vlan``, ``modelo_red``, ``mtu``,
+        ``limite_red``). Los errores de celda quedan anotados en la fila."""
         bridge = self.texto("red")
         vlan = self.entero("vlan")
         crudo_modelo = self.celda("modelo_red")
@@ -824,6 +853,18 @@ class _Fila:
                 limite = unidades.limite_mb(crudo_limite)
             except unidades.ValorInvalido as e:
                 self.error_valor("limite_red", e)
+        return _CeldasRed(bridge, vlan, modelo, mtu_fijado, mtu, limite)
+
+    def _red(self, cfg: ConfiguracionVM, nodo_ef: str) -> None:
+        c = self._celdas_red()
+        bridge, vlan, modelo, mtu_fijado, mtu, limite = (
+            c.bridge,
+            c.vlan,
+            c.modelo,
+            c.mtu_fijado,
+            c.mtu,
+            c.limite,
+        )
         if bridge is None and vlan is None and modelo is None and not mtu_fijado and limite is None:
             return
         if not cfg.redes:
@@ -844,6 +885,76 @@ class _Fila:
             red.mtu = mtu
         if limite is not None:
             red.limite_mb = limite
+
+    # -- red del clon y firewall de la fase C (RF-C6.3) --
+
+    def _reescribir_red(self, reescribir: bool | None, clon: bool) -> None:
+        """Columna ``reescribir_red``: ``sí`` en un clon aplica las columnas de red a ``net0`` del
+        clon conservando la MAC (P-C7); ``no`` fija «como la plantilla»; vacía hereda el
+        formulario. ``sí`` con un origen distinto de clonar es el error V-C51 de la celda."""
+        if reescribir is None:
+            return
+        if not reescribir:
+            self._red_clon = RedClon()
+            return
+        if not clon:
+            self.b.sin_cfg = True
+            self.problema("reescribir_red", "V-C51", Severidad.ERROR)
+            return
+        c = self._celdas_red()
+        fijados = {
+            campo
+            for campo, fijado in (
+                (CampoRed.BRIDGE, c.bridge is not None),
+                (CampoRed.MODELO, c.modelo is not None),
+                (CampoRed.VLAN, c.vlan is not None),
+                (CampoRed.MTU, c.mtu_fijado),
+                (CampoRed.LIMITE, c.limite is not None),
+            )
+            if fijado
+        }
+        tarjeta = TarjetaClon(
+            indice=0,
+            accion=AccionTarjeta.CAMBIAR,
+            bridge=c.bridge,
+            modelo=None if c.modelo is None else c.modelo.value,
+            vlan=c.vlan,
+            mtu=c.mtu,
+            limite_mb=c.limite,
+            fijados=frozenset(fijados),
+        )
+        self._red_clon = RedClon(ModoRedClon.PERSONALIZAR, (tarjeta,))
+
+    def _politica(self, canonica: str) -> Politica | None:
+        crudo = self.celda(canonica)
+        if not crudo:
+            return None
+        try:
+            return unidades.politica(crudo)
+        except unidades.ValorInvalido as e:
+            self.error_valor(canonica, e)
+            return None
+
+    def _grupo_seguridad(self) -> str | None:
+        """Nombre del grupo de seguridad (V-C31); su existencia la comprueba «Comprobar»."""
+        grupo = self.texto("grupo_seguridad")
+        if grupo is not None and RE_GRUPO.fullmatch(grupo) is None:
+            self.b.sin_cfg = True
+            self.problema("grupo_seguridad", "V-C31", Severidad.ERROR)
+            return None
+        return grupo
+
+    def _firewall(self) -> FirewallParcial | None:
+        """Celdas de firewall de la fila (``None`` = hereda todo del formulario). La coherencia
+        con el firewall del formulario (V-C52: grupo sin firewall activo) la evalúa el
+        planificador con el valor combinado."""
+        parcial = FirewallParcial(
+            activo=self.booleano("cortafuegos"),
+            grupo=self._grupo_seguridad(),
+            politica_entrada=self._politica("politica_entrada"),
+            politica_salida=self._politica("politica_salida"),
+        )
+        return None if parcial == FirewallParcial() else parcial
 
     # -- opciones de la fase A (RF-A7.3) --
 
@@ -1029,6 +1140,8 @@ class _Fila:
             proteger=self.booleano("proteger"),
             cloudinit=self._cloudinit(),
             esperar_ip=self.booleano("esperar_ip"),
+            firewall=self._firewall(),
+            red_clon=self._red_clon,
         )
         if op.encender is not None:
             cfg.encender = op.encender

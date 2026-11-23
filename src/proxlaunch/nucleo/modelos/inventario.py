@@ -62,6 +62,33 @@ class Bridge:
     nombre: str
     tipo: str
     vlan_aware: bool
+    mtu: int | None = None  # fase C: de "mtu" de GET …/network; None = desconocida
+
+
+@dataclass(frozen=True)
+class RedVirtual:
+    """VNet de SDN visible en un nodo (``GET …/network?type=any_bridge``). Texto no confiable."""
+
+    nombre: str  # iface validado con RE_NOMBRE_RED
+    alias: str | None  # comments saneado (≤ 64, sin control ni marcado)
+    vlan_aware: bool
+    ipam: str | None = None
+    tipo_declarado: bool = True  # False = la entrada no traía type (supuesto [A]); la filtra I3
+    zona: str | None = None  # reservado (RF-C2.6); en 0.8.0 siempre None
+
+
+@dataclass(frozen=True)
+class RecursoVM:
+    """Una fila de ``GET /cluster/resources?type=vm``, ya interpretada con tolerancia (RF-C1.4)."""
+
+    vmid: int
+    nombre: str | None  # None = aún sin nombre
+    nodo: str | None
+    tipo: str  # "qemu" | "lxc" | otro
+    estado: str | None  # running | stopped | unknown | None
+    bloqueo: str | None
+    plantilla: bool | None  # None = aún no informado
+    etiquetas: tuple[str, ...]  # en minúsculas, separadas por [;, ]+ ; () si tags no es str
 
 
 @dataclass(frozen=True)
@@ -96,3 +123,6 @@ class Inventario:
     # MVP 4 (al final y con valor por defecto)
     storages_todos: dict[str, tuple[Storage, ...]] = field(default_factory=dict)  # todo contenido
     catalogo: CatalogoServidor | None = None
+    # Fase C (0.8): VNets de SDN por nodo y el error de su lectura (no rompe nada, CA-C2.1.3)
+    redes_sdn: dict[str, tuple[RedVirtual, ...]] = field(default_factory=dict)
+    errores_sdn: dict[str, ErrorProxLaunch] = field(default_factory=dict)

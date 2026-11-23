@@ -39,12 +39,18 @@ from proxlaunch.interfaz.textos_b import (
     texto_estado_ip,
     texto_resumen_ips,
 )
+from proxlaunch.interfaz.textos_c import lineas_fase_c_de_entrada
 from proxlaunch.nucleo.agente.modelos import EstadoIp
 from proxlaunch.nucleo.archivos.csv_seguro import escribir_csv
 from proxlaunch.nucleo.archivos.escritura import escribir_atomico
 from proxlaunch.nucleo.errores import ErrorProxLaunch
+from proxlaunch.nucleo.lote.ajustes import ajustes_pendientes
 from proxlaunch.nucleo.lote.constantes import ETIQUETA_APP, PREFIJO_ETIQUETA_LOTE
-from proxlaunch.nucleo.lote.informe import resumen_ips
+from proxlaunch.nucleo.lote.informe import (
+    ajustes_aplicados,
+    resumen_ips,
+    riesgo_firewall_parcial,
+)
 from proxlaunch.nucleo.lote.informe import upid_sin_usuario as _upid_sin_usuario
 from proxlaunch.nucleo.lote.modelos import (
     EntradaLibro,
@@ -247,6 +253,25 @@ def _fila_maquina(d: DatosMaquina) -> tuple[str, ...]:
         texto_duracion(d.duracion_s),
         upid_sin_usuario(d.upid),
     )
+
+
+def _lineas_fase_c(informe: InformeLote) -> list[str]:
+    """Red y firewall de las máquinas que usan la fase C: qué se aplicó y qué no, las tarjetas
+    finales (quitadas, añadidas, MAC conservada) y el riesgo de un firewall a medias (RF-C0.7,
+    RF-C3.8, RF-C4.8). Vacío si ninguna máquina usa la fase C."""
+    bloques: list[str] = []
+    for e in informe.entradas:
+        pendientes = tuple(ajustes_pendientes(e))
+        lineas = lineas_fase_c_de_entrada(
+            e, ajustes_aplicados(e), pendientes, riesgo_firewall_parcial(e)
+        )
+        if lineas:
+            bloques.append(f"• {e.elemento.nombre} ({e.elemento.vmid}):")
+            bloques.extend(f"    {x}" for x in lineas)
+    if not bloques:
+        return []
+    titulo = QCoreApplication.translate("InformeLote", "Red y firewall de las máquinas")
+    return ["", titulo, "-" * len(titulo), *bloques]
 
 
 def _lineas_ips(informe: InformeLote) -> list[str]:
@@ -556,6 +581,7 @@ def texto_informe(informe: InformeLote) -> str:
     )
     lineas.extend(_tabla(cab, [_fila_maquina(d) for d in datos_maquinas(informe)]))
     lineas.extend(_lineas_ips(informe))
+    lineas.extend(_lineas_fase_c(informe))
 
     con_detalle = [e for e in informe.entradas if detalle_entrada(e)]
     if con_detalle:

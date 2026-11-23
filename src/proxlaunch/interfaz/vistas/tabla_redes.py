@@ -7,7 +7,7 @@ from collections.abc import Mapping, Sequence
 from typing import cast
 
 from PySide6.QtCore import QCoreApplication, Qt, Signal
-from PySide6.QtGui import QStandardItemModel
+from PySide6.QtGui import QFont, QStandardItem, QStandardItemModel
 from PySide6.QtWidgets import (
     QComboBox,
     QGridLayout,
@@ -25,9 +25,19 @@ from proxlaunch.interfaz.textos import (
     texto_opcion_restablecida,
     texto_problema,
 )
+from proxlaunch.interfaz.textos_c import (
+    texto_grupo_bridges,
+    texto_grupo_vnets,
+    texto_nodos_sin_leer,
+    texto_redes_ocultas,
+    texto_sdn_sin_leer,
+    texto_sin_vnets,
+    texto_vlan_no_vlanaware,
+    texto_vnet_con_alias,
+)
 from proxlaunch.interfaz.vistas.campos import etiqueta, mensaje, poner_mensaje, poner_propiedad
 from proxlaunch.nucleo.constructor_peticion import formato_limite
-from proxlaunch.nucleo.modelos.inventario import Bridge
+from proxlaunch.nucleo.modelos.inventario import Bridge, RedVirtual
 from proxlaunch.nucleo.modelos.vm import MTU_IGUAL_BRIDGE, InterfazRed, ModeloRed
 from proxlaunch.nucleo.opciones.modelos import EstadoOpcion, OpcionA
 from proxlaunch.nucleo.origen.capacidades_origen import Disponibilidad
@@ -35,6 +45,40 @@ from proxlaunch.nucleo.validacion import Problema, Severidad
 from proxlaunch.nucleo.valores_defecto import bridge_por_defecto
 
 _C_INDICE, _C_BRIDGE, _C_MODELO, _C_VLAN, _C_MTU, _C_LIMITE, _C_QUITAR = range(7)
+
+
+def _cabecera_grupo(combo: QComboBox, titulo: str) -> None:
+    """Título de grupo del desplegable: negrita y no elegible."""
+    combo.addItem(titulo, None)
+    item = cast(QStandardItemModel, combo.model()).item(combo.count() - 1)
+    item.setEnabled(False)
+    fuente = QFont(combo.font())
+    fuente.setBold(True)
+    item.setFont(fuente)
+
+
+def llenar_combo_red(
+    combo: QComboBox,
+    bridges: Sequence[Bridge],
+    vnets: Sequence[RedVirtual],
+    *,
+    ausente: str | None = None,
+) -> None:
+    """Rellena un desplegable de red. Sin VNets es la lista plana de 0.7.0; con ellas, dos grupos
+    («Bridges del servidor» y «Redes virtuales (SDN)») y el alias de cada VNet (RF-C2.1)."""
+    nombres = {b.nombre for b in bridges} | {v.nombre for v in vnets}
+    if vnets:
+        _cabecera_grupo(combo, texto_grupo_bridges())
+    for b in bridges:
+        combo.addItem(b.nombre, b.nombre)
+    if vnets:
+        _cabecera_grupo(combo, texto_grupo_vnets())
+        for v in vnets:
+            combo.addItem(texto_vnet_con_alias(v.nombre, v.alias), v.nombre)
+    if ausente and ausente not in nombres:
+        combo.addItem(texto_ausente(ausente), ausente)
+        item: QStandardItem = cast(QStandardItemModel, combo.model()).item(combo.count() - 1)
+        item.setEnabled(False)
 
 
 def vlan_desde_texto(texto: str) -> int | None:
@@ -129,6 +173,10 @@ class TablaRedes(QWidget):
         super().__init__(parent)
         self._filas: list[_FilaRed] = []
         self._bridges: list[Bridge] = []
+        self._vnets: list[RedVirtual] = []  # redes virtuales (SDN) del nodo o de la intersección
+        self._sdn_leido = False
+        self._sdn_fallido: str | None = None
+        self._sdn_incluido = True  # texto de V-C13 según la versión de Proxmox
         self._avanzado = False
         self._avanzados: list[QWidget] = []
         # Disponibilidad de las opciones de red de la fase A (privilegio VM.Config.Network).
@@ -164,6 +212,10 @@ class TablaRedes(QWidget):
         self._aviso_nodo = mensaje(aviso=True)
         self._sin_redes = mensaje(error=True)
         self._aviso_opciones = mensaje(aviso=True)
+        self._sin_vnets = etiqueta("", secundario=True)  # V-C13: visible sin pasar el ratón
+        self._sin_vnets.hide()
+        self._aviso_redes = mensaje(aviso=True)  # redes ocultas y nodos sin leer (RF-C2.3)
+        self._motivo_vlan = mensaje(aviso=True)  # por qué una VLAN está deshabilitada (RF-C2.2)
         self._nota_mtu = etiqueta(texto_mtu_solo_virtio(), secundario=True)
         self._nota_mtu.hide()
         capa = QVBoxLayout(self)
@@ -171,6 +223,9 @@ class TablaRedes(QWidget):
         capa.addLayout(self._rejilla)
         capa.addWidget(self._agregar, 0, Qt.AlignmentFlag.AlignLeft)
         capa.addWidget(self._sin_redes)
+        capa.addWidget(self._sin_vnets)
+        capa.addWidget(self._aviso_redes)
+        capa.addWidget(self._motivo_vlan)
         capa.addWidget(self._nota_mtu)
         capa.addWidget(self._aviso_opciones)
         capa.addWidget(self._errores)
@@ -195,9 +250,31 @@ class TablaRedes(QWidget):
         hay_otra = any(f.modelo.currentData() != ModeloRed.VIRTIO for f in self._filas)
         self._nota_mtu.setVisible(self._avanzado and self._mtu_ok and hay_otra)
 
-    def establecer_bridges(self, bridges: Sequence[Bridge]) -> list[str]:
-        """Recarga los bridges del nodo; devuelve los que ya no existen (CA-11.7)."""
+    def establecer_bridges(
+        self,
+        bridges: Sequence[Bridge],
+        vnets: Sequence[RedVirtual] = (),
+        *,
+        sdn_leido: bool = False,
+        sdn_incluido: bool = True,
+        ocultas: int = 0,
+        sin_leer: Sequence[str] = (),
+        sdn_fallido: str | None = None,
+    ) -> list[str]:
+        """Recarga las redes del nodo (bridges y, si las hay, VNets); devuelve las que ya no
+        existen (CA-11.7).
+
+        ``sdn_leido`` dice que se leyeron las VNets del nodo (sin ellas sale el texto V-C13);
+        ``sdn_incluido`` elige el texto según la versión; ``ocultas`` y ``sin_leer`` son el
+        resultado de la intersección de nodos de un lote (RF-C2.3); ``sdn_fallido`` es el nodo
+        cuya lectura de redes virtuales falló (se avisa en vez de callar, CA-C2.1.3).
+        """
         self._bridges = list(bridges)
+        self._vnets = list(vnets)
+        self._sdn_leido = sdn_leido
+        self._sdn_incluido = sdn_incluido
+        self._sdn_fallido = sdn_fallido
+        self._refrescar_textos_sdn(ocultas, sin_leer)
         perdidos: list[str] = []
         for f in self._filas:
             previo = f.bridge.currentData() or f.perdido
@@ -214,11 +291,14 @@ class TablaRedes(QWidget):
                     perdidos.append(str(previo))
             elif idx < 0 and previo:
                 perdidos.append(str(previo))
-        self._agregar.setEnabled(bool(self._bridges))
+        self._agregar.setEnabled(bool(self._bridges or self._vnets))
+        for f in self._filas:
+            self._aplicar_estado_fila(f)
+        self._refrescar_motivo_vlan()
         poner_mensaje(
             self._sin_redes,
             None
-            if self._bridges
+            if self._bridges or self._vnets
             else QCoreApplication.translate(
                 "TablaRedes", "El nodo no tiene redes (bridges) disponibles"
             ),
@@ -382,6 +462,11 @@ class TablaRedes(QWidget):
         virtio = f.modelo.currentData() == ModeloRed.VIRTIO
         f.mtu.setEnabled(self._mtu_ok and virtio)
         f.limite.setEnabled(self._limite_ok)
+        bloqueada = self._vlan_bloqueada(f)
+        f.vlan.setEnabled(not bloqueada)
+        motivo_vlan = texto_vlan_no_vlanaware() if bloqueada else ""
+        f.vlan.setToolTip(motivo_vlan)
+        f.vlan.setAccessibleDescription(motivo_vlan)
         motivo_mtu = (
             self._texto_mtu_bloqueado
             if not self._mtu_ok
@@ -393,7 +478,45 @@ class TablaRedes(QWidget):
         f.limite.setAccessibleDescription(self._texto_limite_bloqueado)
 
     def hay_bridges(self) -> bool:
-        return bool(self._bridges)
+        return bool(self._bridges or self._vnets)
+
+    def _refrescar_textos_sdn(self, ocultas: int, sin_leer: Sequence[str]) -> None:
+        """V-C13 (sin VNets visibles) y los avisos de la intersección de nodos."""
+        self._sin_vnets.setText(texto_sin_vnets(self._sdn_incluido))
+        self._sin_vnets.setVisible(self._sdn_leido and not self._vnets)
+        avisos: list[str] = []
+        if ocultas:
+            avisos.append(texto_redes_ocultas(ocultas))
+        if sin_leer:
+            avisos.append(texto_nodos_sin_leer(sin_leer))
+        if self._sdn_fallido:
+            avisos.append(texto_sdn_sin_leer(self._sdn_fallido))
+        poner_mensaje(self._aviso_redes, "\n".join(avisos) or None, aviso=True)
+        self._cabeceras[_C_BRIDGE].setText(
+            QCoreApplication.translate("TablaRedes", "Red")
+            if self._vnets
+            else QCoreApplication.translate("TablaRedes", "Red (bridge)")
+        )
+
+    def vnet_de(self, nombre: str) -> RedVirtual | None:
+        """La VNet de ese nombre si NO es también un bridge (como valida el núcleo)."""
+        if any(b.nombre == nombre for b in self._bridges):
+            return None
+        return next((v for v in self._vnets if v.nombre == nombre), None)
+
+    def _vlan_bloqueada(self, f: _FilaRed) -> bool:
+        """``True`` si la red elegida es una VNet que no es «vlanaware» (RF-C2.2)."""
+        nombre = f.bridge.currentData()
+        vnet = self.vnet_de(str(nombre)) if nombre else None
+        return vnet is not None and not vnet.vlan_aware
+
+    def _refrescar_motivo_vlan(self) -> None:
+        bloqueadas = [f.indice.text() for f in self._filas if self._vlan_bloqueada(f)]
+        poner_mensaje(
+            self._motivo_vlan,
+            "\n".join(f"{n}: {texto_vlan_no_vlanaware()}" for n in bloqueadas) or None,
+            aviso=True,
+        )
 
     def aplicar_problemas(self, problemas: Sequence[Problema]) -> None:
         errores: list[str] = []
@@ -442,16 +565,17 @@ class TablaRedes(QWidget):
         f.bridge.blockSignals(True)
         f.bridge.clear()
         f.bridge.setPlaceholderText(QCoreApplication.translate("TablaRedes", "Elige una red"))
-        for b in self._bridges:
-            f.bridge.addItem(b.nombre, b.nombre)
-        if f.ausente and f.ausente not in {b.nombre for b in self._bridges}:
-            f.bridge.addItem(texto_ausente(f.ausente), f.ausente)
-            cast(QStandardItemModel, f.bridge.model()).item(f.bridge.count() - 1).setEnabled(False)
+        llenar_combo_red(f.bridge, self._bridges, self._vnets, ausente=f.ausente)
         f.bridge.blockSignals(False)
 
     def _nueva_fila(self, red: InterfazRed, *, conservar_ausente: bool = False) -> None:
         f = _FilaRed()
-        if conservar_ausente and red.bridge and red.bridge not in {b.nombre for b in self._bridges}:
+        if (
+            conservar_ausente
+            and red.bridge
+            and red.bridge not in {b.nombre for b in self._bridges}
+            and red.bridge not in {v.nombre for v in self._vnets}
+        ):
             f.ausente = red.bridge
         self._llenar_bridge(f)
         f.bridge.setCurrentIndex(f.bridge.findData(red.bridge))
@@ -474,6 +598,7 @@ class TablaRedes(QWidget):
             w.setVisible(self._avanzado)
         self._aplicar_estado_fila(f)
         self._refrescar_nota_mtu()
+        self._refrescar_motivo_vlan()
 
     def _al_cambiar_modelo(self, f: _FilaRed) -> None:
         """Al dejar VirtIO el MTU vuelve a «Heredar» (P-18); el MTU no vale con otras tarjetas."""
@@ -488,6 +613,10 @@ class TablaRedes(QWidget):
             f.perdido = None  # el usuario eligió otro valor
             if f.bridge.currentData() != f.ausente:
                 f.ausente = None
+        if self._vlan_bloqueada(f):
+            f.vlan.clear()  # una VNet sin «vlanaware» no admite VLAN: no se envía ``tag``
+        self._aplicar_estado_fila(f)
+        self._refrescar_motivo_vlan()
         self.cambiado.emit()
 
     def _quitar_fila(self, f: _FilaRed, *, emitir: bool = True) -> None:
@@ -516,3 +645,4 @@ class TablaRedes(QWidget):
                     "TablaRedes", "Límite de velocidad de net{n} (MB/s)"
                 ).format(n=n)
             )
+        self._refrescar_motivo_vlan()

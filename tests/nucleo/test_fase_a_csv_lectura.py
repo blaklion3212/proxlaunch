@@ -39,8 +39,8 @@ def _error(datos: bytes, **kw) -> ErrorProxLaunch:
 # --- CA-A7.3.6: tope de columnas --------------------------------------------------------------
 
 
-def test_ca_a7_3_6_el_tope_de_columnas_es_60():
-    assert MAX_COLUMNAS_CSV == 60
+def test_ca_a7_3_6_el_tope_de_columnas_es_70():
+    assert MAX_COLUMNAS_CSV == 70  # P-C4 (fase C): sube de 60 a 70
 
 
 def test_ca_a7_3_6_todas_las_columnas_conocidas_caben_en_el_tope():
@@ -53,20 +53,20 @@ def test_ca_a7_3_6_todas_las_columnas_conocidas_caben_en_el_tope():
     assert set(mapa.posiciones) == {c.canonica for c in COLUMNAS}
 
 
-@pytest.mark.parametrize("n", [40, 41, 50, 60])
+@pytest.mark.parametrize("n", [40, 41, 50, 70])
 def test_ca_a7_3_6_un_csv_valido_con_mas_de_40_columnas_no_se_rechaza(n):
     encabezado = ["nombre"] + [f"extra{i}" for i in range(n - 1)]
     tabla = leer_tabla(csv_bytes([";".join(encabezado), ";".join(["a"] * n)]))
     assert len(tabla.encabezado) == n
 
 
-def test_ca_a7_3_6_con_61_columnas_el_error_lleva_el_valor_real_y_el_tope():
-    encabezado = ["nombre"] + [f"extra{i}" for i in range(60)]
-    e = _error(csv_bytes([";".join(encabezado), ";".join(["a"] * 61)]))
+def test_ca_a7_3_6_con_71_columnas_el_error_lleva_el_valor_real_y_el_tope():
+    encabezado = ["nombre"] + [f"extra{i}" for i in range(70)]
+    e = _error(csv_bytes([";".join(encabezado), ";".join(["a"] * 71)]))
     assert e.codigo == CodigoError.ARCHIVO_DEMASIADAS_FILAS
     assert e.params["tipo"] == "columnas"
-    assert e.params["columnas"] == "61"
-    assert e.params["max"] == "60"
+    assert e.params["columnas"] == "71"
+    assert e.params["max"] == "70"
 
 
 def test_ca_a7_3_6_un_csv_con_todas_las_columnas_nuevas_y_los_antiguos_se_interpreta():

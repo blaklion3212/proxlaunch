@@ -4,6 +4,7 @@ from dataclasses import dataclass, field
 from enum import StrEnum
 
 from proxlaunch.nucleo.errores import ErrorProxLaunch
+from proxlaunch.nucleo.red.modelos import TarjetaFinal
 
 
 class Etapa(StrEnum):
@@ -61,3 +62,5 @@ class ResultadoCreacion:
     # MVP 4: códigos de aviso, p. ej. «ajuste_pendiente:etiquetas|cpu_memoria|disco».
     # Fase A: también "encendido_fallido", "encendido_omitido" y "notas_plantilla_ilegible".
     avisos: tuple[str, ...] = ()
+    # Fase C: resultado por tarjeta de red del clon para el informe (RF-C4.8).
+    red_final: tuple[TarjetaFinal, ...] = ()

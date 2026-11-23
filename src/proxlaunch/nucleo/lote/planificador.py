@@ -256,6 +256,35 @@ def _agrupar_vb20(problemas: Sequence[Problema]) -> list[Problema]:
     return resultado
 
 
+_REGLAS_POR_PLANTILLA = frozenset({"V-C19", "V-C35"})
+
+
+def _agrupar_vc_por_plantilla(problemas: Sequence[Problema]) -> list[Problema]:
+    """Une los V-C19 y V-C35 iguales (misma severidad y mismos ``params``, o sea, de la misma
+    plantilla y motivo) en uno solo: primera fila + ``elementos`` (CA-C12.2)."""
+    Clave = tuple[str, str, tuple[tuple[str, str], ...]]
+
+    def clave(pr: Problema) -> Clave:
+        params = tuple(sorted((k, v) for k, v in pr.params.items() if k != "elementos"))
+        return (pr.regla, pr.severidad.value, params)
+
+    cuenta: Counter[Clave] = Counter(
+        clave(pr) for pr in problemas if pr.regla in _REGLAS_POR_PLANTILLA
+    )
+    vistos: set[Clave] = set()
+    resultado: list[Problema] = []
+    for pr in problemas:
+        if pr.regla in _REGLAS_POR_PLANTILLA:
+            k = clave(pr)
+            if k in vistos:
+                continue
+            vistos.add(k)
+            if cuenta[k] > 1:
+                pr = replace(pr, params={**pr.params, "elementos": str(cuenta[k])})
+        resultado.append(pr)
+    return resultado
+
+
 def _problemas_snippets(elementos: Sequence[ElementoPlan], inv: Inventario) -> list[Problema]:
     """V-B51 y V-B52 de los snippets elegidos, contra los listados del catálogo (DT-B11).
 
@@ -574,7 +603,11 @@ def construir_plan(
     de_m1.extend(_problemas_snippets(elementos, inv))  # V-B51 y V-B52 (fase B, B4)
     # Por filas cada problema conserva su fila (``indice``), salvo V-A03: «una por etiqueta y
     # lote» (CA-A3.4.11), que se agrupa con la primera fila afectada.
-    problemas.extend(_agrupar_vb20(_agrupar_va03(de_m1)) if por_filas else _agrupar_m1(de_m1))
+    problemas.extend(
+        _agrupar_vc_por_plantilla(_agrupar_vb20(_agrupar_va03(de_m1)))
+        if por_filas
+        else _agrupar_m1(de_m1)
+    )
     # Fase B (DT-B3): V-B30, V-B31 y V-B38 miran todas las IP del lote ya expandidas.
     problemas.extend(problemas_serie_lote(elementos))
     # Los problemas de resolución del origen llevan siempre su fila (V-O02, V-O03, V-O04...).

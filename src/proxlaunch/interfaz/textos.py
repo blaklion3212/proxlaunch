@@ -14,6 +14,17 @@ from collections.abc import Callable, Iterable, Mapping
 
 from PySide6.QtCore import QCoreApplication, QLocale
 
+from proxlaunch.interfaz.textos_c import (  # noqa: E402  (agrupado con la fase C)
+    texto_accion_via_c,
+    texto_ajuste_sustantivo_c,
+    texto_ajuste_verbo_c,
+    texto_aviso_c,
+    texto_error_c,
+    texto_motivo_opcion_c,
+    texto_nombre_opcion_c,
+    texto_problema_c,
+    texto_via_c,
+)
 from proxlaunch.nucleo.archivos.constantes import (
     LONG_DESCRIPCION,
     LONG_NOMBRE_PERFIL,
@@ -208,6 +219,11 @@ def texto_error(error: ErrorProxLaunch) -> str:
             )
         return QCoreApplication.translate("Textos", "El nodo no está disponible.")
     if c == CodigoError.PERMISO_INSUFICIENTE:
+        if p.get("zona") or p.get("ajuste") in ("red", "firewall_opciones", "firewall_regla"):
+            # 403 de SDN (red o zona nombradas) o de un paso de la fase C: texto propio.
+            texto_c = texto_error_c(error)
+            if texto_c is not None:
+                return texto_c
         if p.get("ajuste") in ("cloudinit", "contrasena"):
             # 403 de un paso de la fase B: la máquina existe y el lote no se pausa (RF-B5.3).
             from proxlaunch.interfaz.textos_b import texto_error_b
@@ -431,6 +447,8 @@ def texto_campo(campo: str) -> str:
         "cloudinit": t("Textos", "Configuración inicial"),
         "esperar_ip": t("Textos", "Esperar la IP"),
         "plazo_ip_s": t("Textos", "Plazo de espera de la IP"),
+        "firewall": t("Textos", "Firewall"),
+        "red_clon": t("Textos", "Red de la copia"),
     }
     return nombres.get(base, "")
 
@@ -561,6 +579,9 @@ def texto_problema(p: Problema) -> str:
     texto_fase_b = _texto_problema_fase_b(p)
     if texto_fase_b is not None:
         return texto_fase_b
+    texto_fase_c = texto_problema_c(p)
+    if texto_fase_c is not None:
+        return texto_fase_c
     return texto_generico()
 
 
@@ -945,7 +966,7 @@ def _texto_error_lote(error: ErrorProxLaunch) -> str | None:
         return QCoreApplication.translate(
             "Textos", "Error interno: se intentó escribir en modo simulación. No se creó nada."
         )
-    return _texto_error_fase_a(error) or _texto_error_fase_b(error)
+    return _texto_error_fase_a(error) or _texto_error_fase_b(error) or texto_error_c(error)
 
 
 def texto_existe_sin_confirmar() -> str:
@@ -1460,6 +1481,12 @@ def _texto_e_m10(p: Mapping[str, str]) -> str:
     if motivo == "duplicada":
         return _fmt(
             QCoreApplication.translate("Textos", "La columna «{columna}» aparece dos veces."), p
+        )
+    if motivo == "inventario":
+        return QCoreApplication.translate(
+            "Textos",
+            "Este archivo es una exportación de «Lotes en el servidor», no una lista de máquinas "
+            "para crear. Descarga la plantilla desde Importar CSV.",
         )
     return _fmt(
         QCoreApplication.translate(
@@ -2484,7 +2511,7 @@ def texto_accion_via(via: Via | str) -> str:
     fabrica = _ACCIONES_VIA.get(str(via))
     if fabrica is not None:
         return fabrica()
-    return QCoreApplication.translate("Textos", "hacer esta acción")
+    return texto_accion_via_c(str(via)) or QCoreApplication.translate("Textos", "hacer esta acción")
 
 
 def texto_via(via: Via) -> str:
@@ -2509,7 +2536,9 @@ def texto_via(via: Via) -> str:
         "ampliar_disco": lambda: QCoreApplication.translate("Textos", "Ampliar el disco"),
     }
     fabrica = nombres.get(str(via))
-    return fabrica() if fabrica is not None else str(via)
+    if fabrica is None:
+        return texto_via_c(str(via)) or str(via)
+    return fabrica()
 
 
 def texto_disponibilidad(disponibilidad: Disponibilidad) -> str:
@@ -2848,6 +2877,9 @@ def _ajuste_verbo(ajuste: str) -> str:
         return QCoreApplication.translate("Textos", "aplicar la configuración inicial (cloud-init)")
     if ajuste == "contrasena":
         return QCoreApplication.translate("Textos", "poner la contraseña de cloud-init")
+    texto_c = texto_ajuste_verbo_c(ajuste)
+    if texto_c:
+        return texto_c
     return QCoreApplication.translate("Textos", "aplicar los ajustes")
 
 
@@ -2867,6 +2899,9 @@ def _ajuste_sustantivo(ajuste: str) -> str:
         return QCoreApplication.translate("Textos", "la configuración inicial (cloud-init)")
     if ajuste == "contrasena":
         return QCoreApplication.translate("Textos", "la contraseña de cloud-init")
+    texto_c = texto_ajuste_sustantivo_c(ajuste)
+    if texto_c:
+        return texto_c
     return QCoreApplication.translate("Textos", "los ajustes")
 
 
@@ -2883,6 +2918,9 @@ def texto_aviso_origen(codigo: str) -> str:
     texto_fase_b = _texto_aviso_fase_b(codigo)
     if texto_fase_b:
         return texto_fase_b
+    texto_fase_c = texto_aviso_c(codigo)
+    if texto_fase_c:
+        return texto_fase_c
     if base == "ajuste_pendiente":
         return QCoreApplication.translate(
             "Textos", "Se creó, pero falta aplicar {ajuste}. Puedes reintentar los ajustes."
@@ -3829,7 +3867,9 @@ def texto_nombre_opcion_fase_a(opcion: str) -> str:
         ),
     }
     fabrica = nombres.get(opcion)
-    return fabrica() if fabrica is not None else opcion
+    if fabrica is None:
+        return texto_nombre_opcion_c(opcion) or opcion
+    return fabrica()
 
 
 def _texto_error_fase_a(error: ErrorProxLaunch) -> str | None:
@@ -4307,6 +4347,9 @@ def texto_estado_opcion(estado: EstadoOpcion) -> str:
     texto_b = _texto_motivo_opcion_b(motivo or "")
     if texto_b:
         return texto_b
+    texto_c = texto_motivo_opcion_c(motivo or "")
+    if texto_c:
+        return texto_c
     if motivo == "sin_pools":
         return QCoreApplication.translate("Textos", "No hay pools en este servidor.")
     if motivo == "no_leido":

@@ -6,6 +6,7 @@ from __future__ import annotations
 from dataclasses import replace
 
 from proxlaunch.nucleo.cloudinit.modelos import INFO_DESCONOCIDA, combinar
+from proxlaunch.nucleo.firewall.modelos import FirewallMV, FirewallParcial
 from proxlaunch.nucleo.modelos.catalogo import DetallePlantilla
 from proxlaunch.nucleo.modelos.vm import ConfiguracionVM, OrigenSO
 from proxlaunch.nucleo.opciones.modelos import ContextoNotas, OpcionesLote, OpcionesParciales
@@ -42,6 +43,45 @@ def preparar_elemento(
     return replace(cfg, descripcion=descripcion)
 
 
+def combinar_firewall(base: FirewallMV | None, fila: FirewallParcial | None) -> FirewallMV | None:
+    """Firewall efectivo de una fila: cada celda fijada gana sobre el firewall del lote y una
+    celda vacía (``None``) lo hereda (RF-C0.5).
+
+    Sin celdas fijadas devuelve ``base`` tal cual. Si el lote no tiene firewall, parte del
+    defecto (apagado): una fila con solo ``grupo`` queda con grupo y firewall apagado, que es el
+    error V-C52 que debe ver «Comprobar» (CA-C6.3.9) en vez de ignorarse en silencio.
+    """
+    if fila is None or fila == FirewallParcial():
+        return base
+    previo = base if base is not None else FirewallMV()
+    if fila.activo is False:
+        # «cortafuegos=no» apaga el de la fila: el grupo y las políticas del formulario no se
+        # heredan (solo cuenta lo que la propia fila fije; si fija grupo, V-C52 sigue avisando).
+        defecto = FirewallMV()
+        return replace(
+            previo,
+            activo=False,
+            grupo=fila.grupo,
+            politica_entrada=(
+                defecto.politica_entrada if fila.politica_entrada is None else fila.politica_entrada
+            ),
+            politica_salida=(
+                defecto.politica_salida if fila.politica_salida is None else fila.politica_salida
+            ),
+        )
+    return replace(
+        previo,
+        activo=previo.activo if fila.activo is None else fila.activo,
+        grupo=previo.grupo if fila.grupo is None else fila.grupo,
+        politica_entrada=(
+            previo.politica_entrada if fila.politica_entrada is None else fila.politica_entrada
+        ),
+        politica_salida=(
+            previo.politica_salida if fila.politica_salida is None else fila.politica_salida
+        ),
+    )
+
+
 def aplicar_opciones_lote(
     cfg: ConfiguracionVM, base: OpcionesLote, fila: OpcionesParciales | None
 ) -> ConfiguracionVM:
@@ -49,6 +89,8 @@ def aplicar_opciones_lote(
 
     ``pool`` de la fila: ``""`` = sin pool explícito (anula el del lote). Fase B: ``cloudinit``
     se combina con ``combinar`` (celda vacía hereda) y ``esperar_ip`` de la fila gana sobre el lote.
+    Fase C: ``firewall`` se combina con ``combinar_firewall`` y la ``red_clon`` de la fila, si la
+    fija, sustituye a la del lote.
     """
     f = fila or OpcionesParciales()
     pool = base.pool if f.pool is None else (f.pool or None)
@@ -67,4 +109,6 @@ def aplicar_opciones_lote(
         cloudinit=combinar(base.cloudinit, f.cloudinit),
         esperar_ip=base.esperar_ip if f.esperar_ip is None else f.esperar_ip,
         plazo_ip_s=base.plazo_ip_s,
+        firewall=combinar_firewall(base.firewall, f.firewall),
+        red_clon=f.red_clon if f.red_clon is not None else base.red_clon,
     )

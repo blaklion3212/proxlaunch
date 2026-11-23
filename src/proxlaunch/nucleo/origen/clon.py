@@ -19,6 +19,7 @@ from proxlaunch.nucleo.modelos.catalogo import DetallePlantilla, DiscoPlantilla
 from proxlaunch.nucleo.modelos.inventario import Inventario, Storage
 from proxlaunch.nucleo.modelos.origen import DetalleClon, ModoClon
 from proxlaunch.nucleo.modelos.vm import ConfiguracionVM, pool_valido
+from proxlaunch.nucleo.red.tarjetas import tarjetas_de_config
 from proxlaunch.nucleo.secreto import Secreto
 from proxlaunch.nucleo.validacion import (
     DISCO_MAX_GIB,
@@ -168,6 +169,8 @@ def detalle_de_config(config: Mapping[str, object]) -> DetallePlantilla:
         descripcion=descripcion if isinstance(descripcion, str) else None,
         # Fase B: lo que la config dice de cloud-init, sin ninguna lectura nueva (DT-B2).
         cloudinit=info_cloudinit(config),
+        # Fase C: ``net0..net31`` de la misma config, interpretadas (DT-C5; cero GET nuevos).
+        tarjetas=tarjetas_de_config(config),
     )
 
 

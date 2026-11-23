@@ -23,7 +23,15 @@ Con ProxLaunch puedes:
   [Configuración inicial con cloud-init](#configuración-inicial-con-cloud-init));
 - **conocer la IP de cada máquina** al terminar y copiar o exportar la lista (ver [Esperar la IP](#esperar-la-ip));
 - **crear una plantilla a partir de una imagen cloud** (Ubuntu, Debian, Rocky…) sin salir de ProxLaunch (ver
-  [Crear una plantilla desde una imagen cloud](#crear-una-plantilla-desde-una-imagen-cloud)).
+  [Crear una plantilla desde una imagen cloud](#crear-una-plantilla-desde-una-imagen-cloud));
+- **conectar las máquinas a redes virtuales (SDN)** que define tu administrador, además de a los bridges de siempre (ver
+  [Redes virtuales (SDN)](#redes-virtuales-sdn));
+- **cambiar la red de las copias de una plantilla** (otra red, VLAN, tarjeta, MTU, añadir o quitar tarjetas) sin perder la
+  dirección MAC (ver [Red del clon](#red-del-clon));
+- **activar el firewall de la máquina** con un grupo de seguridad ya preparado y decidir qué pasa con el tráfico que ninguna
+  regla menciona (ver [Firewall de la máquina](#firewall-de-la-máquina));
+- **encontrar, exportar y deshacer los lotes que ProxLaunch creó en el servidor**, aunque los crearas en otra sesión (ver
+  [Lotes en el servidor (inventario)](#lotes-en-el-servidor-inventario)).
 
 Por defecto todas las máquinas se crean **detenidas**: solo se encienden si marcas **Encender al terminar**. ProxLaunch
 nunca instala el sistema operativo por ti (con un ISO, la instalación la terminas tú desde la consola de Proxmox).
@@ -34,7 +42,8 @@ nunca instala el sistema operativo por ti (con un ISO, la instalación la termin
 > instalación de Windows no se probó con un ISO de Windows real (las pruebas usaron Linux). Las opciones de la máquina de
 > la versión 0.6 (encender, notas, etiquetas, pool, protección, MTU y límite, y el Deshacer con apagado y desprotección) se
 > verificaron con respuestas simuladas de Proxmox, no contra un servidor real. Lo mismo vale para las funciones de la
-> versión 0.7 (cloud-init, esperar la IP y crear una plantilla desde una imagen cloud). Si usas esos casos, revisa siempre el
+> versión 0.7 (cloud-init, esperar la IP y crear una plantilla desde una imagen cloud) y para las de la versión 0.8 (lotes en
+> el servidor, redes virtuales, firewall de la máquina y red del clon). Si usas esos casos, revisa siempre el
 > resumen y simula antes de crear.
 
 ## Cómo leer este manual
@@ -69,22 +78,26 @@ nunca instala el sistema operativo por ti (con un ISO, la instalación la termin
    (DHCP, IP fija e IP en serie), DNS y scripts
 8. [Esperar la IP](#esperar-la-ip): conocer la IP de cada máquina al terminar
 9. [Crear una plantilla desde una imagen cloud](#crear-una-plantilla-desde-una-imagen-cloud)
-10. [Transferencias: subir y descargar archivos](#transferencias-subir-y-descargar-archivos)
-11. [Entender el progreso y los resultados](#entender-el-progreso-y-los-resultados): tiempo agotado,
+10. [Redes virtuales (SDN)](#redes-virtuales-sdn): usar una VNet como si fuera un bridge
+11. [Red del clon](#red-del-clon): cambiar la red de las copias de una plantilla
+12. [Firewall de la máquina](#firewall-de-la-máquina): grupo de seguridad y políticas
+13. [Transferencias: subir y descargar archivos](#transferencias-subir-y-descargar-archivos)
+14. [Entender el progreso y los resultados](#entender-el-progreso-y-los-resultados): tiempo agotado,
     «Comprobar» y deshacer
-12. [Crear varias máquinas de una vez (lotes)](#crear-varias-máquinas-de-una-vez-lotes)
-13. [Perfiles de máquina](#perfiles-de-máquina)
-14. [Guardar y abrir lotes](#guardar-y-abrir-lotes)
-15. [Importar máquinas desde un CSV](#importar-máquinas-desde-un-csv): formato y validación
-16. [Lote por filas](#lote-por-filas)
-17. [Cambios sin guardar](#cambios-sin-guardar)
-18. [Menús y ajustes](#menús-y-ajustes)
-19. [Referencia de ventanas y menús](#referencia-de-ventanas-y-menús)
-20. [Formatos de archivo](#formatos-de-archivo): CSV, lotes y perfiles, versiones del formato y
-    [compatibilidad con 0.5.1 y 0.6](#compatibilidad-con-versiones-anteriores)
-21. [Solución de problemas](#solución-de-problemas): mensajes de error y preguntas frecuentes
-22. [Privacidad y seguridad](#privacidad-y-seguridad)
-23. [Glosario](#glosario)
+15. [Crear varias máquinas de una vez (lotes)](#crear-varias-máquinas-de-una-vez-lotes)
+16. [Lotes en el servidor (inventario)](#lotes-en-el-servidor-inventario): encontrar, exportar y deshacer lotes
+17. [Perfiles de máquina](#perfiles-de-máquina)
+18. [Guardar y abrir lotes](#guardar-y-abrir-lotes)
+19. [Importar máquinas desde un CSV](#importar-máquinas-desde-un-csv): formato y validación
+20. [Lote por filas](#lote-por-filas)
+21. [Cambios sin guardar](#cambios-sin-guardar)
+22. [Menús y ajustes](#menús-y-ajustes)
+23. [Referencia de ventanas y menús](#referencia-de-ventanas-y-menús)
+24. [Formatos de archivo](#formatos-de-archivo): CSV, lotes y perfiles, versiones del formato y
+    [compatibilidad con 0.5.1, 0.6 y 0.7](#compatibilidad-con-versiones-anteriores)
+25. [Solución de problemas](#solución-de-problemas): mensajes de error y preguntas frecuentes
+26. [Privacidad y seguridad](#privacidad-y-seguridad)
+27. [Glosario](#glosario)
 
 ### Ejemplo que se repite en el manual
 
@@ -107,6 +120,10 @@ el formulario ([lotes](#crear-varias-máquinas-de-una-vez-lotes)), cómo se guar
 | Que las copias de una plantilla salgan con usuario, clave SSH e IP ya puestos | Cloud-init | [Configuración inicial con cloud-init](#configuración-inicial-con-cloud-init) |
 | Saber qué IP recibió cada máquina | Esperar la IP | [Esperar la IP](#esperar-la-ip) |
 | Tener una plantilla de Ubuntu, Debian… sin prepararla a mano en Proxmox | El asistente de plantillas | [Crear una plantilla desde una imagen cloud](#crear-una-plantilla-desde-una-imagen-cloud) |
+| Conectar las máquinas a una red virtual (VNet) en lugar de a un bridge | La lista **Red** | [Redes virtuales (SDN)](#redes-virtuales-sdn) |
+| Que las copias de una plantilla salgan en otra red, otra VLAN o con otra tarjeta | **Red de las copias** | [Red del clon](#red-del-clon) |
+| Que las máquinas salgan con el firewall activado y un grupo de reglas | **Firewall de la máquina** | [Firewall de la máquina](#firewall-de-la-máquina) |
+| Ver, exportar o deshacer lotes que creé otro día | **Archivo > Lotes en el servidor…** | [Lotes en el servidor](#lotes-en-el-servidor-inventario) |
 
 ---
 
@@ -294,11 +311,13 @@ opciones, indicando qué permiso falta. Donde asignar estos permisos (en todo el
 donde hacen falta) se explica en
 [Permisos para el administrador: alcance acotado](#permisos-para-el-administrador-alcance-acotado).
 
-**El rol no cambia en las versiones 0.6 ni 0.7**: sigue siendo la misma lista de 14 privilegios. Crear lotes, etiquetar las
-máquinas, deshacer un lote, casi todas las [opciones de la máquina](#opciones-de-la-máquina) y el
-[asistente de plantillas](#privilegios-del-asistente) usan privilegios que ya están en la lista (borrar una máquina solo
-exige `VM.Allocate`). Hay privilegios **opcionales** que no forman parte del rol y habilitan funciones concretas
-(`VM.PowerMgmt`, `Pool.Audit` y, desde la 0.7, los de cloud-init y de esperar la IP; ver
+**El rol no cambia en las versiones 0.6, 0.7 ni 0.8**: sigue siendo la misma lista de 14 privilegios. Crear lotes, etiquetar
+las máquinas, deshacer un lote, casi todas las [opciones de la máquina](#opciones-de-la-máquina), el
+[asistente de plantillas](#privilegios-del-asistente), el [firewall de la máquina](#firewall-de-la-máquina), la
+[red del clon](#red-del-clon) y los [lotes en el servidor](#lotes-en-el-servidor-inventario) usan privilegios que ya están
+en la lista (borrar una máquina solo exige `VM.Allocate`). Hay privilegios **opcionales** que no forman parte del rol y
+habilitan funciones concretas (`VM.PowerMgmt`, `Pool.Audit` y, desde la 0.7, los de cloud-init y de esperar la IP; desde la
+0.8, el permiso para usar redes virtuales fuera de la zona local; ver
 [Privilegios opcionales](#privilegios-opcionales-no-forman-parte-del-rol)).
 Tu administrador, además, puede restringir qué etiquetas se pueden poner (ver
 [Etiquetas](#etiquetas-propias-y-política-del-centro-de-datos)).
@@ -341,6 +360,27 @@ ProxLaunch solo te muestra y te pide los que existen en la versión a la que est
   administrador**) incluye la orden `pveum role modify <rol> --privs "…" --append 1` con los privilegios que corresponden
   a tu versión; el administrador la ejecuta en un nodo de Proxmox.
 - Los privilegios que usa el asistente de plantillas están en [Privilegios del asistente](#privilegios-del-asistente).
+
+**Privilegios de la versión 0.8.** Casi todo lo nuevo usa privilegios que **ya están en el rol**; la excepción son las redes
+virtuales de zonas distintas de la local. ProxLaunch solo desactiva la opción afectada y dice qué falta.
+
+| Privilegio | Ruta | Qué habilita | Sin él |
+|---|---|---|---|
+| `SDN.Use` | `/sdn/zones/<zona>` (toda la zona), `/sdn/zones/<zona>/<red>` (una VNet) o `/sdn/zones/<zona>/<red>/<vlan>` (una VLAN) | Conectar máquinas a las [redes virtuales (SDN)](#redes-virtuales-sdn) de esa zona. Ya está en el rol, pero con la [asignación acotada](#permisos-para-el-administrador-alcance-acotado) solo cubre `localnetwork`: hay que asignarlo (rol `PVESDNUser`) en cada zona o VNet que uses. | Solo puedes usar bridges. En **Qué puedo hacer en este servidor**, «Usar redes virtuales (SDN)» sale en «No». **No verificado en todas las versiones.** |
+| `SDN.Audit` | `/sdn/zones/<zona>` | Ver el alias y el estado de las VNets. **Opcional.** | Las VNets se usan igual, solo sin esa información. **No verificado.** |
+| `VM.Audit` | `/vms` | Ver las máquinas del servidor en **Lotes en el servidor**. Ya está en el rol. | Esa ventana sale vacía con el aviso «No ves ninguna máquina en este servidor…». |
+| `VM.Allocate` | `/vms/<número>` | **Deshacer** un lote desde **Lotes en el servidor** (borrar la máquina). Ya está en el rol. | Esa máquina sale con el motivo «Tu usuario no puede borrar máquinas…». |
+| `VM.Config.Network` | `/vms` | Activar el firewall de la máquina y [cambiar la red de las copias](#red-del-clon). Ya está en el rol. | La sección **Firewall de la máquina** y la opción **Personalizar la red de las copias** salen desactivadas con el motivo. |
+| `Sys.Audit` | `/` | **Ver reglas** de un grupo de seguridad y saber si el firewall general está encendido. Ya está en el rol. | Solo pierdes **Ver reglas** y el aviso del firewall general; no se bloquea nada. |
+| `VM.Monitor` (8.x) o `VM.GuestAgent.Audit` (9.x) | `/vms` | El botón **Obtener IP** y la casilla de IP al exportar en **Lotes en el servidor** (los mismos que [Esperar la IP](#esperar-la-ip)). | Ese botón y esa casilla salen desactivados con el motivo. |
+
+Para dar el acceso a una VNet, el administrador ejecuta en un nodo de Proxmox (con la red `prod` de la zona `dc1`):
+
+```text
+pveum acl modify /sdn/zones/dc1/prod --roles PVESDNUser --users ana@pve
+```
+
+Para toda la zona, la ruta es `/sdn/zones/dc1`; para una sola VLAN de esa red, `/sdn/zones/dc1/prod/20`.
 
 - **`VM.PowerMgmt` debe concederse en `/vms`** (con propagar), no solo en una máquina concreta: al rellenar el formulario
   todavía no existe el número de la máquina, así que ProxLaunch solo mira `/vms` para habilitar **Encender al terminar**.
@@ -658,7 +698,7 @@ disco se crea **vacío**: ProxLaunch **no instala ningún sistema operativo**.
 | Campo | Modo | Para qué sirve | Valores | Defecto | Límites |
 |---|---|---|---|---|---|
 | **Interfaz** | Básico | Nombre de la tarjeta, asignado solo: `net0`, `net1`… | (solo lectura) | `net0` | **Máximo 32 interfaces.** |
-| **Red (bridge)** | Básico | El «conmutador virtual» al que se conecta (lo habitual es `vmbr0`). | Los bridges del nodo. | `vmbr0` si existe; si no, el primero. Marcador «Elige una red». | Obligatorio. Los que ya no existen salen como «x (no existe)». Sin redes: «El nodo no tiene redes (bridges) disponibles» y no puedes crear. |
+| **Red (bridge)** | Básico | El «conmutador virtual» al que se conecta (lo habitual es `vmbr0`). Desde la 0.8 también puede ser una [red virtual (VNet)](#redes-virtuales-sdn). | Los bridges del nodo y, si tu usuario puede usarlas, sus VNets. | `vmbr0` si existe; si no, el primero. Marcador «Elige una red». | Obligatorio. Los que ya no existen salen como «x (no existe)». Sin redes: «El nodo no tiene redes (bridges) disponibles» y no puedes crear. |
 | **Tarjeta** | Avanzado | El tipo de tarjeta de red. | **VirtIO** (la más rápida) o **Intel E1000** (más compatible con sistemas antiguos). | VirtIO | |
 | **VLAN** | Básico | Etiqueta de VLAN, si tu red la usa. | Entero o vacío. | Vacío («Sin VLAN»). | 1 a 4094. |
 | **MTU** | Avanzado | Tamaño máximo de paquete de la tarjeta. Ver [MTU y límite de velocidad](#mtu-y-límite-de-velocidad-de-la-red). | **Heredar del bridge**, **Igual al bridge** o un número. | Heredar del bridge. | Número de 576 a 65520. Solo con tarjeta **VirtIO**. |
@@ -1039,14 +1079,16 @@ un ISO, tú terminas la instalación desde la consola de Proxmox.
 
 #### ¿Por qué no puedo usar alguna opción?
 
-Ese botón (o **Ayuda > Qué puedo hacer en este servidor…**) abre una tabla con las nueve cosas que ProxLaunch puede
-hacer, si están disponibles en *tu* servidor y por qué no:
+Ese botón (o **Ayuda > Qué puedo hacer en este servidor…**) abre una tabla con las cosas que ProxLaunch puede
+hacer (nueve de siempre y, desde la 0.8, cinco más; ver la tabla de abajo), si están disponibles en *tu* servidor y por qué
+no:
 
 ![Ventana «Qué puedo hacer en este servidor»: versión «Proxmox VE 9.2 · nodo pve», tabla con las columnas «Qué quieres hacer», «Estado» y «Por qué» y nueve filas (usar un ISO y importar un disco disponibles; subir y descargar ISO, subir y descargar imagen de disco, clonar, fijar el orden de arranque y ampliar el disco no disponibles, cada una con el permiso que falta), el texto «Qué pedirle a tu administrador» y los botones «Copiar texto para el administrador» y «Cerrar».](img/37-capacidades-servidor.png)
 
 | Elemento | Qué hace |
 |---|---|
 | Tabla | Una fila por vía: usar un ISO, subir un ISO, descargar un ISO desde una dirección web, importar un disco del servidor, subir una imagen de disco, descargar una imagen de disco, clonar una plantilla, fijar el orden de arranque y ampliar el disco. **Estado**: «Disponible», «Con aviso» o «No disponible». |
+| Filas de la versión 0.8 | **Ver y deshacer mis lotes en el servidor** (necesita `VM.Audit`), **Usar redes virtuales (SDN)** (necesita `SDN.Use` fuera de la zona `localnetwork`), **Activar el firewall de las máquinas** y **Cambiar la red de las copias** (las dos, `VM.Config.Network` en `/vms`) y **Saber si el firewall general está encendido** (`Sys.Audit` en `/`; sin él solo pierdes un aviso). **Estado** de estas filas: «Sí», «No» o «No se pudo comprobar» (cuando ProxLaunch no puede leer tus permisos: puedes intentarlo y, si falta alguno, te dirá cuál). Con la fila de redes virtuales en «No», la explicación lleva el comando `pveum acl modify …` para tu administrador. |
 | **Qué pedirle a tu administrador** | Un texto listo para enviar con lo que falta (permisos, contenido «Import», plantillas). |
 | **Copiar texto para el administrador** | Lo copia al portapapeles. |
 | **Cerrar** | Cierra la ventana. |
@@ -1166,7 +1208,8 @@ mismo almacenamiento.
 
 Una **plantilla de Proxmox** es una máquina ya instalada que se marcó como modelo. Al clonarla obtienes máquinas nuevas
 con su mismo sistema, sin instalar nada. Los discos, la red y el tipo de arranque los da la plantilla: lo que tengas
-en esas secciones del formulario se ignora.
+en esas secciones del formulario se ignora. Desde la versión 0.8 puedes cambiar la red de las copias con el grupo
+**Red de las copias** (ver [Red del clon](#red-del-clon)) y activar el [firewall](#firewall-de-la-máquina).
 
 1. Pulsa **Elegir plantilla…**. Se abre **Elegir una plantilla de Proxmox**:
 
@@ -1260,7 +1303,8 @@ asignaciones, en **Datacenter → Permisos**:
 | `/vms` | `ProxLaunchMaquinas` | Sí | Crear máquinas (el segundo rol, sin `VM.Clone`). |
 | `/storage/<almacenamiento>` | `ProxLaunchCreador` | — | Solo en los que se usarán para ISOs, imágenes importadas y discos (`Datastore.AllocateTemplate` y `Datastore.AllocateSpace`). |
 | `/nodes/<nodo>` | `ProxLaunchCreador` | — | Solo en los nodos que descargarán archivos desde una dirección web (`Sys.AccessNetwork`). |
-| `/sdn/zones/localnetwork` | `ProxLaunchCreador` | — | Usar la red (`SDN.Use`). |
+| `/sdn/zones/localnetwork` | `ProxLaunchCreador` | — | Usar la red (`SDN.Use`) de los bridges. |
+| `/sdn/zones/<zona>` o `/sdn/zones/<zona>/<red>` | `PVESDNUser` (o `ProxLaunchCreador`) | — | **Solo si usas [redes virtuales](#redes-virtuales-sdn)** (versión 0.8): `SDN.Use` en cada zona o VNet que quieras ofrecer. |
 | `/` | `ProxLaunchCreador` | **No** | Solo para ver el estado de los nodos (`Sys.Audit`). |
 
 En las filas con «—», la guía de ProxLaunch no indica nada especial sobre **Propagar**.
@@ -1276,6 +1320,12 @@ esquema, `ProxLaunchMaquinas`) `VM.Config.Cloudinit` y, según tu versión, `VM.
 Para usar scripts de configuración (snippets) en 8.x, asigna el rol también sobre el almacenamiento donde están los scripts
 (`/storage/<almacenamiento de snippets>`). El asistente de plantillas no pide nada nuevo: ver
 [Privilegios del asistente](#privilegios-del-asistente).
+
+**Privilegios de la versión 0.8.** El firewall de la máquina, la red del clon y los lotes en el servidor usan privilegios
+que ya están en `ProxLaunchMaquinas` (`VM.Config.Network`, `VM.Audit`, `VM.Allocate`) y `Sys.Audit` en `/`. Lo único nuevo
+es dar `SDN.Use` en las zonas o VNets que quieras ofrecer (ver
+[Privilegios de la versión 0.8](#privilegios-opcionales-no-forman-parte-del-rol)). **Una plantilla conectada a una VNet**
+exige además que quien clona tenga `SDN.Use` sobre esa VNet: si no, Proxmox responde 403 al clonar.
 
 Pasos:
 
@@ -1351,7 +1401,7 @@ Si no eres experto en Proxmox, estas son las ideas que usa esta sección (tambi�
 | **Script o snippet** | Un archivo de texto (normalmente YAML) guardado en el servidor que cloud-init usa como guion de configuración. *Ejemplo:* un script que instala el agente invitado. Lo crea el administrador. |
 | **DHCP** | La red le da a la máquina una IP **sola**, sin que escribas nada (la que tu router o servidor DHCP reparta). Cómoda, pero la IP puede cambiar. |
 | **IP fija** | Tú eliges la dirección de la máquina, con su máscara. *Ejemplo:* `192.168.1.50/24`. La máquina siempre tiene esa IP. |
-| **IP en serie** | En un lote, la primera máquina recibe la IP que escribas y cada una de las siguientes la siguiente: `.50`, `.51`, `.52`, `.53`… |
+| **IP en serie** | En un lote, la primera máquina recibe la IP que escribas y cada una de las siguientes la IP siguiente: `.50`, `.51`, `.52`, `.53`… |
 | **Máscara (`/24`)** | Dice qué parte de la IP es «la red». `/24` equivale a `255.255.255.0`: todas las IP `192.168.1.x` están en la misma red. |
 | **Puerta de enlace** | La dirección del router por el que la máquina sale a otras redes e internet. *Ejemplo:* `192.168.1.1`. |
 | **DNS** | Los servidores que traducen nombres a IP (por ejemplo, `1.1.1.1` y `8.8.8.8`). |
@@ -1557,7 +1607,7 @@ Hay cuatro tipos, cada uno con su lista:
 
 En cada lista eliges: **Como la plantilla** (defecto), **Ninguno** (quita el que traiga la plantilla), uno de los scripts del
 servidor o **Escribir a mano…**, donde escribes el identificador con la forma `almacén:snippets/archivo`, por ejemplo
-`local:snippets/agente.yaml` (sin la lista del servidor ProxLaunch no puede comprobar que exista). Un script de más de
+`local:snippets/agente.yaml` (sin la lista del servidor, ProxLaunch no puede comprobar que exista). Un script de más de
 **1 MiB** sale desactivado «(demasiado grande: máximo 1 MiB)» y todos juntos no pueden pasar de **3 MiB**.
 
 Si el nodo no tiene ningún almacenamiento con el contenido «Fragmentos», la sección sale desactivada («Pide al administrador
@@ -1972,6 +2022,302 @@ desactivado con el motivo:
 Si te falta un privilegio, el origen o la casilla afectados quedan desactivados con el motivo (por ejemplo, sin
 `Datastore.AllocateTemplate` no puedes subir un archivo ni pedir una descarga, pero sí usar una imagen que ya esté en el
 servidor).
+
+---
+
+## Redes virtuales (SDN)
+
+Hasta la versión 0.7, una máquina solo se podía conectar a un **bridge** (por ejemplo `vmbr0`). Desde la 0.8 también puede
+conectarse a una **red virtual** (en Proxmox, una *VNet* de **SDN**, «red definida por software»). Es una red que **crea y
+mantiene tu administrador** de Proxmox y reparte por una **zona**. Para ProxLaunch (y para Proxmox) se usa igual que un
+bridge: eliges su nombre en la lista **Red**.
+
+*Ejemplo:* el administrador creó la VNet `prod` en la zona `dc1`, con la VLAN 20 ya incluida. En el formulario eliges `prod`
+y la máquina queda en esa red, sin que tú tengas que saber qué zona ni qué VLAN hay detrás.
+
+![Tabla «Red» del formulario en modo avanzado con tres tarjetas: net0 en vmbr0; net1 en «prod — Producción» con VLAN 30; net2 en «lab — Pruebas», con la VLAN desactivada y el aviso «Esta red virtual no admite VLAN (no es «vlanaware»). La VLAN ya viene definida en la propia red virtual.»](img/80-redes-con-vnets.png)
+
+*La tabla **Red** con dos redes virtuales: se ven por su nombre y su alias, sin la zona.*
+
+### Palabras que conviene conocer
+
+| Palabra | Qué es, con un ejemplo |
+|---|---|
+| **Zona (SDN)** | Un área de red definida por el administrador que agrupa varias VNets. *Ejemplo:* la zona `dc1`. La zona `localnetwork` es la «normal»: son los bridges de cada servidor. |
+| **VNet (red virtual)** | Una red dentro de una zona, con su propio nombre. *Ejemplo:* la VNet `prod` de la zona `dc1`. |
+| **Alias** | Un texto descriptivo que el administrador puede ponerle a la VNet. Se ve así: `prod — Red de producción`. |
+| **VLAN-aware («vlanaware»)** | Una VNet que admite etiquetas de VLAN **dentro** de ella. Si no lo es, la VLAN ya viene definida por la propia red y ProxLaunch **no te deja poner otra**. |
+
+### Qué hace y cuándo está disponible
+
+- **Dónde aparecen.** En la lista **Red** de la tabla de redes del formulario y en la de **Red de las copias** al
+  [clonar](#red-del-clon). Si hay VNets, la lista se divide en dos grupos: **Bridges del servidor** y **Redes virtuales
+  (SDN)**. Sin VNets, la lista es la plana de siempre. **La lista no muestra la zona**: de cada VNet ves su nombre y su
+  alias (`prod — Producción`). La zona solo aparece en los mensajes de permiso (403), para que sepas qué pedir.
+- **Qué VNets ves.** Solo las que tu usuario puede usar. Si no ves ninguna, ProxLaunch dice: «No ves ninguna red virtual.
+  Puede que no haya ninguna o que tu usuario no tenga permiso para usarlas. Pide al administrador el permiso «SDN.Use» en la
+  zona (/sdn/zones/<zona>) o en la red virtual que quieras usar. Si la acaba de crear, pídele también que aplique la
+  configuración de SDN.»
+- **Versión de Proxmox.** Desde la 8.1 el SDN viene incluido. En la **8.0** solo hay redes virtuales si el administrador
+  instaló el paquete `libpve-network-perl` en cada nodo; si no, ProxLaunch lo explica y puedes seguir usando bridges.
+- **Si no se pudo leer.** «No se pudieron leer las redes virtuales (SDN) del nodo pve2; solo se muestran los bridges.» No
+  bloquea: sigues pudiendo usar los bridges.
+- **VLAN.** Con una VNet que **no** es *vlanaware* el campo **VLAN** se desactiva y se vacía («Esta red virtual no admite VLAN
+  (no es «vlanaware»). La VLAN ya viene definida en la propia red virtual.»). Si aun así llega una VLAN (por ejemplo, desde
+  un CSV), la validación la marca como error: la máquina se crearía pero no arrancaría.
+- **MTU.** ProxLaunch no conoce el MTU de una VNet, así que **no puede avisarte** si el que pones es demasiado grande.
+- **Lotes en varios nodos.** Solo se ofrecen las redes que existen en **todos** los nodos elegidos. Lo demás se resume:
+  «2 redes no se muestran porque no existen en todos los nodos elegidos.» y, si un nodo no respondió, «No pude leer las redes
+  de pve3; las redes mostradas se comprobaron solo en los demás nodos.» Si una VNet no existe en alguno de los nodos
+  del lote: «La red virtual «prod» no existe en el servidor pve2. Elige una red que exista en todos los servidores del
+  lote.»
+- **Direcciones libres.** Si la VNet reparte las IP por sí sola (IPAM, la gestión de direcciones de Proxmox) y se quedó sin direcciones: «La red virtual no tiene
+  direcciones libres (zona «dc1»). Pide al administrador que amplíe el rango o elige otra red.»
+- **ProxLaunch solo usa las VNets: no las crea ni las edita.** Si el administrador creó una hace poco, tiene que **aplicar la
+  configuración de SDN** para que exista en los nodos.
+
+### Privilegios
+
+| Qué | Privilegio | Ruta | Defecto en el rol |
+|---|---|---|---|
+| Conectar una máquina a una VNet | `SDN.Use` | `/sdn/zones/<zona>`, `/sdn/zones/<zona>/<red>` o `/sdn/zones/<zona>/<red>/<vlan>` | Está en el rol, pero con la asignación acotada solo cubre `localnetwork`. |
+| Ver el alias y el estado de las VNets | `SDN.Audit` (opcional, **no verificado**) | `/sdn/zones/<zona>` | No está en el rol. Sin él las VNets se usan igual. |
+
+El administrador da el acceso con el rol predefinido de Proxmox `PVESDNUser`. Para la VNet `prod` de la zona `dc1` y el
+usuario `ana@pve`:
+
+```text
+pveum acl modify /sdn/zones/dc1/prod --roles PVESDNUser --users ana@pve
+```
+
+Para toda la zona, `/sdn/zones/dc1`; para una sola VLAN, `/sdn/zones/dc1/prod/20`.
+
+**Qué ves si falta el permiso.** Si Proxmox rechaza la red al crear o al clonar (error 403), ProxLaunch nombra la zona y la
+red y dice qué pedir. Los cuatro casos:
+
+| Mensaje | Qué significa | Qué hacer |
+|---|---|---|
+| Proxmox no te deja usar la red «prod»: a tu usuario le falta el permiso SDN.Use en /sdn/zones/dc1/prod. Pídeselo al administrador o elige otra red. | Elegiste esa VNet y no tienes `SDN.Use` sobre ella. | Pide el permiso o elige otra red. |
+| Proxmox no te deja conectar la tarjeta net1 a la red «prod»: … | Lo mismo, pero en una tarjeta concreta. | Igual. |
+| Proxmox no te deja clonar: la plantilla usa la red «prod» y tu usuario no tiene el permiso SDN.Use sobre ella. … | La **plantilla** está conectada a una VNet que no puedes usar. | Pide el permiso o usa una plantilla en otra red. |
+| Proxmox no te deja cambiar la tarjeta net0 porque la plantilla la conecta a la red «prod» y tu usuario no tiene el permiso SDN.Use sobre ella. … | Estás reescribiendo una tarjeta que la plantilla conecta a una VNet que no puedes usar. | Igual. |
+
+**Si usas la lista pero no ves el grupo de VNets** y tu administrador ya te dio el permiso, pulsa **Actualizar** (los
+permisos se leen al conectar y al actualizar).
+
+### Redes virtuales en archivos
+
+- **CSV.** La columna `red` (alias `bridge`) acepta el nombre de una VNet igual que el de un bridge.
+- **Lotes y perfiles.** Guardan el **nombre** de la red como el de un bridge; al abrirlos en otro servidor, si esa VNet no
+  existe, aparece [Este lote no encaja en este servidor](#si-el-lote-no-encaja-en-este-servidor).
+
+---
+
+## Red del clon
+
+Al clonar una plantilla, cada copia **hereda las tarjetas de red de la plantilla**: la misma red, VLAN y tipo de tarjeta.
+Hasta la versión 0.7 no había forma de cambiarlo desde ProxLaunch. Desde la 0.8, el grupo **Red de las copias** te deja
+**cambiar** la red de las tarjetas, **quitarlas** o **añadir** otras, y sigue **conservando la dirección MAC** de cada
+tarjeta (la «matrícula» de la tarjeta: un identificador único que usan el router y el DHCP para reconocer la máquina).
+
+*Ejemplo:* tu plantilla `plantilla-debian12` tiene dos tarjetas en el bridge `vmbr0` (`net0` y `net1`), pero quieres que
+en las 4 copias la segunda esté en la VNet `prod`, VLAN 20, y añadirles una tercera en `vmbr0`. Eliges **Personalizar la red
+de las copias**, cambias la red de `net1` y pulsas **Añadir tarjeta** (aparece `net2`).
+
+![Grupo «Red de las copias» con «Personalizar la red de las copias» marcada: una tabla con las columnas Interfaz, Red, Tarjeta, VLAN, MTU y Límite (MB/s), la tarjeta net1 cambiada a la red «prod — Producción» con VLAN 20 y MTU 1400, net0 en vmbr0 con MTU 1500 y net2 en vmbr0 con MTU «Heredar», las casillas «Generar una MAC nueva» sin marcar, los botones «Quitar» y el botón «Añadir tarjeta».](img/83-seccion-red-clon.png)
+
+*El grupo **Red de las copias** con la tarjeta `net1` cambiada. Las columnas MTU y Límite solo se ven en modo avanzado.*
+
+### Dónde aparece y cuándo está disponible
+
+- **Solo al clonar una plantilla.** El grupo **Red de las copias** se muestra únicamente con el origen **Copiar una plantilla
+  de Proxmox**, debajo de los ajustes de la copia.
+- **Necesita leer la plantilla.** Hasta que ProxLaunch lee su configuración dice: «Todavía no se leyó la configuración de la
+  plantilla; espera un momento para poder personalizar su red.» Si la plantilla no tiene tarjetas: «La plantilla no tiene
+  tarjetas de red.»
+- **Por defecto no se toca nada.** El modo **Como la plantilla** (el valor por defecto) deja la red exactamente como en 0.7.
+- **Privilegio.** `VM.Config.Network` en `/vms` (ya está en el rol). Sin él, **Personalizar la red de las copias** queda
+  desactivado con el motivo; si ya lo habías elegido, vuelve a **Como la plantilla** con un aviso.
+- **Versión.** Proxmox 8.0 o posterior (todas las admitidas).
+- **Cómo se aplica.** ProxLaunch **clona** la plantilla y **después** lee la configuración de la copia y le envía los
+  cambios de red de una sola vez, partiendo de lo que la copia **ya tiene**. Así la tarjeta **conserva la MAC que la copia ya
+  recibió** y solo cambia lo que tú pediste. Si ese último paso falla, la máquina **existe** y no se enciende: ves «Se creó,
+  pero falta aplicar la red de la copia. Puedes reintentar los ajustes.» y **Reintentar ajustes** lo vuelve a aplicar sin
+  crear máquinas nuevas.
+- **También con el firewall.** Si activas el [firewall de la máquina](#firewall-de-la-máquina) en un clon, ProxLaunch usa
+  este mismo paso para poner `firewall=1` en **todas** las tarjetas, aunque dejes la red **Como la plantilla**.
+
+### Las opciones
+
+Con **Personalizar la red de las copias** se muestra una fila por cada tarjeta de la plantilla (`net0`, `net1`…). Los valores
+de partida son los de la plantilla; **solo se envía lo que cambies**.
+
+| Opción | Modo | Para qué sirve | Valores | Defecto | Límites y privilegio |
+|---|---|---|---|---|---|
+| **Como la plantilla** / **Personalizar la red de las copias** | Básico | Elige si se cambia algo. | Dos opciones. | **Como la plantilla**. | Personalizar necesita `VM.Config.Network` en `/vms`. |
+| **Interfaz** | Básico | Nombre de la tarjeta, asignado solo: `net0`, `net1`… | (solo lectura) | El de la plantilla. | **Máximo 32** tarjetas (`net0` a `net31`). |
+| **Red** | Básico | El bridge o la [VNet](#redes-virtuales-sdn) a la que se conecta. | Los bridges del nodo y, si puedes usarlas, sus VNets. | La de la plantilla. | Si la red nueva es una VNet, hace falta `SDN.Use` sobre ella. Ejemplo: `prod`. |
+| **Tarjeta** | Básico | El tipo de tarjeta. | **VirtIO** o **Intel E1000**. | El de la plantilla. | |
+| **VLAN** | Básico | Etiqueta de VLAN. | Entero 1 a 4094 o vacío («Sin VLAN»). Ejemplo: `20`. | La de la plantilla. | Vacía **quita** la VLAN de la plantilla. Con una VNet que no es *vlanaware*, desactivada. |
+| **MTU** | Avanzado | Tamaño máximo de paquete. Ver [MTU y límite de velocidad](#mtu-y-límite-de-velocidad-de-la-red). | Vacío («Heredar»), `1` (igual al bridge) o 576 a 65520. Ejemplo: `1500`. | El de la plantilla. | **Solo con VirtIO**: con E1000 el campo se desactiva y, si llega un valor, se ignora con un aviso. |
+| **Límite (MB/s)** | Avanzado | Velocidad máxima de la tarjeta. | Número mayor que 0 o vacío («Sin límite»). Ejemplo: `100`. | El de la plantilla. | Hasta 1 000 000 000. |
+| **Generar una MAC nueva** | Básico | Pide a Proxmox otra dirección MAC para esa tarjeta. | Casilla. | **Desmarcada**: se conserva la MAC. | Solo en tarjetas que ya existen. Resultado: «La tarjeta net0 recibirá una dirección MAC nueva (Proxmox la genera).» |
+| **Quitar** / **Conservar** | Básico | Quita la tarjeta de la copia (su fila se atenúa y dice «Esta tarjeta se quitará de la copia.») o la deja. | Botón. | **Conservar**. | Al quitar `netN` también se quita su `ipconfigN` de cloud-init. |
+| **Añadir tarjeta** | Básico | Añade una tarjeta nueva en el primer índice libre. | Botón. | — | Máximo 32. Una tarjeta nueva **no tiene MAC que conservar**: Proxmox le da una. Por defecto, VirtIO y la primera red de la lista. Si no cabe: «Una máquina admite como máximo 32 tarjetas de red.» |
+
+**Una tarjeta que ProxLaunch no entiende** (por ejemplo, con opciones poco habituales) se muestra **en solo lectura** («No
+entendí la tarjeta net2 de la plantilla; se deja como está y no se puede cambiar.») y **nunca se reescribe**. Si activas el
+firewall, esa tarjeta se queda **sin firewall** y la máquina **no se enciende** (ver [Firewall](#firewall-de-la-máquina)).
+
+### Lo que ProxLaunch comprueba
+
+| Mensaje (resumido) | Tipo | Qué hacer |
+|---|---|---|
+| La VLAN debe ser un número entre 1 y 4094 (por ejemplo, 20). | Error | Corrígela. |
+| La red virtual «x» no admite VLAN en la tarjeta (no es «vlanaware»). Quita la VLAN o elige otra red… | Error | Quita la VLAN o cambia de red. |
+| La MTU N es mayor que la de la red (M); Proxmox podría negarse a arrancar la máquina. Usa «Igual al bridge» o un valor menor. | Aviso | Baja el valor. |
+| Has configurado la IP de la tarjeta N pero la vas a quitar. Quita su configuración o conserva la tarjeta. | Error | Quita esa tarjeta de [cloud-init](#configuración-inicial-con-cloud-init) o no la quites. |
+| La máquina se quedará sin tarjetas de red y no tendrá conexión. | Aviso | Conserva o añade una tarjeta. |
+| La plantilla usa la red «x» y tu usuario no tiene permiso para usarla; clonar o cambiar su tarjeta puede fallar con un error 403. | Aviso | Pide `SDN.Use` o cambia de plantilla. |
+| No entendí la tarjeta N de la plantilla; la dejo como está. | Aviso | Nada: no se toca. |
+| No pude leer la configuración de la copia, así que no cambié su red para no perder su MAC. Usa «Reintentar ajustes». | Error de la copia | **Reintentar ajustes**. |
+| No se cambió la red de la copia: la tarjeta que querías añadir ya está ocupada por otra red (la plantilla cambió desde que preparaste el lote). No se tocó nada. | Error de la copia | Revisa la red y reintenta. |
+| No se cambió la red de la copia: su configuración cambió mientras la preparaba (alguien la editó a la vez). | Error de la copia | **Reintentar ajustes**. |
+
+### Lo que ves en el resumen y el informe
+
+- **Resumen:** una línea **Red de la copia** con **lo que pediste** para cada tarjeta, por ejemplo `net1: cambiar (prod)`
+  o `net2: quitar`. Con **Como la plantilla** no aparece nada; «personalizada, sin cambios» si elegiste personalizar sin
+  tocar nada. El Resumen **no** lista las tarjetas finales.
+- **Informe:** solo aquí aparece el resultado por tarjeta, además de «red aplicada» (o «red no aplicada» si faltó):
+  `net0: virtio, red prod, VLAN 20, MAC conservada, con firewall`, o «quitada net1» / «añadida net2».
+
+![Panel Resumen con las líneas «Red de la copia: net1: cambiar (prod)» y «Firewall: activado, grupo web, entrada Bloquear, salida Permitir, DHCP automático».](img/84-resumen-red-firewall.png)
+
+*El Resumen con una red personalizada y el firewall activado.*
+
+### En lotes, CSV y archivos
+
+- **Lote.** La red personalizada vale para **todas** las copias del lote.
+- **CSV.** La columna `reescribir_red` fila por fila; ver [Columnas de red del clon y firewall](#columnas-de-red-del-clon-y-firewall).
+- **Lote guardado.** Se guarda en el [formato 5](#lote-guardado-archivo-de-lote). Los **perfiles de máquina no la guardan**.
+- **Ejemplo:** [`lote-red-firewall.proxlaunch-lote.json`](ejemplos/lote-red-firewall.proxlaunch-lote.json).
+
+---
+
+## Firewall de la máquina
+
+El **firewall de Proxmox** filtra el tráfico que entra y sale de una máquina virtual. Funciona con **reglas**. Desde la
+versión 0.8, ProxLaunch puede activarlo al crear la máquina y ponerle un **grupo de seguridad**.
+
+Un **grupo de seguridad** es un paquete de reglas con nombre que el **administrador** ya preparó en Proxmox (en **Centro de
+datos > Firewall > Grupos de seguridad**). *Ejemplos:* el grupo `web` permite los puertos 80 y 443; el grupo `ssh`, el 22.
+ProxLaunch **no crea ni edita grupos ni reglas**: solo elige uno de los que existen y lo aplica a la máquina.
+
+![Grupo «Firewall de la máquina» con «Activar el firewall» marcada: la lista «Grupo de seguridad» con «web — Servidores web» elegido y los botones «Recargar» y «Ver reglas», las dos políticas («Bloquear» la entrada y «Permitir» la salida) con su explicación, la casilla «Permitir que la máquina pida su IP por DHCP» y el aviso sobre acceso por la red.](img/81-seccion-firewall.png)
+
+*El grupo **Firewall de la máquina** con un grupo elegido.*
+
+### Palabras que conviene conocer
+
+| Palabra | Qué es, con un ejemplo |
+|---|---|
+| **Firewall (de la máquina)** | El filtro de Proxmox para **una** máquina. Es distinto del *firewall general* del centro de datos. |
+| **Firewall general (del centro de datos)** | El interruptor global en **Centro de datos > Firewall**. **Si está apagado, el firewall de la máquina no hace nada** aunque lo actives. Lo enciende el administrador; ProxLaunch **nunca lo enciende** (encenderlo cierra el acceso a los servidores salvo los puertos permitidos). |
+| **Grupo de seguridad** | Un conjunto de reglas con nombre, hecho por el administrador. *Ejemplo:* `web` (puertos 80 y 443). |
+| **Política** | Qué hace el firewall con el tráfico que **ninguna regla menciona**: **Bloquear** (lo descarta) o **Permitir** (lo deja pasar). |
+| **Entrada y salida** | La entrada es lo que **llega** a la máquina; la salida, lo que **sale** de ella. |
+| **DHCP** | Servicio que reparte IP automáticamente. Con la entrada en Bloquear, su respuesta no llegaría y la máquina se quedaría **sin IP**. |
+
+### Las opciones
+
+Todas están en el grupo **Firewall de la máquina** del formulario (visible con cualquier origen). Mientras **Activar el
+firewall** esté **desmarcada** (el valor por defecto) no se envía nada y la máquina se crea exactamente como en 0.7.
+
+| Opción | Modo | Para qué sirve | Valores | Defecto | Límites y privilegio |
+|---|---|---|---|---|---|
+| **Activar el firewall** | Básico | Enciende el firewall **de esta máquina** y muestra el resto. | Casilla. | **Desmarcada**. | `VM.Config.Network` en `/vms` (ya está en el rol). Sin él, la sección sale desactivada con el motivo. |
+| **Grupo de seguridad** | Básico | El grupo de reglas que se aplica a todas las tarjetas. Se busca escribiendo; solo vale uno **de la lista**. | **Sin grupo** o un grupo del servidor (se ve «web — Servidores web»). Ejemplo: `web`. | **Sin grupo**. | Nombre de 2 a 18 caracteres, empieza por letra; letras, números, `-` y `_`. Si el servidor no tiene: «El servidor no tiene grupos de seguridad. Los crea el administrador en Centro de datos > Firewall > Grupos de seguridad.» |
+| **Recargar** | Básico | Vuelve a leer la lista de grupos. | Botón. | — | |
+| **Ver reglas** | Básico | Muestra las reglas del grupo elegido (solo lectura): «• in: ACCEPT (…)». | Botón. | — | `Sys.Audit` en `/` (ya está en el rol). Sin él: «Para ver las reglas del grupo hace falta el permiso «Sys.Audit» en «/». Pídeselo a tu administrador.» Puedes elegir el grupo igualmente. |
+| **Si ninguna regla lo permite, el tráfico que entra** | Básico | Política de **entrada**. | **Bloquear** o **Permitir**. | **Bloquear** (recomendado). | |
+| **…el tráfico que sale** | Básico | Política de **salida**. | **Bloquear** o **Permitir**. | **Permitir** (lo habitual). | |
+| **Permitir que la máquina pida su IP por DHCP** | Básico | Deja pasar la respuesta del servidor DHCP. | Casilla. | **Automático**: se marca sola si alguna tarjeta usa DHCP en [cloud-init](#configuración-inicial-con-cloud-init). Si la tocas, manda lo que elijas. | Tiene sentido con la entrada en Bloquear. |
+| **Entiendo que la máquina no aceptará conexiones por la red** | Básico | Confirmación obligatoria. | Casilla. | **Desmarcada**. | Solo aparece con la entrada en **Bloquear** y **Sin grupo**. |
+
+**Qué significan las dos políticas, con ejemplos:**
+
+- **Entrada = Bloquear** (lo recomendado): nadie entra a la máquina salvo lo que permita el grupo. *Ejemplo:* con el grupo
+  `ssh`, solo se puede entrar por el puerto 22.
+- **Entrada = Permitir:** entra todo lo que ninguna regla prohíba. Menos seguro.
+- **Salida = Permitir** (lo habitual): la máquina puede conectarse a donde quiera.
+- **Salida = Bloquear:** solo sale lo que el grupo permita. *Ejemplo:* con el grupo `web` y la salida en Bloquear, la máquina
+  no podrá ni descargar actualizaciones, salvo que el grupo lo permita.
+
+### Qué hace ProxLaunch en el servidor
+
+Con el firewall activado, ProxLaunch hace estas cosas, en este orden:
+
+1. Pone `firewall=1` en **todas las tarjetas** de la máquina (al crearla, o al reescribir la red de un clon).
+2. Envía a la máquina las **opciones del firewall**: activado y las dos políticas **siempre explícitas** (para no depender de
+   los valores por defecto de cada versión), y `dhcp=1` si procede.
+3. Añade **una regla** que aplica el grupo elegido a todas las tarjetas, con el comentario `ProxLaunch`. Si la máquina ya
+   tenía esa regla del grupo activa (porque la plantilla ya la traía), **no la duplica**: «El grupo «web» ya estaba en la
+   plantilla: no se añadió otra regla.»
+
+Si la **plantilla ya traía firewall y reglas**, las copias las **heredan** y se suma el grupo que elijas («Esta plantilla ya
+traía firewall y reglas; las copias las heredan y se sumará el grupo que elijas.»).
+
+### Avisos y errores que verás
+
+| Mensaje | Tipo | Qué significa | Qué hacer |
+|---|---|---|---|
+| El firewall general de Proxmox (Centro de datos > Firewall) está apagado: las reglas de esta máquina se guardan pero no se aplican. ProxLaunch no lo enciende… | Aviso | El interruptor global está apagado, así que el firewall de la máquina no filtra. No bloquea. | Pide al administrador que lo encienda (con cuidado: bloquea el acceso a los servidores salvo los puertos permitidos). |
+| No pude comprobar si el firewall general está encendido (falta el permiso «Sys.Audit»). Las reglas se guardarán igualmente. | Aviso | No se pudo leer. | Nada; sigue. |
+| Con el firewall activo, la entrada en Bloquear y ningún grupo, la máquina no aceptaría ninguna conexión por la red. Elige un grupo, cambia la entrada a Permitir o marca que lo entiendes. | **Error** | Una máquina **aislada**: no podrías entrar por SSH ni RDP. | Elige un grupo, pon la entrada en **Permitir** o marca **Entiendo que la máquina no aceptará conexiones por la red**. |
+| La máquina no aceptará conexiones por la red (firewall activo, entrada en Bloquear y ningún grupo). Podrás usar la consola de Proxmox. | Aviso | Marcaste **Entiendo…**: sigues adelante sabiéndolo. | Nada. |
+| La máquina pedirá su IP por DHCP pero el firewall bloqueará la respuesta y se quedará sin IP. Marca «Permitir que la máquina pida su IP por DHCP». | Aviso | Desmarcaste DHCP con DHCP en cloud-init y la entrada en Bloquear. | Marca la casilla. |
+| El grupo «x» no permite ninguna conexión entrante; no podrás entrar por la red (por ejemplo, por SSH). Podrás usar la consola de Proxmox. | Aviso | El grupo no trae ninguna regla de entrada que acepte. | Elige otro grupo (usa **Ver reglas**). |
+| El grupo de seguridad «x» no existe en este servidor. Elige uno de la lista… | Error | El grupo no está (lote guardado de otro servidor, o lo borraron). | Elige otro. |
+| El nombre del grupo debe empezar por una letra y tener entre 2 y 18 caracteres: letras, números, guion y guion bajo (por ejemplo, «web-01»). | Error | Nombre mal escrito (típico en un CSV). | Corrígelo. |
+| No pude leer los grupos de seguridad del servidor, así que no puedo asegurar que el grupo exista. Reintenta o desactiva el firewall. | Error | Falló la lectura. | **Recargar**, o desactiva el firewall. |
+| Falta el permiso «VM.Config.Network» en /vms para activar el firewall. Pídeselo a tu administrador. | Error | Falta el privilegio. | Pídelo. |
+| Esto no está disponible en la versión N de Proxmox. | Error | Versión sin esa función. | Actualiza Proxmox. |
+| La tarjeta net2 de la plantilla no se entiende: quedará sin firewall (el resto de tarjetas sí lo tendrá). | Aviso | Una tarjeta rara no se toca. | Revisa esa tarjeta en Proxmox. |
+| No pude comprobar si la plantilla ya tiene firewall. | Aviso | Lectura fallida. | Nada. |
+
+![Grupo «Firewall de la máquina» con la entrada en «Bloquear» y «Sin grupo»: el texto de riesgo «Con la entrada en Bloquear, solo entra el tráfico que permita el grupo…», la casilla «Entiendo que la máquina no aceptará conexiones por la red» y el mensaje de error «Con el firewall activo, la entrada en Bloquear y ningún grupo, la máquina no aceptaría ninguna conexión por la red…».](img/82-firewall-aviso-aislada.png)
+
+*Una máquina **aislada**: sin grupo y con la entrada en Bloquear, ProxLaunch no te deja crearla hasta que marques **Entiendo…**
+(o elijas un grupo, o pongas la entrada en Permitir). Seguirás pudiendo usar la **consola de Proxmox**.*
+
+### Si algo queda a medias
+
+- **La máquina no se enciende** si queda algún ajuste de red o de firewall pendiente, aunque hayas marcado **Encender al
+  terminar**.
+- **Una tarjeta quedó sin firewall.** Si una tarjeta de la plantilla no se entiende (no se puede reescribir), con el firewall
+  pedido la máquina **no se enciende**: «No se encendió: la tarjeta net1 de la plantilla no tiene firewall. Revísala en
+  Proxmox y enciéndela a mano.» Así no queda una máquina encendida con una tarjeta desprotegida.
+- **Riesgo de una máquina a medias.** Si el firewall ya está activo en las tarjetas pero faltan sus opciones o la regla del
+  grupo, Proxmox usa sus políticas por defecto y la máquina puede quedar sin conexión entrante. El informe lo dice («Riesgo: la
+  máquina quedó a medias… No se encendió. Reintenta los ajustes o usa la consola de Proxmox.»). **Reintentar ajustes** completa
+  las opciones o la regla que falten **sin duplicar** la regla.
+- **Sin permiso.** «Se creó, pero no se pudo aplicar las opciones del firewall: a tu usuario le falta el permiso
+  VM.Config.Network en «/vms». La máquina no se encendió. Pídeselo a tu administrador y reintenta los ajustes.»
+- **El grupo desapareció.** «El grupo de seguridad «web» ya no existe en el servidor, así que no se aplicó la regla. La máquina
+  no se encendió. Elige otro grupo o pide al administrador que lo cree de nuevo.»
+
+### En lotes, CSV y archivos
+
+- **Lote.** El mismo firewall para todas las máquinas del lote. En el **Resumen** aparece una línea **Firewall**: `activado,
+  grupo web, entrada Bloquear, salida Permitir, DHCP automático` (y **Aislamiento** si lo aceptaste).
+- **CSV.** Las columnas `cortafuegos`, `grupo_seguridad`, `politica_entrada` y `politica_salida` permiten fijarlo fila por
+  fila; ver [Columnas de red del clon y firewall](#columnas-de-red-del-clon-y-firewall).
+- **Lote guardado.** Se guarda en el [formato 5](#lote-guardado-archivo-de-lote). **La confirmación «Entiendo que la máquina
+  no aceptará conexiones…» nunca se guarda**: al abrir el lote hay que volver a marcarla. Los **perfiles de máquina** no
+  guardan el firewall.
+- **Ejemplos:** [`mvs-red-firewall.csv`](ejemplos/mvs-red-firewall.csv) y
+  [`lote-red-firewall.proxlaunch-lote.json`](ejemplos/lote-red-firewall.proxlaunch-lote.json).
 
 ---
 
@@ -2480,7 +2826,8 @@ Proxmox; discos sueltos; archivos subidos ni plantillas; ni lo que no está en e
 **protegidas contra borrado** del lote solo se tocan con tu confirmación expresa (ver
 [Deshacer con máquinas encendidas o protegidas](#deshacer-con-máquinas-encendidas-o-protegidas)); si no la das, se omiten
 («Apágala en Proxmox y vuelve a intentarlo»). **Hasta cuándo:** solo mientras ProxLaunch siga abierto y conectado al
-**mismo servidor**.
+**mismo servidor**. Para deshacer un lote **después** de cerrar ProxLaunch, usa
+[Lotes en el servidor](#lotes-en-el-servidor-inventario) (versión 0.8).
 
 ### Deshacer con máquinas encendidas o protegidas
 
@@ -2518,8 +2865,8 @@ lote y que no está bloqueada.
   motivo («No se pudo apagar «x», así que no se eliminó. Apágala desde Proxmox y vuelve a intentarlo.» o «No se pudo quitar
   la protección de «x», así que no se eliminó. Quítala desde Proxmox y vuelve a intentarlo.») y Deshacer sigue con las demás. Si
   no se puede quitar la protección de una máquina que estaba encendida, queda **apagada** (se apaga antes).
-- **Sin privilegio.** Sin `VM.PowerMgmt` una máquina encendida se omite: «“x” está encendida y no se pudo apagar: falta el
-  privilegio VM.PowerMgmt. Apágala en Proxmox y vuelve a intentarlo.» Sin `VM.Config.Options` una protegida se omite: «“x”
+- **Sin privilegio.** Sin `VM.PowerMgmt` una máquina encendida se omite: «x» está encendida y no se pudo apagar: falta el
+  privilegio VM.PowerMgmt. Apágala en Proxmox y vuelve a intentarlo.» Sin `VM.Config.Options` una protegida se omite: «x»
   está protegida y no se pudo desproteger: falta el privilegio VM.Config.Options. Quita la protección en Proxmox y vuelve a
   intentarlo.»
 - **Nunca se fuerza** una máquina que no es del lote (ajena) ni una **bloqueada** por una tarea de Proxmox.
@@ -2551,7 +2898,141 @@ de N terminadas). Si cierras, las tareas ya enviadas seguirán en Proxmox, pero 
 deshacer lo creado.» Opciones: **Seguir en ProxLaunch** y **Cerrar de todos modos**. Si cierras: no se envía ninguna máquina
 más; **las tareas ya enviadas no se detienen**; se guarda un **informe parcial** (`parcial-<código>.txt`) en la carpeta
 `informes` de tus datos; y la próxima vez verás «El último lote se cerró sin terminar. Informe: <ruta>». El lote **no se
-restaura**: revisa en Proxmox qué se creó (por la etiqueta `lote-<código>` o por el rango de números).
+restaura**: revisa en Proxmox qué se creó (por la etiqueta `lote-<código>` o por el rango de números). Desde la 0.8 puedes
+volver a encontrar ese lote con [Lotes en el servidor](#lotes-en-el-servidor-inventario).
+
+---
+
+## Lotes en el servidor (inventario)
+
+El **Deshacer** de siempre solo funciona con el lote que acabas de crear y mientras ProxLaunch sigue abierto. Si lo cierras,
+ya no puedes borrar lo que creó. Desde la versión 0.8, **Archivo > Lotes en el servidor…** abre una ventana que **vuelve a
+encontrar** los lotes que ProxLaunch creó en el servidor, aunque los hicieras otro día o en otra sesión, y te deja **verlos,
+exportarlos a CSV y deshacerlos**.
+
+¿Cómo los reconoce? ProxLaunch marca cada máquina que crea con **dos etiquetas**: `proxlaunch` y `lote-<código>` (por
+ejemplo `lote-ab12cd34`). El **código** de 8 caracteres identifica al lote. La ventana busca esas etiquetas en el servidor.
+
+![Menú «Archivo» desplegado con «Conectar...», «Cerrar sesión», «Ver el último lote», «Archivos subidos en esta sesión…», «Lotes en el servidor…», «Crear plantilla desde imagen cloud…» y «Salir».](img/85-menu-lotes-servidor.png)
+
+*El menú **Archivo** con la entrada nueva **Lotes en el servidor…**.*
+
+### Cuándo está disponible
+
+- **Archivo > Lotes en el servidor…** se activa con una conexión lista y Proxmox 8.0 o posterior (todas las admitidas). Sin
+  conexión: «Conéctate a un servidor para ver sus lotes.»
+- Necesitas **`VM.Audit`** en `/vms` para ver las máquinas (ya está en el rol). Sin él la lista sale vacía: «No ves ninguna
+  máquina en este servidor. Puede que no haya ninguna o que tu usuario no tenga el permiso «VM.Audit». Pide al
+  administrador que te lo dé.»
+- Solo se abre **una** ventana a la vez. Si cambias de servidor, la ventana se cierra sola y nada se ejecuta contra el
+  servidor nuevo.
+- **Lo que no encuentra:** las máquinas creadas con **Seguir sin etiquetas** o sin ninguna etiqueta. Esas se borran desde
+  Proxmox, o desde **Lote > Deshacer** si el lote sigue abierto en esta sesión.
+
+### La lista de lotes
+
+![Ventana «Lotes en el servidor»: el texto de introducción sobre las etiquetas «proxlaunch» y «lote-<código>», el cuadro de búsqueda, el botón «Comprobar», el contador «3 lote(s) encontrado(s).», una tabla con las columnas Lote, Máquinas, Se pueden deshacer, Fecha y Aviso con tres lotes («sin leer» en las columnas de deshacer y fecha) y, abajo, las casillas «Incluir la IP…» y «Exportar todos los lotes» con los botones «Obtener IP», «Exportar CSV…», «Deshacer…» y «Cerrar». El botón «Cancelar la lectura» aparece solo mientras se lee.](img/77-inventario-lotes.png)
+
+Al abrirla se lee la lista del servidor con **una sola petición**; solo **leer** (no cambia nada).
+
+| Elemento | Qué hace | Valores | Defecto |
+|---|---|---|---|
+| Cuadro de búsqueda | Filtra por **código de lote o nombre de máquina**. | Texto, por ejemplo `ab12` o `srv-web`. | Vacío (todos). |
+| **Comprobar** | Vuelve a leer la lista y el lote elegido. Solo lee. | Botón. | — |
+| **Cancelar la lectura** | Corta lo que se esté leyendo; lo que llegue tarde se descarta. | Botón, solo visible mientras lee. | — |
+| Columna **Lote** | El código de 8 caracteres. | `ab12cd34`. | — |
+| Columna **Máquinas** | Cuántas máquinas lleva esa etiqueta. | Número. | — |
+| Columna **Se pueden deshacer** | Cuántas de ellas puede borrar ProxLaunch desde aquí. | Número, o «sin leer» hasta elegir el lote. | «sin leer» |
+| Columna **Fecha** | Cuándo se creó, según la **nota de origen** de las máquinas. | `2026-11-20 10:15` o «desconocida». | «sin leer» |
+| Columna **Aviso** | «Abierto en esta sesión.», «No parece creado por ProxLaunch.» o el aviso del código no válido. | Texto. | Vacío. |
+
+Mensajes de la lista: «N lote(s) encontrado(s).», «Ninguna de las N máquinas que ves lleva una etiqueta de lote, así que no
+hay nada que mostrar aquí.» y «Ningún lote coincide con la búsqueda.» Un código que no tiene 8 caracteres de ProxLaunch
+sale con «El código «x» no es de ProxLaunch (debería ser de 8 caracteres como «ab12cd34»). No se puede deshacer desde aquí.»
+
+### El detalle de un lote
+
+Elige un lote y ProxLaunch lee **la configuración de cada máquina** (una lectura por máquina, con un máximo de lecturas a la
+vez) para saber si es suya de verdad. No se repite la lectura hasta que pulses **Comprobar**.
+
+![Detalle de un lote: tabla con las columnas Nombre, VMID, Nodo, Estado, Bloqueo, Plantilla, Protegida, Nota de origen, IP y Se puede deshacer desde aquí, con casillas marcadas en las máquinas deshacibles y el motivo en las que no.](img/78-inventario-detalle.png)
+
+| Columna | Qué muestra |
+|---|---|
+| **Nombre**, **VMID**, **Nodo** | La máquina y dónde está. El nombre lleva la **casilla** para deshacerla (solo si se puede). |
+| **Estado** | «encendida», «apagada» o «desconocido (Proxmox aún no lo informa)». |
+| **Bloqueo** | Si Proxmox está haciendo algo con ella (copia de seguridad, clonación, migración, snapshot…). |
+| **Plantilla**, **Protegida** | «sí» / «no». |
+| **Nota de origen** | «coincide» (la nota dice que es de este lote), «de otro lote» o «falta». |
+| **IP** | Vacía hasta pulsar **Obtener IP**. |
+| **Se puede deshacer desde aquí** | «Sí», o «No se puede deshacer desde aquí:» y el motivo. |
+
+### Exportar a CSV
+
+**Exportar CSV…** guarda un CSV (UTF-8 con BOM, separador `;`) con una fila por máquina. **No sirve para importar**: es solo
+un informe. Nunca lleva la nota completa ni credenciales.
+
+| Elemento | Qué hace | Defecto |
+|---|---|---|
+| **Exportar todos los lotes** | Exporta todos los lotes de la lista (los que no se habían leído se leen antes) en vez de solo el elegido. | Desmarcada. El archivo se sugiere como `lote-<código>.csv`, o `lotes-servidor.csv` con todos. |
+| **Incluir la IP (necesita el agente invitado)** | Añade las columnas `ip` e `ip_estado`. | Desmarcada. |
+| **Obtener IP** | Pregunta al agente invitado de cada máquina del lote por su IP. | Necesita `VM.Monitor` (8.x) o `VM.GuestAgent.Audit` (9.x) en `/vms`. Sin él: «Para ver la IP tu usuario necesita el privilegio X en las máquinas. Pídeselo a tu administrador.» |
+
+Columnas del CSV: `lote`, `fecha`, `nombre`, `vmid`, `nodo`, `estado`, `bloqueo`, `plantilla`, `protegida`, `etiquetas`,
+`nota_origen` (`coincide`, `falta` u `otro_lote`), `deshacible`, `motivo` y, con IP, `ip` e `ip_estado`. Si no eliges ruta, no se
+crea nada. Al terminar: «CSV guardado en «lote-ab12cd34.csv».»
+
+### Deshacer un lote del servidor: doble control
+
+Este es el único botón de la ventana que **escribe** en el servidor. Como puede borrar máquinas de otro día, tiene **doble
+control**: una máquina solo se puede deshacer si **las dos cosas son ciertas** y, además, tú escribes el código del lote.
+
+**Control 1: ProxLaunch debe poder demostrar que la máquina es suya.** Se lee su configuración **justo ahora** y se exige:
+
+1. Lleva las **dos etiquetas**: `proxlaunch` y `lote-<código>` (la del lote que estás deshaciendo).
+2. Su **nota de origen** («Creada con ProxLaunch…») nombra **el mismo lote**.
+3. **No es una plantilla.**
+
+Nunca se decide por el nombre de la máquina. Cada máquina que no cumple sale **sin casilla** y con su motivo:
+
+| Motivo en la columna | Qué significa |
+|---|---|
+| Le falta la etiqueta «x». Sin las dos etiquetas no puedo asegurar que la creó ProxLaunch… | Le falta `proxlaunch` o `lote-<código>`. |
+| No tiene la nota «Creada con ProxLaunch» de este lote (se creó con la nota desactivada o alguien la cambió)… / Su nota dice que es del lote x. | La nota falta o es de otro lote. |
+| Es una plantilla; no se borra desde aquí. | Las plantillas no se tocan. |
+| Está ocupada (copia de seguridad en curso…); espera a que termine. | Proxmox tiene un bloqueo sobre ella. |
+| Proxmox aún no informa su estado; pulsa «Comprobar» en unos segundos. / No se pudo leer su configuración. / El servidor de pve2 no responde. / Ya no existe. | No se pudo comprobar. |
+| Tu usuario no puede borrar máquinas (falta «VM.Allocate» en /vms/N). Pide el permiso al administrador. | Falta `VM.Allocate`. |
+
+**Control 2: lista desmarcable y código escrito.** Los pasos:
+
+1. Las máquinas que se pueden deshacer vienen **marcadas** (casilla junto al nombre). **Desmarca** las que quieras **conservar**.
+   Máximo **100 a la vez**: «Se pueden borrar como máximo 100 máquinas a la vez. Desmarca algunas y repite el proceso.»
+2. Pulsa **Deshacer…**. Si algo lo impide, el botón sale desactivado y el motivo se ve debajo: «Marca al menos una máquina para
+   deshacer.», «Ninguna máquina de este lote se puede deshacer desde aquí…» o, si el lote sigue abierto en esta sesión,
+   «Este lote sigue abierto en esta sesión. Usa Lote > Deshacer para no borrar dos veces.»
+3. ProxLaunch **relee** el estado de las marcadas («Comprobando las máquinas antes de borrar…»). Si alguna está **encendida o
+   protegida**, aparece [Confirmar Deshacer con apagado o desprotección](#deshacer-con-máquinas-encendidas-o-protegidas), con su
+   casilla desmarcada: sin ella no se apaga ni se desprotege nada.
+4. Aparece **Confirmar el borrado**: «Se borrarán N máquinas del lote ab12cd34 y sus discos. No se puede deshacer.» y «Escribe
+   el código del lote (ab12cd34) para confirmar. Así evitas borrar por error.» **Borrar definitivamente** queda
+   **desactivado** hasta que el texto coincide con el código (no distingue mayúsculas ni espacios en los extremos). **Cancelar**
+   es el botón predeterminado (y el de **Esc**).
+
+![Ventana «Confirmar el borrado» con el aviso en rojo «Se borrarán 3 máquinas del lote e5f60718 y sus discos. No se puede deshacer.», el texto «Escribe el código del lote (e5f60718) para confirmar», un campo de texto y los botones «Borrar definitivamente» (desactivado) y «Cancelar».](img/79-inventario-deshacer-codigo.png)
+
+5. Se borra máquina por máquina, **releyendo su configuración justo antes de cada borrado** (si ya no cumple el control 1, se
+   omite). Ves una tabla **Resultado del borrado** con el estado de cada una y el botón **Detener el borrado** (no se envía
+   ninguna eliminación más; las ya enviadas siguen). Al terminar: «3 eliminada(s), 1 sin tocar.» y la lista se relee.
+
+**Qué se borra y qué no.** Igual que el [Deshacer de siempre](#deshacer): la máquina y los discos que tiene asignados; **sin
+purgar** (ProxLaunch no usa la opción «purge» de Proxmox, así que no limpia a la máquina de otras configuraciones como
+trabajos de copia de seguridad) y **sin borrar discos sueltos**. Nunca toca plantillas, archivos subidos ni máquinas ajenas.
+
+- **No puedes cerrar la ventana mientras borra.** Pulsa **Detener el borrado** y espera: «Se están borrando máquinas…».
+- **Mientras se deshace un lote desde aquí**, **Lote > Deshacer** de ese mismo lote queda bloqueado: «Este lote se está
+  deshaciendo desde «Lotes en el servidor». Espera a que termine.» Y al revés (ver arriba).
+- **«Ya no estaba(n) (no la borró ProxLaunch)»** cuenta las que desaparecieron antes de que ProxLaunch llegara a borrarlas.
 
 ---
 
@@ -2568,7 +3049,7 @@ una plantilla de Proxmox ni un perfil de conexión.**
   tampoco elige el archivo ISO ni instala nada por sí solo, y **no guarda** **Encender al terminar**, las notas, las
   etiquetas, el pool, la protección contra borrado ni el orden y la espera de arranque: esas las decides cada vez. Desde la
   0.7 tampoco guarda la [configuración inicial de cloud-init](#configuración-inicial-con-cloud-init) ni **Esperar la IP**
-  (por eso un perfil no sube un archivo al formato 4).
+  (por eso un perfil no hace que un lote pase al formato 4).
 
 El grupo **Perfil de máquina** está arriba del formulario, en modo básico y avanzado. Con un lote en marcha queda
 desactivado.
@@ -2744,6 +3225,14 @@ usaba una contraseña de cloud-init y no se guardó. Vuelve a escribirla antes d
 > sí abre. Ver [Compatibilidad con versiones anteriores](#compatibilidad-con-versiones-anteriores). Ejemplo listo para
 > abrir: [`lote-cloudinit.proxlaunch-lote.json`](ejemplos/lote-cloudinit.proxlaunch-lote.json).
 
+**Desde la versión 0.8**, el lote guarda también la [red del clon](#red-del-clon) (qué tarjetas se cambian, quitan o añaden)
+y el [firewall de la máquina](#firewall-de-la-máquina) (activado, grupo, políticas y DHCP). **No se guarda** la casilla
+«Entiendo que la máquina no aceptará conexiones por la red»: al abrir el lote hay que volver a marcarla.
+
+> **Compatibilidad (0.8).** Un lote que usa la red del clon o el firewall se guarda en el **formato 5**, que **ProxLaunch
+> 0.7.0 no abre** (ni 0.6.0 ni 0.5.1). Un lote que no usa nada de la 0.8 se sigue guardando en el formato de antes. Ejemplo
+> listo para abrir: [`lote-red-firewall.proxlaunch-lote.json`](ejemplos/lote-red-firewall.proxlaunch-lote.json).
+
 **No se guarda nunca:** datos de conexión (servidor, usuario, token, contraseña), la contraseña de cloud-init, el resumen,
 los números ya reservados, el código del lote ni la casilla de sobreasignar espacio. Si algún texto que escribiste parece una credencial
 (`usuario@realm!token=...`), ProxLaunch **no guarda** y te dice en qué campo (sin mostrar el valor).
@@ -2816,7 +3305,7 @@ después hay un resumen que debes confirmar, como en cualquier lote.
 > [`mvs-minimo.csv`](ejemplos/mvs-minimo.csv) · [`mvs-mixtas.csv`](ejemplos/mvs-mixtas.csv) ·
 > [`mvs-multidisco-cluster.csv`](ejemplos/mvs-multidisco-cluster.csv) · [`mvs-con-errores.csv`](ejemplos/mvs-con-errores.csv) ·
 > [`mvs-escrito-a-mano.csv`](ejemplos/mvs-escrito-a-mano.csv) · [`mvs-opciones.csv`](ejemplos/mvs-opciones.csv) ·
-> [`mvs-cloudinit.csv`](ejemplos/mvs-cloudinit.csv)
+> [`mvs-cloudinit.csv`](ejemplos/mvs-cloudinit.csv) · [`mvs-red-firewall.csv`](ejemplos/mvs-red-firewall.csv)
 
 ### Paso a paso
 
@@ -2870,7 +3359,7 @@ lab-03;4;8;80;vmbr0
 - **Qué manda cuando hay varios valores** (de menor a mayor): los valores normales de ProxLaunch, luego el **perfil**
   (el de la columna `perfil`, o el **Perfil base** si la celda está vacía) y por último las **columnas del archivo**. Si una
   fila dice `memoria` = 8 y su perfil trae 4 GiB, se crea con 8 GiB.
-- **Límites:** hasta **100 filas** (sin contar el encabezado ni las vacías), **60 columnas**, **256 caracteres por celda**
+- **Límites:** hasta **100 filas** (sin contar el encabezado ni las vacías), **70 columnas**, **256 caracteres por celda**
   (las columnas `notas` y `ci_claves` admiten hasta **8192**) y **1 MiB** por archivo. Si te pasas, ProxLaunch no recorta: te pide dividir el
   archivo.
 - **Numeración de filas:** como en Excel; el encabezado es la fila 1, así que tu primera máquina es la **fila 2**.
@@ -2928,6 +3417,11 @@ Solo **`nombre`** es obligatoria. Las demás son opcionales.
 | `ci_snippet_red` (`cicustom_network`, `snippet_network`) | No | Igual. | — | `local:snippets/red.yaml` | Script «Red». Uso avanzado. |
 | `ci_snippet_meta` (`cicustom_meta`, `snippet_meta`) | No | Igual. | — | `local:snippets/meta.yaml` | Script «Metadatos». Uso avanzado. |
 | `esperar_ip` (`wait_ip`, `wait_for_ip`) | No | `si` o `no`. | — | `si` | [Esperar la IP](#esperar-la-ip). Pide que la máquina se encienda. |
+| `reescribir_red` (`rewrite_net`, `red_clon`) | No | `si` o `no`. | — | `si` | Solo con `clonar`. Ver [abajo](#columnas-de-red-del-clon-y-firewall). Uso avanzado. |
+| `cortafuegos` (`firewall`) | No | `si` o `no`. | — | `si` | Activa el [firewall](#firewall-de-la-máquina) de la fila. Vacío = el formulario. |
+| `grupo_seguridad` (`security_group`, `firewall_group`) | No | Nombre de un grupo de seguridad: 2 a 18 caracteres, empieza por letra; letras, números, `-` y `_`. | — | `web` | Si el grupo no existe en el servidor, da error al comprobar. Vacío = el del formulario. |
+| `politica_entrada` (`policy_in`) | No | `bloquear` (o `drop`) o `permitir` (o `accept`). | — | `bloquear` | Vacío = la del formulario (por defecto, Bloquear). Uso avanzado. |
+| `politica_salida` (`policy_out`) | No | `bloquear` (o `drop`) o `permitir` (o `accept`). | — | `permitir` | Vacío = la del formulario (por defecto, Permitir). Uso avanzado. |
 
 **Equivalencias que enseñan los ejemplos:**
 
@@ -3042,6 +3536,58 @@ tuyas). Un fragmento, con la clave abreviada con «…» (en el archivo va compl
 
 Qué enseña cada fila: `web-01` y `web-02` usan clave SSH e **IP fija distinta** (en un CSV la «serie» la escribes tú);
 `lab-01` usa DHCP y una contraseña solo para pruebas.
+
+#### Columnas de red del clon y firewall
+
+Las cinco columnas nuevas de la versión 0.8 (`reescribir_red`, `cortafuegos`, `grupo_seguridad`, `politica_entrada` y
+`politica_salida`) fijan, **fila por fila**, la [red del clon](#red-del-clon) y el [firewall](#firewall-de-la-máquina). Cómo
+se comportan:
+
+- **Celda vacía = lo del formulario**, igual que en las demás columnas de opciones. Para anular algo del formulario escribe
+  `no` (en `reescribir_red` y `cortafuegos`).
+- **`reescribir_red`** (solo al clonar):
+  - **`si`**: las columnas `red`, `vlan`, `modelo_red`, `mtu` y `limite_red` de la fila se aplican a la **primera tarjeta
+    (`net0`) de la copia**, conservando su **MAC**. Lo que dejes vacío **se conserva** como está en la plantilla (`mtu` =
+    `heredar` quita el MTU). Ejemplo: `reescribir_red` = `si` y `red` = `prod` con `vlan` = `20`.
+  - **`no`**: la red queda **como la plantilla**, aunque el formulario tenga otra cosa.
+  - **vacía**: lo que tenga **Red de las copias** en el formulario.
+  - **Sin `reescribir_red`, las columnas `red`, `vlan`… no tocan la tarjeta de un clon** (como en 0.7: la red es la de la
+    plantilla).
+  - `si` en una fila que **no** clona da error: «reescribir_red» solo vale en filas que clonan una plantilla.»
+  - Desde el CSV solo se cambia `net0` y la MAC siempre se conserva; para añadir o quitar tarjetas o pedir una MAC nueva usa el
+    formulario.
+- **`cortafuegos`**: `si` activa el firewall en esa fila; `no` lo apaga aunque el formulario lo tenga activado (y en esa fila
+  **no** se heredan el grupo ni las políticas del formulario).
+- **`grupo_seguridad`**: el nombre del grupo. Que **existe** en el servidor se comprueba al pulsar **Ver resumen** («El grupo
+  de seguridad «x» no existe en este servidor…»). Un nombre mal escrito se marca ya en la vista previa.
+- **`politica_entrada` / `politica_salida`**: `bloquear` o `permitir` (o `drop` / `accept`). Otro valor da error con los
+  valores admitidos.
+- **Coherencia.** Un grupo o una política distinta de la de fábrica en una fila **sin** firewall activo da error: «Has indicado
+  un grupo o una política de firewall pero el firewall no está activado en esta fila. Pon «cortafuegos = sí» o quita esos
+  valores.»
+- **Una fila sin grupo, con firewall activo y la entrada en Bloquear** deja la máquina aislada (da el error «…ninguna
+  conexión por la red…»); el CSV no tiene casilla para aceptarlo, así que **da siempre un grupo o pon `politica_entrada` en
+  `permitir`**. (Si el formulario ya tiene el firewall activado y la confirmación marcada, la fila la hereda.)
+- **El DHCP** no tiene columna: es automático (se permite si la tarjeta usa DHCP por cloud-init).
+- **La plantilla CSV** que descarga ProxLaunch incluye las cinco columnas, con `grupo_seguridad` vacío (depende del servidor).
+  La fila `ejemplo-02` lleva `cortafuegos` = `no`; la que clona (`ejemplo-05`) lleva `reescribir_red` = `no`, `cortafuegos` =
+  `si` y las dos políticas en `permitir`. Un CSV de 0.7 (sin estas columnas) se lee igual que antes.
+- **Con una versión anterior:** ProxLaunch 0.7.0 **ignora** estas columnas con un aviso («columnas desconocidas»), así que un
+  CSV con `cortafuegos` abierto en 0.7.0 **crearía las máquinas sin firewall**. Usa 0.8.
+
+Ejemplo: [`mvs-red-firewall.csv`](ejemplos/mvs-red-firewall.csv), con cuatro máquinas. Como texto:
+
+```text
+"nombre";"origen";"fuente";"reescribir_red";"red";"vlan";"cortafuegos";"grupo_seguridad";"politica_entrada";"politica_salida"
+"web-01";"clonar";"plantilla-debian12";"si";"vmbr1";"20";"si";"web";"bloquear";"permitir"
+"web-02";"clonar";"plantilla-debian12";"no";"";"";"si";"ssh";"bloquear";"permitir"
+"bd-01";"clonar";"plantilla-ubuntu";"si";"prod";"";"si";"bd";"bloquear";"bloquear"
+"lab-01";"vacio";"";"";"vmbr0";"";"no";"";"";""
+```
+
+Qué enseña cada fila: `web-01` cambia `net0` a `vmbr1` con VLAN 20 y activa el firewall con el grupo `web`; `web-02` deja la red
+**como la plantilla** (`no`) pero activa el firewall con el grupo `ssh`; `bd-01` mueve `net0` a la VNet `prod` y bloquea
+también la salida; `lab-01` no clona (disco vacío), usa `vmbr0` de forma normal y deja el firewall apagado.
 
 #### Unidades y números
 
@@ -3273,6 +3819,7 @@ La barra de menús tiene cinco menús. Los de **Lote** y el detalle de cada opci
 | **Cerrar sesión** | | Cierra la sesión actual (con [cambios sin guardar](#cambios-sin-guardar), pregunta). |
 | **Ver el último lote** | | Vuelve a mostrar el último lote. Desactivada hasta que haya uno. |
 | **Archivos subidos en esta sesión…** | | Ver [Archivos subidos](#archivos-subidos-en-esta-sesión). |
+| **Lotes en el servidor…** | | Abre la ventana [Lotes en el servidor](#lotes-en-el-servidor-inventario): encuentra, exporta y deshace los lotes que ProxLaunch creó. Activa con sesión lista y Proxmox 8.0 o posterior; sin conexión dice «Conéctate a un servidor para ver sus lotes.» |
 | **Crear plantilla desde imagen cloud…** | | Abre el [asistente](#crear-una-plantilla-desde-una-imagen-cloud) que convierte una imagen cloud (Ubuntu, Debian…) en una plantilla. Desactivada con Proxmox anterior a la 8.4 («Necesita Proxmox 8.4 o una versión posterior.») y mientras haya una transferencia, un lote o un asistente en marcha. |
 | **Salir** | Atajo estándar de salir | Cierra ProxLaunch. |
 
@@ -3373,12 +3920,19 @@ opciones.
 | **Hay una plantilla en creación** | Cerrar ProxLaunch con el asistente trabajando | — | Avisar de que lo ya enviado sigue su curso | [Al terminar](#al-terminar) |
 | Vista previa de un CSV con cloud-init | **Lote > Importar desde CSV…** con `ci_contrasena` | [75](img/75-importar-csv-cloudinit.png) | Ver la contraseña enmascarada y el aviso | [Columnas de cloud-init](#columnas-de-cloud-init-y-esperar-la-ip) |
 | Menú **Archivo** con el asistente | **Archivo** | [76](img/76-menu-archivo-plantilla.png) | Abrir el asistente de plantillas | [Archivo](#archivo) |
+| **Lotes en el servidor** | **Archivo > Lotes en el servidor…** | [77](img/77-inventario-lotes.png), [78](img/78-inventario-detalle.png) | Encontrar, exportar y deshacer los lotes creados por ProxLaunch | [Lotes en el servidor](#lotes-en-el-servidor-inventario) |
+| **Confirmar el borrado** | **Deshacer…** dentro de **Lotes en el servidor** | [79](img/79-inventario-deshacer-codigo.png) | Escribir el código del lote antes de borrar | [Doble control](#deshacer-un-lote-del-servidor-doble-control) |
+| Lista **Red** con redes virtuales | Ventana de trabajo, con VNets visibles | [80](img/80-redes-con-vnets.png) | Elegir un bridge o una VNet | [Redes virtuales](#redes-virtuales-sdn) |
+| **Firewall de la máquina** (grupo del formulario) | Ventana de trabajo | [81](img/81-seccion-firewall.png), [82](img/82-firewall-aviso-aislada.png) | Activar el firewall, elegir grupo y políticas | [Firewall](#firewall-de-la-máquina) |
+| **Red de las copias** (grupo del formulario) | Origen **Copiar una plantilla de Proxmox** | [83](img/83-seccion-red-clon.png) | Cambiar, quitar o añadir tarjetas de las copias | [Red del clon](#red-del-clon) |
+| Resumen con red y firewall | **Crear máquina** / **Ver resumen** | [84](img/84-resumen-red-firewall.png) | Ver lo que se pidió | [Red del clon](#lo-que-ves-en-el-resumen-y-el-informe) |
+| Menú **Archivo** con «Lotes en el servidor…» | **Archivo** | [85](img/85-menu-lotes-servidor.png) | Abrir el inventario | [Archivo](#archivo) |
 
 ### Menús
 
 | Menú | Capturas | Opciones | Sección |
 |---|---|---|---|
-| **Archivo** | [76](img/76-menu-archivo-plantilla.png) | Conectar..., Cerrar sesión, Ver el último lote, Archivos subidos en esta sesión…, Crear plantilla desde imagen cloud…, Salir | [Archivo](#archivo) |
+| **Archivo** | [76](img/76-menu-archivo-plantilla.png), [85](img/85-menu-lotes-servidor.png) | Conectar..., Cerrar sesión, Ver el último lote, Archivos subidos en esta sesión…, Lotes en el servidor…, Crear plantilla desde imagen cloud…, Salir | [Archivo](#archivo) |
 | **Lote** | [02](img/02-menu-lote.png) | Abrir lote…, Guardar lote…, Guardar lote como…, Importar desde CSV…, Descargar plantilla CSV…, Guardar el informe del lote como CSV… | [Guardar y abrir lotes](#guardar-y-abrir-lotes) |
 | **Perfiles** | — | Guardar como perfil de máquina…, Administrar perfiles… (solo avanzado) | [Perfiles](#perfiles) |
 | **Ajustes** | [03](img/03-menu-ajustes.png) | Almacenamientos recordados…, Tema, Modo | [Ajustes](#ajustes) |
@@ -3395,6 +3949,7 @@ opciones.
 | Cancelar el lote | Cancelas con máquinas ya enviadas | **Cancelar el lote**, **Seguir creando** |
 | Seguir sin etiquetas | Eliges **Seguir sin etiquetas** en una pausa | **Preparar el lote sin etiquetas** y cancelar |
 | Confirmar Deshacer con apagado o desprotección | Al deshacer, hay máquinas del lote encendidas o protegidas | **Apagar, desproteger y eliminar** (desactivado hasta marcar la casilla), **Eliminar sin apagar ni desproteger**, **Cancelar** (predeterminado) |
+| Confirmar el borrado | **Deshacer…** en **Lotes en el servidor**, después de la comprobación | Campo para escribir el código del lote; **Borrar definitivamente** (desactivado hasta que coincide) y **Cancelar** (predeterminado) |
 | Hay un lote en curso | Cierras con un lote en marcha | **Seguir en ProxLaunch**, **Cerrar de todos modos** |
 | Se está esperando la IP de las máquinas | Cierras con la [espera de IP](#esperar-la-ip) en marcha y nada más | **Cerrar de todos modos**, **Seguir en ProxLaunch** |
 | Hay una plantilla en creación | Cierras ProxLaunch con el [asistente de plantillas](#crear-una-plantilla-desde-una-imagen-cloud) trabajando | **Cerrar de todos modos**, **Seguir en ProxLaunch** |
@@ -3412,16 +3967,16 @@ y no se comparte. Los ejemplos están en la carpeta [`ejemplos/`](ejemplos/LEEME
 | # | Archivo | Extensión sugerida | Cómo se importa | Cómo se exporta | ¿Sirve para crear MVs? | Ejemplo |
 |---|---|---|---|---|---|---|
 | 1 | CSV de máquinas | `.csv` (filtro `*.csv *.txt`) | **Lote > Importar desde CSV…** | **Lote > Descargar plantilla CSV…** (plantilla) | **Sí:** una fila = una MV (lote por filas) | [`mvs-*.csv`](ejemplos/LEEME.md#qué-es-cada-archivo) |
-| 2 | Lote guardado | `.proxlaunch-lote.json` | **Lote > Abrir lote…** (`Ctrl+O`) | **Lote > Guardar lote…** (`Ctrl+S`) | **Sí:** lote homogéneo o por filas | [`lote-homogeneo`](ejemplos/lote-homogeneo.proxlaunch-lote.json), [`lote-por-filas`](ejemplos/lote-por-filas.proxlaunch-lote.json), [`lote-cloudinit`](ejemplos/lote-cloudinit.proxlaunch-lote.json) |
+| 2 | Lote guardado | `.proxlaunch-lote.json` | **Lote > Abrir lote…** (`Ctrl+O`) | **Lote > Guardar lote…** (`Ctrl+S`) | **Sí:** lote homogéneo o por filas | [`lote-homogeneo`](ejemplos/lote-homogeneo.proxlaunch-lote.json), [`lote-por-filas`](ejemplos/lote-por-filas.proxlaunch-lote.json), [`lote-cloudinit`](ejemplos/lote-cloudinit.proxlaunch-lote.json), [`lote-red-firewall`](ejemplos/lote-red-firewall.proxlaunch-lote.json) |
 | 3 | Perfiles de máquina | `.proxlaunch-perfiles.json` | **Administrar perfiles… > Importar…** | **Administrar perfiles… > Exportar…** | **Indirecto:** aporta hardware; no crea nada por sí solo | [`perfiles-ejemplo`](ejemplos/perfiles-ejemplo.proxlaunch-perfiles.json) |
 | 4 | Perfiles de conexión | `perfiles.json` (carpeta de configuración) | **No hay importar** | **No hay exportar** | **No** (solo servidor y credenciales) | — |
 
 > **Los perfiles de conexión no se exportan ni se importan.** Para usar un servidor en otro equipo hay que crear su perfil
 > de nuevo (el token o la contraseña nunca viajan en archivos).
 
-**Límites comunes:** CSV hasta 1 MiB, 60 columnas, 256 caracteres por celda (8192 en las columnas `notas` y `ci_claves`) y 100 filas; lote
+**Límites comunes:** CSV hasta 1 MiB, 70 columnas, 256 caracteres por celda (8192 en las columnas `notas` y `ci_claves`) y 100 filas; lote
 guardado hasta 1 MiB; archivo de perfiles hasta 256 KiB y 100 perfiles (también 100 perfiles propios en total); nombre de
-perfil o de lote hasta 60 caracteres; descripción hasta 200; versión máxima de formato legible: 4. Las cadenas que parecen
+perfil o de lote hasta 60 caracteres; descripción hasta 200; versión máxima de formato legible: 5. Las cadenas que parecen
 credenciales se descartan y avisan. Un lote guardado de 100 máquinas con notas muy largas en cada fila puede acercarse al
 límite de 1 MiB: si lo supera, ProxLaunch no lo guarda y lo dice. Un archivo creado por una versión más nueva de ProxLaunch no se abre: «Este archivo lo creó una versión más nueva
 de ProxLaunch. Actualiza la aplicación para abrirlo.»
@@ -3432,20 +3987,20 @@ Reglas, [columnas](#columnas-del-csv), unidades y [validación](#validación-un-
 [Importar máquinas desde un CSV](#importar-máquinas-desde-un-csv). La plantilla que descarga ProxLaunch tiene las columnas
 más usadas (en 0.6, también las de [opciones de la máquina](#columnas-de-opciones-de-la-máquina); en 0.7, las de
 [cloud-init y esperar la IP](#columnas-de-cloud-init-y-esperar-la-ip), **salvo `ci_contrasena`**, que nunca está en la
-plantilla) y cinco filas de ejemplo
+plantilla; en 0.8, las de [red del clon y firewall](#columnas-de-red-del-clon-y-firewall)) y cinco filas de ejemplo
 (dos con disco vacío y una por cada origen: ISO, disco existente y plantilla). Sus nombres empiezan por `ejemplo-`; si las
 importas tal cual, ProxLaunch avisa «Parece una fila de ejemplo de la plantilla.» Las dos primeras filas muestran algunas
 opciones (`arranque_auto`, `notas`, `etiquetas`, `pool`, `mtu`, `limite_red`…) y la que clona una plantilla (`ejemplo-05`)
-un ejemplo de cloud-init (`ci_usuario` = `ubuntu` y `ci_ip` = `dhcp`); las demás las dejan vacías. El texto del archivo
+un ejemplo de cloud-init (`ci_usuario` = `ubuntu` y `ci_ip` = `dhcp`) y de firewall (`cortafuegos` = `si`, sin grupo y con las dos políticas en `permitir`; `reescribir_red` = `no`). `ejemplo-02` lleva `cortafuegos` = `no`. Las demás celdas quedan vacías. El texto del archivo
 (separador `;`; ProxLaunch escribe **todas las celdas entre comillas**, en UTF-8 con BOM):
 
 ```text
-"nombre";"perfil";"cpu";"memoria";"disco";"almacenamiento";"red";"vlan";"nodo";"vmid";"origen";"fuente";"so";"virtio";"modo_clon";"encender";"arranque_auto";"notas";"etiquetas";"pool";"proteger";"mtu";"limite_red";"ci_usuario";"ci_claves";"ci_ip";"ci_puerta";"ci_dns";"ci_dominio";"ci_actualizar";"ci_snippet_usuario";"ci_snippet_vendor";"ci_snippet_red";"ci_snippet_meta";"esperar_ip"
-"ejemplo-01";"fabrica.servidor-mediano";"";"8";"100";"local-lvm";"vmbr0";"";"";"";"vacio";"";"";"";"";"";"si";"Servidor de ejemplo";"web,prod";"";"";"";"";"";"";"";"";"";"";"";"";"";"";"";""
-"ejemplo-02";"";"2";"4 GiB";"40";"";"vmbr1";"20";"pve2";"250";"vacio";"";"";"";"";"no";"";"";"";"ninguno";"no";"heredar";"50";"";"";"";"";"";"";"";"";"";"";"";""
-"ejemplo-03";"";"2";"4";"32";"";"";"";"";"";"iso";"ejemplo-instalador.iso";"linux";"";"";"";"";"";"";"";"";"";"";"";"";"";"";"";"";"";"";"";"";"";""
-"ejemplo-04";"";"2";"4";"40";"";"";"";"";"";"importar";"ejemplo-disco.qcow2";"";"";"";"";"";"";"";"";"";"";"";"";"";"";"";"";"";"";"";"";"";"";""
-"ejemplo-05";"";"4";"8";"80";"";"";"";"";"";"clonar";"ejemplo-plantilla";"";"";"auto";"";"";"";"";"";"";"";"";"ubuntu";"";"dhcp";"";"";"";"";"";"";"";"";""
+"nombre";"perfil";"cpu";"memoria";"disco";"almacenamiento";"red";"vlan";"nodo";"vmid";"origen";"fuente";"so";"virtio";"modo_clon";"encender";"arranque_auto";"notas";"etiquetas";"pool";"proteger";"mtu";"limite_red";"ci_usuario";"ci_claves";"ci_ip";"ci_puerta";"ci_dns";"ci_dominio";"ci_actualizar";"ci_snippet_usuario";"ci_snippet_vendor";"ci_snippet_red";"ci_snippet_meta";"esperar_ip";"reescribir_red";"cortafuegos";"grupo_seguridad";"politica_entrada";"politica_salida"
+"ejemplo-01";"fabrica.servidor-mediano";"";"8";"100";"local-lvm";"vmbr0";"";"";"";"vacio";"";"";"";"";"";"si";"Servidor de ejemplo";"web,prod";"";"";"";"";"";"";"";"";"";"";"";"";"";"";"";"";"";"";"";"";""
+"ejemplo-02";"";"2";"4 GiB";"40";"";"vmbr1";"20";"pve2";"250";"vacio";"";"";"";"";"no";"";"";"";"ninguno";"no";"heredar";"50";"";"";"";"";"";"";"";"";"";"";"";"";"";"no";"";"";""
+"ejemplo-03";"";"2";"4";"32";"";"";"";"";"";"iso";"ejemplo-instalador.iso";"linux";"";"";"";"";"";"";"";"";"";"";"";"";"";"";"";"";"";"";"";"";"";"";"";"";"";"";""
+"ejemplo-04";"";"2";"4";"40";"";"";"";"";"";"importar";"ejemplo-disco.qcow2";"";"";"";"";"";"";"";"";"";"";"";"";"";"";"";"";"";"";"";"";"";"";"";"";"";"";"";""
+"ejemplo-05";"";"4";"8";"80";"";"";"";"";"";"clonar";"ejemplo-plantilla";"";"";"auto";"";"";"";"";"";"";"";"";"ubuntu";"";"dhcp";"";"";"";"";"";"";"";"";"";"no";"si";"";"permitir";"permitir"
 ```
 
 #### Informe del lote en CSV
@@ -3504,7 +4059,7 @@ completo.)
 
 | Clave | Qué es | Unidad o valores |
 |---|---|---|
-| `formato`, `version_formato`, `app_version` | Tipo de archivo y versión del formato (1 a 4) y de ProxLaunch que lo guardó. | `proxlaunch.lote` |
+| `formato`, `version_formato`, `app_version` | Tipo de archivo y versión del formato (1 a 5) y de ProxLaunch que lo guardó. | `proxlaunch.lote` |
 | `nombre` | Nombre del lote (el de **Guardar lote**). | Hasta 60 caracteres. |
 | `tipo` | `homogeneo` o `por_filas`. | |
 | `version_proxmox` | Versión de Proxmox con la que se guardó. | Texto, por ejemplo `9.2`. |
@@ -3517,13 +4072,15 @@ completo.)
 | `config.origen` | De dónde sale el sistema. | En los ejemplos: `disco_vacio`, `iso`, `clonar_plantilla`. El ISO o la plantilla van en `detalle_origen` (solo el **nombre**, nunca URL ni ruta). |
 | `config.encender`, `config.arranque_auto`, `config.proteger` | Las casillas **Encender al terminar**, **Arrancar con el servidor** y **Proteger contra borrado**. *(Formato 3.)* | `true`. Solo se escriben si valen `true`. |
 | `config.arranque_orden`, `config.arranque_espera` | **Orden de arranque** y **Espera (s)**. *(Formato 3.)* | Enteros de 0 en adelante. |
-| `config.notas_origen`, `config.notas_usuario`, `config.notas` | **Añadir notas de origen**, **Incluir mi usuario en las notas** y el texto de **Notas**. | `true` / `true` / texto de hasta 8192 caracteres. `notas_usuario` y `notas` piden el formato 3; `notas_origen` sola **no** lo sube (se escribe igualmente). |
+| `config.notas_origen`, `config.notas_usuario`, `config.notas` | **Añadir notas de origen**, **Incluir mi usuario en las notas** y el texto de **Notas**. | `true` / `true` / texto de hasta 8192 caracteres. `notas_usuario` y `notas` piden el formato 3; `notas_origen` se guarda en el archivo, pero por sí sola **no** sube el formato. |
 | `config.etiquetas_usuario`, `config.pool` | Las etiquetas propias y el pool. *(Formato 3.)* | Lista de textos / nombre del pool (`padre/hijo` admitido). |
 | `config.redes[].mtu`, `config.redes[].limite_mb` | MTU y límite de velocidad de cada tarjeta. *(Formato 3.)* | `1` (igual al bridge) o 576 a 65520 / número de MB/s mayor que 0. |
 | `config.cloudinit` (y `opciones.cloudinit`) | La [configuración inicial de cloud-init](#configuración-inicial-con-cloud-init): `usuario`, `claves` (claves **públicas**), `tarjetas` (cada una con `indice`, `modo`, `ip`, `serie` y `puerta`), `dns`, `dominio`, `actualizar`, `snippets` (`user`, `vendor`, `network`, `meta`) y `activar_agente`. *(Formato 4.)* | `modo`: `sin_configurar`, `dhcp` o `fija`. **Nunca lleva la contraseña**: si la había, solo se anota `con_acceso_local: true`. |
 | `config.esperar_ip` (y `opciones.esperar_ip`) | [Esperar la IP](#esperar-la-ip): `activo` y `plazo_s`. *(Formato 4.)* | `true` y de 10 a 1800. Solo se escribe si está activa. |
+| `config.red_clon` (y `opciones.red_clon`) | La [red del clon](#red-del-clon): `modo` (`plantilla` o `personalizar`) y `tarjetas`, cada una con `indice` (0 a 31), `accion` (`conservar`, `cambiar`, `quitar` o `añadir`), `bridge`, `modelo` (`virtio` o `e1000`), `vlan`, `mtu`, `limite_mb` y `mac_nueva`. *(Formato 5.)* | En una tarjeta `cambiar`, **una clave presente es un campo que se cambia** (con `null` se **quita** ese valor, por ejemplo `"vlan": null`) y una **ausente se conserva**. En `añadir` se usan todos los valores escritos. `mac_nueva` solo se escribe si vale `true`. Solo se escribe si la red se personaliza. |
+| `config.firewall` (y `opciones.firewall`) | El [firewall de la máquina](#firewall-de-la-máquina): `activo`, `grupo` (solo si hay uno), `politica_entrada`, `politica_salida` y `dhcp`. *(Formato 5.)* | `politica_*`: `bloquear` o `permitir` (por defecto, entrada `bloquear` y salida `permitir`). `dhcp`: `auto`, `si` o `no`. **Nunca lleva la confirmación «Entiendo…»** (se ignora si un archivo antiguo la trae). Solo se escribe si difiere del valor por defecto. |
 | `homogeneo.opciones` (o `por_filas.opciones`) | Las opciones que valen para todo el lote. | Mismas claves que arriba (sin las de arranque ni las de red). |
-| `por_filas.filas[].opciones` | Lo que **una fila** sobrescribe de las opciones del lote. | `encender`, `arranque_auto`, `notas`, `etiquetas_usuario`, `pool` y `proteger` y, desde la 0.7, `cloudinit` (con `tarjeta0`: solo la primera tarjeta) y `esperar_ip`; lo que no aparece, se hereda. |
+| `por_filas.filas[].opciones` | Lo que **una fila** sobrescribe de las opciones del lote. | `encender`, `arranque_auto`, `notas`, `etiquetas_usuario`, `pool` y `proteger` y, desde la 0.7, `cloudinit` (con `tarjeta0`: solo la primera tarjeta) y `esperar_ip`; desde la 0.8, `red_clon` y `firewall` (este con solo `activo`, `grupo`, `politica_entrada` y `politica_salida`: lo que falta se hereda); lo que no aparece, se hereda. |
 
 El lote **por filas** ([`lote-por-filas.proxlaunch-lote.json`](ejemplos/lote-por-filas.proxlaunch-lote.json)) usa la clave
 `por_filas` con `destino.algoritmo`, `etiquetar`, `vmid_inicial` y una lista `filas`; cada fila tiene `nombre`, `vmid`,
@@ -3600,21 +4157,29 @@ ni importarlos**; para llevar un servidor a otro equipo se crea de nuevo su perf
 ### Compatibilidad con versiones anteriores
 
 Los lotes guardados y los archivos de perfiles llevan un número de versión del formato (`version_formato`). Desde ProxLaunch
-0.7 la versión más alta es la **4**. **ProxLaunch 0.7.0 abre los archivos de las versiones 0.5 y 0.6.**
+0.8 la versión más alta es la **5**. **ProxLaunch 0.8.0 abre los archivos de las versiones 0.5, 0.6 y 0.7.**
 
-| Archivo | ¿Lo abre 0.7.0? | ¿Lo abre 0.6.0? | ¿Lo abre 0.5.1? |
-|---|---|---|---|
-| Lote o perfiles de versión **1** o **2** (de 0.5.x o anteriores) | Sí. Las opciones nuevas toman su valor por defecto y se crea **igual que antes**. | Sí. | Sí. |
-| Lote o perfiles de versión **3** (usan alguna opción de la 0.6) | Sí. | Sí. | **No**: «Este archivo lo creó una versión más nueva de ProxLaunch. Actualiza la aplicación para abrirlo.» |
-| Lote de versión **4** (usa **cloud-init** o **Esperar la IP**) | Sí. | **No**: el mismo mensaje de «versión más nueva». | **No**. |
-| Perfiles de máquina | Sí (los perfiles **no guardan** cloud-init ni esperar la IP, así que **no suben** a la versión 4). | Sí. | Según su versión (ver arriba). |
-| CSV de 0.5.1 o 0.6 (sin columnas de cloud-init) | Sí, se lee igual que antes. | — | — |
-| CSV con columnas de cloud-init o `esperar_ip` | Sí. | Lo abre, pero **ignora** las columnas que no conoce con un aviso (las de cloud-init **no se aplican**). | Igual. |
+| Archivo | ¿Lo abre 0.8.0? | ¿Lo abre 0.7.0? | ¿Lo abre 0.6.0? | ¿Lo abre 0.5.1? |
+|---|---|---|---|---|
+| Lote o perfiles de versión **1** o **2** (de 0.5.x o anteriores) | Sí. Las opciones nuevas toman su valor por defecto y se crea **igual que antes**. | Sí. | Sí. | Sí. |
+| Lote o perfiles de versión **3** (usan alguna opción de la 0.6) | Sí. | Sí. | Sí. | **No**: «Este archivo lo creó una versión más nueva de ProxLaunch. Actualiza la aplicación para abrirlo.» |
+| Lote de versión **4** (usa **cloud-init** o **Esperar la IP**) | Sí. | Sí. | **No**: el mismo mensaje de «versión más nueva». | **No**. |
+| Lote de versión **5** (usa la **red del clon** o el **firewall de la máquina**) | Sí. | **No**: el mismo mensaje. | **No**. | **No**. |
+| Perfiles de máquina | Sí (los perfiles **no guardan** cloud-init, esperar la IP, red del clon ni firewall, así que **no suben** a la versión 4 ni a la 5). | Sí. | Sí. | Según su versión (ver arriba). |
+| CSV de 0.5.1, 0.6 o 0.7 (sin las columnas nuevas) | Sí, se lee igual que antes. | — | — | — |
+| CSV con columnas de cloud-init o `esperar_ip` | Sí. | Sí. | Lo abre, pero **ignora** las columnas que no conoce con un aviso (las de cloud-init **no se aplican**). | Igual. |
+| CSV con `reescribir_red`, `cortafuegos`, `grupo_seguridad`, `politica_entrada` o `politica_salida` | Sí. | Lo abre, pero **ignora** esas columnas con un aviso: **no se aplica el firewall ni la red del clon**. | Igual. | Igual. |
 
-- **Cuándo se escribe la versión 4.** ProxLaunch 0.7 escribe un **lote** en versión 4 **solo si usa cloud-init o Esperar la
+- **Cuándo se escribe la versión 5.** ProxLaunch 0.8 escribe un **lote** en versión 5 **solo si usa la red del clon
+  personalizada o el firewall de la máquina** (activado o con algo distinto del valor por defecto, en el lote o en alguna
+  fila). Si no usa nada de la 0.8, lo escribe en la versión que le tocaba antes (1 a 4) y las versiones anteriores lo siguen
+  abriendo. Un firewall o una red del clon **con los valores por defecto** no se escriben ni suben el formato. Al abrir un
+  v5 con un valor fuera de rango (por ejemplo, una VLAN de 5000), ProxLaunch marca el archivo como no válido y nombra el
+  campo (`…red_clon.tarjetas[0].vlan`) sin ejecutar nada.
+- **Cuándo se escribe la versión 4.** ProxLaunch 0.7 y 0.8 escriben un **lote** en versión 4 **solo si usa cloud-init o Esperar la
   IP** (con la casilla marcada). Si no usa ninguna, lo escribe en la versión más baja posible (1, 2 o 3), igual que antes, y
   0.6.0 lo sigue abriendo. Un plazo cambiado con **Esperar la IP** desmarcada no se escribe y no sube el formato.
-- **Cuándo se escribe la versión 3.** ProxLaunch 0.6 y 0.7 escriben un lote o un perfil en versión 3 **solo si usa alguna
+- **Cuándo se escribe la versión 3.** ProxLaunch 0.6, 0.7 y 0.8 escriben un lote o un perfil en versión 3 **solo si usa alguna
   opción de la 0.6** (por ejemplo, un lote con **Encender al terminar**, notas propias, etiquetas, pool, protección, MTU o
   límite; o un perfil con **Arrancar con el servidor** o con MTU o límite en alguna tarjeta). Si no usa ninguna, lo escribe en
   la versión más baja posible (1 o 2), igual que antes, y 0.5.1 lo sigue abriendo. Los perfiles de fábrica no cambian.
@@ -3623,9 +4188,9 @@ Los lotes guardados y los archivos de perfiles llevan un número de versión del
 - **La casilla «Añadir notas de origen».** Viene marcada por defecto, pero **por sí sola no sube el formato**: se guarda en el
   archivo, y un lote que solo la usa sigue siendo de versión 1 o 2. 0.5.1 lo abre y, al no conocer ese dato, lo ignora y
   muestra el aviso de campos desconocidos («Se ignoró 1 campo que ProxLaunch no conoce.»).
-- **Abrir un archivo antiguo no lo modifica.** Los archivos de terceros solo se leen. Si lo vuelves a guardar con 0.7, se
+- **Abrir un archivo antiguo no lo modifica.** Los archivos de terceros solo se leen. Si lo vuelves a guardar con 0.8, se
   escribe con la versión que le corresponda según lo que use.
-- **Un archivo de una versión futura** (más de 4) se rechaza con el mismo mensaje de «versión más nueva».
+- **Un archivo de una versión futura** (más de 5) se rechaza con el mismo mensaje de «versión más nueva».
 - **Perfiles exportados** con alguna opción de la 0.6 (versión 3) tampoco se pueden importar en 0.5.1; los demás sí.
 
 ---
@@ -3677,7 +4242,7 @@ En todos, **tu archivo original no se modifica** y, si falla al abrir o importar
 | Este archivo no es un archivo de ProxLaunch del tipo que buscas. | Elegiste un archivo de otro tipo (por ejemplo, un lote donde se esperaban perfiles). | Usa la opción que corresponde: perfiles en **Administrar perfiles… > Importar…**, lotes en **Lote > Abrir lote…**, CSV en **Lote > Importar desde CSV…**. |
 | Este archivo lo creó una versión más nueva de ProxLaunch. Actualiza la aplicación para abrirlo. | El formato es más nuevo que esta versión. | Actualiza ProxLaunch. |
 | El archivo está dañado o tiene datos no válidos: … | Falta un dato, tiene un valor que no corresponde o no es JSON válido. Se muestran hasta 10 campos y «y N más». | Corrige esos campos o vuelve a guardar el archivo desde ProxLaunch. |
-| El archivo tiene 130 filas; el máximo por lote es 100. Divide el archivo en partes. | El CSV supera los límites (filas, columnas o celdas). | Divide el CSV en archivos de hasta 100 filas, 60 columnas y 256 caracteres por celda (8192 en `notas`). |
+| El archivo tiene 130 filas; el máximo por lote es 100. Divide el archivo en partes. | El CSV supera los límites (filas, columnas o celdas). | Divide el CSV en archivos de hasta 100 filas, 70 columnas y 256 caracteres por celda (8192 en `notas`). |
 | No pude leer el archivo CSV (fila 12). Guárdalo como «CSV UTF-8» desde Excel. / Hay unas comillas sin cerrar en la fila 12… | Caracteres ilegibles o comillas sin cerrar. | En Excel: **Guardar como > CSV UTF-8**. Revisa la fila indicada. |
 | El archivo no tiene máquinas. | El CSV solo tiene encabezado. | Añade filas. |
 | Falta la columna «nombre». Columnas reconocidas: … / La columna «cpu» aparece dos veces. / Hay datos en columnas que no tienen encabezado (columnas 7). | El encabezado no sirve. | Añade o renombra `nombre`, quita las repetidas o ponle encabezado a la columna con datos. Ver [Columnas](#columnas-del-csv). |
@@ -3804,6 +4369,36 @@ una clave: solo nombra el número de línea, el campo o el motivo.
 | No se amplió el disco: el tamaño pedido no supera el de la imagen (el disco solo puede crecer). / …no pudimos comprobar que tengas el permiso VM.Config.Disk. Amplíalo en Proxmox si lo necesitas. | Aviso del paso 3. | Amplía el disco en Proxmox si lo necesitas. |
 | El almacenamiento de destino es de tipo LVM grueso: las copias de esta plantilla solo podrán ser clones completos (no enlazados). | Aviso. | Nada; solo afecta al modo de clonar. |
 
+#### Mensajes de redes virtuales, red del clon, firewall y lotes en el servidor
+
+Los textos entre «x» o «N» cambian en cada caso. Los avisos de validación (⚠) no impiden crear; los errores sí.
+
+| Mensaje | Qué significa | Qué hacer |
+|---|---|---|
+| Proxmox no te deja usar la red «x»: a tu usuario le falta el permiso SDN.Use en /sdn/zones/z/x. … (y variantes con «conectar la tarjeta netN», «clonar» o «cambiar la tarjeta netN») | Falta `SDN.Use` sobre una VNet. | Ver [Redes virtuales](#redes-virtuales-sdn). Pide el permiso o elige otra red. |
+| No ves ninguna red virtual. Puede que no haya ninguna o que tu usuario no tenga permiso para usarlas. … | Aviso: la lista no trae VNets. | Pide `SDN.Use` en la zona o VNet y que apliquen la configuración de SDN. |
+| La red virtual «x» no admite VLAN en la tarjeta (no es «vlanaware»). … | Pusiste VLAN en una VNet que no la admite. | Quita la VLAN o cambia de red. |
+| La red virtual «x» no existe en el servidor N. Elige una red que exista en todos los servidores del lote. | La VNet no está en todos los nodos del lote. | Elige otra o limita los nodos. |
+| La red virtual no tiene direcciones libres. Pide al administrador que amplíe el rango o elige otra red. | La VNet se quedó sin IP. | Pide ampliar el rango. |
+| El grupo de seguridad «x» ya no existe en el servidor, así que no se aplicó la regla. La máquina no se encendió. … | El grupo desapareció tras crear. | Elige otro grupo y **Reintentar ajustes**. |
+| Se creó, pero no se pudo aplicar la red / las opciones del firewall / la regla del grupo de seguridad: a tu usuario le falta el permiso … La máquina no se encendió. … | Falta un privilegio en un paso posterior al clon. | Pídelo y **Reintentar ajustes**. |
+| Se creó, pero falta aplicar la red de la copia / las opciones del firewall / la regla del grupo de seguridad. Puedes reintentar los ajustes. | La máquina existe, pero ese último paso falló. | **Reintentar ajustes**. |
+| No se cambió la red de la copia: … (la tarjeta ya estaba ocupada / su configuración cambió mientras la preparaba) | ProxLaunch **no pisó nada** porque la copia no era la que esperaba. | Revisa y **Reintentar ajustes**. |
+| No se encendió: la tarjeta N de la plantilla no tiene firewall. Revísala en Proxmox y enciéndela a mano. | Una tarjeta ilegible no se pudo proteger. | Ponle `firewall=1` en Proxmox y enciende la máquina. |
+| Con el firewall activo, la entrada en Bloquear y ningún grupo, la máquina no aceptaría ninguna conexión por la red. … | Máquina aislada. | Ver [Firewall de la máquina](#avisos-y-errores-que-verás). |
+| El firewall general de Proxmox … está apagado: las reglas de esta máquina se guardan pero no se aplican. … | Aviso. | Lo enciende el administrador. |
+| Has indicado un grupo o una política de firewall pero el firewall no está activado en esta fila. Pon «cortafuegos = sí» o quita esos valores. | Fila de CSV incoherente. | Corrígela. |
+| «reescribir_red» solo vale en filas que clonan una plantilla. | `reescribir_red` = `si` en una fila que no clona. | Pon `origen` = `clonar` o quítala. |
+| La política debe ser «Bloquear» o «Permitir». | Valor no válido en `politica_entrada` / `politica_salida`. | Usa `bloquear` o `permitir`. |
+| Esto no está disponible en la versión N de Proxmox. | La función necesita otra versión. | Actualiza Proxmox. |
+| No ves ninguna máquina en este servidor. … permiso «VM.Audit». | **Lotes en el servidor** sin `VM.Audit`. | Pídelo. |
+| El código «x» no es de ProxLaunch (debería ser de 8 caracteres como «ab12cd34»). No se puede deshacer desde aquí. | La etiqueta `lote-…` no tiene un código de ProxLaunch. | Bórralo desde Proxmox. |
+| Le falta la etiqueta «x». … / No tiene la nota «Creada con ProxLaunch» de este lote… / Su nota dice que es del lote x. / Es una plantilla… | La máquina no pasa el [doble control](#deshacer-un-lote-del-servidor-doble-control). | Si de verdad es tuya, bórrala desde Proxmox. |
+| Este lote sigue abierto en esta sesión. Usa Lote > Deshacer para no borrar dos veces. | El lote está abierto en la ventana principal. | Usa **Lote > Deshacer**. |
+| Se pueden borrar como máximo 100 máquinas a la vez. Desmarca algunas y repite el proceso. | Más de 100 marcadas. | Desmarca y repite. |
+| Se están borrando máquinas. Detén el borrado y espera a que termine antes de cerrar esta ventana. | Cerraste durante el borrado. | **Detener el borrado** y espera. |
+| Faltan máquinas por leer. Pulsa «Comprobar» para leerlas de nuevo. / Lectura cancelada. Pulsa «Comprobar» para volver a leer. | La lectura del lote no terminó. | **Comprobar**. |
+
 #### Mensajes del origen del sistema operativo
 
 Los puntos suspensivos (…) son datos que cambian en cada caso.
@@ -3859,12 +4454,49 @@ usuarios. Pídele que añada esa etiqueta (y `proxlaunch` y `lote-…` si tambi�
 centro de datos, o quita tus etiquetas propias. Ver
 [Etiquetas propias](#etiquetas-propias-y-política-del-centro-de-datos).
 
-**Abrí un lote guardado con 0.6 en 0.5.1 y no se abre.** Los lotes y perfiles que usan opciones nuevas son de formato 3, que
+**Guardé un lote con 0.6 y 0.5.1 no lo abre.** Los lotes y perfiles que usan opciones nuevas son de formato 3, que
 0.5.1 no entiende. Abre ese archivo con 0.6 o 0.7 (ver [Compatibilidad](#compatibilidad-con-versiones-anteriores)).
 
 **Guardé un lote con cloud-init en 0.7 y 0.6.0 no lo abre.** Un lote que usa cloud-init o **Esperar la IP** es de formato 4,
 que 0.6.0 no entiende («Este archivo lo creó una versión más nueva de ProxLaunch»). Ábrelo con 0.7. Los lotes que no usan
 nada de la 0.7 se siguen guardando en el formato de antes.
+
+**Guardé un lote con firewall o red del clon en 0.8 y 0.7.0 no lo abre.** Un lote que usa la red del clon personalizada o el
+firewall es de formato 5, que 0.7.0 no entiende. Ábrelo con 0.8. Un **CSV** con `cortafuegos` abierto en 0.7.0 no da error,
+pero **ignora esas columnas y no activa el firewall**.
+
+**¿Qué es el firewall de la máquina y qué es un grupo de seguridad?** El firewall filtra lo que entra y sale de la máquina. Un
+grupo de seguridad es un paquete de reglas con nombre que crea tu administrador (por ejemplo `web`: puertos 80 y 443). Ver
+[Firewall de la máquina](#firewall-de-la-máquina).
+
+**Activé el firewall pero la máquina responde a todo.** Casi seguro el **firewall general** del centro de datos
+(**Centro de datos > Firewall**) está apagado: ProxLaunch avisa «…las reglas de esta máquina se guardan pero no se aplican» y
+**no lo enciende**. Pídele al administrador que lo encienda con cuidado: bloquea el acceso a los servidores salvo los puertos
+permitidos.
+
+**No puedo entrar por SSH a una máquina nueva con firewall.** Con la entrada en **Bloquear**, solo entra lo que permita el
+grupo. Mira con **Ver reglas** si el grupo abre el 22 (Linux) o el 3389 (Windows). Mientras tanto usa la **consola de
+Proxmox**. Si usas IP por DHCP, marca **Permitir que la máquina pida su IP por DHCP**.
+
+**No me deja crear porque «la máquina no aceptaría ninguna conexión por la red».** Elegiste firewall con la entrada en Bloquear
+y **Sin grupo**. Elige un grupo, pon la entrada en **Permitir** o marca **Entiendo que la máquina no aceptará conexiones por
+la red** si lo quieres así.
+
+**No veo redes virtuales en la lista Red.** Tu usuario no tiene `SDN.Use` sobre ellas, o no hay ninguna aplicada. Pídele al
+administrador `SDN.Use` en `/sdn/zones/<zona>` (rol `PVESDNUser`) y que aplique la configuración de SDN. En Proxmox 8.0 hace
+falta además el paquete `libpve-network-perl`. Ver [Redes virtuales (SDN)](#redes-virtuales-sdn).
+
+**¿Cambiar la red de la copia cambia su MAC?** No, salvo que marques **Generar una MAC nueva**: ProxLaunch reenvía la MAC que
+la copia ya tiene. Una tarjeta **añadida** recibe una MAC nueva de Proxmox (no tiene otra que conservar). Ver
+[Red del clon](#red-del-clon).
+
+**Cerré ProxLaunch y quiero borrar el lote que creé ayer.** Usa **Archivo > Lotes en el servidor…**: encuentra el lote por sus
+etiquetas, y lo deshace con doble control y escribiendo su código. Ver
+[Lotes en el servidor](#lotes-en-el-servidor-inventario).
+
+**«Lotes en el servidor» no encuentra mi lote.** Solo ve las máquinas con las etiquetas `proxlaunch` y `lote-<código>`. Si
+creaste el lote con **Seguir sin etiquetas** o quitaste las etiquetas en Proxmox, bórralo desde Proxmox. Tampoco ve las
+máquinas si tu usuario no tiene `VM.Audit`.
 
 **¿Qué es cloud-init y para qué sirve aquí?** Es el programa de las imágenes de servidores que, en el primer arranque, crea el
 usuario, pone tu clave SSH y configura la red con los datos que ProxLaunch le deja. Evita entrar a cada máquina a configurarla.
@@ -3881,7 +4513,7 @@ ProxLaunch con `ssh-keygen -t ed25519`.
 
 **Pegué mi clave y ProxLaunch dijo que es privada y la borró.** Pegaste el archivo **sin** `.pub` (o su contenido). Ese es el
 secreto: no se comparte con nadie. Usa el archivo con la extensión `.pub`. Si ya lo habías pegado en otro sitio (un chat, un
-correo), créate una pareja de claves nueva.
+correo), crea una pareja de claves nueva.
 
 **¿Dónde queda la contraseña que pongo en cloud-init?** Se envía a Proxmox y queda en la configuración de la máquina (cualquiera
 con acceso a ella podría obtenerla). ProxLaunch **no la guarda nunca** en un archivo, un perfil, un CSV, el informe ni el
@@ -3977,14 +4609,16 @@ necesitas máquinas **distintas** en el mismo lote, usa un [lote por filas](#lot
 [importando un CSV](#importar-máquinas-desde-un-csv)). No se edita una máquina suelta dentro del lote: corrige el archivo e
 impórtalo otra vez, o quita esa fila.
 
-**¿Puedo editar o borrar máquinas existentes?** No, salvo una cosa: **Deshacer…** borra las máquinas que **creó el lote que
-acabas de hacer** (y solo mientras ProxLaunch siga abierto). Si alguna está encendida o protegida, solo la apaga o desprotege
+**¿Puedo editar o borrar máquinas existentes?** No, salvo dos cosas: **Deshacer…** borra las máquinas que **creó el lote que
+acabas de hacer**, y **Archivo > Lotes en el servidor…** (0.8) borra las de un lote antiguo **creado por ProxLaunch** (con sus
+etiquetas y su nota, y escribiendo su código). Si alguna está encendida o protegida, solo la apaga o desprotege
 con tu confirmación expresa ([Deshacer con máquinas encendidas o protegidas](#deshacer-con-máquinas-encendidas-o-protegidas)). ProxLaunch tampoco gestiona contenedores (LXC) ni alta
 disponibilidad.
 
 **¿Qué pasa si se corta la luz o se cierra ProxLaunch en mitad de un lote?** Las tareas ya enviadas siguen en Proxmox y
-terminan solas. ProxLaunch no puede retomar el lote ni deshacerlo después. Busca en Proxmox las máquinas por la etiqueta
-`proxlaunch` (o `lote-<código>`) o por el rango de números. Si cerraste con el aviso normal, guardó un informe parcial.
+terminan solas. ProxLaunch no puede retomar el lote, pero desde la 0.8 puedes volver a encontrarlo y deshacerlo con
+**Archivo > Lotes en el servidor…** ([ver](#lotes-en-el-servidor-inventario)). También puedes buscar en Proxmox las máquinas
+por la etiqueta `proxlaunch` (o `lote-<código>`) o por el rango de números. Si cerraste con el aviso normal, guardó un informe parcial.
 
 **¿Puedo probar un lote sin crear nada?** Sí, con **Simular**. Solo lee del servidor.
 
@@ -4142,6 +4776,14 @@ administrador.
 | **Almacenamiento (storage)** | El lugar del servidor donde se guardan los discos de las máquinas. |
 | **Contenido de un almacenamiento** | Lo que admite guardar: discos de máquinas (`images`), ISOs (`iso`) o discos para importar (`import`). |
 | **Bridge (red)** | El «conmutador virtual» que conecta la máquina a tu red. Lo habitual es `vmbr0`. |
+| **SDN (red definida por software)** | La función de Proxmox con la que el administrador define **zonas** y **redes virtuales** que se reparten por los servidores. |
+| **Zona (SDN)** | Un área de red del SDN que agrupa varias VNets. La zona `localnetwork` son los bridges normales de cada servidor. |
+| **VNet (red virtual)** | Una red dentro de una zona del SDN. Se elige en la lista **Red** como un bridge. Ver [Redes virtuales (SDN)](#redes-virtuales-sdn). |
+| **MAC (dirección MAC)** | La «matrícula» de una tarjeta de red: un identificador único que usan el router y el DHCP para reconocer la máquina. ProxLaunch la conserva al cambiar la red de una copia. |
+| **Firewall de la máquina / firewall general** | El filtro de Proxmox para una máquina, y el interruptor global del centro de datos sin el cual el primero no actúa. ProxLaunch nunca enciende el general. |
+| **Grupo de seguridad** | Un paquete de reglas del firewall con nombre (por ejemplo `web`: puertos 80 y 443) que crea el administrador y ProxLaunch solo elige. |
+| **Política (del firewall)** | Qué hace el firewall con el tráfico que ninguna regla menciona: **Bloquear** o **Permitir**. Hay una para la entrada y otra para la salida. |
+| **Inventario de lotes** | La ventana **Archivo > Lotes en el servidor…**, que encuentra por sus etiquetas los lotes creados por ProxLaunch. Ver [Lotes en el servidor](#lotes-en-el-servidor-inventario). |
 | **VLAN** | Una división lógica de la red identificada por un número (1 a 4094). |
 | **VMID (número de máquina)** | El número que identifica a la máquina en todo el servidor (desde 100). No se puede repetir. |
 | **API Token** | Una «llave» que un administrador crea para que una aplicación entre a Proxmox sin contraseña personal. Se escribe `usuario@realm!nombre=secreto`. |
@@ -4169,7 +4811,7 @@ administrador.
 | **Protección contra borrado** | Un ajuste de la máquina por el que Proxmox no deja eliminarla hasta que se quite. |
 | **Arranque con el servidor (`onboot`)** | Hace que la máquina se encienda sola cuando arranca el servidor Proxmox. El **orden** y la **espera** (`startup`) indican en qué orden y con qué retraso. |
 | **MTU** | El tamaño máximo de paquete de una tarjeta de red. **Igual al bridge** usa el del bridge. Solo se fija en tarjetas VirtIO. |
-| **Privilegio opcional** | Un privilegio que no forma parte del rol `ProxLaunchCreador` y que solo habilita una función concreta: `VM.PowerMgmt` (encender y apagar), `Pool.Audit` (ver pools) y, desde la 0.7, `VM.Config.Cloudinit` (cloud-init), `VM.Monitor` o `VM.GuestAgent.Audit` (esperar la IP, según la versión) y los de los scripts. |
+| **Privilegio opcional** | Un privilegio que no forma parte del rol `ProxLaunchCreador` y que solo habilita una función concreta: `VM.PowerMgmt` (encender y apagar), `Pool.Audit` (ver pools) y, desde la 0.7, `VM.Config.Cloudinit` (cloud-init), `VM.Monitor` o `VM.GuestAgent.Audit` (esperar la IP, según la versión) y los de los scripts; desde la 0.8, `SDN.Use` en las zonas o redes virtuales que quieras usar (con la asignación acotada). |
 | **Perfil de máquina** | Una configuración de hardware ya preparada que rellena el formulario. No es una plantilla de Proxmox ni un perfil de conexión. |
 | **Perfil de conexión** | Los datos para llegar a un servidor (sin secretos). No se exporta. |
 | **CSV** | Un archivo de texto con una tabla, que puedes crear y editar con Excel o LibreOffice Calc. Cada fila es una máquina. |
@@ -4188,7 +4830,7 @@ administrador.
 | **Script (snippet)** | Un archivo de texto (normalmente YAML) guardado en un almacenamiento con el contenido «Fragmentos» que cloud-init usa como guion. Lo crea el administrador; ProxLaunch solo lo elige. |
 | **DHCP** | La red le da a la máquina su IP automáticamente. |
 | **IP fija** | Una IP que eliges tú y que no cambia. Se escribe con su máscara: `192.168.1.50/24`. |
-| **IP en serie** | En un lote con IP fija, la primera máquina recibe la IP que escribas y cada una de las siguientes la siguiente (`.50`, `.51`, `.52`…). |
+| **IP en serie** | En un lote con IP fija, la primera máquina recibe la IP que escribas y cada una de las siguientes la IP siguiente (`.50`, `.51`, `.52`…). |
 | **Máscara de red (`/24`)** | Indica qué parte de la IP identifica la red. `/24` equivale a `255.255.255.0`. |
 | **Puerta de enlace** | La dirección del router por el que la máquina sale a otras redes e internet. |
 | **DNS** | Servidores que traducen nombres (`pve1.lab.local`) a direcciones IP. |

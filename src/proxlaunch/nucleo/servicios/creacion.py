@@ -11,14 +11,16 @@ from __future__ import annotations
 import contextlib
 import logging
 import threading
-from collections.abc import Callable, Mapping
-from dataclasses import dataclass, replace
-from typing import Any
+from collections.abc import Callable, Mapping, Sequence
+from dataclasses import dataclass, field, replace
+from typing import Any, Final
 from urllib.parse import unquote
 
 from proxlaunch.nucleo.api.traductor_errores import CODIGOS_DE_RED, traducir_exitstatus
 from proxlaunch.nucleo.constructor_peticion import construir_parametros
 from proxlaunch.nucleo.errores import CodigoError, ErrorProxLaunch
+from proxlaunch.nucleo.firewall.modelos import FirewallPlantilla, usa_firewall
+from proxlaunch.nucleo.firewall.reglas import parametros_opciones, parametros_regla, regla_ya_existe
 from proxlaunch.nucleo.modelos.catalogo import DetallePlantilla
 from proxlaunch.nucleo.modelos.inventario import Inventario
 from proxlaunch.nucleo.modelos.origen import DetalleImportacion
@@ -34,6 +36,15 @@ from proxlaunch.nucleo.origen.clon import (
 )
 from proxlaunch.nucleo.origen.permisos import estado_privilegio, privilegios_cloudinit
 from proxlaunch.nucleo.origen.resolucion import espera_maxima_s, nodo_de_upid
+from proxlaunch.nucleo.red.errores_sdn import anotar_error_red, es_error_digest
+from proxlaunch.nucleo.red.modelos import (
+    AccionTarjeta,
+    TarjetaFinal,
+    TarjetaPlantilla,
+    usa_red_clon,
+)
+from proxlaunch.nucleo.red.reescritura import construir_peticion_red, requiere_paso_red
+from proxlaunch.nucleo.red.tarjetas import ipconfigs_de_config, tarjetas_de_config
 from proxlaunch.nucleo.reloj import Reloj
 from proxlaunch.nucleo.servicios.catalogo import fuente_vigente
 from proxlaunch.nucleo.servicios.conexion import Sesion
@@ -62,7 +73,51 @@ AJUSTE_CPU_MEMORIA = "cpu_memoria"
 AJUSTE_DISCO = "disco"
 AJUSTE_CLOUDINIT = "cloudinit"  # fase B: PUT de ciuser, sshkeys, ipconfigN, cicustom, agent…
 AJUSTE_CONTRASENA = "contrasena"  # fase B: PUT propio con solo cipassword
+# Fase C (0.8): la red del clon (C4/C3) y las dos escrituras del firewall de la MV (C3).
+AJUSTE_RED: Final = "red"
+AJUSTE_FIREWALL_OPCIONES: Final = "firewall_opciones"
+AJUSTE_FIREWALL_REGLA: Final = "firewall_regla"
+# Orden en que se aplican los ajustes de una MV (DT-C7); un fallo deja pendiente su paso y los
+# siguientes de C y B.
+ORDEN_AJUSTES: Final = (
+    AJUSTE_ETIQUETAS,
+    AJUSTE_ARRANQUE,
+    AJUSTE_PROTECCION,
+    AJUSTE_CPU_MEMORIA,
+    AJUSTE_RED,
+    AJUSTE_CLOUDINIT,
+    AJUSTE_CONTRASENA,
+    AJUSTE_FIREWALL_OPCIONES,
+    AJUSTE_FIREWALL_REGLA,
+    AJUSTE_DISCO,
+)
+# Avisos de la fase C (los textos los pone la interfaz); los de ``AVISOS_C_ADVERTENCIA`` pasan una
+# MV ``OK`` a ``CON_AVISOS`` (algo pedido no se aplicó o la plantilla ya traía firewall).
+AVISO_FIREWALL_GRUPO_YA_ESTABA: Final = "firewall_grupo_ya_estaba"  # «…:<grupo>»
+AVISO_FIREWALL_HEREDADO: Final = "firewall_heredado"
+AVISO_RED_MAC_NUEVA: Final = "red_mac_nueva"  # «…:netN» (informativo)
+AVISO_RED_MTU_IGNORADA: Final = "red_mtu_ignorada"  # «…:netN»
+AVISO_RED_TARJETA_ILEGIBLE: Final = "red_tarjeta_ilegible"  # «…:netN»
+# Con el firewall pedido, una tarjeta ilegible queda sin ``firewall=1``: la MV no se enciende.
+AVISO_FIREWALL_INCOMPLETO_NO_ENCENDIDA: Final = "firewall_incompleto_no_encendida"  # «…:netN»
+AVISOS_C_ADVERTENCIA: Final = frozenset(
+    {
+        AVISO_FIREWALL_HEREDADO,
+        AVISO_RED_MTU_IGNORADA,
+        AVISO_RED_TARJETA_ILEGIBLE,
+        AVISO_FIREWALL_INCOMPLETO_NO_ENCENDIDA,
+    }
+)
+PRIVILEGIO_RED = "VM.Config.Network"
 _AJUSTES_B = (AJUSTE_CLOUDINIT, AJUSTE_CONTRASENA)
+# Pasos cuyo fallo deja la MV PARCIAL sin pausar el lote (``params["ajuste"]``, DT-C8).
+_AJUSTES_SIN_PAUSA = (
+    AJUSTE_CLOUDINIT,
+    AJUSTE_CONTRASENA,
+    AJUSTE_RED,
+    AJUSTE_FIREWALL_OPCIONES,
+    AJUSTE_FIREWALL_REGLA,
+)
 _CLAVES_CPU = ("sockets", "cores", "cpu", "vcpus")
 _CLAVES_MEMORIA = ("memory", "balloon")
 _CLAVES_OPCIONES = ("tags", "onboot", "startup", "protection")  # exigen VM.Config.Options
@@ -93,6 +148,46 @@ class _Contexto:
     espera: float | None = None  # espera máxima de la tarea; None = la del servicio
     plantilla: DetallePlantilla | None = None  # config de la plantilla leída antes del clon
     config: dict[str, Any] | None = None  # config de la MV creada, leída al comprobar
+    # Fase C: resultado del paso de red y avisos de C acumulados durante los ajustes.
+    red_final: tuple[TarjetaFinal, ...] = ()
+    avisos_c: list[str] = field(default_factory=list)
+    # MAC original de cada tarjeta del clon (índice -> MAC), leída antes de tocar su red. Viene
+    # del libro (persiste entre llamadas y reconexiones) y se vuelca al libro con ``al_leer_macs``.
+    macs_originales: dict[int, str] = field(default_factory=dict)
+    al_leer_macs: Callable[[Mapping[int, str]], None] | None = None
+
+
+class _DigestCambiado(Exception):
+    """Interna: el ``PUT`` de red falló por ``digest`` caducado (la config cambió)."""
+
+
+class _EnvioIncierto(Exception):
+    """Interna: el ``PUT`` de red falló por la red; puede haber llegado al servidor."""
+
+    def __init__(self, error: ErrorProxLaunch) -> None:
+        super().__init__(str(error.codigo))
+        self.error = error
+
+
+# Rondas máximas del paso de red cuando un ``PUT`` de red queda incierto (se relee y se decide).
+_RONDAS_RED_INCIERTAS = 3
+
+
+@dataclass(frozen=True)
+class _PasosC:
+    """Pasos de la fase C que toca ejecutar en esta llamada (DT-C7, DT-C9)."""
+
+    red: bool = False
+    opciones: bool = False
+    regla: bool = False
+    verificar_regla: bool = False  # ``GET …/firewall/rules`` del clon antes del ``POST``
+
+    @property
+    def alguno(self) -> bool:
+        return self.red or self.opciones or self.regla
+
+
+_SIN_PASOS_C = _PasosC()
 
 
 def _error_inesperado(exc: BaseException) -> ErrorProxLaunch:
@@ -156,6 +251,118 @@ def ajustes_de_clon(
     if ajustes.disco is not None and not disco_seguro(cfg, inv):
         return replace(ajustes, disco=None), True
     return ajustes, False
+
+
+def ajustes_planeados(cfg: ConfiguracionVM) -> tuple[str, ...]:
+    """Ajustes de la fase B y C que el plan de ``cfg`` aplicará tras crear (en ``ORDEN_AJUSTES``).
+
+    Para el informe y la simulación: «aplicados» = estos menos los ``ajuste_pendiente:*``. No
+    incluye los ajustes que dependen de la config de la plantilla (etiquetas, arranque, CPU,
+    memoria y disco de un clon): esos solo se conocen al ejecutar.
+    """
+    planeados: set[str] = set()
+    if cfg.origen == OrigenSO.CLONAR_PLANTILLA:
+        if requiere_paso_red(cfg):
+            planeados.add(AJUSTE_RED)
+        ci = cfg.cloudinit
+        if ci is not None:
+            if not ci.vacia:
+                planeados.add(AJUSTE_CLOUDINIT)
+            if ci.contrasena is not None:
+                planeados.add(AJUSTE_CONTRASENA)
+    fw = cfg.firewall
+    if fw is not None and usa_firewall(fw):
+        planeados.add(AJUSTE_FIREWALL_OPCIONES)
+        if fw.grupo:
+            planeados.add(AJUSTE_FIREWALL_REGLA)
+    return tuple(n for n in ORDEN_AJUSTES if n in planeados)
+
+
+def ipconfigs_de_plantilla(detalle: DetallePlantilla | None) -> frozenset[int]:
+    """Índices ``N`` de los ``ipconfigN`` que la plantilla ya trae (para simular ``delete=``)."""
+    if detalle is None or detalle.cloudinit is None:
+        return frozenset()
+    return frozenset(
+        int(k.removeprefix("ipconfig"))
+        for k in detalle.cloudinit.heredados
+        if k.startswith("ipconfig") and k.removeprefix("ipconfig").isdigit()
+    )
+
+
+def _avisos_ilegibles(cfg: ConfiguracionVM, tarjetas: Sequence[TarjetaPlantilla]) -> list[str]:
+    """``red_tarjeta_ilegible:netN`` de las tarjetas ilegibles que el plan iba a tocar."""
+    red = cfg.red_clon if usa_red_clon(cfg.red_clon) else None
+    avisos: list[str] = []
+    for t in tarjetas:
+        if t.legible:
+            continue
+        pedido = red.tarjeta(t.indice) if red is not None else None
+        toca = usa_firewall(cfg.firewall) or (
+            pedido is not None and pedido.accion != AccionTarjeta.CONSERVAR
+        )
+        if toca:
+            avisos.append(f"{AVISO_RED_TARJETA_ILEGIBLE}:net{t.indice}")
+    return avisos
+
+
+def avisos_red_planeados(
+    cfg: ConfiguracionVM,
+    tarjetas: Sequence[TarjetaPlantilla],
+    ipconfigs: frozenset[int] = frozenset(),
+) -> tuple[str, ...]:
+    """Avisos de red que dará el plan sobre las tarjetas de la plantilla (sin escribir nada).
+
+    Sirve a la simulación y al Resumen (arquitectura §9, pregunta 1): una tarjeta ilegible que el
+    plan iba a tocar queda sin tocar y se avisa ANTES de crear. Vacío sin paso de red.
+    """
+    if not requiere_paso_red(cfg):
+        return ()
+    avisos: list[str] = []
+    try:
+        peticion = construir_peticion_red(cfg, tarjetas, ipconfigs, None)
+    except ErrorProxLaunch:
+        peticion = None  # índice ocupado: el motivo lo da la ejecución (RED_PLANTILLA_CAMBIADA)
+    if peticion is not None:
+        avisos.extend(peticion.avisos)
+    ilegibles = _avisos_ilegibles(cfg, tarjetas)
+    avisos.extend(ilegibles)
+    if cfg.encender and usa_firewall(cfg.firewall):
+        avisos.extend(_avisos_no_encendida(ilegibles))
+    return tuple(dict.fromkeys(avisos))
+
+
+def _avisos_no_encendida(ilegibles: Sequence[str]) -> list[str]:
+    """Un ``firewall_incompleto_no_encendida:netN`` por cada ``red_tarjeta_ilegible:netN``."""
+    return [
+        f"{AVISO_FIREWALL_INCOMPLETO_NO_ENCENDIDA}:{a.split(':', 1)[1]}"
+        for a in ilegibles
+        if a.startswith(f"{AVISO_RED_TARJETA_ILEGIBLE}:")
+    ]
+
+
+def firewall_de_plantilla(cfg: ConfiguracionVM, inv: Inventario | None) -> FirewallPlantilla | None:
+    """Lo leído en «Comprobar» del firewall de la plantilla del clon; ``None`` si no consta."""
+    if cfg.origen != OrigenSO.CLONAR_PLANTILLA or inv is None or inv.catalogo is None:
+        return None
+    info = inv.catalogo.firewall
+    vmid = getattr(getattr(cfg.detalle_origen, "plantilla", None), "vmid", None)
+    if info is None or not isinstance(vmid, int):
+        return None
+    return info.plantillas.get(vmid)
+
+
+def avisos_firewall_planeados(cfg: ConfiguracionVM, inv: Inventario | None) -> tuple[str, ...]:
+    """``firewall_heredado`` y ``firewall_grupo_ya_estaba:<g>`` según la plantilla del clon."""
+    fw = cfg.firewall
+    plantilla = firewall_de_plantilla(cfg, inv)
+    if fw is None or not usa_firewall(fw) or plantilla is None or not plantilla.legible:
+        return ()
+    avisos: list[str] = []
+    if plantilla.activo is True or plantilla.con_reglas is True:
+        avisos.append(AVISO_FIREWALL_HEREDADO)
+    if fw.grupo and fw.grupo in plantilla.grupos:
+        avisos.append(f"{AVISO_FIREWALL_GRUPO_YA_ESTABA}:{fw.grupo}")
+    return tuple(avisos)
 
 
 def _nombres_ajuste(config: dict[str, str]) -> list[str]:
@@ -364,6 +571,8 @@ class ServicioCreacion:
         al_enviar: Callable[[str], None] | None = None,
         puede_enviar: Callable[[], bool] | None = None,
         parametros_extra: Mapping[str, str] | None = None,
+        macs_originales: Mapping[int, str] | None = None,
+        al_leer_macs: Callable[[Mapping[int, str]], None] | None = None,
     ) -> ResultadoCreacion:
         """Valida, envía y sigue la tarea hasta un desenlace.
 
@@ -383,8 +592,12 @@ class ServicioCreacion:
         tarea, cualquier fallo que no sea el desenlace de la propia tarea (sesión
         expirada, 403, error puntual, excepción inesperada) da ``CONEXION_PERDIDA`` con
         el ``upid``: no se sabe cómo terminó, así que no se declara un error.
+
+        ``macs_originales`` y ``al_leer_macs`` (fase C) llevan la MAC original de cada tarjeta del
+        clon desde y hacia el libro: así «MAC nueva» no se repite en un reintento (RF-C4.8).
         """
-        ctx = _Contexto(cancelado=cancelado, inv=inv)
+        ctx = _Contexto(cancelado=cancelado, inv=inv, al_leer_macs=al_leer_macs)
+        ctx.macs_originales.update(macs_originales or {})
         try:
             return self._crear(
                 ctx, cfg, inv, al_cambiar_etapa, al_enviar, puede_enviar, parametros_extra
@@ -490,6 +703,8 @@ class ServicioCreacion:
         try:
             upid = cliente.crear_vm(cfg.nodo, parametros)
         except ErrorProxLaunch as e:
+            nuevas = {i: r.bridge for i, r in enumerate(cfg.redes)}
+            e = anotar_error_red(e, paso="crear", antiguas={}, nuevas=nuevas)  # 403 de SDN.Use
             return self._fallo_de_envio(cfg, e)
         except Exception as e:  # el POST pudo salir: resultado incierto
             _log.exception("Fallo inesperado al enviar la creación")
@@ -569,6 +784,10 @@ class ServicioCreacion:
                 peticion.nodo_plantilla, peticion.vmid_plantilla, peticion.parametros
             )
         except ErrorProxLaunch as e:
+            antiguas = (
+                {t.indice: t.bridge for t in plantilla.tarjetas if t.bridge} if plantilla else {}
+            )
+            e = anotar_error_red(e, paso="clon", antiguas=antiguas, nuevas={})  # la PLANTILLA
             return self._fallo_de_envio(
                 cfg, e, PRIVILEGIO_CLONAR, f"/vms/{peticion.vmid_plantilla}"
             )
@@ -764,6 +983,8 @@ class ServicioCreacion:
         cancelado: threading.Event,
         *,
         pendientes: frozenset[str] | None = None,
+        macs_originales: Mapping[int, str] | None = None,
+        al_leer_macs: Callable[[Mapping[int, str]], None] | None = None,
     ) -> ResultadoCreacion:
         """Reenvía solo los ``PUT`` de ajuste que la MV aún no tiene (CA-O22.6, Debería).
 
@@ -778,8 +999,11 @@ class ServicioCreacion:
         ``ajuste_pendiente:contrasena`` y el error ``CONTRASENA_OLVIDADA``. Con ``None`` se
         reenvía lo que difiera de la config leída (cloud-init y contraseña incluidos, por
         comparación de mejor esfuerzo).
+
+        ``macs_originales`` y ``al_leer_macs`` (fase C): ver ``crear``.
         """
-        ctx = _Contexto(cancelado=cancelado, inv=inv)
+        ctx = _Contexto(cancelado=cancelado, inv=inv, al_leer_macs=al_leer_macs)
+        ctx.macs_originales.update(macs_originales or {})
         try:
             try:
                 config = self._tolerante(
@@ -807,7 +1031,10 @@ class ServicioCreacion:
                 )
             ctx.config = config
             base = ResultadoCreacion(Desenlace.OK, cfg.vmid, cfg.nodo, None, None)
-            if cfg.origen not in (OrigenSO.CLONAR_PLANTILLA, OrigenSO.IMPORTAR_DISCO):
+            if cfg.origen not in (
+                OrigenSO.CLONAR_PLANTILLA,
+                OrigenSO.IMPORTAR_DISCO,
+            ) and not usa_firewall(cfg.firewall):
                 return base
             ajustado = self._ajustar(ctx, cfg, base, None, pendientes=pendientes, reintento=True)
             return self._encender_si_procede(ctx, cfg, ajustado, None)
@@ -837,9 +1064,13 @@ class ServicioCreacion:
         (fase B) restringe el envío a esos ajustes; ``reintento`` indica que la config leída es
         la de una MV ya ajustada en parte, así que cloud-init y contraseña se comparan con ella.
         """
-        if cfg.origen not in (OrigenSO.CLONAR_PLANTILLA, OrigenSO.IMPORTAR_DISCO):
-            return resultado
-        if cfg.origen == OrigenSO.IMPORTAR_DISCO and not self._pide_ampliar(cfg):
+        con_firewall = usa_firewall(cfg.firewall)
+        if cfg.origen == OrigenSO.CLONAR_PLANTILLA:
+            pass
+        elif cfg.origen == OrigenSO.IMPORTAR_DISCO:
+            if not (self._pide_ampliar(cfg) or con_firewall):
+                return resultado
+        elif not con_firewall:  # disco vacío e ISO solo necesitan ajustes con firewall (§3.3)
             return resultado
         if etapa is not None:
             etapa(Etapa.AJUSTANDO)
@@ -899,16 +1130,21 @@ class ServicioCreacion:
         avisos = tuple(resultado.avisos)
         if omitido:
             avisos += (f"{AVISO_AJUSTE_OMITIDO}:{AJUSTE_DISCO}",)
+        pasos = self._pasos_c(ctx, cfg, pendientes, reintento=reintento)
         pendientes_lectura: list[str] = []
         lista: list[str]
         error: ErrorProxLaunch | None = None
         if solo_lectura:
             if ajustes.config:
                 pendientes_lectura += _nombres_ajuste(ajustes.config)
+            if pasos.red and self._red_pendiente(ctx, cfg, config):
+                pendientes_lectura.append(AJUSTE_RED)
             if ajustes.cloudinit or sin_unidad:
                 pendientes_lectura.append(AJUSTE_CLOUDINIT)
             if ajustes.contrasena is not None:
                 pendientes_lectura.append(AJUSTE_CONTRASENA)
+            if pasos.alguno:
+                pendientes_lectura += self._firewall_pendiente(cfg, pasos)
             if ajustes.disco is not None:
                 pendientes_lectura.append(AJUSTE_DISCO)
             if pendientes_lectura:
@@ -920,8 +1156,11 @@ class ServicioCreacion:
             or ajustes.cloudinit
             or ajustes.contrasena is not None
             or sin_unidad
+            or pasos.alguno
         ):
-            lista, error = self._enviar_ajustes(ctx, cfg, ajustes, sin_unidad=sin_unidad)
+            lista, error = self._enviar_ajustes(
+                ctx, cfg, ajustes, sin_unidad=sin_unidad, pasos=pasos
+            )
         else:
             lista = []
         if olvidada:  # la contraseña pendiente ya no está en memoria: hay que volver a escribirla
@@ -929,7 +1168,116 @@ class ServicioCreacion:
             error = error or ErrorProxLaunch(
                 CodigoError.CONTRASENA_OLVIDADA, {"nombre": cfg.nombre}
             )
-        return self._con_ajustes(resultado, avisos, lista, error, omitido)
+        avisos = self._avisos_con_c(ctx, cfg, avisos)
+        return self._con_c(ctx, self._con_ajustes(resultado, avisos, lista, error, omitido))
+
+    # --- Fase C: pasos, avisos y estado ------------------------------------------------
+
+    @staticmethod
+    def _pasos_c(
+        ctx: _Contexto,
+        cfg: ConfiguracionVM,
+        pendientes: frozenset[str] | None,
+        *,
+        reintento: bool,
+    ) -> _PasosC:
+        """Qué pasos de C se ejecutan: los del plan y, con ``pendientes``, solo esos (DT-C9).
+
+        La regla de grupo no se envía si la plantilla ya la traía (CA-C3.6.2); se comprueba con
+        ``GET …/firewall/rules`` antes del ``POST`` en un reintento o si el firewall de la plantilla
+        no se pudo leer (DT-C10). Un origen ``POST`` envía la regla directamente.
+        """
+
+        def toca(nombre: str) -> bool:
+            return pendientes is None or nombre in pendientes
+
+        fw = cfg.firewall
+        red = requiere_paso_red(cfg) and toca(AJUSTE_RED)
+        if fw is None or not usa_firewall(fw):
+            return _PasosC(red=red)
+        plantilla = firewall_de_plantilla(cfg, ctx.inv)
+        legible = plantilla is not None and plantilla.legible
+        ya_estaba = bool(
+            legible
+            and plantilla is not None
+            and fw.grupo is not None
+            and fw.grupo in plantilla.grupos
+        )
+        regla = bool(fw.grupo) and toca(AJUSTE_FIREWALL_REGLA) and not ya_estaba
+        clon = cfg.origen == OrigenSO.CLONAR_PLANTILLA
+        return _PasosC(
+            red=red,
+            opciones=toca(AJUSTE_FIREWALL_OPCIONES),
+            regla=regla,
+            verificar_regla=reintento or (clon and not legible),
+        )
+
+    @staticmethod
+    def _avisos_con_c(
+        ctx: _Contexto, cfg: ConfiguracionVM, avisos: tuple[str, ...]
+    ) -> tuple[str, ...]:
+        """Suma a ``avisos`` los de C: los del paso de red y los del firewall de la plantilla."""
+        nuevos = (*ctx.avisos_c, *avisos_firewall_planeados(cfg, ctx.inv))
+        return tuple(dict.fromkeys((*avisos, *nuevos)))
+
+    @staticmethod
+    def _con_c(ctx: _Contexto, resultado: ResultadoCreacion) -> ResultadoCreacion:
+        """Añade ``red_final`` y pasa ``OK`` a ``CON_AVISOS`` si hay un aviso de C que advierte."""
+        if ctx.red_final:
+            resultado = replace(resultado, red_final=ctx.red_final)
+        advierte = any(a.split(":", 1)[0] in AVISOS_C_ADVERTENCIA for a in resultado.avisos)
+        if resultado.desenlace == Desenlace.OK and advierte:
+            resultado = replace(resultado, desenlace=Desenlace.CON_AVISOS)
+        return resultado
+
+    def _red_pendiente(
+        self, ctx: _Contexto, cfg: ConfiguracionVM, config: Mapping[str, Any] | None
+    ) -> bool:
+        """Solo lectura: ¿la config del clon aún difiere de lo que escribiría el paso de red?"""
+        if config is None:
+            return True  # sin leerla no se puede afirmar que esté aplicado
+        try:
+            peticion = construir_peticion_red(
+                cfg,
+                tarjetas_de_config(config),
+                ipconfigs_de_config(config),
+                None,
+                ctx.macs_originales,
+            )
+        except ErrorProxLaunch:
+            return True
+        return peticion is not None
+
+    def _firewall_pendiente(self, cfg: ConfiguracionVM, pasos: _PasosC) -> list[str]:
+        """Solo lectura: pasos de firewall que el servidor aún no refleja (lecturas de la MV).
+
+        Si una lectura falla no se puede afirmar que esté aplicado: queda como pendiente.
+        """
+        fw = cfg.firewall
+        if fw is None:
+            return []
+        cliente = self._sesion.cliente
+        pendientes: list[str] = []
+        if pasos.opciones:
+            try:
+                actuales = cliente.opciones_firewall_vm(cfg.nodo, cfg.vmid)
+                # ``dhcp=0`` se da por aplicado si la clave falta (el valor por defecto es 0).
+                faltan = any(
+                    str(actuales.get(k, "0" if k == "dhcp" else None)) != v
+                    for k, v in parametros_opciones(fw, cfg).items()
+                )
+            except Exception:
+                faltan = True
+            if faltan:
+                pendientes.append(AJUSTE_FIREWALL_OPCIONES)
+        if pasos.regla and fw.grupo:
+            try:
+                existe = regla_ya_existe(cliente.reglas_firewall_vm(cfg.nodo, cfg.vmid), fw.grupo)
+            except Exception:
+                existe = False
+            if not existe:
+                pendientes.append(AJUSTE_FIREWALL_REGLA)
+        return pendientes
 
     def _decidir_fase_b(
         self,
@@ -993,6 +1341,11 @@ class ServicioCreacion:
             return resultado
         if resultado.desenlace not in (Desenlace.OK, Desenlace.CON_AVISOS):
             return resultado
+        sin_firewall = self._tarjetas_sin_firewall(ctx, cfg)
+        if sin_firewall:
+            # SEG-C-M2: con el firewall pedido no se enciende una MV con una tarjeta sin protección.
+            avisos = tuple(dict.fromkeys((*resultado.avisos, *sin_firewall)))
+            return replace(resultado, desenlace=Desenlace.CON_AVISOS, avisos=avisos)
         if etapa is not None:
             etapa(Etapa.ENCENDIENDO)
         error: ErrorProxLaunch | None = None
@@ -1021,6 +1374,24 @@ class ServicioCreacion:
             resultado.log_tarea,
             (*resultado.avisos, AVISO_ENCENDIDO_FALLIDO),
         )
+
+    @staticmethod
+    def _tarjetas_sin_firewall(ctx: _Contexto, cfg: ConfiguracionVM) -> list[str]:
+        """``firewall_incompleto_no_encendida:netN`` de las tarjetas ilegibles del clon.
+
+        Con el firewall pedido, una tarjeta que no se entiende no se reescribe y queda sin
+        ``firewall=1``. Se toma del paso de red de esta llamada o, si no corrió, de la config leída.
+        """
+        if cfg.origen != OrigenSO.CLONAR_PLANTILLA or not usa_firewall(cfg.firewall):
+            return []
+        ilegibles = [a for a in ctx.avisos_c if a.startswith(f"{AVISO_RED_TARJETA_ILEGIBLE}:")]
+        if ctx.config is not None:
+            ilegibles.extend(
+                f"{AVISO_RED_TARJETA_ILEGIBLE}:net{t.indice}"
+                for t in tarjetas_de_config(ctx.config)
+                if not t.legible
+            )
+        return _avisos_no_encendida(list(dict.fromkeys(ilegibles)))
 
     @staticmethod
     def _pide_ampliar(cfg: ConfiguracionVM) -> bool:
@@ -1080,15 +1451,18 @@ class ServicioCreacion:
         ajustes: AjustesTrasClon,
         *,
         sin_unidad: bool = False,
+        pasos: _PasosC = _SIN_PASOS_C,
     ) -> tuple[list[str], ErrorProxLaunch | None]:
-        """Envía, en este orden, el ``PUT config`` (etiquetas, CPU, memoria…), el de cloud-init,
-        el de la contraseña y el ``PUT resize`` (la marca de propiedad primero, DT-B7).
+        """Envía, en este orden, el ``PUT config`` (etiquetas, CPU, memoria…), [C: el ``PUT`` de
+        red], el de cloud-init, el de la contraseña, [C: opciones y regla del firewall] y el
+        ``PUT resize`` (la marca de propiedad primero, DT-B7; el orden de C es el de DT-C7).
 
         Devuelve los ajustes que no se aplicaron y el primer error. Cada ``PUT`` es idempotente
         (valores absolutos) y se envía una sola vez. Si falla el ``PUT config``, cloud-init y
         contraseña quedan pendientes sin intentarse; si falla cloud-init o la contraseña, lo que
         sigue también (la contraseña y el disco). ``sin_unidad`` marca cloud-init como pendiente
-        con ``CLOUDINIT_SIN_UNIDAD`` sin emitir ningún ``PUT``.
+        con ``CLOUDINIT_SIN_UNIDAD`` sin emitir ningún ``PUT``. Fase C: un fallo de la red o del
+        firewall deja pendiente su paso y todos los siguientes (incluido el disco), sin intentarlos.
         """
         cliente = self._sesion.cliente
         pendientes: list[str] = []
@@ -1118,6 +1492,18 @@ class ServicioCreacion:
         # Fase B: tras un fallo previo los pasos de cloud-init no se intentan (quedan pendientes).
         fallo_config = bool(pendientes)
         fallo_b = False
+        # Fase C: el ``PUT`` de red va aparte, tras el de ajustes y antes del de cloud-init.
+        fallo_c = False
+        if pasos.red:
+            if fallo_config:
+                pendientes.append(AJUSTE_RED)
+                fallo_c = True
+            else:
+                error_red = self._paso_red(ctx, cfg)
+                if error_red is not None:
+                    pendientes.append(AJUSTE_RED)
+                    primero = primero or error_red
+                    fallo_c = True
         if ajustes.cloudinit or sin_unidad:
             if sin_unidad:
                 pendientes.append(AJUSTE_CLOUDINIT)
@@ -1126,7 +1512,7 @@ class ServicioCreacion:
                     {"nombre": cfg.nombre, "plantilla": self._nombre_plantilla(cfg)},
                 )
                 fallo_b = True
-            elif fallo_config:
+            elif fallo_config or fallo_c:
                 pendientes.append(AJUSTE_CLOUDINIT)
             else:
                 fallo_b, sin_red, primero = self._enviar_paso_b(
@@ -1139,7 +1525,7 @@ class ServicioCreacion:
                 )
         if ajustes.contrasena is not None:
             secreto = ajustes.contrasena
-            if fallo_config or fallo_b:
+            if fallo_config or fallo_c or fallo_b:
                 pendientes.append(AJUSTE_CONTRASENA)
             elif not secreto.definido:  # se olvidó entre el plan y el envío: no se envía nada
                 pendientes.append(AJUSTE_CONTRASENA)
@@ -1158,10 +1544,26 @@ class ServicioCreacion:
                 )
                 fallo_b = fallo_b or fallo_pw
                 sin_red = sin_red or sin_red_pw
+        # Fase C: firewall de la MV. Cualquier paso pendiente antes lo bloquea (cascada, DT-C7).
+        if pasos.opciones or pasos.regla:
+            bloqueado = bool(pendientes)
+            if pasos.opciones:
+                error_fw = None if bloqueado else self._paso_firewall_opciones(ctx, cfg)
+                if bloqueado or error_fw is not None:
+                    pendientes.append(AJUSTE_FIREWALL_OPCIONES)
+                    primero = primero or error_fw
+                    bloqueado = True
+                    fallo_c = True
+            if pasos.regla:
+                error_fw = None if bloqueado else self._paso_firewall_regla(ctx, cfg, pasos)
+                if bloqueado or error_fw is not None:
+                    pendientes.append(AJUSTE_FIREWALL_REGLA)
+                    primero = primero or error_fw
+                    fallo_c = True
         if ajustes.disco is not None:
             clave, gib = ajustes.disco
-            if sin_red or fallo_b:
-                pendientes.append(AJUSTE_DISCO)  # sin red o tras un fallo de cloud-init
+            if sin_red or fallo_b or fallo_c:
+                pendientes.append(AJUSTE_DISCO)  # sin red o tras un fallo de cloud-init o de C
             else:
                 try:
                     upid = self._tolerante(
@@ -1183,6 +1585,268 @@ class ServicioCreacion:
                         cfg, _error_inesperado(e), AJUSTE_DISCO, "resize", PRIVILEGIO_DISCO
                     )
         return pendientes, primero
+
+    def _enviar_c(
+        self, ctx: _Contexto, enviar: Callable[[], Any], que: str
+    ) -> ErrorProxLaunch | None:
+        """Una escritura de la fase C, una sola vez y con la tolerancia a la red. Devuelve el error
+        crudo (o ``None``); quien llama lo traduce a ajuste pendiente."""
+        try:
+            self._tolerante(ctx, enviar)
+        except _Cancelado:
+            raise
+        except _ConexionPerdida as p:
+            return p.error
+        except ErrorProxLaunch as e:
+            return e
+        except Exception as e:
+            _log.exception("Fallo inesperado al aplicar %s", que)
+            return _error_inesperado(e)
+        return None
+
+    def _paso_red(self, ctx: _Contexto, cfg: ConfiguracionVM) -> ErrorProxLaunch | None:
+        """Paso de red del clon (C4/C3, DT-C6): ``GET config`` del clon y un solo ``PUT config``.
+
+        Calcula el ``PUT`` sobre la config DEL CLON recién leída (conserva su MAC). Un fallo del
+        ``digest`` relee y reintenta una vez; el segundo es ``RED_CONFIG_CAMBIADA``. Rellena
+        ``ctx.red_final`` y ``ctx.avisos_c``. Devuelve el error (ya con ``params["ajuste"]``) o
+        ``None`` si quedó aplicado o no había nada que cambiar.
+        """
+        digest_reintentado = False
+        incierto: ErrorProxLaunch | None = None
+        for _ in range(_RONDAS_RED_INCIERTAS + 1):
+            try:
+                self._ronda_red(ctx, cfg)
+            except _DigestCambiado:
+                if digest_reintentado:
+                    return self._error_c(cfg, CodigoError.RED_CONFIG_CAMBIADA, AJUSTE_RED)
+                digest_reintentado = True
+                continue
+            except _EnvioIncierto as e:
+                # El ``PUT`` pudo llegar: se relee la config y se decide sobre lo que hay (así
+                # «MAC nueva» no se aplica dos veces); no se reenvía a ciegas.
+                incierto = e.error
+                continue
+            except ErrorProxLaunch as e:
+                return e
+            return None
+        if incierto is not None:
+            return self._error_ajuste(cfg, incierto, AJUSTE_RED, "config", PRIVILEGIO_RED)
+        return self._error_c(cfg, CodigoError.RED_CONFIG_CAMBIADA, AJUSTE_RED)
+
+    def _ronda_red(self, ctx: _Contexto, cfg: ConfiguracionVM) -> None:
+        """Una lectura de la config del clon y, si hace falta, su ``PUT`` de red.
+
+        Raises:
+            _DigestCambiado: el servidor rechazó el ``PUT`` por ``digest``.
+            ErrorProxLaunch: el paso falló (``RED_CONFIG_ILEGIBLE``, ``RED_PLANTILLA_CAMBIADA``, 403
+                de SDN anotado, IPAM agotado u otro, ya como error de ajuste).
+        """
+        cliente = self._sesion.cliente
+        try:
+            config = self._tolerante(ctx, lambda: cliente.config_vm(cfg.nodo, cfg.vmid))
+        except _Cancelado:
+            raise
+        except (ErrorProxLaunch, _ConexionPerdida):
+            config = None
+        if config is None:  # V-C21: sin la config del clon no se escribe nada de red
+            raise self._error_c(cfg, CodigoError.RED_CONFIG_ILEGIBLE, AJUSTE_RED)
+        actuales = tarjetas_de_config(config)
+        self._anotar_macs_originales(ctx, actuales)
+        digest = config.get("digest")
+        try:
+            peticion = construir_peticion_red(
+                cfg,
+                actuales,
+                ipconfigs_de_config(config),
+                digest if isinstance(digest, str) and digest else None,
+                ctx.macs_originales,
+            )
+        except ErrorProxLaunch as e:  # RED_PLANTILLA_CAMBIADA: el índice a añadir ya está ocupado
+            raise self._error_c(cfg, e.codigo, AJUSTE_RED, **e.params) from None
+        # Lo que no se entiende no se toca; se avisa aunque no haya nada más que escribir.
+        ctx.avisos_c.extend(_avisos_ilegibles(cfg, actuales))
+        if peticion is None:
+            # Nada que escribir: el informe muestra las tarjetas tal como están (CA-C4.8.2).
+            ctx.red_final = tuple(
+                TarjetaFinal(
+                    t.indice,
+                    AccionTarjeta.CONSERVAR,
+                    t.modelo,
+                    t.bridge,
+                    t.vlan,
+                    True,
+                    t.firewall,
+                )
+                for t in actuales
+                if t.legible
+            )
+            return
+        parametros = peticion.parametros
+        error = self._enviar_una_vez(
+            ctx, lambda: cliente.configurar_vm(cfg.nodo, cfg.vmid, parametros), AJUSTE_RED
+        )
+        if error is not None:
+            if es_error_digest(error):
+                raise _DigestCambiado
+            if error.codigo in CODIGOS_DE_RED:
+                raise _EnvioIncierto(error)
+            error = anotar_error_red(
+                error,
+                paso="red",
+                antiguas={t.indice: t.bridge for t in actuales if t.bridge},
+                nuevas={f.indice: f.red for f in peticion.finales if f.red},
+            )
+            raise self._error_ajuste(cfg, error, AJUSTE_RED, "config", PRIVILEGIO_RED)
+        ctx.red_final = peticion.finales
+        ctx.avisos_c.extend(peticion.avisos)
+
+    @staticmethod
+    def _anotar_macs_originales(ctx: _Contexto, actuales: Sequence[TarjetaPlantilla]) -> None:
+        """Guarda la MAC de cada tarjeta legible la primera vez que se lee (y la vuelca al libro).
+
+        La primera lectura del clon es anterior a cualquier ``PUT`` de red de ProxLaunch: esa es
+        la MAC original con la que se detecta que «MAC nueva» ya se aplicó (QA-C-M1).
+        """
+        nuevas = {
+            t.indice: t.mac
+            for t in actuales
+            if t.legible and t.mac and t.indice not in ctx.macs_originales
+        }
+        if not nuevas:
+            return
+        ctx.macs_originales.update(nuevas)
+        if ctx.al_leer_macs is not None:
+            try:
+                ctx.al_leer_macs(dict(nuevas))
+            except Exception:
+                _log.exception("No se pudieron registrar las MAC originales en el libro")
+
+    def _enviar_una_vez(
+        self, ctx: _Contexto, enviar: Callable[[], Any], que: str
+    ) -> ErrorProxLaunch | None:
+        """Una escritura que NO se reenvía por fallo de red (el llamador decide tras releer).
+
+        Devuelve el error crudo (o ``None``); un fallo de red llega tal cual, sin ``_tolerante``.
+        """
+        if ctx.cancelado is not None and ctx.cancelado.is_set():
+            raise _Cancelado
+        try:
+            enviar()
+        except ErrorProxLaunch as e:
+            return e
+        except Exception as e:
+            _log.exception("Fallo inesperado al aplicar %s", que)
+            return _error_inesperado(e)
+        return None
+
+    @staticmethod
+    def _error_c(
+        cfg: ConfiguracionVM, codigo: CodigoError, ajuste: str, **params: str
+    ) -> ErrorProxLaunch:
+        """Error propio de un paso de C: ``nombre`` y ``ajuste`` (así el lote no se pausa)."""
+        return ErrorProxLaunch(codigo, {**params, "nombre": cfg.nombre, "ajuste": ajuste})
+
+    def _paso_firewall_opciones(
+        self, ctx: _Contexto, cfg: ConfiguracionVM
+    ) -> ErrorProxLaunch | None:
+        """``PUT …/firewall/options`` de la MV (valores absolutos: idempotente, DT-C9)."""
+        fw = cfg.firewall
+        if fw is None:
+            return None
+        cliente = self._sesion.cliente
+        parametros = parametros_opciones(fw, cfg)
+        error = self._enviar_c(
+            ctx,
+            lambda: cliente.configurar_firewall_vm(cfg.nodo, cfg.vmid, parametros),
+            AJUSTE_FIREWALL_OPCIONES,
+        )
+        if error is None:
+            return None
+        return self._error_ajuste(cfg, error, AJUSTE_FIREWALL_OPCIONES, "firewall", PRIVILEGIO_RED)
+
+    def _paso_firewall_regla(
+        self, ctx: _Contexto, cfg: ConfiguracionVM, pasos: _PasosC
+    ) -> ErrorProxLaunch | None:
+        """``POST …/firewall/rules`` con la regla del grupo, sin duplicarla (CA-C3.8.3).
+
+        Con ``pasos.verificar_regla`` lee antes las reglas de la MV (``GET``) y no envía si ya
+        está. Si el ``POST`` da 400/404 el grupo ya no existe (``FIREWALL_GRUPO_INEXISTENTE``).
+        """
+        fw = cfg.firewall
+        if fw is None or not fw.grupo:
+            return None
+        grupo = fw.grupo
+        cliente = self._sesion.cliente
+        if pasos.verificar_regla:
+            reglas: list[Any] = []
+
+            def leer() -> None:
+                reglas.extend(cliente.reglas_firewall_vm(cfg.nodo, cfg.vmid))
+
+            error = self._enviar_c(ctx, leer, AJUSTE_FIREWALL_REGLA)
+            if error is not None:  # sin poder comprobarlo no se arriesga una regla duplicada
+                return self._error_ajuste(
+                    cfg, error, AJUSTE_FIREWALL_REGLA, "firewall", PRIVILEGIO_RED
+                )
+            if regla_ya_existe(reglas, grupo):
+                return None
+        try:
+            cuerpo = parametros_regla(grupo)
+        except ValueError:
+            return self._error_c(
+                cfg, CodigoError.FIREWALL_GRUPO_INEXISTENTE, AJUSTE_FIREWALL_REGLA, grupo=grupo
+            )
+        # El POST va UNA sola vez: un reenvío tras perder la respuesta duplicaría la regla.
+        error = self._enviar_una_vez(
+            ctx,
+            lambda: cliente.crear_regla_firewall_vm(cfg.nodo, cfg.vmid, cuerpo),
+            AJUSTE_FIREWALL_REGLA,
+        )
+        if error is None:
+            return None
+        if error.codigo in CODIGOS_DE_RED:
+            # Envío incierto: se relee y se decide si la regla ya está (QA-C-A1).
+            if self._regla_presente(ctx, cfg, grupo):
+                return None
+            return self._error_ajuste(cfg, error, AJUSTE_FIREWALL_REGLA, "firewall", PRIVILEGIO_RED)
+        grupo_perdido = error.codigo in (
+            CodigoError.PARAMETRO_INVALIDO,
+            CodigoError.RECURSO_INEXISTENTE,
+        ) and (self._grupo_existe(ctx, grupo) is False)
+        if grupo_perdido:
+            return self._error_c(
+                cfg, CodigoError.FIREWALL_GRUPO_INEXISTENTE, AJUSTE_FIREWALL_REGLA, grupo=grupo
+            )
+        return self._error_ajuste(cfg, error, AJUSTE_FIREWALL_REGLA, "firewall", PRIVILEGIO_RED)
+
+    def _regla_presente(self, ctx: _Contexto, cfg: ConfiguracionVM, grupo: str) -> bool:
+        """Relee las reglas de la MV (``GET`` tolerante): ``True`` si la del grupo ya está.
+
+        Si no se puede leer devuelve ``False``: la regla queda pendiente y el reintento
+        verifica antes de enviar (nunca se reenvía a ciegas).
+        """
+        reglas: list[Any] = []
+        cliente = self._sesion.cliente
+
+        def leer() -> None:
+            reglas.extend(cliente.reglas_firewall_vm(cfg.nodo, cfg.vmid))
+
+        if self._enviar_c(ctx, leer, AJUSTE_FIREWALL_REGLA) is not None:
+            return False
+        return regla_ya_existe(reglas, grupo)
+
+    def _grupo_existe(self, ctx: _Contexto, grupo: str) -> bool | None:
+        """``GET /cluster/firewall/groups``: ¿existe el grupo? ``None`` si no se pudo leer."""
+        cliente = self._sesion.cliente
+        nombres: list[str] = []
+
+        def leer() -> None:
+            nombres.extend(g.nombre for g in cliente.grupos_firewall())
+
+        if self._enviar_c(ctx, leer, AJUSTE_FIREWALL_REGLA) is not None:
+            return None
+        return grupo in nombres
 
     def _enviar_paso_b(
         self,
@@ -1254,9 +1918,15 @@ class ServicioCreacion:
                 err.params["inferido"] = "1"
             err.params.setdefault("ruta", f"/vms/{cfg.vmid}")
             err.params["via"] = via
-            if ajuste in _AJUSTES_B:  # el motor no pausa el lote por estos 403 (arquitectura §0)
+            if ajuste in _AJUSTES_SIN_PAUSA:  # el motor no pausa el lote por estos 403 (§0)
                 err.params["ajuste"] = ajuste
             return err
+        if err.codigo == CodigoError.RED_SIN_DIRECCIONES:  # IPAM agotado (RF-C4.9): código propio
+            return ErrorProxLaunch(
+                err.codigo,
+                {**err.params, "nombre": cfg.nombre, "ajuste": ajuste},
+                err.detalle_tecnico,
+            )
         params = {"nombre": cfg.nombre, "ajuste": ajuste, "causa": str(err.codigo)}
         if ajuste in _AJUSTES_B:
             # Solo nombres de parámetro o de snippet (``ipconfig0``, ``local:snippets/x``).
