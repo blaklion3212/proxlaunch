@@ -20,6 +20,7 @@ from proxlaunch.nucleo.constructor_peticion import construir_parametros
 from proxlaunch.nucleo.errores import ErrorProxLaunch
 from proxlaunch.nucleo.firewall.modelos import FirewallPlantilla, usa_firewall
 from proxlaunch.nucleo.firewall.reglas import parametros_opciones, parametros_regla
+from proxlaunch.nucleo.lote.informe import AnunciosFaseD, anuncios_fase_d
 from proxlaunch.nucleo.lote.modelos import (
     AccionPeticion,
     DefinicionLote,
@@ -48,6 +49,7 @@ from proxlaunch.nucleo.servicios.creacion import (
     avisos_red_planeados,
     disco_seguro,
     firewall_de_plantilla,
+    hardware_de_clon,
     ipconfigs_de_plantilla,
 )
 
@@ -55,8 +57,9 @@ from proxlaunch.nucleo.servicios.creacion import (
 def _peticiones_de_clon(
     e: ElementoPlan, inv: Inventario
 ) -> tuple[dict[str, str], tuple[PeticionSimulada, ...]]:
-    """Clon + ``PUT config`` + [leer config + ``PUT`` de red] + cloud-init + contraseña +
-    [firewall] + ``PUT resize`` de un elemento (lanza ``ErrorProxLaunch``). El orden es el de
+    """Clon + ``PUT config`` + [``PUT`` de hardware del clúster] + [leer config + ``PUT`` de red] +
+    cloud-init + contraseña + [firewall] + ``PUT resize`` de un elemento (lanza
+    ``ErrorProxLaunch``). El orden es el de
     ``ServicioCreacion`` (DT-B7, DT-C7). La contraseña va siempre enmascarada y las claves SSH
     como ``[n]``: nunca se simula un secreto."""
     peticion = construir_peticion_clon(e.cfg, inv)
@@ -68,6 +71,7 @@ def _peticiones_de_clon(
         ajustes, _ = ajustes_de_clon(e.cfg, inv, plantilla)
         if ajustes.config:
             detalle.append(PeticionSimulada(AccionPeticion.CONFIGURAR, e.nodo, ajustes.config))
+        detalle.extend(_peticiones_de_hardware(e, plantilla))
         detalle.extend(_peticiones_de_red(e, plantilla))
         ci = e.cfg.cloudinit
         if ci is not None and ajustes.cloudinit:
@@ -109,6 +113,19 @@ def _peticiones_de_clon(
                 )
         detalle.extend(_peticiones_de_firewall(e, firewall_de_plantilla(e.cfg, inv)))
     return peticion.parametros, tuple(detalle)
+
+
+def _peticiones_de_hardware(e: ElementoPlan, plantilla: DetallePlantilla) -> list[PeticionSimulada]:
+    """``PUT config`` de hardware del clúster de un clon (DT-D11), sobre los índices libres de la
+    plantilla. Sin hardware no hay petición. Si no caben los índices, la ejecución dejará el
+    paso pendiente (``ajuste_pendiente:hardware``): la simulación no lo inventa."""
+    try:
+        cuerpo = hardware_de_clon(e.cfg, plantilla)
+    except ErrorProxLaunch:
+        return []
+    if not cuerpo:
+        return []
+    return [PeticionSimulada(AccionPeticion.CONFIGURAR, e.nodo, cuerpo)]
 
 
 def _peticiones_de_red(
@@ -187,6 +204,13 @@ def _peticiones_de_post(
             PeticionSimulada(AccionPeticion.AMPLIAR, e.nodo, parametros_ampliacion(clave, gib))
         )
     return parametros, tuple(detalle)
+
+
+def anuncios_de_simulacion(resultado: ResultadoSimulacion) -> AnunciosFaseD:
+    """Lo que la fase D anuncia en la simulación: adaptación ARM (V-D08), nodos ARM64
+    (etiqueta «experimental»), hardware del clúster, MAC conservada e imágenes adicionales.
+    Vacío con un lote x86 sin opciones de D (la simulación no gana nada)."""
+    return anuncios_fase_d(resultado.plan.problemas, resultado.plan.elementos)
 
 
 def avisos_de_simulacion(

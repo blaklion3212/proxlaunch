@@ -11,7 +11,6 @@ import dataclasses
 import pytest
 
 from proxlaunch.nucleo.api.traductor_errores import traducir_exitstatus, traducir_http
-from proxlaunch.nucleo.capacidades import Funcion
 from proxlaunch.nucleo.csv_importacion import unidades
 from proxlaunch.nucleo.csv_importacion.unidades import ValorInvalido
 from proxlaunch.nucleo.errores import CodigoError, ErrorProxLaunch
@@ -451,10 +450,10 @@ def test_ca_o26_4_guardar_como_perfil_con_y_sin_pistas():
     assert sin.origen == OrigenSO.DISCO_VACIO and sin.pista_origen is None
 
 
-def test_la_compatibilidad_del_perfil_pide_importar_disco_solo_con_origen_importar():
-    assert Funcion.IMPORTAR_DISCO in funciones_requeridas(_hw(origen=OrigenSO.IMPORTAR_DISCO))
-    for origen in (OrigenSO.DISCO_VACIO, OrigenSO.ISO, OrigenSO.CLONAR_PLANTILLA):
-        assert Funcion.IMPORTAR_DISCO not in funciones_requeridas(_hw(origen=origen))
+def test_la_compatibilidad_del_perfil_no_pide_ninguna_funcion_por_origen_con_la_minima_8_4():
+    """DT-D3: importar disco ya no depende de la versión; ningún origen exige funciones."""
+    for origen in OrigenSO:
+        assert funciones_requeridas(_hw(origen=origen)) == frozenset()
 
 
 # --- Lotes guardados (RF-O27) ---------------------------------------------------------------------

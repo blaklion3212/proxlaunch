@@ -96,13 +96,13 @@ def test_ca_o02_1_con_todo_disponible_las_cuatro_opciones_estan_activas_sin_moti
         assert _motivo(con_caps, origen) == ""
 
 
-def test_ca_o02_2_version_8_0_deshabilita_importar_con_el_motivo_de_la_version(selector):
-    selector.establecer_capacidades(caps_origen(inv_origen(version=(8, 0))))
-    radio = selector.opciones[OrigenSO.IMPORTAR_DISCO]
-    assert not radio.isEnabled()
-    motivo = _motivo(selector, OrigenSO.IMPORTAR_DISCO)
-    assert "8.0" in motivo and "8.4" in motivo
-    # El resto de opciones sigue disponible.
+def test_ca_o02_2_con_la_version_minima_8_4_importar_esta_habilitado_sin_motivo_de_version(
+    selector,
+):
+    """DT-D3: la mínima 8.4 ya incluye importar; no queda motivo de versión."""
+    selector.establecer_capacidades(caps_origen(inv_origen(version=(8, 4))))
+    assert selector.opciones[OrigenSO.IMPORTAR_DISCO].isEnabled()
+    assert _motivo(selector, OrigenSO.IMPORTAR_DISCO) == ""
     assert selector.opciones[OrigenSO.ISO].isEnabled()
     assert selector.opciones[OrigenSO.CLONAR_PLANTILLA].isEnabled()
 
@@ -138,13 +138,17 @@ def test_ca_o01_2_la_explicacion_tambien_es_la_descripcion_accesible(selector):
 def test_origen_marcado_que_deja_de_estar_disponible_vuelve_a_vacia(con_caps):
     con_caps.opciones[OrigenSO.IMPORTAR_DISCO].setChecked(True)
     assert con_caps.origen == OrigenSO.IMPORTAR_DISCO
-    con_caps.establecer_capacidades(caps_origen(inv_origen(version=(8, 0))))
+    con_caps.establecer_capacidades(
+        caps_origen(inv_origen(version=(8, 4), contenido_local="images,iso"))
+    )
     assert con_caps.origen == OrigenSO.DISCO_VACIO
     assert con_caps.opciones[OrigenSO.DISCO_VACIO].isChecked()
 
 
-def test_ca_o02_7_cambiar_la_version_recalcula_las_opciones(selector):
-    selector.establecer_capacidades(caps_origen(inv_origen(version=(8, 0))))
+def test_ca_o02_7_cambiar_las_capacidades_recalcula_las_opciones(selector):
+    selector.establecer_capacidades(
+        caps_origen(inv_origen(version=(8, 4), contenido_local="images,iso"))
+    )
     assert not selector.opciones[OrigenSO.IMPORTAR_DISCO].isEnabled()
     selector.establecer_capacidades(caps_origen(inv_origen(version=(9, 2))))
     assert selector.opciones[OrigenSO.IMPORTAR_DISCO].isEnabled()

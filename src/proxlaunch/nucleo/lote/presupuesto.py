@@ -23,7 +23,13 @@ from proxlaunch.nucleo.lote.modelos import (
 )
 from proxlaunch.nucleo.modelos.catalogo import Contenido, DetallePlantilla, Plantilla, Volumen
 from proxlaunch.nucleo.modelos.inventario import Inventario, Storage
-from proxlaunch.nucleo.modelos.origen import DetalleClon, DetalleImportacion, ModoClon
+from proxlaunch.nucleo.modelos.origen import (
+    DetalleClon,
+    DetalleImportacion,
+    ImagenDisco,
+    ModoClon,
+    RefVolumen,
+)
 from proxlaunch.nucleo.modelos.vm import ConfiguracionVM, Firmware, OrigenSO
 from proxlaunch.nucleo.origen.clon import disco_principal
 from proxlaunch.nucleo.origen.clon import modo_efectivo as _modo_efectivo_clon
@@ -111,13 +117,10 @@ def _es_disco_de_datos(clave: str) -> bool:
     return not clave.startswith(("efidisk", "tpmstate"))
 
 
-def _tamano_archivo(
-    cfg: ConfiguracionVM, detalle: DetalleImportacion, inv: Inventario
-) -> int | None:
+def _tamano_archivo(cfg: ConfiguracionVM, ref: RefVolumen, inv: Inventario) -> int | None:
     """Tamaño del archivo de la imagen según el catálogo leído (``None`` si no consta)."""
     if inv.catalogo is None:
         return None
-    ref = detalle.imagen
     volumenes: tuple[Volumen, ...] = ()
     if ref.volid is not None:
         encontrado = inv.catalogo.buscar_volid(ref.volid, cfg.nodo)
@@ -135,11 +138,27 @@ def _tamano_importacion(cfg: ConfiguracionVM, detalle: DetalleImportacion, inv: 
     """
     tam = detalle.tamano_virtual_bytes
     if tam is None:
-        tam = _tamano_archivo(cfg, detalle, inv)
+        tam = _tamano_archivo(cfg, detalle.imagen, inv)
     tam = tam or 0
     if detalle.ampliar_a_gib is not None:
         tam = max(tam, detalle.ampliar_a_gib * _GIB)
     return tam
+
+
+def _imagen_adicional(detalle: DetalleImportacion, indice: int) -> ImagenDisco | None:
+    """Imagen del disco ``indice`` (≥ 1) si la tiene; la imagen manda sobre ``crear_vacio``."""
+    for otra in detalle.otras:
+        if otra.indice == indice and otra.imagen is not None:
+            return otra
+    return None
+
+
+def _tamano_imagen_adicional(cfg: ConfiguracionVM, otra: ImagenDisco, inv: Inventario) -> int:
+    """Bytes de un disco adicional importado (DT-D14): tamaño virtual o, si no, el del archivo."""
+    tam = otra.tamano_virtual_bytes
+    if tam is None and otra.imagen is not None:
+        tam = _tamano_archivo(cfg, otra.imagen, inv)
+    return tam or 0
 
 
 def pedido_vm(cfg: ConfiguracionVM, inv: Inventario) -> dict[ClavePresupuesto, int]:
@@ -176,6 +195,13 @@ def pedido_vm(cfg: ConfiguracionVM, inv: Inventario) -> dict[ClavePresupuesto, i
             if tam > 0:
                 sumar(d.storage, tam)
             continue
+        otra = _imagen_adicional(importado, i) if importado is not None else None
+        if otra is not None:
+            # DT-D14: cada imagen adicional suma su tamaño (V-D27b, mecanismo E-L de espacio).
+            tam = _tamano_imagen_adicional(cfg, otra, inv)
+            if tam > 0:
+                sumar(d.storage, tam)
+            continue
         if _es_entero(d.tamano_gib) and d.tamano_gib > 0:
             sumar(d.storage, d.tamano_gib * _GIB)
     id_efi: str | None = None
@@ -194,14 +220,22 @@ def pedido_vm(cfg: ConfiguracionVM, inv: Inventario) -> dict[ClavePresupuesto, i
 def claves_pesadas(cfg: ConfiguracionVM, inv: Inventario) -> tuple[ClavePresupuesto, ...]:
     """Storages destino de la parte pesada de una MV (para el tope por storage, RNF-O04).
 
-    Importación = storage del primer disco; clon completo = storages donde se copian los
-    discos de datos de la plantilla; vacío para cualquier otra. Ordenadas y sin repetidos.
+    Importación = storages de los discos con imagen (el primero y los adicionales); clon
+    completo = storages donde se copian los discos de datos de la plantilla; vacío para
+    cualquier otra. Ordenadas y sin repetidos.
     """
     claves: set[ClavePresupuesto] = set()
     if cfg.origen == OrigenSO.IMPORTAR_DISCO and cfg.con_disco and cfg.discos:
         clave = clave_de(inv, cfg.nodo, cfg.discos[0].storage)
         if clave is not None:
             claves.add(clave)
+        detalle = cfg.detalle_origen
+        if isinstance(detalle, DetalleImportacion):
+            for i, d in enumerate(cfg.discos[1:], start=1):
+                if _imagen_adicional(detalle, i) is not None:
+                    clave = clave_de(inv, cfg.nodo, d.storage)
+                    if clave is not None:
+                        claves.add(clave)
     elif cfg.origen == OrigenSO.CLONAR_PLANTILLA:
         for storage, _, datos in _discos_pesados_del_clon(cfg, inv):
             clave = clave_de(inv, cfg.nodo, storage) if datos else None

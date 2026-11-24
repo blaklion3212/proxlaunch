@@ -11,6 +11,8 @@ from __future__ import annotations
 import dataclasses
 import re
 
+from proxlaunch.nucleo.arquitectura.modelos import Arquitectura
+from proxlaunch.nucleo.arquitectura.perfil import adaptar_a_arquitectura
 from proxlaunch.nucleo.modelos.catalogo import Contenido
 from proxlaunch.nucleo.modelos.origen import DetalleImportacion, RefVolumen, TipoSO
 from proxlaunch.nucleo.modelos.vm import (
@@ -70,17 +72,24 @@ def nombre_sugerido(nombre_archivo: str) -> str:
     return nombre[:_MAX_LONG_ETIQUETA_DNS].rstrip("-")
 
 
-def parametros_extra(fijas: FijasPlantilla, storage_destino: str) -> dict[str, str]:
+def parametros_extra(
+    fijas: FijasPlantilla,
+    storage_destino: str,
+    *,
+    arquitectura: Arquitectura = Arquitectura.X86_64,
+) -> dict[str, str]:
     """Parámetros propios de las imágenes cloud para ``crear(parametros_extra=…)`` (RF-B2.7).
 
     En este orden y solo los de las casillas marcadas: ``ide2=<destino>:cloudinit``,
     ``serial0=socket`` y ``vga=serial0``; ``boot=order=scsi0`` va siempre. ``agent=1`` no va aquí:
     lo envía ``construir_parametros`` desde ``cfg.agente_qemu``. ``serial0`` es siempre ``socket``
-    (nunca un dispositivo real, CA-B2.7.5).
+    (nunca un dispositivo real, CA-B2.7.5). En aarch64 (D2, DT-D9) la unidad de cloud-init es
+    ``scsi1`` (no hay IDE) y ``vga=serial0`` sustituye a la ``vga=virtio`` del constructor.
     """
     extra: dict[str, str] = {}
     if fijas.unidad_cloudinit:
-        extra["ide2"] = f"{storage_destino}:cloudinit"
+        clave = "scsi1" if arquitectura == Arquitectura.AARCH64 else "ide2"
+        extra[clave] = f"{storage_destino}:cloudinit"
     if fijas.consola_serie:
         extra["serial0"] = "socket"
         extra["vga"] = "serial0"
@@ -123,13 +132,20 @@ def volid_de_imagen(sol: SolicitudPlantillaImagen) -> str:
     return f"{sol.storage_import}:{Contenido.IMPORT.value}/{sol.nombre_archivo}"
 
 
-def cfg_de_creacion(sol: SolicitudPlantillaImagen, volid_imagen: str) -> ConfiguracionVM:
+def cfg_de_creacion(
+    sol: SolicitudPlantillaImagen,
+    volid_imagen: str,
+    *,
+    arquitectura: Arquitectura = Arquitectura.X86_64,
+) -> ConfiguracionVM:
     """Configuración para ``ServicioCreacion.crear`` (origen ``IMPORTAR_DISCO``).
 
     Parte de ``sol.cfg`` (sin modificarla) y fija lo propio de B2: Linux (``ostype=l26``),
     controlador ``virtio-scsi-single``, disco ``scsi0`` en el destino, agente según la casilla,
     sin encender, sin cloud-init ni espera de IP (los valores de cloud-init se escriben después,
-    paso 4) y ``ampliar_a_gib`` solo si el tamaño final supera el de la imagen.
+    paso 4) y ``ampliar_a_gib`` solo si el tamaño final supera el de la imagen. Con
+    ``arquitectura`` aarch64 el resultado pasa por ``adaptar_a_arquitectura`` (OVMF, CPU
+    ``host``, red ``virtio``).
     """
     base = sol.cfg
     final = tamano_final_gib(sol)
@@ -143,7 +159,7 @@ def cfg_de_creacion(sol: SolicitudPlantillaImagen, volid_imagen: str) -> Configu
         ampliar_a_gib=final if necesita_ampliar(sol) else None,
         tamano_virtual_bytes=sol.tamano_virtual_bytes,
     )
-    return dataclasses.replace(
+    cfg = dataclasses.replace(
         base,
         nodo=sol.nodo,
         con_disco=True,
@@ -159,3 +175,4 @@ def cfg_de_creacion(sol: SolicitudPlantillaImagen, volid_imagen: str) -> Configu
         esperar_ip=False,
         info_cloudinit=None,
     )
+    return adaptar_a_arquitectura(cfg, arquitectura)[0]

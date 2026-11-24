@@ -97,15 +97,15 @@ def test_al_conectar_el_selector_tiene_las_cuatro_opciones_y_no_pregunta_nada(
     assert preguntas == []  # nunca al conectar
 
 
-def test_ca_o02_7_forzar_una_version_antigua_deshabilita_importar_en_el_selector(
+def test_ca_o02_7_forzar_la_version_minima_8_4_deja_importar_habilitado_en_el_selector(
     qtbot, entorno, lecturas, preguntas
 ):
     entorno.inv = inv_origen()
-    conectar(qtbot, entorno, sesion_falsa(version=(8, 0), forzada=True))
+    conectar(qtbot, entorno, sesion_falsa(version=(8, 4), forzada=True))
     esperar_validacion(qtbot, entorno.ventana)
     sel = entorno.ventana.formulario.selector_origen
-    assert not sel.opciones[OrigenSO.IMPORTAR_DISCO].isEnabled()
-    assert "8.0" in sel.motivos[OrigenSO.IMPORTAR_DISCO].text()
+    assert sel.opciones[OrigenSO.IMPORTAR_DISCO].isEnabled()
+    assert sel.motivos[OrigenSO.IMPORTAR_DISCO].text() == ""
 
 
 # --- «¿Cuál usar siempre?» del storage de discos -------------------------------------------------

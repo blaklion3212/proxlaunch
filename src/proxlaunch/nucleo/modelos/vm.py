@@ -9,12 +9,20 @@ from proxlaunch.nucleo.cloudinit import serializacion as _serial_cloudinit
 from proxlaunch.nucleo.cloudinit.modelos import ConfigCloudInit, InfoCloudInitPlantilla
 from proxlaunch.nucleo.errores import CodigoError, ErrorProxLaunch
 from proxlaunch.nucleo.firewall.modelos import FirewallMV, firewall_a_dict, firewall_desde_dict
+from proxlaunch.nucleo.hardware_cluster.modelos import (
+    RE_ID_MAPEO,
+    AsignacionPCI,
+    AsignacionUSB,
+    HardwareCluster,
+)
+from proxlaunch.nucleo.modelos.cpu import TIPO_CPU_X86_DEFECTO
 from proxlaunch.nucleo.modelos.origen import (
     AjustesClon,
     DetalleClon,
     DetalleImportacion,
     DetalleIso,
     DetalleOrigen,
+    ImagenDisco,
     ModoClon,
     RefPlantilla,
     RefVolumen,
@@ -98,6 +106,8 @@ class InterfazRed:
     vlan: int | None = None
     mtu: int | None = None  # None = heredar; 1 = igual al bridge; 576..65520
     limite_mb: float | None = None  # rate en MB/s; None = sin límite; > 0
+    # Fase D (0.9): MAC conservada del origen (``52:54:00:ab:cd:ef``); None = MAC nueva (DT-D15)
+    mac_conservada: str | None = None
 
 
 @dataclass
@@ -123,7 +133,88 @@ def _red_a_dict(r: InterfazRed) -> dict[str, Any]:
         d["mtu"] = r.mtu
     if r.limite_mb is not None:
         d["limite_mb"] = r.limite_mb
+    if r.mac_conservada is not None:
+        d["mac_conservada"] = r.mac_conservada
     return d
+
+
+def _invalido(campo: str, valor: object) -> ErrorProxLaunch:
+    """``PARAMETRO_INVALIDO`` con la ruta del campo (como ``red_clon`` en la fase C)."""
+    return ErrorProxLaunch(
+        CodigoError.PARAMETRO_INVALIDO, {"campo": campo, "valor": str(valor)[:80]}
+    )
+
+
+def _bool_estricto(d: dict[str, Any], clave: str, defecto: bool, ruta: str) -> bool:
+    valor = d.get(clave, defecto)
+    if not isinstance(valor, bool):
+        raise _invalido(f"{ruta}.{clave}", valor)
+    return valor
+
+
+def _id_mapeo(d: dict[str, Any], ruta: str) -> str:
+    valor = d.get("mapeo")
+    if not isinstance(valor, str) or RE_ID_MAPEO.fullmatch(valor) is None:
+        raise _invalido(f"{ruta}.mapeo", valor)
+    return valor
+
+
+def _hardware_a_dict(hw: HardwareCluster) -> dict[str, Any]:
+    """Serializa el hardware del clúster: solo las claves que difieren del defecto + ``mapeo``."""
+    datos: dict[str, Any] = {}
+    if hw.pci:
+        pci: list[dict[str, Any]] = []
+        for a in hw.pci:
+            x: dict[str, Any] = {"mapeo": a.mapeo}
+            if a.pcie:
+                x["pcie"] = True
+            if a.x_vga:
+                x["x_vga"] = True
+            if not a.rombar:
+                x["rombar"] = False
+            if a.driver_keep:
+                x["driver_keep"] = True
+            pci.append(x)
+        datos["pci"] = pci
+    if hw.usb:
+        datos["usb"] = [
+            {"mapeo": a.mapeo, "usb3": True} if a.usb3 else {"mapeo": a.mapeo} for a in hw.usb
+        ]
+    return datos
+
+
+def _hardware_desde_dict(d: object) -> HardwareCluster:
+    """Reconstruye el hardware del clúster; ``PARAMETRO_INVALIDO`` con la ruta del campo malo."""
+    ruta = "hardware_cluster"
+    if not isinstance(d, dict):
+        raise _invalido(ruta, d)
+    pci_d = d.get("pci", [])
+    usb_d = d.get("usb", [])
+    if not isinstance(pci_d, (list, tuple)):
+        raise _invalido(f"{ruta}.pci", pci_d)
+    if not isinstance(usb_d, (list, tuple)):
+        raise _invalido(f"{ruta}.usb", usb_d)
+    pci: list[AsignacionPCI] = []
+    for i, x in enumerate(pci_d):
+        r = f"{ruta}.pci[{i}]"
+        if not isinstance(x, dict):
+            raise _invalido(r, x)
+        pci.append(
+            AsignacionPCI(
+                mapeo=_id_mapeo(x, r),
+                pcie=_bool_estricto(x, "pcie", False, r),
+                x_vga=_bool_estricto(x, "x_vga", False, r),
+                rombar=_bool_estricto(x, "rombar", True, r),
+                driver_keep=_bool_estricto(x, "driver_keep", False, r),
+            )
+        )
+    usb: list[AsignacionUSB] = []
+    for i, x in enumerate(usb_d):
+        r = f"{ruta}.usb[{i}]"
+        if not isinstance(x, dict):
+            raise _invalido(r, x)
+        usb.append(AsignacionUSB(mapeo=_id_mapeo(x, r), usb3=_bool_estricto(x, "usb3", False, r)))
+    return HardwareCluster(pci=tuple(pci), usb=tuple(usb))
 
 
 def _ref_volumen_a_dict(r: RefVolumen) -> dict[str, Any]:
@@ -132,6 +223,33 @@ def _ref_volumen_a_dict(r: RefVolumen) -> dict[str, Any]:
 
 def _ref_volumen_desde_dict(d: dict[str, Any]) -> RefVolumen:
     return RefVolumen(nombre=d.get("nombre", ""), volid=d.get("volid"))
+
+
+def _imagen_disco_a_dict(o: ImagenDisco) -> dict[str, Any]:
+    """``tamano_virtual_bytes`` es de sesión: nunca se serializa."""
+    d: dict[str, Any] = {
+        "indice": o.indice,
+        "imagen": None if o.imagen is None else _ref_volumen_a_dict(o.imagen),
+    }
+    if o.crear_vacio:
+        d["crear_vacio"] = True
+    return d
+
+
+def _imagen_disco_desde_dict(d: Any, ruta: str) -> ImagenDisco:
+    if not isinstance(d, dict):
+        raise _invalido(ruta, d)
+    indice = d.get("indice")
+    if not isinstance(indice, int) or isinstance(indice, bool) or indice < 1:
+        raise _invalido(f"{ruta}.indice", indice)
+    imagen = d.get("imagen")
+    if imagen is not None and not isinstance(imagen, dict):
+        raise _invalido(f"{ruta}.imagen", imagen)
+    return ImagenDisco(
+        indice=indice,
+        imagen=None if imagen is None else _ref_volumen_desde_dict(imagen),
+        crear_vacio=_bool_estricto(d, "crear_vacio", False, ruta),
+    )
 
 
 def _detalle_a_dict(detalle: DetalleOrigen) -> dict[str, Any]:
@@ -143,11 +261,14 @@ def _detalle_a_dict(detalle: DetalleOrigen) -> dict[str, Any]:
             "sin_drivers": detalle.sin_drivers,
         }
     if isinstance(detalle, DetalleImportacion):
-        return {
+        datos: dict[str, Any] = {
             "imagen": _ref_volumen_a_dict(detalle.imagen),
             "ampliar_a_gib": detalle.ampliar_a_gib,
             "tamano_virtual_bytes": detalle.tamano_virtual_bytes,
         }
+        if detalle.otras:  # solo si existen: el formato de 0.8.0 no cambia
+            datos["otras"] = [_imagen_disco_a_dict(o) for o in detalle.otras]
+        return datos
     a = detalle.ajustes
     return {
         "plantilla": {
@@ -168,6 +289,14 @@ def _detalle_a_dict(detalle: DetalleOrigen) -> dict[str, Any]:
     }
 
 
+def _otras_desde_dict(valor: Any) -> tuple[ImagenDisco, ...]:
+    if not isinstance(valor, (list, tuple)):
+        raise _invalido("detalle_origen.otras", valor)
+    return tuple(
+        _imagen_disco_desde_dict(x, f"detalle_origen.otras[{i}]") for i, x in enumerate(valor)
+    )
+
+
 def _detalle_desde_dict(origen: OrigenSO, d: dict[str, Any]) -> DetalleOrigen:
     """Reconstruye el detalle según el origen; valida enums."""
     if origen == OrigenSO.ISO:
@@ -182,6 +311,7 @@ def _detalle_desde_dict(origen: OrigenSO, d: dict[str, Any]) -> DetalleOrigen:
             imagen=_ref_volumen_desde_dict(d.get("imagen", {})),
             ampliar_a_gib=d.get("ampliar_a_gib"),
             tamano_virtual_bytes=d.get("tamano_virtual_bytes"),
+            otras=_otras_desde_dict(d.get("otras", ())),
         )
     p = d.get("plantilla", {})
     a = d.get("ajustes", {})
@@ -212,7 +342,7 @@ class ConfiguracionVM:
     storage_efi: str | None = None  # None = el del primer disco (CA-14.2)
     sockets: int = 1
     cores: int = 2
-    tipo_cpu: str = "x86-64-v2-AES"
+    tipo_cpu: str = TIPO_CPU_X86_DEFECTO
     memoria_mib: int = 2048
     ballooning: Ballooning | None = None  # None = no enviar (modo básico, CA-15.5)
     con_disco: bool = True
@@ -250,6 +380,8 @@ class ConfiguracionVM:
     # --- Fase C (0.8): al final; ``None`` = comportamiento de 0.7.0 ---
     red_clon: RedClon | None = None  # red del clon (C4); solo con origen clonar
     firewall: FirewallMV | None = None  # firewall de la máquina (C3)
+    # --- Fase D (0.9): al final; ``None`` = comportamiento de 0.8.0 ---
+    hardware_cluster: HardwareCluster | None = None  # mapeos PCI/USB del clúster (D3)
 
     def __post_init__(self) -> None:
         # CA-18.2: cualquier origen distinto de "disco_vacio" es un error de validación.
@@ -338,6 +470,9 @@ class ConfiguracionVM:
             datos["red_clon"] = red_clon_a_dict(self.red_clon)
         if self.firewall is not None:
             datos["firewall"] = firewall_a_dict(self.firewall)
+        # Claves de la fase D: solo si existen y no están vacías (los archivos de 0.8.0 no cambian).
+        if self.hardware_cluster is not None and not self.hardware_cluster.vacio:
+            datos["hardware_cluster"] = _hardware_a_dict(self.hardware_cluster)
         return datos
 
     @classmethod
@@ -351,6 +486,7 @@ class ConfiguracionVM:
         espera = d.get("esperar_ip") or {}
         red_clon = d.get("red_clon")
         firewall = d.get("firewall")
+        hardware = d.get("hardware_cluster")
         if not isinstance(espera, dict):
             raise ErrorProxLaunch(CodigoError.PARAMETRO_INVALIDO, {"campo": "esperar_ip"})
         return cls(
@@ -385,6 +521,7 @@ class ConfiguracionVM:
                     vlan=x["vlan"],
                     mtu=x.get("mtu"),
                     limite_mb=x.get("limite_mb"),
+                    mac_conservada=x.get("mac_conservada"),
                 )
                 for x in d["redes"]
             ],
@@ -409,4 +546,5 @@ class ConfiguracionVM:
             plazo_ip_s=espera.get("plazo_s", PLAZO_IP_DEFECTO_S),
             red_clon=None if red_clon is None else red_clon_desde_dict(red_clon),
             firewall=None if firewall is None else firewall_desde_dict(firewall),
+            hardware_cluster=None if hardware is None else _hardware_desde_dict(hardware),
         )

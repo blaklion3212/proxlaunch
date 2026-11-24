@@ -147,10 +147,10 @@ def plantilla_con(vmid: int, nombre: str, info: InfoCloudInitPlantilla):
 
 
 def test_rf_b6_3_las_trece_columnas_canonicas_existen_y_son_59_en_total():
-    # Fase C (RF-C6.3): 5 columnas nuevas (54 → 59).
+    # Fase C (RF-C6.3): 5 columnas nuevas (54 → 59); fase D (RF-D6.3): 2 más (59 → 61).
     canonicas = [c.canonica for c in COLUMNAS]
     assert set(COLUMNAS_B) <= set(canonicas)
-    assert len(canonicas) == 59 and len(set(canonicas)) == 59
+    assert len(canonicas) == 61 and len(set(canonicas)) == 61
 
 
 def test_rf_b6_3_las_marcadas_avanzadas_son_las_de_la_tabla():
@@ -440,7 +440,7 @@ def test_ca_b6_3_5_un_csv_con_todas_las_columnas_canonicas_se_acepta():
         [";".join(cabecera), ";".join("a" if c == "nombre" else "" for c in cabecera)]
     )
     tabla = leer_tabla(datos)
-    assert len(tabla.encabezado) == 59
+    assert len(tabla.encabezado) == 61
     r = interpretar(
         tabla,
         perfil_base=perfil_base(),
@@ -642,7 +642,7 @@ def test_ca_b6_3_8_la_plantilla_incluye_las_columnas_nuevas_salvo_la_contrasena(
     assert all(c in ENCABEZADO_PLANTILLA for c in nuevas)
     assert COLUMNA_CONTRASENA not in ENCABEZADO_PLANTILLA
     assert "cipassword" not in ENCABEZADO_PLANTILLA and "ci_password" not in ENCABEZADO_PLANTILLA
-    assert len(ENCABEZADO_PLANTILLA) == 40  # fase C: 5 columnas más
+    assert len(ENCABEZADO_PLANTILLA) == 42  # fase D: 2 columnas más
 
 
 @pytest.mark.parametrize("separador", [";", ","])

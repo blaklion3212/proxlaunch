@@ -28,6 +28,7 @@ from proxlaunch.nucleo.capacidades import (
     VERSION_MINIMA,
     Capacidades,
     capacidades_para,
+    es_rama_8,
 )
 from proxlaunch.nucleo.errores import CodigoError, ErrorProxLaunch
 from proxlaunch.nucleo.modelos.catalogo import PermisosEfectivos
@@ -87,6 +88,7 @@ class CodigoAviso(StrEnum):
     TOPOLOGIA_DEGRADADA = "topologia_degradada"  # A-6
     PERMISOS_INCOMPLETOS = "permisos_incompletos"  # RF-12
     VERSION_NO_PROBADA = "version_no_probada"  # CA-09.3
+    RAMA_8_SIN_SOPORTE = "rama_8_sin_soporte"  # V-D02: params{"version"}; solo la detectada
 
 
 @dataclass(frozen=True)
@@ -366,6 +368,9 @@ class ServicioConexion:
         if (version.mayor, version.menor) > ULTIMA_VERSION_CONOCIDA:
             # Se permite conectar, pero se avisa de que la versión no se ha probado (CA-09.3).
             sesion.avisos.append(Aviso(CodigoAviso.VERSION_NO_PROBADA, {"version": version.texto}))
+        if es_rama_8((version.mayor, version.menor)):
+            # La rama 8.x pierde el soporte de Proxmox: se conecta, pero se avisa una vez (V-D02).
+            sesion.avisos.append(Aviso(CodigoAviso.RAMA_8_SIN_SOPORTE, {"version": version.texto}))
         if perfil.recordar_credenciales and secreto:
             try:
                 self._secretos.guardar(perfil.id, secreto)

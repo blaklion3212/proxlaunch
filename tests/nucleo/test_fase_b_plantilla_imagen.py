@@ -140,13 +140,13 @@ def _sol_basica():
     )
 
 
-@pytest.mark.parametrize("version", [(8, 0, 1), (8, 3, 9)])
-def test_ca_b2_1_1_antes_de_8_4_el_asistente_se_deshabilita_y_v_b01_es_error(version):
+@pytest.mark.parametrize("version", [(8, 4, 0), (9, 2, 1)])
+def test_ca_b2_1_1_con_la_minima_8_4_el_asistente_esta_habilitado_y_no_existe_v_b01(version):
+    """DT-D3: la versión ya no deshabilita el asistente; V-B01 quedó sin productor."""
     inv = inv_origen(nodos=("pve1",), version=Version("x", *version))
     d = disponibilidad_plantilla_imagen(inv.catalogo.permisos, caps(version), inv, "pve1")
-    assert not d[ControlB2.ASISTENTE].habilitado
-    assert d[ControlB2.ASISTENTE].codigo == CodigoError.OPCION_SIN_VERSION
-    assert "V-B01" in errores(validar_solicitud(_sol_basica(), inv, caps(version)))
+    assert d[ControlB2.ASISTENTE].habilitado
+    assert "V-B01" not in errores(validar_solicitud(_sol_basica(), inv, caps(version)))
 
 
 def _inv_sin_import():

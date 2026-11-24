@@ -7,6 +7,7 @@ from dataclasses import dataclass
 from enum import StrEnum
 from pathlib import Path
 
+from proxlaunch.nucleo.capacidades import VERSION_MINIMA
 from proxlaunch.nucleo.persistencia.almacen_json import AlmacenJson
 
 VERSION_ESQUEMA = 1
@@ -49,6 +50,8 @@ class RepositorioPreferencias:
         self.hubo_corrupcion = False
         self.copia_danada: Path | None = None
         self.error_lectura = False
+        # V-D03: texto («8.2») de una versión forzada anterior a la mínima que se descartó al cargar
+        self.version_forzada_descartada: str | None = None
 
     def cargar(self) -> Preferencias:
         r = self._almacen.leer()
@@ -62,7 +65,12 @@ class RepositorioPreferencias:
             pref.tema = Tema(d.get("tema", pref.tema))
         with contextlib.suppress(ValueError):
             pref.modo = Modo(d.get("modo", pref.modo))
-        pref.version_forzada = _version_desde_texto(d.get("version_forzada"))
+        forzada = _version_desde_texto(d.get("version_forzada"))
+        if forzada is not None and forzada < VERSION_MINIMA:
+            # La mínima subió a 8.4 (V-D03): se descarta y la ventana lo avisa una vez.
+            self.version_forzada_descartada = f"{forzada[0]}.{forzada[1]}"
+            forzada = None
+        pref.version_forzada = forzada
         return pref
 
     def guardar(self, pref: Preferencias) -> None:

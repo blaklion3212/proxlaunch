@@ -66,12 +66,24 @@ class DetalleIso:
 
 
 @dataclass(frozen=True)
+class ImagenDisco:
+    """Imagen de un disco adicional (índice ≥ 1) del origen «importar disco» (DT-D14)."""
+
+    indice: int  # índice en cfg.discos (≥ 1)
+    imagen: RefVolumen | None = None  # None + crear_vacio=False -> pendiente (V-D27)
+    crear_vacio: bool = False
+    tamano_virtual_bytes: int | None = None  # sesión; NUNCA se escribe en archivos
+
+
+@dataclass(frozen=True)
 class DetalleImportacion:
     """Origen «importar disco»: imagen del contenido ``import`` del servidor."""
 
     imagen: RefVolumen = field(default_factory=RefVolumen)
     ampliar_a_gib: int | None = None  # CA-O18.4; None = tamaño de la imagen
     tamano_virtual_bytes: int | None = None  # sesión o API; NUNCA se escribe en archivos
+    # Fase D (0.9): imágenes de los discos 1.. (el disco 0 usa ``imagen``); () = como 0.8.0
+    otras: tuple[ImagenDisco, ...] = ()
 
 
 @dataclass(frozen=True)

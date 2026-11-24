@@ -159,6 +159,19 @@ def validar_opciones(cfg: ConfiguracionVM, inv: Inventario, caps: Capacidades) -
                 if plantilla is not None:
                     finales = tuple(e for e in finales if e not in plantilla.etiquetas)
             sys_modify = estado_privilegio(catalogo.permisos, "Sys.Modify", "/")
+            sin_audit = estado_privilegio(catalogo.permisos, "Sys.Audit", "/") is False
+            if sin_audit and sys_modify is not True and catalogo.politica_etiquetas.acceso_ausente:
+                # LAB-C-1: sin Sys.Audit en «/», /cluster/options llega parcial (sin
+                # user-tag-access) y no se sabe la política: aviso confirmable por etiqueta.
+                # Si la clave sí vino, la política es real y se evalúa como en 0.8.0.
+                for etiqueta in finales:
+                    campo = (
+                        f"etiquetas_usuario[{cfg.etiquetas_usuario.index(etiqueta)}]"
+                        if etiqueta in cfg.etiquetas_usuario
+                        else "etiquetas"
+                    )
+                    aviso(campo, "V-A03", etiqueta=etiqueta, motivo="sin_sys_audit")
+                finales = ()
             for etiqueta, motivo in rechazadas_por_politica(
                 finales, catalogo.politica_etiquetas, sys_modify
             ):

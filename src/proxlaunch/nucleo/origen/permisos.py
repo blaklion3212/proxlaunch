@@ -12,7 +12,9 @@ from dataclasses import dataclass
 from typing import Final
 
 from proxlaunch.nucleo.capacidades import Capacidades, Funcion
+from proxlaunch.nucleo.hardware_cluster.modelos import TipoMapeo
 from proxlaunch.nucleo.modelos.catalogo import PermisosEfectivos
+from proxlaunch.nucleo.modelos.cpu import PREFIJO_CPU_PERSONALIZADA
 
 # privilegio -> (plantilla de ruta, vía principal). ``VM.Config.Disk`` sirve además a la vía
 # «ampliar_disco» (resize); ``Sys.Modify`` en ``/`` solo se reconoce (administrador): nunca se pide.
@@ -70,6 +72,18 @@ PRIVILEGIOS_SDN_OPCIONALES: tuple[PrivilegioOpcional, ...] = (
     PrivilegioOpcional("SDN.Audit", RUTA_ZONA_GENERICA, no_verificado=True),
 )
 
+# Fase D (0.9): mapeos del clúster (DT-D17). No forman parte del rol (sigue con 14): solo habilitan
+# opciones. Todos son hechos inferidos de la documentación, aún sin probar en un servidor.
+RUTA_MAPEO_PCI: Final = "/mapping/pci"
+RUTA_MAPEO_USB: Final = "/mapping/usb"
+RUTA_MAPEO_CPU: Final = "/mapping/cpu"
+PRIVILEGIO_MAPEO_USAR: Final = "Mapping.Use"
+PRIVILEGIOS_D_OPCIONALES: tuple[PrivilegioOpcional, ...] = (
+    PrivilegioOpcional(PRIVILEGIO_MAPEO_USAR, RUTA_MAPEO_PCI, no_verificado=True),
+    PrivilegioOpcional(PRIVILEGIO_MAPEO_USAR, RUTA_MAPEO_USB, no_verificado=True),
+    PrivilegioOpcional(PRIVILEGIO_MAPEO_USAR, RUTA_MAPEO_CPU, no_verificado=True),
+)
+
 # Ruta que se muestra cuando se desconoce el almacén de snippets (la guía lo indica con texto).
 RUTA_STORAGE_SNIPPETS_DESCONOCIDO = "/storage/<almacén de snippets>"
 
@@ -106,6 +120,10 @@ def privilegios_opcionales(
         return tuple(lista)
     lista.append(PrivilegioOpcional("VM.Config.Cloudinit", "/vms"))
     lista.extend(PRIVILEGIOS_SDN_OPCIONALES)
+    # Fase D: mapeos PCI/USB siempre; ``/mapping/cpu`` solo si la versión lo usa (9.2).
+    for d in PRIVILEGIOS_D_OPCIONALES:
+        if d.ruta != RUTA_MAPEO_CPU or caps.tiene(Funcion.CPU_PERSONALIZADA_POR_MAPPING):
+            lista.append(d)
     if caps.tiene(Funcion.PRIVILEGIOS_GUEST_AGENT):
         lista.append(PrivilegioOpcional("VM.GuestAgent.Audit", "/vms"))
     else:
@@ -145,6 +163,55 @@ def estado_sdn_fuera_de_local(permisos: PermisosEfectivos | None) -> bool | None
             if zona and zona != ZONA_LOCAL:
                 return True
     return False
+
+
+def ruta_mapeo(tipo: TipoMapeo, id_mapeo: str) -> str:
+    """Ruta de ACL de un mapeo concreto: ``/mapping/<tipo>/<id>``."""
+    return f"{RUTA_MAPEO_PCI if tipo == TipoMapeo.PCI else RUTA_MAPEO_USB}/{id_mapeo}"
+
+
+def estado_mapeo(permisos: PermisosEfectivos | None, tipo: TipoMapeo, id_mapeo: str) -> bool | None:
+    """¿Tiene ``Mapping.Use`` sobre ese mapeo? ``None`` = permisos desconocidos (CA-D5.1.3)."""
+    return estado_privilegio(permisos, PRIVILEGIO_MAPEO_USAR, ruta_mapeo(tipo, id_mapeo))
+
+
+def _uso_bajo(permisos: PermisosEfectivos, privilegio: str, ruta: str) -> bool:
+    """``True`` si el privilegio rige en ``ruta`` o en alguna ruta concreta por debajo de ella."""
+    if tiene_privilegio(permisos.rutas, ruta, privilegio):
+        return True
+    return any(
+        privilegio in privs and p.startswith(ruta + "/") for p, privs in permisos.rutas.items()
+    )
+
+
+def estado_algun_mapeo(permisos: PermisosEfectivos | None) -> bool | None:
+    """¿Hay ``Mapping.Use`` en alguna ruta de mapeo PCI o USB (general o de un id)?"""
+    if permisos is None:
+        return None
+    return any(
+        _uso_bajo(permisos, PRIVILEGIO_MAPEO_USAR, r) for r in (RUTA_MAPEO_PCI, RUTA_MAPEO_USB)
+    )
+
+
+def estado_cpu_personalizada(
+    permisos: PermisosEfectivos | None, caps: Capacidades, nombre: str | None = None
+) -> bool | None:
+    """¿Puede usar un modelo de CPU personalizado? (DT-D17).
+
+    9.2: ``Mapping.Use`` en ``/mapping/cpu/<nombre sin "custom-">``; con ``nombre`` ``None`` basta
+    en cualquier modelo. 8.4–9.1: ``VM.Config.CPU`` en ``/vms`` y ``Sys.Audit`` en ``/nodes``.
+    ``None`` = permisos desconocidos.
+    """
+    if permisos is None:
+        return None
+    if caps.tiene(Funcion.CPU_PERSONALIZADA_POR_MAPPING):
+        if nombre is None:
+            return _uso_bajo(permisos, PRIVILEGIO_MAPEO_USAR, RUTA_MAPEO_CPU)
+        simple = nombre.removeprefix(PREFIJO_CPU_PERSONALIZADA)
+        return tiene_privilegio(permisos.rutas, f"{RUTA_MAPEO_CPU}/{simple}", PRIVILEGIO_MAPEO_USAR)
+    return tiene_privilegio(permisos.rutas, "/vms", "VM.Config.CPU") and tiene_privilegio(
+        permisos.rutas, "/nodes", "Sys.Audit"
+    )
 
 
 def privilegios_agente(caps: Capacidades) -> tuple[str, ...]:

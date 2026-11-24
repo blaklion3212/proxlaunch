@@ -146,7 +146,7 @@ def texto_sin_vnets(version_con_sdn_incluido: bool) -> str:
         )
     return QCoreApplication.translate(
         "TextosC",
-        "Esta versión de Proxmox (8.0) solo tiene redes virtuales si el administrador instaló "
+        "Esta versión de Proxmox (8.4) solo tiene redes virtuales si el administrador instaló "
         "el paquete «libpve-network-perl» en cada nodo. Si no lo tienes, puedes seguir usando "
         "los bridges.",
     )

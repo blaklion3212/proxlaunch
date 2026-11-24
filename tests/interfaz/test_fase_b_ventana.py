@@ -279,9 +279,9 @@ def conectar_con(qtbot, entorno, version, *, forzada=False) -> None:
 
 @pytest.mark.parametrize(
     ("version", "disponible"),
-    [((8, 0), False), ((8, 3), False), ((8, 4), True), ((9, 0), True), ((9, 2), True)],
+    [((8, 4), True), ((9, 0), True), ((9, 2), True)],  # la mínima de 0.9.0 es 8.4 (DT-D3)
 )
-def test_rf_b0_4_el_asistente_de_plantillas_solo_esta_disponible_desde_proxmox_8_4(
+def test_rf_b0_4_el_asistente_de_plantillas_esta_disponible_en_toda_version_soportada(
     qtbot, entorno, version, disponible
 ):
     conectar_con(qtbot, entorno, version)

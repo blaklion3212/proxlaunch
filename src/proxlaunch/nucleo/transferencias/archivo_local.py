@@ -49,6 +49,9 @@ MOTIVO_VACIO = "vacio"
 # Avisos (códigos; los textos los pone la interfaz).
 AVISO_NO_ISO9660 = "no_iso9660"
 AVISO_RAW_SIN_VERIFICAR = "raw_sin_verificar"
+# V-D25c: no se puede comprobar si la imagen depende de otra (raw, vmdk, cabecera corta).
+AVISO_BACKING_SIN_COMPROBAR = "backing_sin_comprobar"
+AVISO_SNAPSHOTS = "snapshots"  # qcow2 con instantáneas internas (V-D26); no impide subirlo
 
 
 class TipoArchivoLocal(StrEnum):
@@ -78,6 +81,8 @@ class InspeccionArchivo:
     extension_propuesta: str
     motivo_rechazo: str | None
     avisos: tuple[str, ...]
+    # Fase D (0.9): ``nb_snapshots`` de la cabecera qcow2; None = no aplica o no es legible
+    instantaneas: int | None = None
 
 
 _EXTENSION_POR_TIPO: dict[TipoArchivoLocal, str] = {
@@ -96,6 +101,13 @@ def _u32_be(datos: bytes, desde: int) -> int:
 
 def _u64_be(datos: bytes, desde: int) -> int:
     return int(struct.unpack_from(">Q", datos, desde)[0])
+
+
+def instantaneas_qcow2(cabecera: bytes) -> int | None:
+    """``nb_snapshots`` (u32 en el byte 60) de una cabecera qcow2; ``None`` si no se puede leer."""
+    if not cabecera.startswith(_FIRMA_QCOW2) or len(cabecera) < 64:
+        return None
+    return _u32_be(cabecera, 60)
 
 
 def _interpretar_qcow2(
@@ -117,7 +129,9 @@ def _interpretar_qcow2(
     virtual = _u64_be(cabecera, 24)
     if virtual == 0:
         return tipo, None, MOTIVO_TRUNCADO, ()
-    return tipo, virtual, None, ()
+    # Las instantáneas internas no se importan (solo el estado actual): aviso, no rechazo (V-D26).
+    avisos = (AVISO_SNAPSHOTS,) if (instantaneas_qcow2(cabecera) or 0) > 0 else ()
+    return tipo, virtual, None, avisos
 
 
 def _interpretar_vmdk(
@@ -165,7 +179,12 @@ def interpretar_cabecera(
         return TipoArchivoLocal.OVA, None, MOTIVO_OVA, ()
     if tamano <= 0:
         return TipoArchivoLocal.DESCONOCIDO, None, MOTIVO_VACIO, ()
-    return TipoArchivoLocal.RAW, tamano, None, (AVISO_RAW_SIN_VERIFICAR,)
+    return (
+        TipoArchivoLocal.RAW,
+        tamano,
+        None,
+        (AVISO_RAW_SIN_VERIFICAR,),
+    )
 
 
 # --- Apertura segura -------------------------------------------------------------------
@@ -300,6 +319,18 @@ def _extension_propuesta(ruta: Path, tipo: TipoArchivoLocal, contenido: Contenid
     return _EXTENSION_POR_TIPO[tipo] or ruta.suffix.lower()
 
 
+def _avisa_backing_sin_comprobar(tipo: TipoArchivoLocal, cabecera: bytes) -> bool:
+    """V-D25c (CA-D1.8.5 y CA-D1.8.7): raw, vmdk o qcow2 con la cabecera demasiado corta para
+    mirar el backing file y el bit data-file."""
+    if tipo in (TipoArchivoLocal.RAW, TipoArchivoLocal.VMDK):
+        return True
+    if tipo != TipoArchivoLocal.QCOW2:
+        return False
+    return len(cabecera) < 72 or (
+        len(cabecera) >= 8 and _u32_be(cabecera, 4) == 3 and len(cabecera) < 80
+    )
+
+
 def inspeccionar(ruta: Path, contenido: Contenido) -> InspeccionArchivo:
     """Abre, comprueba y lee la cabecera del archivo local (E/S mínima, solo lectura).
 
@@ -327,6 +358,12 @@ def inspeccionar(ruta: Path, contenido: Contenido) -> InspeccionArchivo:
     if contenido != Contenido.ISO and sufijo in (".ova", ".ovf"):
         return InspeccionArchivo(nombre, tamano, TipoArchivoLocal.OVA, None, sufijo, MOTIVO_OVA, ())
     tipo, virtual, motivo, avisos = interpretar_cabecera(cabecera, firma, tamano, contenido)
+    if (
+        contenido != Contenido.ISO
+        and motivo is None
+        and _avisa_backing_sin_comprobar(tipo, cabecera)
+    ):
+        avisos = (*avisos, AVISO_BACKING_SIN_COMPROBAR)
     return InspeccionArchivo(
         nombre_local=nombre,
         tamano_bytes=tamano,
@@ -335,6 +372,7 @@ def inspeccionar(ruta: Path, contenido: Contenido) -> InspeccionArchivo:
         extension_propuesta=_extension_propuesta(ruta, tipo, contenido),
         motivo_rechazo=motivo,
         avisos=avisos,
+        instantaneas=instantaneas_qcow2(cabecera) if tipo == TipoArchivoLocal.QCOW2 else None,
     )
 
 

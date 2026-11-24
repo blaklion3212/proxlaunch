@@ -24,9 +24,10 @@ CODIGOS_GLOBALES = frozenset(
 )
 PRIVILEGIO_CREAR = "VM.Allocate"
 # Pasos B y C (``params["ajuste"]``) cuyo fallo deja la MV PARCIAL sin pausar el lote, ni siquiera
-# por repetición (arquitectura §9.7, QA-M2, DT-C8): cloud-init, contraseña, red del clon y firewall.
+# por repetición (arquitectura §9.7, QA-M2, DT-C8): cloud-init, contraseña, red del clon, firewall
+# y, desde 0.9 (DT-D11), el hardware del clúster del clon.
 AJUSTES_SIN_PAUSA = frozenset(
-    {"cloudinit", "contrasena", "red", "firewall_opciones", "firewall_regla"}
+    {"cloudinit", "contrasena", "red", "firewall_opciones", "firewall_regla", "hardware"}
 )
 
 

@@ -19,7 +19,11 @@ from proxlaunch.nucleo.modelos.catalogo import Contenido, PermisosEfectivos
 from proxlaunch.nucleo.modelos.inventario import Inventario
 from proxlaunch.nucleo.modelos.vm import OrigenSO
 from proxlaunch.nucleo.origen.permisos import (
+    RUTA_MAPEO_CPU,
+    RUTA_MAPEO_PCI,
     RUTA_ZONA_GENERICA,
+    estado_algun_mapeo,
+    estado_cpu_personalizada,
     estado_privilegio,
     estado_sdn_fuera_de_local,
 )
@@ -43,6 +47,10 @@ class Via(StrEnum):
     FIREWALL = "firewall"  # VM.Config.Network en /vms
     FIREWALL_GENERAL = "firewall_general"  # Sys.Audit en /
     RED_CLON = "red_clon"  # VM.Config.Network en /vms
+    # Fase D (0.9): filas de «Qué puedo hacer» (RF-D5.2). Siempre calculadas; no son de origen.
+    ARQUITECTURA = "arquitectura"  # Sys.Audit en /nodes (9.2: siempre SI por host-arch)
+    MAPEOS = "mapeos"  # Mapping.Use en alguna /mapping/{pci,usb}[/id]; None -> CON_AVISO
+    CPU_PERSONALIZADA = "cpu_personalizada"  # Mapping.Use en /mapping/cpu (9.2); antes Sys.Audit
 
 
 class Disponibilidad(StrEnum):
@@ -102,6 +110,9 @@ _AYUDA = {
     Via.FIREWALL: "permisos_rol_ampliado",
     Via.FIREWALL_GENERAL: "permisos_rol_ampliado",
     Via.RED_CLON: "permisos_rol_ampliado",
+    Via.ARQUITECTURA: "permisos_rol_ampliado",
+    Via.MAPEOS: "permisos_rol_ampliado",
+    Via.CPU_PERSONALIZADA: "permisos_rol_ampliado",
 }
 
 
@@ -110,8 +121,8 @@ def _version(caps: Capacidades) -> str:
 
 
 def calcular_capacidades(caps: Capacidades, inv: Inventario, nodo: str | None) -> CapacidadesOrigen:
-    """Estado de las vías (nueve de origen y cinco de la fase C) para la versión efectiva, el
-    inventario y el nodo (o todo el servidor si ``nodo`` es ``None``)."""
+    """Estado de las vías (nueve de origen, cinco de la fase C y tres de la D) para la versión
+    efectiva, el inventario y el nodo (o todo el servidor si ``nodo`` es ``None``)."""
     permisos: PermisosEfectivos | None = None if inv.catalogo is None else inv.catalogo.permisos
     nodos = [n.nombre for n in inv.topologia.nodos] if nodo is None else [nodo]
     vias: dict[Via, EstadoVia] = {}
@@ -165,37 +176,23 @@ def calcular_capacidades(caps: Capacidades, inv: Inventario, nodo: str | None) -
 
     # --- Descarga por URL (ISO e imagen) ---
     def red_ok(via: Via) -> bool:
-        if caps.tiene(Funcion.DESCARGAR_URL):
-            rutas = [f"/nodes/{n}" for n in nodos]
-            if permisos is None:
-                poner(via, Disponibilidad.CON_AVISO, motivo="permisos_desconocidos")
-                return False
-            if any(
-                estado_privilegio(permisos, "Sys.AccessNetwork", r)
-                or estado_privilegio(permisos, "Sys.Modify", "/")
-                for r in rutas
-            ):
-                return True
-            poner(
-                via,
-                Disponibilidad.NO,
-                CodigoError.DESCARGA_URL_SIN_PERMISO,
-                version=_version(caps),
-                nodo=nodos[0] if nodos else "",
-                privilegio="Sys.AccessNetwork",
-            )
-            return False
+        rutas = [f"/nodes/{n}" for n in nodos]
         if permisos is None:
             poner(via, Disponibilidad.CON_AVISO, motivo="permisos_desconocidos")
             return False
-        if estado_privilegio(permisos, "Sys.Modify", "/"):
+        if any(
+            estado_privilegio(permisos, "Sys.AccessNetwork", r)
+            or estado_privilegio(permisos, "Sys.Modify", "/")
+            for r in rutas
+        ):
             return True
         poner(
             via,
             Disponibilidad.NO,
             CodigoError.DESCARGA_URL_SIN_PERMISO,
             version=_version(caps),
-            privilegio="Sys.Modify",
+            nodo=nodos[0] if nodos else "",
+            privilegio="Sys.AccessNetwork",
         )
         return False
 
@@ -228,18 +225,14 @@ def calcular_capacidades(caps: Capacidades, inv: Inventario, nodo: str | None) -
         }
         return ",".join(sorted(tipos))
 
-    def base_importacion(via: Via, funcion: Funcion) -> bool:
-        if not caps.tiene(funcion):
-            poner(via, Disponibilidad.NO, CodigoError.IMPORTAR_VERSION_NO_SOPORTADA,
-                  version=_version(caps))  # fmt: skip
-            return False
+    def base_importacion(via: Via) -> bool:
         if not imp:
             poner(via, Disponibilidad.NO, CodigoError.IMPORTAR_SIN_STORAGE_IMPORT,
                   candidatos=candidatos_posibles())  # fmt: skip
             return False
         return True
 
-    if base_importacion(Via.IMPORTAR, Funcion.IMPORTAR_DISCO):
+    if base_importacion(Via.IMPORTAR):
         lectura_ok = permisos is None or any(
             estado_privilegio(permisos, p, r)
             for r in rutas_imp
@@ -258,7 +251,7 @@ def calcular_capacidades(caps: Capacidades, inv: Inventario, nodo: str | None) -
             )
         else:
             poner(Via.IMPORTAR, Disponibilidad.SI)
-    if base_importacion(Via.SUBIR_IMAGEN, Funcion.SUBIR_IMAGEN_DISCO) and con_privilegio(
+    if base_importacion(Via.SUBIR_IMAGEN) and con_privilegio(
         Via.SUBIR_IMAGEN,
         "Datastore.AllocateTemplate",
         rutas_imp,
@@ -266,7 +259,7 @@ def calcular_capacidades(caps: Capacidades, inv: Inventario, nodo: str | None) -
     ):
         listo(Via.SUBIR_IMAGEN)
     if (
-        base_importacion(Via.DESCARGAR_IMAGEN, Funcion.SUBIR_IMAGEN_DISCO)
+        base_importacion(Via.DESCARGAR_IMAGEN)
         and red_ok(Via.DESCARGAR_IMAGEN)
         and estado_privilegio(permisos, "Datastore.AllocateTemplate", rutas_imp[0]) is not False
     ):
@@ -369,4 +362,37 @@ def calcular_capacidades(caps: Capacidades, inv: Inventario, nodo: str | None) -
         )
     if not sin_version(Via.RED_CLON, Funcion.REESCRIBIR_RED_CLON):
         con_privilegios(Via.RED_CLON, "/vms", ("VM.Config.Network",))
+
+    # --- Fase D (0.9): arquitectura, mapeos y CPU personalizadas (RF-D5.2) ---
+    sys_audit_nodos = estado_privilegio(permisos, "Sys.Audit", "/nodes")
+    if caps.tiene(Funcion.HOST_ARCH_EN_RESOURCES) or sys_audit_nodos:
+        poner(Via.ARQUITECTURA, Disponibilidad.SI)
+    elif sys_audit_nodos is None:
+        poner(Via.ARQUITECTURA, Disponibilidad.CON_AVISO, motivo="permisos_desconocidos")
+    else:
+        falta_permiso(Via.ARQUITECTURA, "Sys.Audit", "/nodes", CodigoError.PERMISO_INSUFICIENTE)
+    uso_mapeos = estado_algun_mapeo(permisos)
+    if uso_mapeos:
+        poner(Via.MAPEOS, Disponibilidad.SI)
+    elif uso_mapeos is None:
+        poner(Via.MAPEOS, Disponibilidad.CON_AVISO, motivo="permisos_desconocidos")
+    else:
+        falta_permiso(Via.MAPEOS, "Mapping.Use", RUTA_MAPEO_PCI, CodigoError.PERMISO_INSUFICIENTE)
+    uso_cpu = estado_cpu_personalizada(permisos, caps)
+    if uso_cpu:
+        poner(Via.CPU_PERSONALIZADA, Disponibilidad.SI)
+    elif uso_cpu is None:
+        poner(Via.CPU_PERSONALIZADA, Disponibilidad.CON_AVISO, motivo="permisos_desconocidos")
+    elif caps.tiene(Funcion.CPU_PERSONALIZADA_POR_MAPPING):
+        falta_permiso(
+            Via.CPU_PERSONALIZADA, "Mapping.Use", RUTA_MAPEO_CPU, CodigoError.PERMISO_INSUFICIENTE
+        )
+    else:
+        falta = (
+            "Sys.Audit"
+            if not estado_privilegio(permisos, "Sys.Audit", "/nodes")
+            else "VM.Config.CPU"
+        )
+        ruta = "/nodes" if falta == "Sys.Audit" else "/vms"
+        falta_permiso(Via.CPU_PERSONALIZADA, falta, ruta, CodigoError.PERMISO_INSUFICIENTE)
     return CapacidadesOrigen(caps.version, caps.forzada, nodo, vias)

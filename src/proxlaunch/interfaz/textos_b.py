@@ -892,6 +892,8 @@ def texto_problema_b2(p: Problema) -> str | None:
     prm = p.params
     cod = p.codigo
     if cod == "V-B01":
+        # Sin productor desde 0.9 (la mínima es 8.4 y el asistente funciona en toda versión
+        # admitida); se conserva el texto por compatibilidad con lotes y pruebas antiguos.
         return _fmt(
             QCoreApplication.translate(
                 "TextosB",

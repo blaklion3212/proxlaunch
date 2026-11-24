@@ -231,7 +231,11 @@ def test_nextid_con_vmid_ocupado_da_400_y_vmid_ocupado(sesion_plc, vms):
         sesion_plc.cliente.proximo_vmid(vmid)
     assert e.value.codigo == CodigoError.VMID_OCUPADO
     assert e.value.params["vmid"] == str(vmid)
-    assert f"VM {vmid} already exists" in e.value.detalle_tecnico
+    # PVE 9.2.32+: "guest ID N is already in use"; antes: "VM N already exists".
+    assert (
+        f"guest ID {vmid} is already in use" in e.value.detalle_tecnico
+        or f"VM {vmid} already exists" in e.value.detalle_tecnico
+    )
 
 
 def test_post_directo_con_vmid_ocupado_da_vmid_ocupado_con_nodo(sesion_plc, vms):
@@ -252,7 +256,11 @@ def test_vmid_ocupado_por_contenedor_nextid_dice_vm(sesion_plc, ct_9050):
     with pytest.raises(ErrorProxLaunch) as e:
         sesion_plc.cliente.proximo_vmid(ct_9050)
     assert e.value.codigo == CodigoError.VMID_OCUPADO
-    assert f"VM {ct_9050} already exists" in e.value.detalle_tecnico
+    # PVE 9.2.32+: "guest ID N is already in use"; antes: "VM N already exists".
+    assert (
+        f"guest ID {ct_9050} is already in use" in e.value.detalle_tecnico
+        or f"VM {ct_9050} already exists" in e.value.detalle_tecnico
+    )
 
 
 def test_vmid_ocupado_por_contenedor_post_dice_ct(sesion_plc, ct_9050):
@@ -278,9 +286,9 @@ def test_servicio_crear_con_vmid_de_contenedor_da_vmid_ocupado(sesion_plc, ct_90
 
 @pytest.fixture
 def storage_lvm_grueso() -> Iterator[str]:
-    """Storage LVM no thin sobre el VG `lab` (con ~3 GiB libres), solo para esta prueba."""
+    """Storage LVM no thin sobre el VG `labvg` (con ~3 GiB libres), solo para esta prueba."""
     lab.ssh("sudo pvesm remove lab-lvm", comprobar=False)
-    lab.ssh("sudo pvesm add lvm lab-lvm --vgname lab --content images")
+    lab.ssh(f"sudo pvesm add lvm lab-lvm --vgname {lab.VG_LAB} --content images")
     try:
         yield "lab-lvm"
     finally:
@@ -315,9 +323,9 @@ def test_sin_espacio_real_con_inventario_desactualizado(sesion_plc, storage_lvm_
     r, _, _, _ = _crear(sesion_plc, cfg, inv)
     assert r.desenlace == Desenlace.ERROR, r
     assert r.error.codigo == CodigoError.SIN_ESPACIO
-    # Proxmox habla del grupo de volúmenes `lab`; ProxLaunch lo traduce al id del storage.
+    # Proxmox habla del grupo de volúmenes `labvg`; ProxLaunch lo traduce al id del storage.
     assert r.error.params["storage"] == storage_lvm_grueso
-    assert r.error.params["vg"] == "lab"
+    assert r.error.params["vg"] == lab.VG_LAB
     assert "insufficient free space" in r.error.detalle_tecnico
     assert r.upid is not None
     assert ServicioCreacion(sesion_plc, RelojReal()).existe_vm(cfg) is False  # no quedó nada

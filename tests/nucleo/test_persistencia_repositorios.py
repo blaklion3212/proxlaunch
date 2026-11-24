@@ -344,8 +344,28 @@ def test_ca24_4_el_modo_se_guarda_y_se_restaura(modo, tmp_path):
 def test_ca26_2_la_version_forzada_se_conserva(tmp_path):
     """CA-26.2."""
     ruta = tmp_path / "preferencias.json"
-    RepositorioPreferencias(ruta).guardar(Preferencias(version_forzada=(8, 2)))
-    assert RepositorioPreferencias(ruta).cargar().version_forzada == (8, 2)
+    RepositorioPreferencias(ruta).guardar(Preferencias(version_forzada=(9, 0)))
+    repo = RepositorioPreferencias(ruta)
+    assert repo.cargar().version_forzada == (9, 0)
+    assert repo.version_forzada_descartada is None
+
+
+@pytest.mark.parametrize("texto", ["8.0", "8.2", "8.3", "7.4"])
+def test_ca_d2_3_una_version_forzada_anterior_a_la_minima_se_descarta_y_se_avisa(texto, tmp_path):
+    """V-D03: la mínima es 8.4; se descarta y queda el texto para avisar una vez."""
+    ruta = tmp_path / "preferencias.json"
+    ruta.write_text(json.dumps({"version_forzada": texto}), encoding="utf-8")
+    repo = RepositorioPreferencias(ruta)
+    assert repo.cargar().version_forzada is None
+    assert repo.version_forzada_descartada == texto
+
+
+def test_ca_d2_3_la_minima_exacta_no_se_descarta(tmp_path):
+    ruta = tmp_path / "preferencias.json"
+    ruta.write_text(json.dumps({"version_forzada": "8.4"}), encoding="utf-8")
+    repo = RepositorioPreferencias(ruta)
+    assert repo.cargar().version_forzada == (8, 4)
+    assert repo.version_forzada_descartada is None
 
 
 @pytest.mark.parametrize("valor", ["abc", "8", "8.2.1", "8.x", 8.2, "", None, [8, 2]])

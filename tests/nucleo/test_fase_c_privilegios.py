@@ -241,8 +241,8 @@ def test_dc_1_las_cuatro_funciones_de_c_se_piden_desde_8_0(funcion):
     assert TABLA[funcion] == (8, 0)
 
 
-@pytest.mark.parametrize("version", [(8, 0), (9, 2)])
-def test_ca_c0_4_1_con_8_0_forzada_y_9_2_las_cuatro_funciones_estan_disponibles(version):
+@pytest.mark.parametrize("version", [(8, 4), (9, 2)])
+def test_ca_c0_4_1_con_8_4_forzada_y_9_2_las_cuatro_funciones_estan_disponibles(version):
     c = capacidades_para(interpretar_version("9.2.1")[0], version)
     assert c.forzada and c.version == version
     assert all(c.tiene(f) for f in FUNCIONES_C)
@@ -256,10 +256,9 @@ def test_ca_c0_4_1_con_8_0_y_9_2_la_disponibilidad_de_las_opciones_de_versionado
             assert estados[opcion].disponibilidad == Disponibilidad.SI, (v, opcion)
 
 
-def test_ca_c0_4_1_el_sdn_incluido_de_serie_se_elige_solo_con_caps():
-    assert TABLA[Funcion.SDN_INCLUIDO] == (8, 1)
-    assert not caps((8, 0)).tiene(Funcion.SDN_INCLUIDO)
-    assert caps((8, 1)).tiene(Funcion.SDN_INCLUIDO) and caps((9, 2)).tiene(Funcion.SDN_INCLUIDO)
+def test_ca_c0_4_1_el_sdn_incluido_de_serie_ya_no_es_una_bandera():
+    """DT-D3: con la mínima 8.4 el SDN viene siempre instalado; la bandera se retiró."""
+    assert not hasattr(Funcion, "SDN_INCLUIDO")
 
 
 def test_ca_c0_4_1_la_comparacion_de_versiones_de_la_fase_c_solo_vive_en_capacidades_py():

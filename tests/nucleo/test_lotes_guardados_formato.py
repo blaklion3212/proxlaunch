@@ -571,10 +571,10 @@ def test_un_archivo_de_perfiles_abierto_como_lote_da_e_m02_con_la_pista():
 
 def test_version_futura_es_e_m03_sin_lectura_parcial_y_con_version_invalida_e_m02():
     """CA-G06.2 / CA-X01.4: aunque el resto del archivo sea válido."""
-    # Fase C (CA-C6.1.5): la 5 ya se lee; la futura es la 6.
-    e = _error_lote(archivo_lote(version_formato=6))
+    # Fase D (CA-D6.1.5): la 6 ya se lee; la futura es la 7.
+    e = _error_lote(archivo_lote(version_formato=7))
     assert e.codigo == CodigoError.ARCHIVO_VERSION_FUTURA
-    assert e.params == {"version_archivo": "6", "version_soportada": "5"}
+    assert e.params == {"version_archivo": "7", "version_soportada": "6"}
     for malo in (0, -1, True, "1", 1.0, None):
         assert (
             _error_lote(archivo_lote(version_formato=malo)).codigo

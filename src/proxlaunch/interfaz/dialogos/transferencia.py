@@ -962,7 +962,7 @@ class DialogoSubida(_DialogoTransferencia):
                 nombre=insp.nombre_local, tamano=formatear_bytes(insp.tamano_bytes)
             )
         ]
-        lineas.extend(texto_aviso_archivo_local(a) for a in insp.avisos)
+        lineas.extend(texto_aviso_archivo_local(a, insp.nombre_local) for a in insp.avisos)
         self.etiqueta_info.setText("\n".join(lineas))
         self.etiqueta_info.show()
         if insp.motivo_rechazo is not None:

@@ -4,9 +4,16 @@ from __future__ import annotations
 
 import dataclasses
 import logging
-from collections.abc import Collection
+from collections.abc import Collection, Mapping
 from concurrent.futures import ThreadPoolExecutor
 
+from proxlaunch.nucleo.arquitectura.deteccion import detectar_nodo, normalizar
+from proxlaunch.nucleo.arquitectura.modelos import (
+    Arquitectura,
+    ArquitecturaNodo,
+    FuenteArquitectura,
+)
+from proxlaunch.nucleo.capacidades import Funcion
 from proxlaunch.nucleo.errores import CodigoError, ErrorProxLaunch
 from proxlaunch.nucleo.modelos.catalogo import CatalogoServidor
 from proxlaunch.nucleo.modelos.inventario import (
@@ -76,13 +83,29 @@ def descubrir_nodo_c(
 
     Mismas peticiones que ``descubrir_nodo_completo`` pero con la lista de redes leída UNA vez
     (todas las interfaces, que además sirven de filtro para las VNets) y la consulta nueva
-    ``?type=any_bridge``, tolerante a errores.
+    ``?type=any_bridge``, tolerante a errores. No detecta la arquitectura: para eso,
+    ``descubrir_nodo_d``.
     """
     todos = list(sesion.cliente.storages(nodo))
     interfaces = list(sesion.cliente.bridges(nodo))
     bridges = [b for b in interfaces if b.tipo in TIPOS_BRIDGE]
     redes = descubrir_redes_sdn(sesion, nodo, {b.nombre for b in interfaces})
     return [s for s in todos if "images" in s.contenido], todos, bridges, redes
+
+
+def descubrir_nodo_d(
+    sesion: Sesion, nodo: str, *, recursos: Mapping[str, str | None] | None = None
+) -> tuple[list[Storage], list[Storage], list[Bridge], RedesNodo, ArquitecturaNodo | None]:
+    """Como ``descubrir_nodo_c`` más la arquitectura del nodo (D2, DT-D6), en el mismo hilo.
+
+    El 5.º elemento es ``None`` si ``recursos`` (``host-arch``, 9.2) ya la trae para este nodo; si
+    no, se lee el estado del nodo. Nunca lanza por la arquitectura (fallo → ``DESCONOCIDA``).
+    """
+    con_images, todos, bridges, redes = descubrir_nodo_c(sesion, nodo)
+    arquitectura: ArquitecturaNodo | None = None
+    if recursos is None or normalizar(recursos.get(nodo)) == Arquitectura.DESCONOCIDA:
+        arquitectura = detectar_nodo(sesion.cliente, nodo, recursos=recursos)
+    return con_images, todos, bridges, redes, arquitectura
 
 
 def descubrir_nodo(sesion: Sesion, nodo: str) -> tuple[list[Storage], list[Bridge]]:
@@ -112,6 +135,17 @@ def _topologia(sesion: Sesion, nodos: list[Nodo]) -> Topologia:
     )
 
 
+def _leer_recursos_arquitectura(sesion: Sesion) -> dict[str, str | None] | None:
+    """``host-arch`` de todos los nodos con UNA lectura (solo 9.2); ``None`` si no hay o falla."""
+    if not sesion.capacidades.tiene(Funcion.HOST_ARCH_EN_RESOURCES):
+        return None
+    try:
+        return sesion.cliente.recursos_nodos()
+    except Exception as e:  # lectura opcional: nunca rompe el descubrimiento (DT-D6)
+        _log.warning("Sin host-arch en /cluster/resources: %s", type(e).__name__)
+        return None
+
+
 def descubrir(sesion: Sesion) -> Inventario:
     """Descubre nodos, storages, bridges y el próximo VMID (RF-11).
 
@@ -132,15 +166,18 @@ def descubrir(sesion: Sesion) -> Inventario:
     errores: dict[str, ErrorProxLaunch] = {}
     redes_sdn: dict[str, tuple[RedVirtual, ...]] = {}
     errores_sdn: dict[str, ErrorProxLaunch] = {}
+    arquitecturas: dict[str, ArquitecturaNodo] = {}
+    recursos = _leer_recursos_arquitectura(sesion) if consultables else None
 
     if consultables:
         with ThreadPoolExecutor(max_workers=min(len(consultables), MAX_HILOS)) as pool:
             futuros = {
-                nombre: pool.submit(descubrir_nodo_c, sesion, nombre) for nombre in consultables
+                nombre: pool.submit(descubrir_nodo_d, sesion, nombre, recursos=recursos)
+                for nombre in consultables
             }
             for nombre, futuro in futuros.items():
                 try:
-                    st, todos, br, redes = futuro.result()
+                    st, todos, br, redes, arq = futuro.result()
                 except ErrorProxLaunch as e:
                     if e.codigo not in _CODIGOS_DE_NODO:
                         # Un error de sesión o de permisos no es un nodo caído: se propaga.
@@ -151,10 +188,24 @@ def descubrir(sesion: Sesion) -> Inventario:
                     storages[nombre] = tuple(st)
                     storages_todos[nombre] = tuple(todos)
                     bridges[nombre] = tuple(br)
+                    if arq is not None:
+                        arquitecturas[nombre] = arq
                     if redes.error is not None:
                         errores_sdn[nombre] = redes.error
                     else:
                         redes_sdn[nombre] = redes.vnets
+
+    for nombre in consultables:
+        if nombre in errores or nombre in arquitecturas:
+            continue
+        # Cubierto por ``host-arch`` (sin llamada por nodo); ``detectar_nodo`` no lanza.
+        arquitecturas[nombre] = detectar_nodo(sesion.cliente, nombre, recursos=recursos)
+    for n in topologia.nodos:
+        if n.nombre not in arquitecturas:
+            # Fuera de línea o con error: sin llamadas, ``DESCONOCIDA`` con V-D04 (CA-D2.5.6).
+            arquitecturas[n.nombre] = ArquitecturaNodo(
+                Arquitectura.DESCONOCIDA, FuenteArquitectura.NINGUNA, "no_responde"
+            )
 
     if errores and len(errores) == len(consultables):
         permiso = [e for e in errores.values() if e.codigo == CodigoError.PERMISO_INSUFICIENTE]
@@ -187,6 +238,8 @@ def descubrir(sesion: Sesion) -> Inventario:
         redes_sdn=redes_sdn,
         errores_sdn=errores_sdn,
         storages_todos=storages_todos,
+        arquitecturas=arquitecturas,
+        recursos_arquitectura=recursos,
         catalogo=CatalogoServidor(
             permisos=permisos,
             pools=leer_pools(sesion.cliente, permisos),

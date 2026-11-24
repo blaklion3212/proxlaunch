@@ -68,7 +68,8 @@ class CodigoError(StrEnum):
     LOTE_NO_ENCAJA = "lote_no_encaja"  # E-M15
     PERFIL_RECHAZADO = "perfil_rechazado"  # interno: regla V-M01/V-M03/V-M05 (sin E-M propio)
     # --- Origen del sistema operativo (MVP 4, docs/arquitectura/mvp4.md §8) ---
-    IMPORTAR_VERSION_NO_SOPORTADA = "importar_version_no_soportada"  # E-O01
+    # E-O01: obsoleto desde 0.9 (la mínima 8.4 ya incluye importar); se conserva sin productor
+    IMPORTAR_VERSION_NO_SOPORTADA = "importar_version_no_soportada"
     IMPORTAR_SIN_STORAGE_IMPORT = "importar_sin_storage_import"  # E-O02
     DESCARGA_URL_SIN_PERMISO = "descarga_url_sin_permiso"  # E-O03
     STORAGE_RECORDADO_NO_DISPONIBLE = "storage_recordado_no_disponible"  # E-O04
@@ -129,6 +130,12 @@ class CodigoError(StrEnum):
     RED_CONFIG_CAMBIADA = "red_config_cambiada"  # digest distinto dos veces
     RED_SIN_DIRECCIONES = "red_sin_direcciones"  # IPAM: «can't find any free ip in zone…»
     FIREWALL_GRUPO_INEXISTENTE = "firewall_grupo_inexistente"  # el grupo desapareció
+    # --- Fase D (0.9): XML de libvirt, hardware del clúster y CPU personalizada ---
+    # V-D20/21/22/23; params["motivo"]: tamano|doctype|formato|codificacion|limites|no_dominio|
+    # no_kvm, ["tamano"], ["tipo"]
+    XML_NO_VALIDO = "xml_no_valido"
+    MAPEO_NO_DISPONIBLE = "mapeo_no_disponible"  # RF-D3.8; params: mapeo, nodo, motivo
+    CPU_PERSONALIZADA_RECHAZADA = "cpu_personalizada_rechazada"  # 403/400 de cpu=custom-*
 
 
 class ErrorProxLaunch(Exception):

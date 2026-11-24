@@ -1,0 +1,3 @@
+<?xml version="1.0"?>
+<!ENTITY xxe SYSTEM "file:///etc/passwd">
+<domain type='kvm'><name>&xxe;</name></domain>

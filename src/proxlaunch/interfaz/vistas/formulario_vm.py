@@ -11,7 +11,7 @@ from __future__ import annotations
 import math
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
-from typing import cast
+from typing import TYPE_CHECKING, cast
 
 from PySide6.QtCore import Signal
 from PySide6.QtGui import QStandardItemModel
@@ -36,6 +36,18 @@ from proxlaunch.interfaz.textos import (
     texto_opcion_restablecida,
     texto_problema,
 )
+from proxlaunch.interfaz.textos_d import (
+    etiqueta_experimental_arm,
+    texto_arquitectura,
+    texto_arquitectura_detectada,
+    texto_cambios_arquitectura,
+    texto_cpu_arm_sin_listar,
+    texto_cpus_no_leidas,
+    texto_cpus_ocultas,
+    texto_grupo_cpu_personalizada,
+    texto_linea_experimental_arm,
+    texto_nodo_con_arquitectura,
+)
 from proxlaunch.interfaz.vistas.campos import (
     FilaCampo,
     etiqueta,
@@ -44,10 +56,17 @@ from proxlaunch.interfaz.vistas.campos import (
 )
 from proxlaunch.interfaz.vistas.seccion_cloudinit import SeccionCloudInit
 from proxlaunch.interfaz.vistas.seccion_firewall import SeccionFirewall
+from proxlaunch.interfaz.vistas.seccion_hardware_cluster import SeccionHardwareCluster
 from proxlaunch.interfaz.vistas.seccion_red_clon import SeccionRedClon
 from proxlaunch.interfaz.vistas.selector_origen import SelectorOrigen
 from proxlaunch.interfaz.vistas.tabla_discos import TablaDiscos, entero_o_cero, texto_ausente
 from proxlaunch.interfaz.vistas.tabla_redes import TablaRedes
+from proxlaunch.nucleo.arquitectura.modelos import (
+    Arquitectura,
+    FuenteArquitectura,
+    arquitectura_efectiva,
+)
+from proxlaunch.nucleo.arquitectura.perfil import CambioArquitectura, adaptar_a_arquitectura
 from proxlaunch.nucleo.capacidades import Capacidades, Funcion
 from proxlaunch.nucleo.cloudinit.disponibilidad import OpcionB
 from proxlaunch.nucleo.cloudinit.modelos import (
@@ -57,7 +76,9 @@ from proxlaunch.nucleo.cloudinit.modelos import (
 )
 from proxlaunch.nucleo.errores import ErrorProxLaunch
 from proxlaunch.nucleo.firewall.modelos import LecturaGrupos, ReglaFirewall
-from proxlaunch.nucleo.modelos.catalogo import ListadoSnippets, Plantilla
+from proxlaunch.nucleo.hardware_cluster.modelos import InfoHardwareCluster, ModeloCpu
+from proxlaunch.nucleo.modelos.catalogo import ListadoSnippets, PermisosEfectivos, Plantilla
+from proxlaunch.nucleo.modelos.cpu import TIPOS_CPU_ARM, TIPOS_CPU_X86, es_cpu_personalizada
 from proxlaunch.nucleo.modelos.inventario import Inventario, RedVirtual
 from proxlaunch.nucleo.modelos.origen import DetalleClon, TipoSO
 from proxlaunch.nucleo.modelos.vm import (
@@ -73,6 +94,7 @@ from proxlaunch.nucleo.opciones.modelos import (
     EstadoPools,
     OpcionA,
     OpcionC,
+    OpcionD,
     OpcionesLote,
     PoolsServidor,
 )
@@ -89,7 +111,11 @@ from proxlaunch.nucleo.valores_defecto import (
     storage_disco_por_defecto,
 )
 
-TIPOS_CPU = ("x86-64-v2-AES", "x86-64-v2", "x86-64-v3", "x86-64-v4", "host", "kvm64")
+if TYPE_CHECKING:
+    from proxlaunch.nucleo.libvirt.correspondencias import PropuestaLibvirt
+
+# Tipos de CPU fijos de un servidor x86 (la lista vive en el núcleo, RF-D2.11).
+TIPOS_CPU = TIPOS_CPU_X86
 
 
 def gib_a_mib(texto: str) -> int:
@@ -120,6 +146,16 @@ def entero_opcional(texto: str) -> int | None:
         return -1
 
 
+class _ComboCpu(QComboBox):
+    """Desplegable de CPU que avisa al abrirse: entonces se leen los modelos personalizados."""
+
+    se_abre = Signal()
+
+    def showPopup(self) -> None:
+        self.se_abre.emit()
+        super().showPopup()
+
+
 class _Transparente(QWidget):
     """Contenedor que no pinta el fondo del QSS: se ve el del grupo, como las demás filas."""
 
@@ -145,6 +181,11 @@ class FormularioVM(QWidget):
     # ``establecer_reglas_grupo``.
     pide_grupos_firewall = Signal()  # al activar «Activar el firewall» o pulsar «Recargar»
     pide_reglas_grupo = Signal(str)  # «Ver reglas» (RF-C3.11)
+    # Fase D: la ventana lee en un trabajador y responde con ``establecer_cpus``,
+    # ``establecer_hardware`` y (tras ``arquitectura_forzada``) ``establecer_arquitecturas``.
+    pide_cpus = Signal(object)  # nodos cuyos modelos de CPU hay que leer (RNF-D4)
+    pide_mapeos = Signal()  # reemite el de la sección «Hardware del clúster»
+    arquitectura_forzada = Signal(str, object)  # (nodo, Arquitectura | None) del selector manual
 
     def __init__(self, parent: QWidget | None = None) -> None:
         super().__init__(parent)
@@ -181,6 +222,15 @@ class FormularioVM(QWidget):
         self._estados_c: dict[OpcionC, EstadoOpcion] = {}
         self._caps_c: Capacidades | None = None
         self._nodos_destino: tuple[str, ...] = ()
+        # Fase D: arquitectura del nodo efectivo, valores x86 cambiados al pasar a ARM64 y modelos
+        # de CPU personalizados leídos por nodo (con los nodos ya pedidos y los que fallaron).
+        self._arq = Arquitectura.X86_64
+        self._nodo_sincronizado = ""
+        self._cambios_arq: tuple[CambioArquitectura, ...] = ()
+        self._cpus: dict[str, tuple[ModeloCpu, ...]] = {}
+        self._errores_cpu: dict[str, ErrorProxLaunch] = {}
+        self._cpus_pedidas: set[str] = set()
+        self._estados_d: dict[OpcionD, EstadoOpcion] = {}
 
         capa = QVBoxLayout(self)
         capa.setContentsMargins(0, 0, 0, 0)
@@ -197,6 +247,7 @@ class FormularioVM(QWidget):
         self._caja_red = self._ultima_caja
         self._construir_red_clon(capa)
         self._construir_firewall(capa)
+        self._construir_hardware_cluster(capa)
         self._construir_cloudinit(capa)
         capa.addStretch(1)
         self._aplicar_modo()
@@ -268,7 +319,36 @@ class FormularioVM(QWidget):
         cn.addWidget(self._texto_motivo)
         self.fila_nodo = FilaCampo(self.tr("Nodo destino"), contenedor, "nodo")
         self.fila_nodo.hide()
-        for f in (self.fila_vmid, self.fila_nombre, self.fila_nodo):
+        # Fase D (RF-D2.5): selector manual de la arquitectura del servidor, solo en avanzado.
+        self.combo_arquitectura = QComboBox()
+        self.combo_arquitectura.addItem(self.tr("Detectarla automáticamente"), None)
+        self.combo_arquitectura.addItem(
+            texto_arquitectura(Arquitectura.X86_64), Arquitectura.X86_64
+        )
+        self.combo_arquitectura.addItem(
+            f"{texto_arquitectura(Arquitectura.AARCH64)} ({etiqueta_experimental_arm()})",
+            Arquitectura.AARCH64,
+        )
+        self.combo_arquitectura.setAccessibleName(self.tr("Arquitectura de este servidor"))
+        self._texto_arq = etiqueta("", secundario=True)
+        cont_arq = _Transparente()
+        ca = QVBoxLayout(cont_arq)
+        ca.setContentsMargins(0, 0, 0, 0)
+        ca.addWidget(self.combo_arquitectura)
+        ca.addWidget(self._texto_arq)
+        self.fila_arquitectura = FilaCampo(
+            self.tr("Arquitectura de este servidor"), cont_arq, "arquitectura_servidor"
+        )
+        self._registrar_avanzado(self.fila_arquitectura)
+        # Aviso permanente de ARM64 (experimental) y de los valores adaptados (V-D08).
+        self._aviso_arq = mensaje(aviso=True)
+        for f in (
+            self.fila_vmid,
+            self.fila_nombre,
+            self.fila_nodo,
+            self.fila_arquitectura,
+            self._aviso_arq,
+        ):
             g.addWidget(f)
         self._construir_opciones(g)
         # Conexiones.
@@ -278,6 +358,7 @@ class FormularioVM(QWidget):
         self.nombre.editingFinished.connect(lambda: self._tocar(self.fila_nombre))
         self._radio_auto.toggled.connect(self._al_cambiar_modo_nodo)
         self.combo_nodo.currentIndexChanged.connect(self._al_elegir_nodo)
+        self.combo_arquitectura.currentIndexChanged.connect(self._al_elegir_arquitectura)
 
     def _casilla(self, nombre: str, ayuda_texto: str, texto: str = "") -> QCheckBox:
         """Casilla con nombre accesible y sugerencia (el texto va en la etiqueta de la fila)."""
@@ -546,12 +627,14 @@ class FormularioVM(QWidget):
         self.cores.setMaximumWidth(80)
         self.fila_cores = FilaCampo(self.tr("Núcleos por socket"), self.cores, "cores")
         self._total_cpu = etiqueta("", secundario=True)
-        self.combo_cpu = QComboBox()
+        self.combo_cpu = _ComboCpu()
         for t in TIPOS_CPU:
             self.combo_cpu.addItem(t, t)
         self.fila_cpu = FilaCampo(self.tr("Tipo de CPU"), self.combo_cpu, "tipo_cpu")
         self._aviso_cpu = etiqueta(ayuda_cpu_host(), secundario=True)
         self._aviso_cpu.hide()
+        # Fase D: por qué no hay CPUs personalizadas (permiso, lectura fallida, modelos ocultos).
+        self._aviso_cpu_d = mensaje(aviso=True)
         self.memoria = QLineEdit("2")
         self.memoria.setMaximumWidth(100)
         self.fila_memoria = FilaCampo(self.tr("Memoria (GiB)"), self.memoria, "memoria")
@@ -571,6 +654,7 @@ class FormularioVM(QWidget):
             self._total_cpu,
             self.fila_cpu,
             self._aviso_cpu,
+            self._aviso_cpu_d,
             self.fila_memoria,
             self.fila_balloon,
             self.fila_balloon_min,
@@ -578,6 +662,7 @@ class FormularioVM(QWidget):
             g.addWidget(f)
         self._registrar_avanzado(self.fila_cpu)
         self._registrar_avanzado(self._aviso_cpu, lambda: self.combo_cpu.currentData() == "host")
+        self._registrar_avanzado(self._aviso_cpu_d, lambda: bool(self._aviso_cpu_d.text()))
         self._registrar_avanzado(self.fila_balloon)
         self._registrar_avanzado(
             self.fila_balloon_min, lambda: self.combo_balloon.currentData() is True
@@ -586,6 +671,7 @@ class FormularioVM(QWidget):
         self.cores.textEdited.connect(lambda _t: self._al_cambiar_cpu(fila=self.fila_cores))
         self.cores.editingFinished.connect(lambda: self._tocar(self.fila_cores))
         self.combo_cpu.currentIndexChanged.connect(self._al_cambiar_tipo_cpu)
+        self.combo_cpu.se_abre.connect(self._pedir_cpus)
         self.memoria.textEdited.connect(lambda _t: self._al_editar(self.fila_memoria))
         self.memoria.editingFinished.connect(lambda: self._tocar(self.fila_memoria))
         self.combo_balloon.currentIndexChanged.connect(self._al_cambiar_balloon)
@@ -611,6 +697,8 @@ class FormularioVM(QWidget):
         self.chk_sin_disco.toggled.connect(self._al_cambiar_sin_disco)
         self.combo_ctrl.currentIndexChanged.connect(self._al_cambiar_controlador)
         self.tabla_discos.cambiado.connect(self._al_cambiar_tabla)
+        # Al quitar un disco, cada imagen sigue con su disco (no con su posición).
+        self.tabla_discos.disco_quitado.connect(self.selector_origen.al_quitar_disco)
 
     def _construir_red(self, capa: QVBoxLayout) -> None:
         g = self._grupo(self.tr("Red"), capa)
@@ -632,6 +720,13 @@ class FormularioVM(QWidget):
         self.seccion_firewall.cambiado.connect(self._al_editar)
         self.seccion_firewall.pide_grupos.connect(self.pide_grupos_firewall)
         self.seccion_firewall.pide_reglas.connect(self.pide_reglas_grupo)
+
+    def _construir_hardware_cluster(self, capa: QVBoxLayout) -> None:
+        """«Hardware del clúster»: mapeos PCI/USB, plegada y apagada (RF-D3.2)."""
+        self.seccion_hardware = SeccionHardwareCluster()
+        capa.addWidget(self.seccion_hardware)
+        self.seccion_hardware.cambiado.connect(self._al_editar)
+        self.seccion_hardware.pide_mapeos.connect(self.pide_mapeos)
 
     def _construir_cloudinit(self, capa: QVBoxLayout) -> None:
         """«Configuración inicial (cloud-init)»: solo con origen «Clonar plantilla» (RF-B1.2)."""
@@ -668,6 +763,7 @@ class FormularioVM(QWidget):
         primera = self._inv is None or reiniciar
         if reiniciar:
             self.limpiar_secretos()  # otro servidor: la contraseña no se arrastra
+            self._reiniciar_fase_d()
         self._inv = inv
         self._ocupado = True
         try:
@@ -696,6 +792,7 @@ class FormularioVM(QWidget):
                 if not self.fila_vmid.tocado:
                     self.vmid.setText(str(inv.proximo_vmid))
                 self._nodo_cargado = ""  # fuerza la recarga de recursos del nodo
+                self._nodo_sincronizado = ""
                 self._actualizar_nodo()
         finally:
             self._ocupado = False
@@ -737,6 +834,7 @@ class FormularioVM(QWidget):
         origen: bool = True,
         asistente: bool = False,
         conservar_fase_c: bool = False,
+        conservar_fase_d: bool = False,
     ) -> None:
         """Aplica SOLO el hardware de ``cfg`` (perfil de máquina o lote guardado) y sus opciones.
 
@@ -751,6 +849,9 @@ class FormularioVM(QWidget):
         sobre lo cargado; un lote guardado ya trae lo que el usuario dejó y no se toca.
         Con ``conservar_fase_c`` (perfiles: no guardan red del clon ni firewall, RF-C6.2) no se
         tocan esas dos secciones; sin él (lote guardado) se cargan las de ``cfg``.
+        Con ``conservar_fase_d`` (perfiles: no guardan mapeos, MAC ni imágenes, CA-D6.2.2) no se
+        toca el hardware del clúster; si el nodo es ARM64, los valores x86 del perfil se adaptan
+        y se avisa (RF-D2.10).
         """
         self._base_asistente = None
         self._ocupado = True
@@ -762,11 +863,7 @@ class FormularioVM(QWidget):
             self.chk_agente.setChecked(cfg.agente_qemu)
             self.combo_sockets.setCurrentIndex(max(self.combo_sockets.findData(cfg.sockets), 0))
             self.cores.setText(str(cfg.cores))
-            idx = self.combo_cpu.findData(cfg.tipo_cpu)
-            if idx < 0:
-                self.combo_cpu.addItem(cfg.tipo_cpu, cfg.tipo_cpu)
-                idx = self.combo_cpu.count() - 1
-            self.combo_cpu.setCurrentIndex(idx)
+            self._poblar_cpu(cfg.tipo_cpu)
             self.memoria.setText(mib_a_texto_gib(cfg.memoria_mib))
             if cfg.ballooning is None:
                 self.combo_balloon.setCurrentIndex(0)
@@ -780,6 +877,8 @@ class FormularioVM(QWidget):
             self.tabla_discos.establecer_discos(cfg.discos, conservar_ausentes=True)
             self.tabla_redes.establecer_redes(cfg.redes, conservar_ausentes=True)
             self._escribir_opciones(cfg, fase_c=not conservar_fase_c)
+            if not conservar_fase_d:
+                self.seccion_hardware.establecer_valor(cfg.hardware_cluster)
             self._efi_ausente = None
             self._poblar_efi(cfg.storage_efi, conservar_ausente=True)
             self._actualizar_total_cpu()
@@ -787,6 +886,9 @@ class FormularioVM(QWidget):
             self._actualizar_nodo()
             self._avisar_ausentes()
             self._actualizar_para_origen()
+            # Valores x86 de un perfil o lote guardado hacia un nodo ARM64 (RF-D2.10).
+            self._sincronizar_arquitectura(adaptar=True, nueva=True)
+            self._pedir_cpus_cargadas()
             if (
                 asistente
                 and origen
@@ -837,11 +939,7 @@ class FormularioVM(QWidget):
         self.chk_agente.setChecked(cfg.agente_qemu)
         self.combo_sockets.setCurrentIndex(max(self.combo_sockets.findData(cfg.sockets), 0))
         self.cores.setText(str(cfg.cores))
-        idx = self.combo_cpu.findData(cfg.tipo_cpu)
-        if idx < 0:
-            self.combo_cpu.addItem(cfg.tipo_cpu, cfg.tipo_cpu)
-            idx = self.combo_cpu.count() - 1
-        self.combo_cpu.setCurrentIndex(idx)
+        self._poblar_cpu(cfg.tipo_cpu)
         self.memoria.setText(mib_a_texto_gib(cfg.memoria_mib))
         if cfg.ballooning is None:
             self.combo_balloon.setCurrentIndex(0)
@@ -859,11 +957,15 @@ class FormularioVM(QWidget):
         self.tabla_discos.establecer_discos(cfg.discos)
         self.tabla_redes.establecer_redes(cfg.redes)
         self._escribir_opciones(cfg)
+        self.seccion_hardware.establecer_valor(cfg.hardware_cluster)
         self._poblar_efi(cfg.storage_efi)
         self._refrescar_etiqueta_nodo()
         self._actualizar_total_cpu()
         self._actualizar_sin_disco()
         self._actualizar_para_origen()
+        self._nodo_sincronizado = cfg.nodo
+        self._sincronizar_arquitectura(adaptar=True, nueva=True)
+        self._pedir_cpus_cargadas()
 
     # --- Lectura ----------------------------------------------------------------------
 
@@ -917,6 +1019,7 @@ class FormularioVM(QWidget):
             plazo_ip_s=self._plazo_ip(),
             red_clon=self._red_clon_actual(),
             firewall=self.seccion_firewall.firewall(),
+            hardware_cluster=self.seccion_hardware.valor(),
         )
 
     def _red_clon_actual(self) -> RedClon | None:
@@ -1131,6 +1234,9 @@ class FormularioVM(QWidget):
         cambio_caps = caps != self._caps_c
         self._estados_c = dict(estados)
         self._caps_c = caps
+        self.seccion_hardware.establecer_driver_keep(
+            caps is not None and caps.tiene(Funcion.MAPEO_DRIVER_KEEP)
+        )
         self.seccion_red_clon.establecer_disponibilidad(estados.get(OpcionC.RED_CLON))
         self.seccion_firewall.establecer_disponibilidad(
             estados.get(OpcionC.FIREWALL), estados.get(OpcionC.FIREWALL_GENERAL)
@@ -1154,6 +1260,291 @@ class FormularioVM(QWidget):
     ) -> None:
         """Contenido de un grupo (lo pidió ``pide_reglas_grupo``); solo lectura."""
         self.seccion_firewall.establecer_reglas(grupo, reglas, error)
+
+    # --- Fase D: arquitectura, CPU personalizadas y hardware del clúster -------------------
+
+    @property
+    def arquitectura_actual(self) -> Arquitectura:
+        """Arquitectura del nodo efectivo (x86 si no se pudo leer, P-D3)."""
+        return self._arq
+
+    @property
+    def cambios_arquitectura(self) -> tuple[CambioArquitectura, ...]:
+        """Valores x86 que se cambiaron al pasar a un nodo ARM64 (V-D08), para el Resumen."""
+        return self._cambios_arq
+
+    def _nombre_nodo(self, nodo: str) -> str:
+        """El nodo con la marca «(ARM64, experimental)» si lo es (CA-D2.12.1)."""
+        if self._inv is None:
+            return nodo
+        return texto_nodo_con_arquitectura(nodo, arquitectura_efectiva(self._inv, nodo))
+
+    def establecer_arquitecturas(self, inv: Inventario) -> None:
+        """Arquitecturas por nodo (detectadas o elegidas a mano): ajusta los desplegables
+        (CA-D2.7.1) y aplica V-D08 en vivo si el nodo efectivo es ARM64. ``inv`` puede ser el
+        mismo inventario o uno nuevo con ``arquitecturas`` distintas; el resto no se toca."""
+        if self._inv is None:
+            return
+        if inv is not self._inv:
+            self._inv.arquitecturas = dict(inv.arquitecturas)
+        self._ocupado = True
+        try:
+            self._llenar_combo_nodos()
+            self._sincronizar_arquitectura(adaptar=True)
+            self._pedir_cpus_cargadas()
+        finally:
+            self._ocupado = False
+        self._refrescar_etiqueta_nodo()
+        self.cambiado.emit()
+
+    def _sincronizar_arquitectura(self, *, adaptar: bool = False, nueva: bool = False) -> None:
+        """Ajusta el formulario a la arquitectura del nodo efectivo: tipos de CPU, SeaBIOS (no
+        existe en ARM64), selector manual y, con ``adaptar``, los valores x86 ya escritos
+        (``adaptar_a_arquitectura``, fuente única con el planificador). ``nueva``: se acaba de
+        cargar otra configuración y la lista de cambios anterior ya no vale."""
+        inv = self._inv
+        arq = (
+            arquitectura_efectiva(inv, self._nodo_actual)
+            if inv is not None and self._nodo_actual
+            else Arquitectura.X86_64
+        )
+        previa = self._arq
+        self._arq = arq
+        previo, self._ocupado = self._ocupado, True
+        try:
+            if nueva or arq != previa:
+                self._cambios_arq = ()
+            modelo = cast(QStandardItemModel, self.combo_firmware.model())
+            fila_seabios = self.combo_firmware.findData(Firmware.SEABIOS)
+            item = modelo.item(fila_seabios)
+            if item is not None:
+                item.setEnabled(arq != Arquitectura.AARCH64)
+            self._poblar_cpu(None)
+            if adaptar and arq == Arquitectura.AARCH64:
+                self._adaptar_a_arm()
+            self.seccion_hardware.establecer_arquitectura(arq)
+            self._refrescar_arquitectura()
+        finally:
+            self._ocupado = previo
+        self._aplicar_modo()
+
+    def _adaptar_a_arm(self) -> None:
+        """Cambia los valores x86 del formulario a su equivalente ARM64 y recuerda la lista."""
+        if self.selector_origen.origen == OrigenSO.CLONAR_PLANTILLA:
+            return  # un clon hereda el hardware de la plantilla
+        cfg = self._configuracion_base()
+        cpus = self._cpus.get(self._nodo_actual)
+        adaptada, cambios = adaptar_a_arquitectura(cfg, self._arq, cpus_nodo=cpus)
+        if not cambios:
+            return
+        self._cambios_arq = cambios
+        idx = self.combo_firmware.findData(adaptada.firmware)
+        self.combo_firmware.setCurrentIndex(max(idx, 0))
+        self._poblar_cpu(adaptada.tipo_cpu)
+        self.tabla_discos.establecer_discos(adaptada.discos, conservar_ausentes=True)
+        self.tabla_redes.establecer_redes(adaptada.redes, conservar_ausentes=True)
+
+    def _refrescar_arquitectura(self) -> None:
+        """Selector manual, texto de lo detectado y aviso de ARM64 (experimental, V-D08)."""
+        inv = self._inv
+        nodo = self._nodo_actual
+        info = inv.arquitecturas.get(nodo) if inv is not None and nodo else None
+        forzada = info is not None and info.fuente == FuenteArquitectura.MANUAL
+        self.combo_arquitectura.blockSignals(True)
+        self.combo_arquitectura.setCurrentIndex(
+            max(self.combo_arquitectura.findData(self._arq), 0) if forzada else 0
+        )
+        self.combo_arquitectura.blockSignals(False)
+        self.combo_arquitectura.setEnabled(bool(nodo))
+        self._texto_arq.setText(
+            texto_arquitectura_detectada(
+                self._arq, info.fuente.value if info is not None else "", forzada
+            )
+        )
+        lineas: list[str] = []
+        if self._arq == Arquitectura.AARCH64:
+            lineas.append(texto_linea_experimental_arm())
+        if self._cambios_arq:
+            lineas.append(texto_cambios_arquitectura(self._cambios_arq))
+        poner_mensaje(self._aviso_arq, "\n".join(lineas) or None, aviso=True)
+
+    def _al_elegir_arquitectura(self, _i: int) -> None:
+        """El usuario fijó la arquitectura a mano: la ventana la guarda en el inventario y
+        vuelve a llamar a ``establecer_arquitecturas``."""
+        if self._ocupado or not self._nodo_actual:
+            return
+        valor = self.combo_arquitectura.currentData()
+        try:
+            arq = Arquitectura(valor) if valor else None  # Qt devuelve el texto del valor
+        except ValueError:
+            arq = None
+        self.arquitectura_forzada.emit(self._nodo_actual, arq)
+
+    def _reiniciar_fase_d(self) -> None:
+        """Otro servidor: se olvidan los modelos de CPU y los mapeos leídos del anterior."""
+        self._cpus.clear()
+        self._errores_cpu.clear()
+        self._cpus_pedidas.clear()
+        self._cambios_arq = ()
+        self._nodo_sincronizado = ""
+        self.seccion_hardware.reiniciar()
+
+    # CPU personalizadas ----------------------------------------------------------------------
+
+    def _nodos_de_cpu(self) -> tuple[str, ...]:
+        """Nodos donde se creará la máquina: los del lote o, si no hay, el nodo efectivo."""
+        if self._nodos_destino:
+            return self._nodos_destino
+        return (self._nodo_actual,) if self._nodo_actual else ()
+
+    def _cpu_personalizada_permitida(self) -> bool:
+        estado = self._estados_d.get(OpcionD.CPU_PERSONALIZADA)
+        return estado is None or estado.disponibilidad != Disponibilidad.NO
+
+    def _pedir_cpus(self) -> None:
+        """Pide a la ventana los modelos de CPU de los nodos aún no leídos (≤ 1 lectura por nodo
+        y conexión; ninguna sin nodos elegidos ni sin permiso)."""
+        if not self._cpu_personalizada_permitida() or self._inv is None:
+            return
+        pendientes = tuple(n for n in self._nodos_de_cpu() if n not in self._cpus_pedidas)
+        if not pendientes:
+            return
+        self._cpus_pedidas.update(pendientes)
+        self.pide_cpus.emit(pendientes)
+
+    def _pedir_cpus_cargadas(self) -> None:
+        """Una CPU personalizada cargada de un perfil o lote pide ya los modelos del nodo, para
+        poder comprobar que existe (V-D61)."""
+        if es_cpu_personalizada(str(self.combo_cpu.currentData() or "")):
+            self._pedir_cpus()
+
+    def establecer_cpus(
+        self,
+        cpus: Mapping[str, Sequence[ModeloCpu]],
+        errores: Mapping[str, ErrorProxLaunch],
+    ) -> None:
+        """Modelos de CPU leídos por nodo (y los nodos cuya lectura falló, V-D62). El desplegable
+        gana el grupo «Personalizados del clúster» con los que existen en todos los nodos."""
+        for nodo, modelos in cpus.items():
+            self._cpus[nodo] = tuple(modelos)
+            self._errores_cpu.pop(nodo, None)
+        for nodo, error in errores.items():
+            self._errores_cpu[nodo] = error
+            self._cpus.pop(nodo, None)
+        self._ocupado = True
+        try:
+            self._poblar_cpu(None)
+        finally:
+            self._ocupado = False
+        self._aplicar_modo()
+        self.cambiado.emit()
+
+    def _personalizados_comunes(self) -> tuple[tuple[str, ...], int]:
+        """Modelos personalizados presentes en todos los nodos leídos y cuántos se ocultan por
+        faltar en alguno (CA-D3.6.2)."""
+        if not self._cpu_personalizada_permitida():
+            return (), 0
+        if (
+            self._arq == Arquitectura.AARCH64
+            and self._caps_c is not None
+            and not self._caps_c.tiene(Funcion.CAPACIDADES_POR_ARCH)
+        ):
+            return (), 0  # sin ``arch=`` no se pueden listar los de ARM64 (RF-D3.6)
+        listas = [
+            {m.nombre for m in self._cpus[n] if m.personalizado}
+            for n in self._nodos_de_cpu()
+            if n in self._cpus
+        ]
+        if not listas:
+            return (), 0
+        comunes = set.intersection(*listas)
+        union = set.union(*listas)
+        return tuple(sorted(comunes)), len(union - comunes)
+
+    def _poblar_cpu(self, seleccion: str | None) -> None:
+        """Rellena el desplegable de CPU: tipos fijos de la arquitectura y, aparte, los
+        personalizados del clúster. Conserva la selección (un valor que ya no está se mantiene a
+        la vista y la validación lo marca, nunca se cambia en silencio)."""
+        actual = self.combo_cpu.currentData()
+        previo = (
+            seleccion if seleccion is not None else (actual if isinstance(actual, str) else None)
+        )
+        fijos = TIPOS_CPU_ARM if self._arq == Arquitectura.AARCH64 else TIPOS_CPU_X86
+        personalizados, ocultos = self._personalizados_comunes()
+        self.combo_cpu.blockSignals(True)
+        self.combo_cpu.clear()
+        for t in fijos:
+            self.combo_cpu.addItem(t, t)
+        if personalizados:
+            self.combo_cpu.addItem(texto_grupo_cpu_personalizada(), None)
+            cast(QStandardItemModel, self.combo_cpu.model()).item(
+                self.combo_cpu.count() - 1
+            ).setEnabled(False)
+            for nombre in personalizados:
+                self.combo_cpu.addItem(nombre, nombre)
+        if previo and self.combo_cpu.findData(previo) < 0:
+            self.combo_cpu.addItem(previo, previo)
+        self.combo_cpu.setCurrentIndex(max(self.combo_cpu.findData(previo), 0) if previo else 0)
+        self.combo_cpu.blockSignals(False)
+        avisos: list[str] = []
+        if ocultos:
+            avisos.append(texto_cpus_ocultas(ocultos))
+        if any(n in self._errores_cpu for n in self._nodos_de_cpu()):
+            avisos.append(texto_cpus_no_leidas())
+        estado = self._estados_d.get(OpcionD.CPU_PERSONALIZADA)
+        if estado is not None and estado.disponibilidad == Disponibilidad.NO:
+            avisos.append(texto_estado_opcion(estado))
+        elif (
+            self._arq == Arquitectura.AARCH64
+            and self._caps_c is not None
+            and not self._caps_c.tiene(Funcion.CAPACIDADES_POR_ARCH)
+        ):
+            avisos.append(texto_cpu_arm_sin_listar())
+        poner_mensaje(self._aviso_cpu_d, "\n".join(avisos) or None, aviso=True)
+
+    def establecer_disponibilidad_d(self, estados: Mapping[OpcionD, EstadoOpcion]) -> None:
+        """Habilita o deshabilita las opciones de la fase D según privilegios y versión
+        (``disponibilidad_fase_d``). Es barato: ignora lo que no cambió."""
+        if dict(estados) == self._estados_d:
+            return
+        self._estados_d = dict(estados)
+        mapeos = estados.get(OpcionD.MAPEOS)
+        if mapeos is not None:
+            self.seccion_hardware.establecer_disponibilidad(mapeos)
+        self._ocupado = True
+        try:
+            self._poblar_cpu(None)
+        finally:
+            self._ocupado = False
+        self._aplicar_modo()
+
+    def establecer_hardware(self, info: InfoHardwareCluster | None) -> None:
+        """Mapeos PCI/USB leídos del clúster (lo pidió ``pide_mapeos``)."""
+        inv = self._inv
+        permisos: PermisosEfectivos | None = (
+            inv.catalogo.permisos if inv is not None and inv.catalogo is not None else None
+        )
+        self.seccion_hardware.establecer_info(info, permisos)
+
+    def aplicar_propuesta_libvirt(
+        self, propuesta: PropuestaLibvirt, macs_origen: Sequence[str | None] = ()
+    ) -> None:
+        """Rellena el formulario con la propuesta de la vista previa de libvirt, de una sola vez
+        (CL-D23): origen «Importar disco», discos, redes, CPU, memoria, firmware y nombre."""
+        cfg = propuesta.cfg
+        self._base_asistente = None
+        self._ocupado = True
+        try:
+            if cfg.nombre:
+                self.nombre.setText(cfg.nombre)
+                self.fila_nombre.marcar_tocado()
+        finally:
+            self._ocupado = False
+        self.aplicar_hardware(
+            cfg, origen=True, asistente=False, conservar_fase_c=True, conservar_fase_d=True
+        )
+        # Cada tarjeta con MAC de origen ofrece su casilla, desmarcada salvo que ya se conserve.
+        self.tabla_redes.establecer_macs_origen(macs_origen)
 
     def _plantilla_elegida(self) -> Plantilla | None:
         """La plantilla del clon que ya está en el catálogo (por VMID o por nombre único)."""
@@ -1429,6 +1820,11 @@ class FormularioVM(QWidget):
         self._refrescar_etiqueta_nodo()
         if nodo != self._nodo_cargado:
             self._cargar_recursos_nodo(nodo)
+        if nodo != self._nodo_sincronizado:
+            # Otro nodo efectivo: puede ser de otra arquitectura (RF-D2.7, CA-D2.7.5).
+            self._nodo_sincronizado = nodo
+            self._sincronizar_arquitectura(adaptar=True, nueva=True)
+            self._pedir_cpus_cargadas()
 
     def _refrescar_etiqueta_nodo(self) -> None:
         if self._inv is None or not self._inv.topologia.es_cluster:
@@ -1442,7 +1838,8 @@ class FormularioVM(QWidget):
         elif self._motivo_nodo is not None:
             self._texto_motivo.setText(
                 self.tr("Nodo elegido: {nodo} ({motivo})").format(
-                    nodo=self._nodo_actual, motivo=texto_motivo_nodo(self._motivo_nodo)
+                    nodo=self._nombre_nodo(self._nodo_actual),
+                    motivo=texto_motivo_nodo(self._motivo_nodo),
                 )
             )
         self._texto_motivo.show()
@@ -1455,7 +1852,8 @@ class FormularioVM(QWidget):
         self.combo_nodo.blockSignals(True)
         self.combo_nodo.clear()
         for n in inv.topologia.nodos:
-            texto = n.nombre if n.en_linea else f"{n.nombre} — {self.tr('Sin conexión')}"
+            nombre = self._nombre_nodo(n.nombre)
+            texto = nombre if n.en_linea else f"{nombre} — {self.tr('Sin conexión')}"
             self.combo_nodo.addItem(texto, n.nombre)
             if not n.en_linea:
                 cast(QStandardItemModel, self.combo_nodo.model()).item(
@@ -1517,8 +1915,7 @@ class FormularioVM(QWidget):
                 sdn_leido = nodo in inv.redes_sdn and nodo not in inv.errores_sdn
                 if nodo in inv.errores_sdn:
                     sdn_fallido = nodo
-        caps = self._caps_c
-        incluido = caps.tiene(Funcion.SDN_INCLUIDO) if caps is not None else True
+        incluido = True  # con la mínima 8.4 el SDN viene instalado (DT-D3)
         perdidas = self.tabla_redes.establecer_bridges(
             bridges,
             vnets,
@@ -1853,6 +2250,7 @@ class FormularioVM(QWidget):
         self.seccion_cloudinit.mostrar_problemas(problemas)
         self.seccion_red_clon.mostrar_problemas(problemas)
         self.seccion_firewall.mostrar_problemas(problemas)
+        self.seccion_hardware.mostrar_problemas(problemas)
         self.fila_efi.marcar_tocado()
         self.fila_efi.mostrar_error(texto("storage_efi"))
         self.tabla_discos.aplicar_problemas(problemas)

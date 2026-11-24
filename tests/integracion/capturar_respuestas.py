@@ -408,7 +408,7 @@ def main() -> None:  # noqa: PLR0915
                 lab.ssh(f"sudo pveam remove local:vztmpl/{plantilla}", comprobar=False)
 
         print("Sin espacio (LVM grueso):")
-        lab.ssh("sudo pvesm add lvm lab-lvm --vgname lab --content images")
+        lab.ssh(f"sudo pvesm add lvm lab-lvm --vgname {lab.VG_LAB} --content images")
         try:
             c.guardar(
                 "storage_con_lvm_grueso", c.llamar("GET", f"/nodes/{lab.NODO}/storage", token=tok)

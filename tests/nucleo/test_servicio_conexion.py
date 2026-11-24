@@ -518,8 +518,8 @@ def _conectar_con_version(hacer_servicio, huellas, version, **kw):
 @pytest.mark.parametrize(
     ("texto", "mayor", "menor"),
     [
-        pytest.param("8.2.4", 8, 2, id="CA-09.1-8.2.4"),
-        pytest.param("8.0.4", 8, 0, id="8.0.4"),
+        pytest.param("8.4.1", 8, 4, id="CA-09.1-8.4.1"),
+        pytest.param("8.4", 8, 4, id="8.4"),
         pytest.param("9.2.1", 9, 2, id="9.2.1"),
     ],
 )
@@ -534,14 +534,23 @@ def test_ca_09_2_version_7_se_bloquea(hacer_servicio, huellas):
     with pytest.raises(ErrorProxLaunch) as e:
         _conectar_con_version(hacer_servicio, huellas, "7.4-17")
     assert e.value.codigo == CodigoError.VERSION_NO_SOPORTADA
-    assert e.value.params == {"version": "7.4-17", "minima": "8.0"}
+    assert e.value.params == {"version": "7.4-17", "minima": "8.4"}
+
+
+@pytest.mark.parametrize("texto", ["8.0.4", "8.1", "8.2.4", "8.3.0"])
+def test_ca_d2_1_versiones_8_0_a_8_3_se_bloquean_con_la_minima_8_4(hacer_servicio, huellas, texto):
+    """V-D01: la mínima de 0.9.0 es 8.4; por debajo se rechaza con ``VERSION_NO_SOPORTADA``."""
+    with pytest.raises(ErrorProxLaunch) as e:
+        _conectar_con_version(hacer_servicio, huellas, texto)
+    assert e.value.codigo == CodigoError.VERSION_NO_SOPORTADA
+    assert e.value.params == {"version": texto, "minima": "8.4"}
 
 
 def test_ca_09_3_version_mayor_que_la_conocida_se_permite(hacer_servicio, huellas):
     sesion = _conectar_con_version(hacer_servicio, huellas, "10.0")
     assert (sesion.version.mayor, sesion.version.menor) == (10, 0)
     assert sesion.capacidades.es_soportada()
-    assert sesion.capacidades.tiene(Funcion.IMPORTAR_DISCO)
+    assert sesion.capacidades.tiene(Funcion.CLAVES_MS_2023)
 
 
 @pytest.mark.parametrize("texto", ["texto raro", "", "v?"])
@@ -549,26 +558,25 @@ def test_ca_09_5_formato_inesperado_conecta_con_la_capacidad_minima(
     hacer_servicio, huellas, registros, texto
 ):
     sesion = _conectar_con_version(hacer_servicio, huellas, texto)
-    assert sesion.capacidades.version == (8, 0)
-    assert not sesion.capacidades.tiene(Funcion.IMPORTAR_DISCO)
+    assert sesion.capacidades.version == (8, 4)
+    assert not sesion.capacidades.tiene(Funcion.CLAVES_MS_2023)
     assert any(r.levelno == logging.WARNING for r in registros)
 
 
-def test_ca_09_4_funcion_desde_8_4_no_esta_en_8_0(hacer_servicio, huellas):
-    # Enmienda 14.6 del MVP 4: IMPORTAR_DISCO requiere (8, 4), no (8, 2).
-    sesion = _conectar_con_version(hacer_servicio, huellas, "8.0.4")
-    assert not sesion.capacidades.tiene(Funcion.IMPORTAR_DISCO)
-    assert sesion.capacidades.requisito(Funcion.IMPORTAR_DISCO) == (8, 4)
+def test_ca_09_4_funcion_desde_9_1_no_esta_en_8_4(hacer_servicio, huellas):
+    sesion = _conectar_con_version(hacer_servicio, huellas, "8.4.1")
+    assert not sesion.capacidades.tiene(Funcion.CLAVES_MS_2023)
+    assert sesion.capacidades.requisito(Funcion.CLAVES_MS_2023) == (9, 1)
 
 
 def test_rf_26_version_forzada(hacer_servicio, huellas):
     _confiar(huellas, A)
-    t = TransporteFalso().en("GET", "/version", {"version": "8.0.4"})
+    t = TransporteFalso().en("GET", "/version", {"version": "8.4.1"})
     sesion = hacer_servicio(fabrica=lambda p, h: t).conectar(
-        perfil_basico(), TOKEN, version_forzada=(8, 4)
+        perfil_basico(), TOKEN, version_forzada=(9, 1)
     )
     assert sesion.capacidades.forzada is True
-    assert sesion.capacidades.tiene(Funcion.IMPORTAR_DISCO)  # enmienda 14.6: desde (8, 4)
+    assert sesion.capacidades.tiene(Funcion.CLAVES_MS_2023)  # forzada 9.1: desde (9, 1)
 
 
 # --- RF-08: llavero ---------------------------------------------------------------------

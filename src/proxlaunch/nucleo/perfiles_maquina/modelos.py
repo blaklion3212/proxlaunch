@@ -8,6 +8,7 @@ solo sugerencias (RF-P06).
 from dataclasses import dataclass, field
 from enum import StrEnum
 
+from proxlaunch.nucleo.modelos.cpu import TIPO_CPU_X86_DEFECTO
 from proxlaunch.nucleo.modelos.origen import AjustesClon, ModoClon, TipoSO
 from proxlaunch.nucleo.modelos.vm import (
     Bus,
@@ -79,7 +80,7 @@ class ConfigPerfil:
     firmware: Firmware = Firmware.SEABIOS
     sockets: int = 1
     cores: int = 2
-    tipo_cpu: str = "x86-64-v2-AES"
+    tipo_cpu: str = TIPO_CPU_X86_DEFECTO
     memoria_mib: int = 2048
     ballooning: BallooningPerfil | None = None
     con_disco: bool = True

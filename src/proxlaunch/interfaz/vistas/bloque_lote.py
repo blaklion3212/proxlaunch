@@ -28,7 +28,9 @@ from PySide6.QtWidgets import (
 )
 
 from proxlaunch.interfaz.textos import texto_problema_lote
+from proxlaunch.interfaz.textos_d import texto_nodo_con_arquitectura
 from proxlaunch.interfaz.vistas.campos import FilaCampo, boton_ayuda, etiqueta
+from proxlaunch.nucleo.arquitectura.modelos import arquitectura_efectiva
 from proxlaunch.nucleo.lote.constantes import MAX_LOTE
 from proxlaunch.nucleo.lote.modelos import (
     Algoritmo,
@@ -387,7 +389,9 @@ class BloqueLote(QGroupBox):
             self._en_linea = {n.nombre for n in inv.topologia.nodos if n.en_linea}
             sin_conexion = QCoreApplication.translate("BloqueLote", "Sin conexión")
             for n in inv.topologia.nodos:
-                texto = n.nombre if n.en_linea else f"{n.nombre} — {sin_conexion}"
+                # Un nodo ARM64 lleva la marca «ARM64, experimental» (CA-D2.12.1).
+                nombre = texto_nodo_con_arquitectura(n.nombre, arquitectura_efectiva(inv, n.nombre))
+                texto = nombre if n.en_linea else f"{nombre} — {sin_conexion}"
                 self.combo_nodo.addItem(texto, n.nombre)
                 check = QCheckBox(texto)
                 check.setEnabled(n.en_linea and self._avanzado)

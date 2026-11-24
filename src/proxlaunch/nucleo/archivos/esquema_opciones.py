@@ -39,6 +39,7 @@ from proxlaunch.nucleo.archivos.esquema_fase_c import (
     red_clon_para_escribir,
     red_clon_requiere_v5,
 )
+from proxlaunch.nucleo.archivos.esquema_fase_d import hardware_para_escribir, leer_hardware
 from proxlaunch.nucleo.archivos.texto import (
     MOTIVO_CARACTERES,
     MOTIVO_LONGITUD,
@@ -49,6 +50,7 @@ from proxlaunch.nucleo.archivos.texto import (
 from proxlaunch.nucleo.cloudinit.modelos import ConfigCloudInit
 from proxlaunch.nucleo.errores import CodigoError, ErrorProxLaunch
 from proxlaunch.nucleo.firewall.modelos import FirewallMV, FirewallParcial
+from proxlaunch.nucleo.hardware_cluster.modelos import HardwareCluster
 from proxlaunch.nucleo.modelos.vm import (
     MAX_LIMITE_MB,
     MTU_IGUAL_BRIDGE,
@@ -81,6 +83,7 @@ CLAVES_OPCIONES_CFG = frozenset(
         "esperar_ip",
         "red_clon",
         "firewall",
+        "hardware_cluster",  # fase D: mapeos PCI/USB (solo en la configuración de un lote)
     }
 )
 CLAVES_OPCIONES_LOTE = frozenset(
@@ -200,6 +203,8 @@ def opciones_cfg_a_dict(cfg: ConfiguracionVM) -> dict[str, object]:
         datos["proteger"] = True
     datos.update(_fase_b_a_dict(cfg.cloudinit, cfg.esperar_ip, cfg.plazo_ip_s, ""))
     datos.update(fase_c_a_dict(cfg.red_clon, cfg.firewall, ""))
+    if cfg.hardware_cluster is not None and not cfg.hardware_cluster.vacio:
+        datos["hardware_cluster"] = hardware_para_escribir(cfg.hardware_cluster)
     return datos
 
 
@@ -434,6 +439,7 @@ class OpcionesCfgLeidas:
     plazo_ip_s: int = PLAZO_IP_DEFECTO_S
     red_clon: RedClon | None = None
     firewall: FirewallMV | None = None
+    hardware_cluster: HardwareCluster | None = None  # fase D (``None`` = sin mapeos)
 
 
 @dataclass
@@ -509,6 +515,11 @@ def leer_opciones_cfg(
     proteger = lector.booleano(obj, "proteger", ruta, requerido=False, defecto=False)
     fase_b = _leer_fase_b(lector, obj, ruta)
     fase_c = _leer_fase_c(lector, obj, ruta)
+    hardware: HardwareCluster | None = None
+    if obj.get("hardware_cluster") is not None:
+        hardware = leer_hardware(lector, obj["hardware_cluster"], _ruta(ruta, "hardware_cluster"))
+        if hardware is not None and hardware.vacio:
+            hardware = None  # un objeto sin asignaciones equivale a no tener mapeos
     if (
         len(lector.errores) > n0
         or encender is None
@@ -538,6 +549,7 @@ def leer_opciones_cfg(
         plazo_ip_s=fase_b.plazo_ip_s,
         red_clon=fase_c.red_clon,
         firewall=fase_c.firewall,
+        hardware_cluster=hardware,
     )
 
 

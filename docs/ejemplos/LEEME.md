@@ -11,9 +11,9 @@ plantillas (`ubuntu-24.04-server.iso`, `debian-12-generic.qcow2`, `plantilla-deb
 están inventados: **sustitúyelos por los de tu servidor**. Si un nombre no existe en tu
 servidor, la vista previa o la validación te lo dirá antes de crear nada.
 
-Los archivos los generó ProxLaunch (exportar plantilla CSV, guardar lote, exportar perfiles)
-y se comprobaron con sus propios lectores, así que el formato es exactamente el que la
-aplicación escribe y acepta.
+Los archivos tienen el formato que escribe ProxLaunch (exportar plantilla CSV, guardar lote,
+exportar perfiles) y se comprueban con sus propios lectores en las pruebas del proyecto, así
+que son archivos que la aplicación acepta.
 
 ## Qué es cada archivo
 
@@ -27,6 +27,8 @@ aplicación escribe y acepta.
 | `mvs-opciones.csv` | 4 MVs que usan las columnas de opciones de la versión 0.6: `encender`, `arranque_auto`, `notas`, `etiquetas`, `pool`, `proteger`, `mtu` y `limite_red`. Una fila lo fija todo, otra no fija nada (hereda lo del formulario) y las demás mezclan valores. | **Lote > Importar desde CSV…** |
 | `mvs-cloudinit.csv` | 4 MVs que **clonan una plantilla** y la configuran en su primer arranque con las columnas de la versión 0.7: `ci_usuario`, `ci_claves`, `ci_ip` (`dhcp` o una IP fija), `ci_puerta`, `ci_dns` y `esperar_ip`. No lleva la columna `ci_contrasena` a propósito. | **Lote > Importar desde CSV…** |
 | `mvs-red-firewall.csv` | 4 MVs con las columnas de la versión 0.8: `reescribir_red`, `cortafuegos`, `grupo_seguridad`, `politica_entrada` y `politica_salida`. Dos filas clonan una plantilla y cambian la red de la primera tarjeta, una clona sin cambiar la red y otra (disco vacío) deja el firewall apagado. | **Lote > Importar desde CSV…** |
+| `mvs-hardware-cluster.csv` | 4 MVs con las columnas de la versión 0.9: `mapeo_pci` y `mapeo_usb` (identificadores de mapeos separados por `;`) y una CPU personalizada en `tipo_cpu`. Una fila usa una gráfica, una llave USB y la CPU `custom-ejemplo`; otra solo la gráfica en otro nodo; otra solo la llave USB; y otra **dos** tarjetas PCI. Los mapeos y la CPU son inventados. | **Lote > Importar desde CSV…** |
+| `lote-libvirt.proxlaunch-lote.json` | Lote guardado de **una** MV traída de libvirt (`app-linux-ejemplo`): origen «Usar un disco existente» con **dos discos** (la imagen del sistema `app-sistema.qcow2` y la del segundo disco `app-datos.qcow2`, ya subidas al almacenamiento `local`) y la **MAC de origen conservada** (`52:54:00:12:34:56`, ficticia). Es un archivo de **formato 6**: ProxLaunch 0.8.0 y anteriores no lo abren. | **Lote > Abrir lote…** (`Ctrl+O`) |
 | `lote-red-firewall.proxlaunch-lote.json` | Lote guardado de 4 MVs que clonan `plantilla-debian12`: cambian `net0` a `vmbr1` con VLAN 20, añaden una tarjeta `net1` en `vmbr0` (VirtIO) y activan el firewall con el grupo `web` (entrada Bloquear, salida Permitir). Es un archivo de **formato 5**: ProxLaunch 0.7.0 y anteriores no lo abren. | **Lote > Abrir lote…** (`Ctrl+O`) |
 | `lote-homogeneo.proxlaunch-lote.json` | Lote guardado de 3 MVs iguales (`srv-web-01`...`srv-web-03`; 2 núcleos, 2 GiB, disco de 32 GiB). | **Lote > Abrir lote…** (`Ctrl+O`) |
 | `lote-con-opciones.proxlaunch-lote.json` | El mismo lote de 3 servidores web, pero con las opciones de la versión 0.6 (encender, arrancar con el servidor con orden y espera, notas, etiquetas, pool, protección, MTU y límite de red). Es un archivo de **formato 3**: ProxLaunch 0.5.1 no lo abre. | **Lote > Abrir lote…** (`Ctrl+O`) |
@@ -115,6 +117,8 @@ Solo `nombre` es obligatoria. Las demás son opcionales.
 | `grupo_seguridad` (`security_group`, `firewall_group`) | No | Nombre de un grupo de seguridad (2 a 18 caracteres, empieza por letra; letras, números, `-` y `_`) | `web` | Debe existir en el servidor. Solo con `cortafuegos` en `si`. |
 | `politica_entrada` (`policy_in`) | No | `bloquear` (`drop`) o `permitir` (`accept`) | `bloquear` | Qué pasa con la entrada que ninguna regla menciona. Uso avanzado. |
 | `politica_salida` (`policy_out`) | No | `bloquear` (`drop`) o `permitir` (`accept`) | `permitir` | Igual, para la salida. Uso avanzado. |
+| `mapeo_pci` (`pci_mapping`) | No | Identificadores de mapeos PCI separados por `;` (hasta 16; letras, números, `.`, `_` y `-`) | `gpu-ejemplo` | Tarjetas PCI del clúster para la MV. Vacío = lo del formulario. Necesita el permiso `Mapping.Use`. Uso avanzado. |
+| `mapeo_usb` (`usb_mapping`) | No | Identificadores de mapeos USB separados por `;` (hasta 5) | `llave-ejemplo` | Dispositivos USB del clúster para la MV. Vacío = lo del formulario. Uso avanzado. |
 
 ### Equivalencias que enseñan los ejemplos
 
@@ -236,6 +240,47 @@ Es un lote de cuatro servidores que clonan `plantilla-debian12`. Fíjate en:
   usa DHCP en cloud-init). **Nunca se guarda** la confirmación «Entiendo que la máquina no aceptará conexiones por la red».
 
 Los nombres de red, de grupo y de plantilla son inventados; sustitúyelos por los de tu servidor.
+
+## `mvs-hardware-cluster.csv`: tarjetas PCI, USB y CPU personalizada
+
+```text
+"nombre";"nodo";"origen";"tipo_cpu";"mapeo_pci";"mapeo_usb"
+"grafico-01";"pve1";"vacio";"custom-ejemplo";"gpu-ejemplo";"llave-ejemplo"
+"grafico-02";"pve2";"vacio";"";"gpu-ejemplo";""
+"licencias-01";"pve1";"vacio";"";"";"llave-ejemplo"
+"doble-gpu-01";"pve1";"vacio";"";"gpu-ejemplo;gpu-secundaria";""
+```
+
+Qué enseña cada fila:
+
+- `grafico-01` usa la CPU personalizada `custom-ejemplo`, la tarjeta `gpu-ejemplo` y la llave USB `llave-ejemplo`, todo en `pve1`.
+- `grafico-02` usa la misma gráfica en `pve2` (el mapeo debe existir en ese nodo).
+- `licencias-01` solo lleva la llave USB.
+- `doble-gpu-01` lleva **dos** tarjetas PCI, separadas por `;`.
+
+Los mapeos (`gpu-ejemplo`, `gpu-secundaria`, `llave-ejemplo`) y la CPU (`custom-ejemplo`) son inventados: los crea el administrador
+en **Datacenter → Mapeo de recursos** y tu usuario necesita el permiso `Mapping.Use` sobre cada uno (ver la
+[guía de usuario](../guia-usuario.md#hardware-del-clúster-y-cpu-personalizadas)). Las opciones de cada tarjeta (**Es una
+tarjeta PCIe**, **Es la gráfica principal**, **USB 3**…) no van en el CSV: se toman de las que tenga el formulario. Si un
+mapeo no existe en el servidor, la fila da error al validarla.
+
+## `lote-libvirt.proxlaunch-lote.json`: un lote guardado de formato 6
+
+Es una máquina traída de libvirt con el asistente **Archivo > Importar desde libvirt…**. Fíjate en:
+
+- `"version_formato": 6`: un archivo que usa mapeos del clúster, una MAC conservada o más de una imagen de disco se escribe en
+  formato 6. Uno que no usa nada de esto sigue escribiéndose como en la 0.8.
+- `origen` vale `importar_disco`. En `detalle_origen`, la imagen del primer disco (el del sistema) va en `imagen`; las de los
+  demás discos, en `imagenes`, cada una con su posición en `disco` (`1` es el segundo disco). Una imagen puede ser `null`
+  (pendiente de elegir) o llevar `"crear_vacio": true` (disco nuevo y vacío).
+- La tarjeta de red lleva `mac_conservada`: es la MAC de origen que se conserva (ficticia, `52:54:00:…`). Solo se guarda con una
+  copia y apagando la máquina original antes de encender la nueva.
+- **No se guarda** el XML de libvirt, su contenido ni su ruta, y nunca una contraseña.
+
+Con mapeos del clúster, la `config` lleva además `hardware_cluster`, por ejemplo
+`{ "pci": [{ "mapeo": "gpu-ejemplo", "pcie": true }], "usb": [{ "mapeo": "llave-ejemplo" }] }`.
+
+Los nombres de imagen, almacenamiento y red son inventados: sustitúyelos por los de tu servidor.
 
 ## `mvs-con-errores.csv`: lo que verás en la vista previa
 

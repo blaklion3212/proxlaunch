@@ -16,8 +16,10 @@ from typing import TYPE_CHECKING, Any, TypeVar
 
 from proxlaunch.nucleo.api.cliente import ClienteProxmox
 from proxlaunch.nucleo.api.traductor_errores import CODIGOS_DE_RED
+from proxlaunch.nucleo.arquitectura.modelos import Arquitectura
 from proxlaunch.nucleo.errores import CodigoError, ErrorProxLaunch
 from proxlaunch.nucleo.firewall.lectura import leer_info_firewall
+from proxlaunch.nucleo.hardware_cluster.lectura import leer_info_hardware
 from proxlaunch.nucleo.lote.constantes import MAX_CONSULTAS_SIMULTANEAS
 from proxlaunch.nucleo.modelos.catalogo import (
     CatalogoServidor,
@@ -58,6 +60,11 @@ _CODIGOS_FATALES = frozenset(
         CodigoError.HUELLA_NO_CONFIADA,
     }
 )
+
+
+def _arquitecturas_de(inv: Inventario) -> dict[str, Arquitectura]:
+    """Arquitectura detectada por nodo (D2); los nodos sin dato no constan."""
+    return {nodo: info.arquitectura for nodo, info in inv.arquitecturas.items()}
 
 
 def leer_pools(cliente: ClienteProxmox, permisos: PermisosEfectivos | None) -> PoolsServidor:
@@ -318,6 +325,20 @@ class ServicioCatalogo:
             )
         elif previo is not None:
             extra["firewall"] = previo.firewall
+        # Fase D (DT-D12): mapeos, ``check-node`` y CPU personalizadas solo si alguna fila los
+        # usa; sin D3, cero GET y se conserva lo que ya hubiera.
+        if necesidades.mapeos or necesidades.cpus_personalizadas:
+            extra["hardware"] = leer_info_hardware(
+                self._cliente,
+                permisos,
+                self._sesion.capacidades,
+                necesidades,
+                nodos,
+                previo.hardware if previo is not None else None,
+                _arquitecturas_de(inv),
+            )
+        elif previo is not None:
+            extra["hardware"] = previo.hardware
         return CatalogoServidor(
             permisos=permisos,
             listados=tuple(listados),
@@ -326,6 +347,33 @@ class ServicioCatalogo:
             leido_en=self._reloj.ahora(),
             **extra,
         )
+
+    def leer_hardware_seccion(
+        self, inv: Inventario, nodos: Collection[str], *, cpus: bool = False
+    ) -> CatalogoServidor:
+        """Lee los mapeos (2 GET, una vez por conexión) al abrir la sección «Hardware del clúster».
+
+        Con ``cpus=True`` lee además los modelos de CPU de ``nodos`` (≤ 1 GET por nodo, con la
+        caché de lo ya leído). Devuelve el catálogo previo con ``hardware`` completado; los
+        permisos y el resto no se tocan. Un fallo queda anotado en ``hardware`` (V-D50, V-D62).
+        """
+        from proxlaunch.nucleo.origen.resolucion import NecesidadesCatalogo  # evita el ciclo
+
+        previo = inv.catalogo
+        info = leer_info_hardware(
+            self._cliente,
+            previo.permisos if previo is not None else None,
+            self._sesion.capacidades,
+            NecesidadesCatalogo(),
+            nodos,
+            previo.hardware if previo is not None else None,
+            _arquitecturas_de(inv),
+            leer_mapeos=True,
+            cpus_en=nodos if cpus else (),
+        )
+        if previo is None:
+            return CatalogoServidor(leido_en=self._reloj.ahora(), hardware=info)
+        return dataclasses.replace(previo, hardware=info)
 
     def _plantillas_usadas(self, nombres: Collection[str]) -> tuple[Plantilla, ...]:
         """Todas las plantillas visibles; las de los ``nombres`` dados llevan su detalle."""
@@ -353,7 +401,14 @@ def _fuentes_de(cfg: ConfiguracionVM) -> list[tuple[str, str, str | None]]:
             fuentes.append((TIPO_FUENTE_DRIVERS, detalle.drivers.nombre, detalle.drivers.volid))
         return fuentes
     if cfg.origen == OrigenSO.IMPORTAR_DISCO and isinstance(detalle, DetalleImportacion):
-        return [(TIPO_FUENTE_IMAGEN, detalle.imagen.nombre, detalle.imagen.volid)]
+        fuentes = [(TIPO_FUENTE_IMAGEN, detalle.imagen.nombre, detalle.imagen.volid)]
+        # Fase D (DT-D14): también las imágenes de los discos 1.. deben seguir en el servidor.
+        fuentes.extend(
+            (TIPO_FUENTE_IMAGEN, o.imagen.nombre, o.imagen.volid)
+            for o in detalle.otras
+            if o.imagen is not None
+        )
+        return fuentes
     return []
 
 

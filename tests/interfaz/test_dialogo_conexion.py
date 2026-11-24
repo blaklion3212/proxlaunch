@@ -478,23 +478,23 @@ def test_ignorar_ssl_guardado_no_se_aplica_en_modo_basico(qtbot, crear, deps, se
 
 def test_version_forzada_elegida_se_pasa_al_servicio(qtbot, crear, servicio_falso):
     servicio_falso.infos = [info_huella(EstadoHuella.CONFIRMADA)]
-    servicio_falso.resultado_conectar = sesion_falsa(version=(8, 2), forzada=True)
+    servicio_falso.resultado_conectar = sesion_falsa(version=(9, 0), forzada=True)
     d = crear(avanzado=True)
     _llenar_token(d)
     d.combo_version.setCurrentIndex(
-        next(i for i in range(d.combo_version.count()) if d.combo_version.itemData(i) == (8, 2))
+        next(i for i in range(d.combo_version.count()) if d.combo_version.itemData(i) == (9, 0))
     )
     with qtbot.waitSignal(d.accepted, timeout=4000):
         d.btn_conectar.click()
-    assert servicio_falso.llamadas[-1][3] == (8, 2)
-    assert d.version_forzada == (8, 2)
+    assert servicio_falso.llamadas[-1][3] == (9, 0)
+    assert d.version_forzada == (9, 0)
 
 
 def test_en_modo_basico_no_se_fuerza_version(qtbot, crear, servicio_falso):
     """CA-26.3."""
     servicio_falso.infos = [info_huella(EstadoHuella.CONFIRMADA)]
     servicio_falso.resultado_conectar = sesion_falsa()
-    d = crear(avanzado=False, version_forzada=(8, 2))
+    d = crear(avanzado=False, version_forzada=(9, 0))
     _llenar_token(d)
     with qtbot.waitSignal(d.accepted, timeout=4000):
         d.btn_conectar.click()

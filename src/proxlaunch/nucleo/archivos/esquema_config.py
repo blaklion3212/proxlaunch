@@ -31,6 +31,13 @@ from proxlaunch.nucleo.archivos.esquema_cloudinit import (
     espera_ip_requiere_v4,
 )
 from proxlaunch.nucleo.archivos.esquema_fase_c import firewall_requiere_v5, red_clon_requiere_v5
+from proxlaunch.nucleo.archivos.esquema_fase_d import (
+    claves_red_fase_d,
+    imagenes_a_lista,
+    imagenes_requieren_v6,
+    leer_imagenes,
+    leer_mac_conservada,
+)
 from proxlaunch.nucleo.archivos.esquema_opciones import (
     CLAVES_OPCIONES_CFG,
     leer_limite,
@@ -42,7 +49,9 @@ from proxlaunch.nucleo.archivos.esquema_opciones import (
 )
 from proxlaunch.nucleo.archivos.texto import exigir_sin_credencial
 from proxlaunch.nucleo.errores import CodigoError, ErrorProxLaunch
+from proxlaunch.nucleo.libvirt.validacion import conserva_mac
 from proxlaunch.nucleo.modelos.catalogo import Contenido
+from proxlaunch.nucleo.modelos.cpu import PREFIJO_CPU_PERSONALIZADA
 from proxlaunch.nucleo.modelos.origen import (
     AjustesClon,
     DetalleClon,
@@ -95,7 +104,8 @@ from proxlaunch.nucleo.validacion import (
 
 _TOPE_CORDURA = 10**9  # en modo lote: valores absurdos se rechazan por tipo/rango, no por regla
 MAX_DISCOS = sum(MAX_DISPOSITIVOS.values())
-MAX_LONG_TIPO_CPU = 64
+# Un modelo personalizado (``custom-<nombre>``, nombre de hasta 64 caracteres) cabe en un perfil.
+MAX_LONG_TIPO_CPU = len(PREFIJO_CPU_PERSONALIZADA) + 64
 # Topes del lector de lotes guardados: un lote se lee como borrador (sin reglas de M1) y el
 # lector debe aceptar todo lo que el escritor guarda; solo frenan abusos.
 _MAX_LISTA_LOTE = 256
@@ -128,7 +138,7 @@ CLAVES_DISCO_PERFIL = _CLAVES_DISCO | {"storage_preferido"}
 CLAVES_DISCO_LOTE = _CLAVES_DISCO | {"storage"}
 _CLAVES_RED = frozenset({"modelo", "vlan", "mtu", "limite_mb"})
 CLAVES_RED_PERFIL = _CLAVES_RED | {"bridge_preferido"}
-CLAVES_RED_LOTE = _CLAVES_RED | {"bridge"}
+CLAVES_RED_LOTE = _CLAVES_RED | {"bridge", "mac_conservada"}  # la MAC solo viaja en lotes (D)
 _CLAVES_BALLOONING = frozenset({"activo", "minimo_mib"})
 _CLAVES_AJUSTES = frozenset({"sockets", "cores", "tipo_cpu", "memoria_mib", "disco_gib"})
 _CLAVES_REF_LOTE = frozenset({"nombre", "volid"})
@@ -263,10 +273,14 @@ def detalle_origen_a_dict(cfg: ConfiguracionVM) -> dict[str, object] | None:
             "sin_drivers": det.sin_drivers,
         }
     if isinstance(det, DetalleImportacion):
-        return {
+        importar: dict[str, object] = {
             "imagen": _ref_a_dict(det.imagen, Contenido.IMPORT, "imagen"),
             "ampliar_a_gib": det.ampliar_a_gib,
         }
+        # Fase D: las imágenes de los discos 1.. se escriben (también las pendientes; v6, P-D9).
+        if imagenes_requieren_v6(det.otras):
+            importar["imagenes"] = imagenes_a_lista(det.otras, "imagenes")
+        return importar
     if isinstance(det, DetalleClon):
         exigir_sin_credencial(det.plantilla.nombre, "plantilla")
         return {
@@ -470,8 +484,13 @@ def configuracion_a_dict(cfg: ConfiguracionVM) -> dict[str, object]:
                 "modelo": str(r.modelo),
                 "vlan": r.vlan,
                 **_claves_red_fase_a(r.mtu, r.limite_mb),
+                **claves_red_fase_d(
+                    # Solo con «Importar disco» cuenta la MAC (QA-7): otra, residual, no se escribe.
+                    r.mac_conservada if conserva_mac(cfg) else None,
+                    f"redes[{i}].mac_conservada",
+                ),
             }
-            for r in cfg.redes
+            for i, r in enumerate(cfg.redes)
         ],
         "origen": str(cfg.origen),
     }
@@ -771,12 +790,17 @@ def _leer_plantilla(
 
 
 def leer_detalle_origen(
-    lector: LectorEsquema, valor: object, ruta: str, origen: OrigenSO
+    lector: LectorEsquema,
+    valor: object,
+    ruta: str,
+    origen: OrigenSO,
+    n_discos: int | None = None,
 ) -> DetalleOrigen | None:
     """Lee ``detalle_origen`` de un lote (modo lote) según el ``origen`` de su config.
 
     ``None`` con errores anotados en ``lector``. Un detalle con ``origen = disco_vacio`` es ajeno
     y se rechaza. Los volids pasan la lista blanca; nunca se leen URL, rutas ni checksums.
+    Con ``n_discos`` se rechaza una imagen adicional de un disco que no existe.
     """
     if origen == OrigenSO.DISCO_VACIO:
         lector.error(ruta, MotivoCampo.TIPO)
@@ -803,7 +827,7 @@ def leer_detalle_origen(
             return None
         return DetalleIso(iso=iso, drivers=drivers, sin_drivers=sin_drivers)
     if origen == OrigenSO.IMPORTAR_DISCO:
-        obj = lector.objeto(valor, ruta, frozenset({"imagen", "ampliar_a_gib"}))
+        obj = lector.objeto(valor, ruta, frozenset({"imagen", "ampliar_a_gib", "imagenes"}))
         if obj is None:
             return None
         n0 = len(lector.errores)
@@ -815,9 +839,14 @@ def leer_detalle_origen(
         ampliar = _entero(
             lector, obj, "ampliar_a_gib", ruta, (0, _TOPE_CORDURA), nulo=True, requerido=False
         )
+        otras = (
+            leer_imagenes(lector, obj["imagenes"], _ruta_hija(ruta, "imagenes"), n_discos)
+            if obj.get("imagenes") is not None
+            else ()
+        )
         if len(lector.errores) > n0 or imagen is None:
             return None
-        return DetalleImportacion(imagen=imagen, ampliar_a_gib=ampliar)
+        return DetalleImportacion(imagen=imagen, ampliar_a_gib=ampliar, otras=otras)
     obj = lector.objeto(valor, ruta, frozenset({"plantilla", "modo", "ajustes", "storage_destino"}))
     if obj is None:
         return None
@@ -1007,12 +1036,21 @@ def leer_configuracion(lector: LectorEsquema, valor: object, ruta: str) -> Confi
             continue
         campos_r = _campos_red(lector, red, r, perfil=False)
         bridge = lector.texto(red, "bridge", r, minimo=0, maximo=MAX_LONG_TEXTO, sin_token=True)
+        mac = leer_mac_conservada(lector, red, r)
         if campos_r is not None and bridge is not None:
-            redes.append(InterfazRed(bridge, campos_r[0], campos_r[1], campos_r[2], campos_r[3]))
+            redes.append(
+                InterfazRed(
+                    bridge, campos_r[0], campos_r[1], campos_r[2], campos_r[3], mac_conservada=mac
+                )
+            )
     detalle: DetalleOrigen | None = None
     if "detalle_origen" in obj and hw is not None:
         detalle = leer_detalle_origen(
-            lector, obj["detalle_origen"], _ruta_hija(ruta, "detalle_origen"), hw.origen
+            lector,
+            obj["detalle_origen"],
+            _ruta_hija(ruta, "detalle_origen"),
+            hw.origen,
+            len(discos),
         )
     opciones = leer_opciones_cfg(lector, obj, ruta)
     if len(lector.errores) > n0 or hw is None or opciones is None:
@@ -1052,4 +1090,5 @@ def leer_configuracion(lector: LectorEsquema, valor: object, ruta: str) -> Confi
         plazo_ip_s=opciones.plazo_ip_s,
         red_clon=opciones.red_clon,
         firewall=opciones.firewall,
+        hardware_cluster=opciones.hardware_cluster,
     )

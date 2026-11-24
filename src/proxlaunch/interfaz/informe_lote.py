@@ -40,6 +40,7 @@ from proxlaunch.interfaz.textos_b import (
     texto_resumen_ips,
 )
 from proxlaunch.interfaz.textos_c import lineas_fase_c_de_entrada
+from proxlaunch.interfaz.textos_d import lineas_fase_d_de_entrada, texto_linea_experimental_arm
 from proxlaunch.nucleo.agente.modelos import EstadoIp
 from proxlaunch.nucleo.archivos.csv_seguro import escribir_csv
 from proxlaunch.nucleo.archivos.escritura import escribir_atomico
@@ -271,6 +272,24 @@ def _lineas_fase_c(informe: InformeLote) -> list[str]:
     if not bloques:
         return []
     titulo = QCoreApplication.translate("InformeLote", "Red y firewall de las máquinas")
+    return ["", titulo, "-" * len(titulo), *bloques]
+
+
+def _lineas_fase_d(informe: InformeLote) -> list[str]:
+    """Fase D de las máquinas que la usan: hardware del clúster, CPU personalizada, MAC conservada
+    y discos importados, más la marca «ARM64: experimental» si algún servidor lo es (RF-D0.1,
+    RF-D2.12). Vacío si ninguna máquina usa la fase D y no hay servidores ARM64."""
+    bloques: list[str] = []
+    for e in informe.entradas:
+        lineas = lineas_fase_d_de_entrada(e, arm=False)
+        if lineas:
+            bloques.append(f"• {e.elemento.nombre} ({e.elemento.vmid}):")
+            bloques.extend(f"    {x}" for x in lineas)
+    if any(p.regla == "V-D05" for p in informe.problemas_plan):
+        bloques.insert(0, texto_linea_experimental_arm())
+    if not bloques:
+        return []
+    titulo = QCoreApplication.translate("InformeLote", "Hardware del clúster y servidores ARM64")
     return ["", titulo, "-" * len(titulo), *bloques]
 
 
@@ -582,6 +601,7 @@ def texto_informe(informe: InformeLote) -> str:
     lineas.extend(_tabla(cab, [_fila_maquina(d) for d in datos_maquinas(informe)]))
     lineas.extend(_lineas_ips(informe))
     lineas.extend(_lineas_fase_c(informe))
+    lineas.extend(_lineas_fase_d(informe))
 
     con_detalle = [e for e in informe.entradas if detalle_entrada(e)]
     if con_detalle:

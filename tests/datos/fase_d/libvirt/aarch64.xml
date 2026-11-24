@@ -1,0 +1,5 @@
+<domain type='kvm'><name>armvm</name><memory unit='GiB'>2</memory><vcpu>2</vcpu><os firmware='efi'><type arch='aarch64' machine='virt'>hvm</type></os>
+<devices>
+<disk type='file' device='disk'><driver name='qemu' type='qcow2'/><source file='/a.qcow2'/><target dev='sda' bus='sata'/></disk>
+<interface type='bridge'><source bridge='vmbr0'/><model type='e1000e'/></interface>
+</devices></domain>

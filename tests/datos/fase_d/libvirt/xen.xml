@@ -1,0 +1,2 @@
+<domain type='xen'><name>xenvm</name><memory unit='MiB'>512</memory><vcpu>1</vcpu><os><type arch='x86_64'>hvm</type></os>
+<devices><disk type='file' device='disk'><source file='/x.img'/><target dev='xvda' bus='xen'/></disk></devices></domain>

@@ -15,10 +15,11 @@ Reglas de ``repartir`` (todas deterministas):
     cuenta como «no puede» (RF-L08): el turno se respeta y el exceso lo informa V-L10.
 """
 
-from collections import defaultdict
+from collections import Counter, defaultdict
 from collections.abc import Sequence
 from dataclasses import replace
 
+from proxlaunch.nucleo.arquitectura.modelos import Arquitectura, arquitectura_efectiva
 from proxlaunch.nucleo.lote.modelos import (
     Algoritmo,
     ClavePresupuesto,
@@ -45,8 +46,37 @@ def _nodos_candidatos(inv: Inventario, destino: Destino) -> list[str]:
     return sorted(set(destino.nodos))
 
 
-def _motivos_nodo(plantilla: ConfiguracionVM, inv: Inventario, nombre: str) -> list[Problema]:
-    """Motivos (V-L11) por los que el nodo no puede alojar la plantilla; vacío = elegible."""
+def arquitectura_de_referencia(inv: Inventario, destino: Destino) -> Arquitectura:
+    """Arquitectura con la que el reparto no mezcla (V-D06, DT-D10).
+
+    La del primer nodo elegido (``destino.nodos[0]``) o, en ``AUTOMATICO``, la mayoritaria de
+    los nodos en línea (empate o ninguno → ``X86_64``). ``DESCONOCIDA`` cuenta como x86.
+    """
+    if destino.modo != ModoDestino.AUTOMATICO:
+        if destino.nodos:
+            return arquitectura_efectiva(inv, destino.nodos[0])
+        return Arquitectura.X86_64
+    cuenta = Counter(
+        arquitectura_efectiva(inv, n.nombre) for n in inv.topologia.nodos if n.en_linea
+    )
+    if not cuenta:
+        return Arquitectura.X86_64
+    mayor = max(cuenta.values())
+    ganadoras = {a for a, c in cuenta.items() if c == mayor}
+    return Arquitectura.X86_64 if len(ganadoras) > 1 else ganadoras.pop()
+
+
+def _motivos_nodo(
+    plantilla: ConfiguracionVM,
+    inv: Inventario,
+    nombre: str,
+    referencia: Arquitectura | None = None,
+) -> list[Problema]:
+    """Motivos (V-L11) por los que el nodo no puede alojar la plantilla; vacío = elegible.
+
+    Con ``referencia`` (arquitectura del lote) un nodo de otra arquitectura queda fuera con el
+    motivo ``arquitectura`` (``params``: ``arquitectura`` del nodo y ``esperada``).
+    """
     nodo: Nodo | None = next((n for n in inv.topologia.nodos if n.nombre == nombre), None)
     if nodo is None:
         return [
@@ -60,6 +90,22 @@ def _motivos_nodo(plantilla: ConfiguracionVM, inv: Inventario, nombre: str) -> l
         ]
 
     motivos: list[Problema] = []
+    if referencia is not None:
+        propia = arquitectura_efectiva(inv, nombre)
+        if propia != referencia:
+            motivos.append(
+                Problema(
+                    "V-L11",
+                    Severidad.ERROR,
+                    "destino",
+                    {
+                        "nodo": nombre,
+                        "motivo": "arquitectura",
+                        "arquitectura": propia.value,
+                        "esperada": referencia.value,
+                    },
+                )
+            )
 
     def falta(motivo: str, **params: str) -> None:
         motivos.append(
@@ -72,7 +118,7 @@ def _motivos_nodo(plantilla: ConfiguracionVM, inv: Inventario, nombre: str) -> l
     if cfg.origen == OrigenSO.CLONAR_PLANTILLA:
         # Clon: los discos, el efidisk y las redes son los de la plantilla; las reglas de M1
         # sobre ellos no se evalúan (arquitectura §4.3). Solo cuenta la plantilla (V-O25).
-        return motivos_nodo_origen(cfg, inv, nombre)
+        return [*motivos, *motivos_nodo_origen(cfg, inv, nombre)]
     storages = {s.id: s for s in inv.storages.get(nombre, ())}
     discos = cfg.discos if cfg.con_disco else []
 
@@ -108,12 +154,20 @@ def nodos_elegibles(
     todos los discos (y del efidisk con OVMF) y los bridges de todas las redes. Se evalúan
     todos los nodos del servidor (Automático) o solo los de ``destino.nodos``. Los motivos
     son problemas ``V-L11`` con ``params`` ``nodo`` y ``motivo`` (``no_existe``,
-    ``sin_conexion``, ``storage``, ``efidisk``, ``bridge``) más ``storage`` o ``bridge``.
+    ``sin_conexion``, ``storage``, ``efidisk``, ``bridge``, ``arquitectura``) más ``storage`` o
+    ``bridge``. Un nodo de otra arquitectura que la de referencia (``arquitectura_de_referencia``)
+    no es elegible: el reparto nunca mezcla x86 y ARM64 (V-D06).
     """
     elegibles: list[str] = []
     motivos: dict[str, list[Problema]] = {}
+    # Con nodos elegidos a mano no se filtra por arquitectura: la mezcla es V-D06 (CA-D2.8.1).
+    referencia = (
+        None
+        if destino.modo == ModoDestino.NODOS_ELEGIDOS
+        else arquitectura_de_referencia(inv, destino)
+    )
     for nombre in _nodos_candidatos(inv, destino):
-        m = _motivos_nodo(plantilla, inv, nombre)
+        m = _motivos_nodo(plantilla, inv, nombre, referencia)
         if m:
             motivos[nombre] = m
         else:
@@ -198,6 +252,16 @@ def repartir_filas(
                 Problema("E-L01", Severidad.ERROR, "destino", {"nodo": nombre, "motivo": motivo})
             )
             return [""] * n, {}, problemas
+        # V-D07: con un solo nodo la plantilla de otra arquitectura tampoco sirve (CA-D2.9.1/2).
+        if n:
+            cruzadas = [
+                m
+                for m in motivos_nodo_origen(filas[0].cfg, inv, nombre)
+                if m.params.get("motivo") == "arquitectura_plantilla"
+            ]
+            if cruzadas:
+                problemas.extend(cruzadas)
+                return [""] * n, {}, problemas
         reparto = {nombre: (n, MotivoReparto.ELEGIDO_POR_USUARIO)} if n else {}
         return [nombre] * n, reparto, problemas
     if n == 0:

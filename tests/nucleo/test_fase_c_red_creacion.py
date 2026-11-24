@@ -661,12 +661,20 @@ def _transporte_descubrimiento(network=None) -> TransporteFalso:
     return t
 
 
+def _es_lectura_de_arquitectura(c) -> bool:
+    """Lecturas que añade la fase D (D2) al descubrimiento: ``host-arch`` y el estado del nodo."""
+    return c.ruta == "/cluster/resources" or (
+        c.ruta.startswith("/nodes/") and c.ruta.endswith("/status")
+    )
+
+
 def _llamadas(t: TransporteFalso, *, con_any_bridge: bool) -> list[tuple]:
     return sorted(
         (
             (c.metodo, c.ruta, c.params)
             for c in t.llamadas
-            if con_any_bridge or (c.params or {}).get("type") != "any_bridge"
+            if (con_any_bridge or (c.params or {}).get("type") != "any_bridge")
+            and not _es_lectura_de_arquitectura(c)
         ),
         key=str,
     )
@@ -678,7 +686,10 @@ def test_rf_c0_2_el_descubrimiento_conserva_las_lecturas_de_0_7_0_y_solo_suma_an
     assert _llamadas(t, con_any_bridge=False) == LECTURAS_070
     extra = [c for c in t.llamadas if (c.params or {}).get("type") == "any_bridge"]
     assert sorted(c.ruta for c in extra) == [f"/nodes/pve{i}/network" for i in (1, 2, 3)]
-    assert len(t.llamadas) == len(LECTURAS_070) + 3
+    # D2 solo suma la arquitectura: ``host-arch`` (9.2) y como mucho un estado por nodo
+    lecturas_d2 = [c for c in t.llamadas if _es_lectura_de_arquitectura(c)]
+    assert len(t.llamadas) == len(LECTURAS_070) + 3 + len(lecturas_d2)
+    assert len(lecturas_d2) <= 1 + 3
     assert all(c.metodo == "GET" for c in t.llamadas)
     # Con la respuesta de 0.7.0 (solo interfaces y bridges) no aparece ninguna VNet.
     assert inv.redes_sdn == {"pve1": (), "pve2": (), "pve3": ()}

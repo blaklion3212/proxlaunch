@@ -86,6 +86,7 @@ class DialogoConexion(QDialog):
         version_forzada: tuple[int, int] | None = None,
         perfil_id: str | None = None,
         motivo: str | None = None,
+        aviso_version: str | None = None,
         parent: QWidget | None = None,
     ) -> None:
         super().__init__(parent)
@@ -116,6 +117,9 @@ class DialogoConexion(QDialog):
         self._perfil_a_conectar: PerfilConexion | None = None
         self._efectivo: PerfilConexion | None = None
         self._construir(motivo)
+        # V-D03: la versión forzada guardada ya no se admite; se avisa una sola vez, junto al
+        # selector de versión (la ventana lo pasa solo hasta la primera conexión).
+        poner_mensaje(self._aviso_version, aviso_version, aviso=True)
         self._recargar_perfiles(perfil_id)
         self._actualizar_visibilidad()
 
@@ -226,6 +230,8 @@ class DialogoConexion(QDialog):
         capa.addWidget(self._nota_recordar)
         capa.addWidget(self._contenedor_ssl)
         capa.addWidget(self.fila_version)
+        self._aviso_version = mensaje(aviso=True)
+        capa.addWidget(self._aviso_version)
         self._construir_storages(capa)
         if self.version_forzada is not None:
             self._seleccionar_version(self.version_forzada)

@@ -13,7 +13,8 @@ import re
 from dataclasses import dataclass
 from pathlib import Path
 
-from proxlaunch.nucleo.capacidades import Capacidades, Funcion, asistente_plantilla_disponible
+from proxlaunch.nucleo.arquitectura.modelos import arquitectura_efectiva
+from proxlaunch.nucleo.capacidades import Capacidades
 from proxlaunch.nucleo.cloudinit.modelos import (
     InfoCloudInitPlantilla,
     ModoTarjeta,
@@ -259,7 +260,9 @@ def _validar_maquina(
     """V-B09, V-B11 y V-B12: las reglas de ``validar_vm`` sobre la configuración de B2."""
     if not nombre_dns_valido(sol.cfg.nombre):
         p.append(_error("nombre", "V-B09"))
-    cfg = cfg_de_creacion(sol, volid_de_imagen(sol))
+    cfg = cfg_de_creacion(
+        sol, volid_de_imagen(sol), arquitectura=arquitectura_efectiva(inv, sol.nodo)
+    )
     for q in validar_vm(cfg, inv, caps):
         regla = q.codigo.split(".", 1)[0]
         if regla in _REGLAS_NOMBRE or regla in _REGLAS_IGNORADAS:
@@ -354,16 +357,6 @@ def validar_solicitud(
     ``ServicioCreacion`` al crear. Lee la cabecera de un archivo local; no hace peticiones.
     """
     p: list[Problema] = []
-    if not asistente_plantilla_disponible(caps):
-        minima = caps.requisito(Funcion.ASISTENTE_PLANTILLA_IMAGEN)
-        p.append(
-            _error(
-                "version",
-                "V-B01",
-                version=f"{caps.version[0]}.{caps.version[1]}",
-                requerida=f"{minima[0]}.{minima[1]}",
-            )
-        )
     _validar_origen(sol, p)
     _validar_almacenamientos(sol, inv, p)
     _validar_maquina(sol, inv, caps, p)

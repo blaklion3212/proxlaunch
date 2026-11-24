@@ -1,0 +1,5 @@
+<domain type='kvm'>
+  <name>roto</name>
+  <devices>
+    <disk>
+</domain>

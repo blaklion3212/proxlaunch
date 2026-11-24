@@ -14,7 +14,19 @@ from __future__ import annotations
 
 from dataclasses import replace
 
+from proxlaunch.nucleo.arquitectura.modelos import (
+    Arquitectura,
+    ArquitecturaNodo,
+    FuenteArquitectura,
+)
 from proxlaunch.nucleo.errores import CodigoError, ErrorProxLaunch
+from proxlaunch.nucleo.hardware_cluster.modelos import (
+    EntradaMapeo,
+    InfoHardwareCluster,
+    Mapeo,
+    ModeloCpu,
+    TipoMapeo,
+)
 from proxlaunch.nucleo.modelos.catalogo import CatalogoServidor, Contenido, ListadoStorage
 from proxlaunch.nucleo.modelos.inventario import Bridge, Inventario, Nodo, Storage, Topologia
 from proxlaunch.nucleo.modelos.tarea import Etapa
@@ -256,3 +268,112 @@ class CreacionConSecuenciaCompleta(CreacionPorVmid):
         res = super().crear(cfg, inv, al_cambiar_etapa, cancelado, **kw)
         al_cambiar_etapa(Etapa.COMPROBANDO)
         return res
+
+
+# --- Fase D (0.9): libvirt, hardware del clúster, ARM64 y CPU personalizadas ----------------------
+
+# XML de ejemplo de una máquina de libvirt (todo inventado): Linux con UEFI, dos discos y una
+# tarjeta de red. Trae un modelo de CPU concreto, un TPM y un dispositivo gráfico para que la
+# vista previa muestre filas migradas, aproximadas y «No se migra».
+XML_LIBVIRT_EJEMPLO = """<domain type='kvm'>
+  <name>app-linux-ejemplo</name>
+  <metadata>
+    <libosinfo:libosinfo xmlns:libosinfo="http://libosinfo.org/xmlns/libvirt/domain/1.0">
+      <libosinfo:os id="http://ubuntu.com/ubuntu/24.04"/>
+    </libosinfo:libosinfo>
+  </metadata>
+  <memory unit='GiB'>4</memory>
+  <vcpu>4</vcpu>
+  <os firmware='efi'>
+    <type arch='x86_64' machine='pc-q35-8.2'>hvm</type>
+    <loader readonly='yes' type='pflash'>/usr/share/OVMF/OVMF_CODE.fd</loader>
+  </os>
+  <cpu mode='custom' match='exact'>
+    <model fallback='allow'>Skylake-Server</model>
+    <topology sockets='1' cores='2' threads='2'/>
+  </cpu>
+  <devices>
+    <disk type='file' device='disk'>
+      <driver name='qemu' type='qcow2'/>
+      <source file='/imagenes/app-sistema.qcow2'/>
+      <target dev='vda' bus='virtio'/>
+      <boot order='1'/>
+    </disk>
+    <disk type='file' device='disk'>
+      <driver name='qemu' type='qcow2'/>
+      <source file='/imagenes/app-datos.qcow2'/>
+      <target dev='vdb' bus='virtio'/>
+    </disk>
+    <interface type='bridge'>
+      <mac address='52:54:00:12:34:56'/>
+      <source bridge='vmbr0'/>
+      <model type='virtio'/>
+    </interface>
+    <graphics type='spice' autoport='yes'><listen type='address'/></graphics>
+    <sound model='ich9'/>
+    <watchdog model='itco' action='reset'/>
+  </devices>
+</domain>
+"""
+
+
+# Privilegios de la fase D que no trae el rol de la guía: leer los nodos y usar los mapeos.
+PRIVILEGIOS_FASE_D = (*PRIVILEGIOS_ESCENARIO, "Sys.Audit", "Mapping.Use")
+
+# Mapeos y modelos de CPU del clúster ficticio (nada leído de un servidor real).
+MAPEO_PCI_GUIA = Mapeo(
+    TipoMapeo.PCI,
+    "gpu-ejemplo",
+    "Gráfica de pruebas",
+    (EntradaMapeo("pve1"), EntradaMapeo("pve2")),
+)
+MAPEO_USB_GUIA = Mapeo(
+    TipoMapeo.USB, "llave-ejemplo", "Llave de licencias", (EntradaMapeo("pve1"),)
+)
+CPU_PERSONALIZADA_GUIA = "custom-ejemplo"
+
+
+def info_hardware_guia(nodos=("pve1", "pve2", "pve-arm")) -> InfoHardwareCluster:
+    """Mapeos y CPU (estándar y ``custom-ejemplo``) que «lee» el escenario de la fase D."""
+    modelos = (
+        ModeloCpu("x86-64-v2-AES", False),
+        ModeloCpu("kvm64", False),
+        ModeloCpu(CPU_PERSONALIZADA_GUIA, True),
+        ModeloCpu("custom-laboratorio", True),
+    )
+    return InfoHardwareCluster(
+        mapeos=(MAPEO_PCI_GUIA, MAPEO_USB_GUIA), cpus={n: modelos for n in nodos}
+    )
+
+
+def inventario_guia_fase_d() -> Inventario:
+    """Clúster ``demo`` con ``pve1`` y ``pve2`` (x86-64) y ``pve-arm`` (arm64) y la fase D."""
+    base = inventario_guia_cluster()
+    todos = _storages()
+    nodos = (
+        Nodo("pve1", True, 61440, 16),
+        Nodo("pve2", True, 49152, 16),
+        Nodo("pve-arm", True, 32768, 8),
+    )
+    redes = (Bridge("vmbr0", "bridge", False), Bridge("vmbr1", "bridge", True))
+    nombres = [n.nombre for n in nodos]
+    inv = replace(
+        base,
+        topologia=Topologia(True, "demo", nodos),
+        storages={n: _con_imagenes(todos) for n in nombres},
+        storages_todos={n: todos for n in nombres},
+        bridges={n: redes for n in nombres},
+        catalogo=_catalogo(base.catalogo, nombres),
+        errores_por_nodo={},
+    )
+    permisos = inv.catalogo.permisos
+    rutas = {r: {**p, **dict.fromkeys(PRIVILEGIOS_FASE_D, 1)} for r, p in permisos.rutas.items()}
+    inv.catalogo = replace(inv.catalogo, permisos=replace(permisos, rutas=rutas))
+    inv.arquitecturas = {
+        n: ArquitecturaNodo(
+            Arquitectura.AARCH64 if n == "pve-arm" else Arquitectura.X86_64,
+            FuenteArquitectura.KERNEL,
+        )
+        for n in nombres
+    }
+    return inv

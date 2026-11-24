@@ -14,6 +14,7 @@ from PySide6.QtWidgets import (
     QGridLayout,
     QLabel,
     QLineEdit,
+    QListView,
     QPushButton,
     QVBoxLayout,
     QWidget,
@@ -22,6 +23,7 @@ from PySide6.QtWidgets import (
 from proxlaunch.interfaz.ayuda import ayuda
 from proxlaunch.interfaz.textos import texto_problema
 from proxlaunch.interfaz.vistas.campos import mensaje, poner_mensaje, poner_propiedad
+from proxlaunch.nucleo.arquitectura.modelos import Arquitectura
 from proxlaunch.nucleo.modelos.inventario import Storage
 from proxlaunch.nucleo.modelos.vm import Bus, ControladorScsi, Disco, FormatoDisco
 from proxlaunch.nucleo.validacion import (
@@ -35,6 +37,8 @@ from proxlaunch.nucleo.valores_defecto import TAMANO_DISCO_GIB, disco_por_defect
 # Columnas de la rejilla.
 _C_INDICE, _C_STORAGE, _C_TAMANO, _C_BUS, _C_FORMATO, _C_DISCARD, _C_SSD, _C_IOTHREAD = range(8)
 _C_QUITAR = 8
+# Conexiones que no existen en un servidor ARM64 (D2, RF-D2.7): se ocultan de la lista.
+_BUSES_SOLO_X86 = (Bus.SATA, Bus.IDE)
 
 
 def entero_o_cero(texto: str) -> int:
@@ -117,6 +121,8 @@ class TablaDiscos(QWidget):
     """Lista editable de discos. Emite ``cambiado`` ante cualquier modificación."""
 
     cambiado = Signal()
+    # Posición del disco que el usuario va a quitar; se emite antes de quitarlo y de renumerar.
+    disco_quitado = Signal(int)
 
     def __init__(self, parent: QWidget | None = None) -> None:
         super().__init__(parent)
@@ -124,6 +130,7 @@ class TablaDiscos(QWidget):
         self._storages: dict[str, Storage] = {}
         self._recordado: str | None = None  # storage recordado del servidor (RF-O05)
         self._primero_importado = False  # el primer disco sale de una imagen (RF-O17)
+        self._arm = False  # el servidor elegido es ARM64: sin SATA ni IDE
         self._ctrl = ControladorScsi.VIRTIO_SINGLE
         self._avanzado = False
         self._avanzados: list[QWidget] = []  # registro de widgets que solo ve el modo avanzado
@@ -210,6 +217,31 @@ class TablaDiscos(QWidget):
                 if importado
                 else ""
             )
+
+    def establecer_arquitectura(self, arq: Arquitectura) -> None:
+        """En un servidor ARM64 no existen SATA ni IDE: se ocultan de la lista de conexiones.
+
+        Solo se ocultan opciones; el valor de un disco no cambia aquí (lo adapta el formulario
+        con V-D08 y avisa), así que un disco cargado de un lote guardado no se pierde en silencio.
+        """
+        arm = arq == Arquitectura.AARCH64
+        if arm == self._arm:
+            return
+        self._arm = arm
+        for f in self._filas:
+            self._aplicar_arquitectura(f)
+
+    def _aplicar_arquitectura(self, f: _FilaDisco) -> None:
+        modelo = cast(QStandardItemModel, f.bus.model())
+        vista = cast(QListView, f.bus.view())
+        for bus in _BUSES_SOLO_X86:
+            posicion = f.bus.findData(bus)
+            if posicion < 0:
+                continue
+            vista.setRowHidden(posicion, self._arm)
+            item = modelo.item(posicion)
+            if item is not None:
+                item.setEnabled(not self._arm)
 
     def establecer_controlador(self, ctrl: ControladorScsi) -> None:
         self._ctrl = ctrl
@@ -411,6 +443,7 @@ class TablaDiscos(QWidget):
         f.ssd.toggled.connect(lambda v, fila=f: self._al_marcar(fila, "ssd", v))
         f.iothread.toggled.connect(lambda v, fila=f: self._al_marcar(fila, "iothread", v))
         f.quitar.clicked.connect(lambda _c=False, fila=f: self._al_quitar(fila))
+        self._aplicar_arquitectura(f)
         self._filas.append(f)
         fila_rejilla = len(self._filas)
         for col, w in f.widgets():
@@ -456,6 +489,7 @@ class TablaDiscos(QWidget):
 
     def _al_quitar(self, f: _FilaDisco) -> None:
         if len(self._filas) > 1:
+            self.disco_quitado.emit(self._filas.index(f))
             self._quitar_fila(f)
 
     def _al_cambiar_storage(self, f: _FilaDisco) -> None:

@@ -295,6 +295,50 @@ def respuesta_agente(*interfaces: tuple[str, str | None, tuple[str, ...]]) -> di
     return {"result": resultado}
 
 
+# --- Respuestas de la API de la fase D (0.9) ----------------------------------------------------
+
+
+def mapeo_api(
+    id_: str,
+    *entradas: tuple[str, str],
+    descripcion: str = "",
+    mdev: bool | None = None,
+    migrable: bool | None = None,
+) -> dict[str, Any]:
+    """Un elemento de ``GET /cluster/mapping/pci|usb``: ``entradas`` = ``(nodo, ruta)``."""
+    fila: dict[str, Any] = {
+        "id": id_,
+        "description": descripcion,
+        "map": [f"node={n},path={ruta},id=10de:2236" for n, ruta in entradas],
+    }
+    if mdev is not None:
+        fila["mdev"] = int(mdev)
+    if migrable is not None:
+        fila["live-migration-capable"] = int(migrable)
+    return fila
+
+
+def modelo_cpu_api(
+    nombre: str, *, custom: bool = False, abstract: bool = False, vendor: str = "default"
+) -> dict[str, Any]:
+    """Un elemento de ``GET /nodes/{n}/capabilities/qemu/cpu``."""
+    return {
+        "name": nombre,
+        "custom": int(custom),
+        "vendor": vendor,
+        **({"abstract": 1} if abstract else {}),
+    }
+
+
+def estado_nodo_api(maquina: str | None = "x86_64", **extra: Any) -> dict[str, Any]:
+    """``data`` de ``GET /nodes/{n}/status`` con ``current-kernel.machine`` (sin él, ``None``)."""
+    datos: dict[str, Any] = {"uptime": 12345, "pveversion": "pve-manager/9.2.1"}
+    if maquina is not None:
+        datos["current-kernel"] = {"machine": maquina, "sysname": "Linux", "release": "6.17"}
+    datos.update(extra)
+    return datos
+
+
 class Cluster:
     """Servidor de Proxmox simulado: estado, rutas de la API usadas por el lote y contadores.
 
@@ -351,6 +395,15 @@ class Cluster:
         self.bloqueo_clon: set[int] = set()
         # Traza completa (método, ruta, consulta, cuerpo en bytes); la llena ``instalar_http``.
         self.trazas: list[tuple[str, str, str, bytes]] = []
+        # --- Fase D (0.9): arquitectura, CPU y mapeos del clúster ------------------------------
+        # Cada valor puede ser el ``data`` de la respuesta o una excepción (se lanza). Sin valor
+        # fijado la ruta sigue su camino de siempre (arquitectura) o responde vacía (CPU, mapeos).
+        self.recursos_nodo: Any = None  # ``GET /cluster/resources?type=node`` (lista de filas)
+        self.estados_nodo: dict[str, Any] = {}  # ``GET /nodes/{n}/status`` por nodo
+        self.cpus_api: dict[str, Any] = {}  # ``GET /nodes/{n}/capabilities/qemu/cpu`` por nodo
+        self.cpus_por_arch: dict[tuple[str, str], Any] = {}  # ídem con ``?arch=`` (nodo, arch)
+        self.mapeos_api: dict[str, Any] = {}  # ``GET /cluster/mapping/{pci|usb}`` por tipo
+        self.check_node_api: dict[tuple[str, str], Any] = {}  # ``?check-node=`` por (tipo, nodo)
 
     # --- Configuración ---------------------------------------------------------------------
 
@@ -456,6 +509,9 @@ class Cluster:
         propio = self._fase_b(ll)  # antes que ``_normal``: sirve también a los clústeres derivados
         if not isinstance(propio, _Normal):
             return propio
+        propio = self._fase_d(ll)
+        if not isinstance(propio, _Normal):
+            return propio
         resultado = self._normal(ll)
         self._tras_normal(ll)
         return resultado
@@ -502,6 +558,39 @@ class Cluster:
                     f"{unquote_plus(cuerpo)}",
                 )
         return NORMAL
+
+    # --- Rutas de la fase D (0.9) ----------------------------------------------------------------
+
+    @staticmethod
+    def _valor_d(valor: Any) -> Any:
+        if isinstance(valor, BaseException):
+            raise valor
+        return valor
+
+    def _fase_d(self, ll: Llamada) -> Any:
+        """Arquitectura, capacidades de CPU y mapeos del clúster (solo lecturas, ``GET``)."""
+        if ll.metodo != "GET":
+            return NORMAL
+        ruta, params = ll.ruta, ll.params or {}
+        if ruta == "/cluster/resources" and params.get("type") == "node":
+            return NORMAL if self.recursos_nodo is None else self._valor_d(self.recursos_nodo)
+        if (mt := _RE_ESTADO_NODO.match(ruta)) and mt["n"] in self.estados_nodo:
+            return self._valor_d(self.estados_nodo[mt["n"]])
+        if mt := re.match(r"^/nodes/(?P<n>[^/]+)/capabilities/qemu/cpu$", ruta):
+            arch = params.get("arch")
+            if arch is not None and (mt["n"], arch) in self.cpus_por_arch:
+                return self._valor_d(self.cpus_por_arch[(mt["n"], arch)])
+            return self._valor_d(self.cpus_api.get(mt["n"], []))
+        if mt := re.match(r"^/cluster/mapping/(?P<t>pci|usb)$", ruta):
+            tipo = mt["t"]
+            if "check-node" in params:
+                return self._valor_d(self.check_node_api.get((tipo, params["check-node"]), []))
+            return self._valor_d(self.mapeos_api.get(tipo, []))
+        return NORMAL
+
+    def lecturas_d(self, patron: str) -> list[Llamada]:
+        """``GET`` recibidos cuya ruta casa ``patron`` (cuenta lecturas de la fase D)."""
+        return self.llamadas_a("GET", patron)
 
     def _agente(self, ll: Llamada, vmid: int) -> Any:
         with self._cerrojo:

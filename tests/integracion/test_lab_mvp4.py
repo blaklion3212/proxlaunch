@@ -348,19 +348,31 @@ def sha256_de(ruta: Path) -> str:
 
 @pytest.fixture(scope="module", autouse=True)
 def _limpieza_m4() -> Iterator[None]:
-    """Estado inicial comprobado y limpieza total al terminar el módulo."""
+    """Estado inicial comprobado y limpieza total al terminar el módulo.
+
+    El laboratorio recreado trae ``lab-import`` (dir con contenido import,iso,snippets). Estas
+    pruebas verifican qué storages ofrece cada contenido partiendo de un servidor donde solo
+    ``local`` puede tener ``import``; se deshabilita ``lab-import`` durante el módulo (conserva
+    intactas las expectativas ``{LOCAL}``) y se rehabilita SIEMPRE al terminar.
+    """
     esperar_api()
-    original = contenido_de_local()
-    assert "import" not in original.split(","), f"local ya tiene import: {original}"
-    assert set(original.split(",")) == set(CONTENIDO_LOCAL_ORIGINAL.split(",")), original
-    borrar_archivos_lab()
-    yield
-    limpiar_vms()
-    borrar_archivos_lab()
-    borrar_temporales_subida()
-    fijar_contenido_local(CONTENIDO_LOCAL_ORIGINAL)
-    for rol in ("PlcM4Menos", "PlcM4Tmp", ROL14):
-        lab.borrar_rol(rol)
+    lab.ssh("sudo pvesm set lab-import --disable 1")
+    try:
+        original = contenido_de_local()
+        assert "import" not in original.split(","), f"local ya tiene import: {original}"
+        assert set(original.split(",")) == set(CONTENIDO_LOCAL_ORIGINAL.split(",")), original
+        borrar_archivos_lab()
+        yield
+    finally:
+        try:
+            limpiar_vms()
+            borrar_archivos_lab()
+            borrar_temporales_subida()
+            fijar_contenido_local(CONTENIDO_LOCAL_ORIGINAL)
+            for rol in ("PlcM4Menos", "PlcM4Tmp", ROL14):
+                lab.borrar_rol(rol)
+        finally:
+            lab.ssh("sudo pvesm set lab-import --delete disable", comprobar=False)
 
 
 @pytest.fixture(scope="module")

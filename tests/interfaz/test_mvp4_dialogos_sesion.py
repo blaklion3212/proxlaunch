@@ -37,9 +37,9 @@ def _dialogo(qtbot, caps):
 
 def test_ca_o02_9_la_tabla_lista_las_nueve_vias_con_estado_en_texto_y_simbolo(qtbot):
     d = _dialogo(qtbot, caps_origen())
-    # Las nueve vías de origen y las cinco filas de la fase C (RF-C5.2).
-    assert d.tabla.rowCount() == 14
-    for fila in range(14):
+    # Las nueve vías de origen, las cinco filas de la fase C (RF-C5.2) y las tres de la D (RF-D5.2).
+    assert d.tabla.rowCount() == 17
+    for fila in range(17):
         estado = d.tabla.item(fila, d.COL_ESTADO).text()
         assert estado[0] in "✔!✖" and len(estado) > 2  # símbolo + texto: no solo color
 
@@ -75,13 +75,18 @@ def test_ca_o32_2_copiar_deja_el_texto_en_el_portapapeles(qtbot):
 
 
 def test_con_todo_disponible_no_hay_lista_de_faltantes():
-    assert texto_faltante_para_administrador(caps_origen()) == ""
+    # Con el rol de 14 privilegios solo faltan los permisos opcionales de la fase D (Mapping.Use).
+    lineas = texto_faltante_para_administrador(caps_origen()).splitlines()
+    assert all(
+        linea.startswith(("- Usar tarjetas PCI y USB", "- Usar modelos de CPU")) for linea in lineas
+    )
 
 
 def test_la_lista_de_faltantes_nombra_cada_funcion_y_su_motivo():
-    texto = texto_faltante_para_administrador(caps_origen(inv_origen(version=(8, 0))))
+    # Con la mínima 8.4 ninguna función falta por la versión: el motivo es el permiso (con su ruta).
+    texto = texto_faltante_para_administrador(caps_origen(inv_origen(privilegios=ROL_10)))
     assert texto.startswith("- ")
-    assert "8.0" in texto
+    assert "Datastore.AllocateTemplate" in texto
 
 
 def test_sin_capacidades_todavia_el_dialogo_lo_dice(qtbot):

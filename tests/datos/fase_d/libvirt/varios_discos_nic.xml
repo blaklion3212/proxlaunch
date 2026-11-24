@@ -1,0 +1,53 @@
+<domain type='kvm'>
+  <name>Web Server #1 (prod)</name>
+  <memory unit='MiB'>2048</memory>
+  <vcpu>4</vcpu>
+  <os><type arch='x86_64' machine='pc'>hvm</type></os>
+  <cpu mode='custom' match='exact'>
+    <model fallback='allow'>Skylake-Server</model>
+    <topology sockets='2' cores='1' threads='2'/>
+    <feature policy='require' name='vmx'/>
+  </cpu>
+  <devices>
+    <disk type='file' device='disk'>
+      <driver name='qemu' type='qcow2'/>
+      <source file='/imgs/datos.qcow2'/>
+      <target dev='vdb' bus='virtio'/>
+    </disk>
+    <disk type='file' device='disk'>
+      <driver name='qemu' type='qcow2'/>
+      <source file='/imgs/sistema.qcow2'/>
+      <target dev='vda' bus='virtio'/>
+      <boot order='1'/>
+    </disk>
+    <disk type='file' device='disk'>
+      <driver name='qemu' type='raw' cache='none'/>
+      <source file='/imgs/extra.img'/>
+      <target dev='sdc' bus='sata'/>
+      <readonly/>
+    </disk>
+    <disk type='network' device='disk'>
+      <driver name='qemu' type='raw'/>
+      <source protocol='rbd' name='pool/img'/>
+      <target dev='vdd' bus='virtio'/>
+    </disk>
+    <interface type='bridge'>
+      <mac address='52:54:00:00:00:01'/>
+      <source bridge='vmbr0'/>
+      <vlan><tag id='20'/></vlan>
+      <model type='virtio'/>
+      <mtu size='9000'/>
+      <bandwidth><outbound average='10240'/></bandwidth>
+    </interface>
+    <interface type='bridge'>
+      <mac address='52:54:00:00:00:02'/>
+      <source bridge='vmbr1'/>
+      <model type='rtl8139'/>
+    </interface>
+    <interface type='direct'>
+      <mac address='52:54:00:00:00:03'/>
+      <source dev='eth0' mode='bridge'/>
+      <model type='vmxnet3'/>
+    </interface>
+  </devices>
+</domain>

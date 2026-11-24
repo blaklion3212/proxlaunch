@@ -11,7 +11,7 @@ Este módulo importa ``validacion``; ``validacion.validar_vm`` lo importa de for
 
 from __future__ import annotations
 
-from proxlaunch.nucleo.capacidades import Capacidades, Funcion
+from proxlaunch.nucleo.capacidades import Capacidades
 from proxlaunch.nucleo.modelos.catalogo import CatalogoServidor, Contenido
 from proxlaunch.nucleo.modelos.inventario import Inventario
 from proxlaunch.nucleo.modelos.origen import (
@@ -245,17 +245,6 @@ def _validar_importacion(
     det: DetalleImportacion,
     p: list[Problema],
 ) -> None:
-    if not caps.tiene(Funcion.IMPORTAR_DISCO):
-        mayor, menor = caps.requisito(Funcion.IMPORTAR_DISCO)
-        p.append(
-            _error(
-                "detalle_origen.imagen",
-                "V-O03",
-                motivo="version",
-                version=f"{caps.version[0]}.{caps.version[1]}",
-                requerida=f"{mayor}.{menor}",
-            )
-        )
     _volumen(cfg, inv, det.imagen, Contenido.IMPORT, "detalle_origen.imagen", "V-O03", p)
     if det.ampliar_a_gib is not None and det.tamano_virtual_bytes is not None:
         actual = -(-det.tamano_virtual_bytes // _GIB)

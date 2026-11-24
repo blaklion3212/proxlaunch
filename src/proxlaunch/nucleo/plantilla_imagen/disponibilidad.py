@@ -16,7 +16,7 @@ import dataclasses
 from dataclasses import dataclass, field
 from enum import StrEnum
 
-from proxlaunch.nucleo.capacidades import Capacidades, Funcion, asistente_plantilla_disponible
+from proxlaunch.nucleo.capacidades import Capacidades
 from proxlaunch.nucleo.cloudinit.disponibilidad import estado_permisos_cloudinit
 from proxlaunch.nucleo.errores import CodigoError
 from proxlaunch.nucleo.modelos.catalogo import CatalogoServidor, Contenido, PermisosEfectivos
@@ -118,15 +118,7 @@ def disponibilidad_plantilla_imagen(
     vias = calcular_capacidades(caps, inv, nodo)
     estados: DisponibilidadB2 = {}
 
-    if not asistente_plantilla_disponible(caps):
-        minima = caps.requisito(Funcion.ASISTENTE_PLANTILLA_IMAGEN)
-        estados[ControlB2.ASISTENTE] = EstadoControlB2(
-            ControlB2.ASISTENTE,
-            Disponibilidad.NO,
-            CodigoError.OPCION_SIN_VERSION,
-            {"control": ControlB2.ASISTENTE.value, "version": f"{minima[0]}.{minima[1]}"},
-        )
-    elif not candidatos(inv, Contenido.IMPORT, nodo):
+    if not candidatos(inv, Contenido.IMPORT, nodo):
         estados[ControlB2.ASISTENTE] = EstadoControlB2(
             ControlB2.ASISTENTE,
             Disponibilidad.NO,

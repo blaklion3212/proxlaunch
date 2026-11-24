@@ -9,21 +9,31 @@ excepciones) y **no** sustituyen nada en silencio (D-23.2).
 from __future__ import annotations
 
 import copy
+import dataclasses
 import re
 from collections.abc import Iterable, Sequence
 from dataclasses import dataclass
 
+from proxlaunch.nucleo.arquitectura.modelos import (
+    Arquitectura,
+    arquitectura_de,
+    arquitectura_efectiva,
+)
 from proxlaunch.nucleo.cloudinit.snippets import volid_snippet_valido
 from proxlaunch.nucleo.firewall.modelos import RE_GRUPO, FirewallMV, FirewallParcial
+from proxlaunch.nucleo.hardware_cluster.modelos import TipoMapeo
+from proxlaunch.nucleo.hardware_cluster.validacion import validar_plantilla_hardware
 from proxlaunch.nucleo.lote.modelos import FilaLote
 from proxlaunch.nucleo.lote.modelos import Problema as ProblemaLote
 from proxlaunch.nucleo.lote.modelos import Severidad as SeveridadLote
 from proxlaunch.nucleo.modelos.catalogo import CatalogoServidor, Contenido, Plantilla, Volumen
+from proxlaunch.nucleo.modelos.cpu import RE_CPU_PERSONALIZADA
 from proxlaunch.nucleo.modelos.inventario import Inventario, Storage
 from proxlaunch.nucleo.modelos.origen import (
     DetalleClon,
     DetalleImportacion,
     DetalleIso,
+    ImagenDisco,
     ModoClon,
     RefPlantilla,
     RefVolumen,
@@ -62,6 +72,10 @@ class NecesidadesCatalogo:
     firewall: bool = False
     grupos_firewall: frozenset[str] = frozenset()
     firewall_plantillas: frozenset[str] = frozenset()  # nombres de plantilla de filas con C3
+    # Fase D (D3): mapeos ``(tipo, id)`` que usan las filas y nombres de las CPU ``custom-*``
+    # elegidas (se leen en cada nodo del lote, no aquí: el reparto aún no se hizo).
+    mapeos: frozenset[tuple[str, str]] = frozenset()
+    cpus_personalizadas: frozenset[str] = frozenset()
 
     @property
     def vacias(self) -> bool:
@@ -71,6 +85,8 @@ class NecesidadesCatalogo:
             and not self.formatos
             and not self.snippets
             and not self.firewall
+            and not self.mapeos
+            and not self.cpus_personalizadas
         )
 
 
@@ -125,8 +141,18 @@ def necesidades_catalogo(
     plantillas_fw: set[str] = set()
     formatos = False
     usa_fw = False
+    mapeos: set[tuple[str, str]] = set()
+    cpus: set[str] = set()
     for fila in filas:
         det = fila.cfg.detalle_origen
+        # Fase D: mapeos y CPU personalizada de la fila (sin ellos, ninguna lectura nueva).
+        hw = fila.cfg.hardware_cluster
+        if hw is not None:
+            mapeos.update((TipoMapeo.PCI.value, a.mapeo) for a in hw.pci)
+            mapeos.update((TipoMapeo.USB.value, u.mapeo) for u in hw.usb)
+        cpu = det.ajustes.tipo_cpu if isinstance(det, DetalleClon) else fila.cfg.tipo_cpu
+        if isinstance(cpu, str) and RE_CPU_PERSONALIZADA.fullmatch(cpu):
+            cpus.add(cpu)
         fw_activo, fw_grupo = _firewall_de_fila(fila, opciones)
         if fw_activo:
             usa_fw = True
@@ -152,6 +178,8 @@ def necesidades_catalogo(
         usa_fw,
         frozenset(grupos),
         frozenset(plantillas_fw),
+        frozenset(mapeos),
+        frozenset(cpus),
     )
 
 
@@ -327,10 +355,28 @@ def _resolver_imagen(
     )
     if p is not None:
         problemas.append(p)
+    # Fase D (DT-D14): cada imagen de los discos 1.. se resuelve igual que la del disco 0.
+    otras: list[ImagenDisco] = []
+    for extra in det.otras:
+        if extra.imagen is None:
+            otras.append(extra)
+            continue
+        ref, p = _resolver_ref(
+            inv,
+            nodo,
+            extra.imagen,
+            Contenido.IMPORT,
+            "V-O03",
+            f"detalle_origen.otras[{extra.indice}].imagen",
+        )
+        if p is not None:
+            problemas.append(p)
+        otras.append(dataclasses.replace(extra, imagen=ref))
     return DetalleImportacion(
         imagen=imagen,
         ampliar_a_gib=det.ampliar_a_gib,
         tamano_virtual_bytes=det.tamano_virtual_bytes,
+        otras=tuple(otras),
     )
 
 
@@ -415,6 +461,8 @@ def _resolver_clon(
     modo, problema = modo_efectivo(det, detalle, inv, plantilla.nodo)
     if problema is not None:
         problemas.append(problema)
+    # Fase D (RF-D3.5): V-D58/V-D58b de lo que la config ya trae (sin ninguna lectura nueva).
+    problemas.extend(validar_plantilla_hardware(detalle, plantilla.nombre))
     nueva = copy.deepcopy(cfg)
     nueva.detalle_origen = DetalleClon(
         plantilla=RefPlantilla(plantilla.nombre, plantilla.vmid, plantilla.nodo),
@@ -491,6 +539,26 @@ def _falta_archivo(inv: Inventario, nodo: str, ref: RefVolumen, contenido: Conte
     return None if presente else nombre
 
 
+def _normalizar_arquitectura(texto: str | None) -> Arquitectura:
+    """``arch`` de una config (texto no confiable): ``x86_64|amd64`` o ``aarch64|arm64``."""
+    valor = (texto or "").strip().lower()
+    if valor in ("x86_64", "amd64"):
+        return Arquitectura.X86_64
+    if valor in ("aarch64", "arm64"):
+        return Arquitectura.AARCH64
+    return Arquitectura.DESCONOCIDA
+
+
+def _arquitectura_plantilla(inv: Inventario, p: Plantilla) -> Arquitectura:
+    """Arquitectura de la plantilla: su clave ``arch``; sin ella, la de su nodo (S-D5). Lo
+    desconocido cuenta como x86_64 (P-D3), igual que el destino."""
+    propia = _normalizar_arquitectura(p.detalle.arquitectura if p.detalle is not None else None)
+    if propia != Arquitectura.DESCONOCIDA:
+        return propia
+    nodo = arquitectura_de(inv, p.nodo)
+    return Arquitectura.X86_64 if nodo == Arquitectura.DESCONOCIDA else nodo
+
+
 def _motivos_clon(
     inv: Inventario, nodo: str, det: DetalleClon, red: RedClon | None = None
 ) -> list[ProblemaLote]:
@@ -501,6 +569,24 @@ def _motivos_clon(
     if not candidatas:
         return []  # «no existe» lo da la resolución, no es cuestión de nodo
     elegible = [p for p in candidatas if p.nodo == nodo or _alcanzable(p, nodo, inv)]
+    # V-D07: la plantilla debe ser de la arquitectura del nodo destino (DT-D10).
+    if elegible:
+        destino = arquitectura_efectiva(inv, nodo)
+        compatibles = [p for p in elegible if _arquitectura_plantilla(inv, p) == destino]
+        if not compatibles:
+            primera = _arquitectura_plantilla(inv, elegible[0])
+            return [
+                _motivo(
+                    nodo,
+                    "arquitectura_plantilla",
+                    plantilla=det.plantilla.nombre,
+                    arquitectura_plantilla=primera.value,
+                    arquitectura_nodo=destino.value,
+                    arq_origen=primera.value,
+                    arq_destino=destino.value,
+                )
+            ]
+        elegible = compatibles
     if not elegible:
         activos = {s.id for s in _storages_nodo(inv, nodo) if s.activo}
         usados = sorted({d.storage for p in candidatas if p.detalle for d in p.detalle.discos})
@@ -558,8 +644,13 @@ def motivos_nodo_origen(cfg: ConfiguracionVM, inv: Inventario, nodo: str) -> lis
                     return [_motivo(nodo, "fuente", fuente="virtio-win", tipo="drivers")]
         return []
     if cfg.origen == OrigenSO.IMPORTAR_DISCO and isinstance(det, DetalleImportacion):
-        falta = _falta_archivo(inv, nodo, det.imagen, Contenido.IMPORT)
-        return [] if falta is None else [_motivo(nodo, "fuente", fuente=falta, tipo="imagen")]
+        # Fase D: también las imágenes de los discos 1.. deben estar en el nodo.
+        imagenes = [det.imagen, *(o.imagen for o in det.otras if o.imagen is not None)]
+        for imagen in imagenes:
+            falta = _falta_archivo(inv, nodo, imagen, Contenido.IMPORT)
+            if falta is not None:
+                return [_motivo(nodo, "fuente", fuente=falta, tipo="imagen")]
+        return []
     if cfg.origen == OrigenSO.CLONAR_PLANTILLA and isinstance(det, DetalleClon):
         return _motivos_clon(inv, nodo, det, cfg.red_clon)
     return []
@@ -589,6 +680,23 @@ def firma_origen(cfg: ConfiguracionVM) -> tuple[object, ...]:
             det.imagen.nombre,
             det.ampliar_a_gib,
             det.tamano_virtual_bytes,
+            # Fase D: solo si hay imágenes extra (sin ellas la firma es la de 0.8.0).
+            *(
+                (
+                    (
+                        tuple(
+                            (
+                                o.indice,
+                                None if o.imagen is None else o.imagen.volid,
+                                o.imagen and o.imagen.nombre,
+                            )
+                            for o in det.otras
+                        )
+                    ),
+                )
+                if det.otras
+                else ()
+            ),
         )
     if isinstance(det, DetalleClon):
         a = det.ajustes

@@ -13,7 +13,7 @@ import logging
 import secrets
 import threading
 import time
-from collections.abc import Callable, Collection, Iterable, Sequence
+from collections.abc import Callable, Collection, Iterable, Mapping, Sequence
 from pathlib import Path
 from typing import Any
 
@@ -21,6 +21,8 @@ from PySide6.QtCore import QObject, QRunnable, Qt, QThreadPool, Signal
 
 from proxlaunch.nucleo.agente.espera import EsperaIp
 from proxlaunch.nucleo.agente.exportacion import guardar_ips_csv
+from proxlaunch.nucleo.arquitectura.deteccion import detectar_nodo
+from proxlaunch.nucleo.arquitectura.modelos import ArquitecturaNodo
 from proxlaunch.nucleo.capacidades import Capacidades
 from proxlaunch.nucleo.cloudinit.modelos import ModoTarjeta
 from proxlaunch.nucleo.constructor_peticion import construir_parametros
@@ -28,9 +30,13 @@ from proxlaunch.nucleo.csv_importacion.plantilla import escribir_plantilla
 from proxlaunch.nucleo.errores import CodigoError, ErrorProxLaunch
 from proxlaunch.nucleo.firewall import lectura as lectura_firewall
 from proxlaunch.nucleo.firewall.modelos import LecturaGrupos, ReglaFirewall
+from proxlaunch.nucleo.hardware_cluster.lectura import leer_info_hardware
+from proxlaunch.nucleo.hardware_cluster.modelos import InfoHardwareCluster, ModeloCpu
 from proxlaunch.nucleo.inventario.exportacion import exportar_csv
 from proxlaunch.nucleo.inventario.modelos import DetalleLote, IpInventario, ListaLotes, LoteServidor
 from proxlaunch.nucleo.inventario.servicio import ServicioInventario
+from proxlaunch.nucleo.libvirt.lectura_xml import ErrorXml, leer_archivo, leer_xml
+from proxlaunch.nucleo.libvirt.modelos import DominioLibvirt, interpretar_dominio
 from proxlaunch.nucleo.lote.ajustes import reintentar_ajustes
 from proxlaunch.nucleo.lote.constantes import ETIQUETA_APP, PREFIJO_ETIQUETA_LOTE
 from proxlaunch.nucleo.lote.libro import Libro
@@ -92,6 +98,7 @@ from proxlaunch.nucleo.servicios.creacion import (
 from proxlaunch.nucleo.servicios.descubrimiento import (
     descubrir,
     descubrir_nodo_c,
+    descubrir_nodo_d,
 )
 from proxlaunch.nucleo.validacion import Severidad as SeveridadM1
 from proxlaunch.nucleo.validacion import validar_vm
@@ -377,37 +384,117 @@ def descubrir_y_comprobar_permisos(sesion: Sesion) -> tuple[Inventario, list[str
 
 
 def recargar_nodo(
-    sesion: Sesion, nodo: str
-) -> tuple[str, list[Storage], list[Bridge], list[Storage], RedesNodo]:
-    """Relee storages, bridges y VNets de un nodo (CA-11.7, CA-C2.1.3).
+    sesion: Sesion, nodo: str, detectar: bool = True
+) -> tuple[str, list[Storage], list[Bridge], list[Storage], RedesNodo, ArquitecturaNodo | None]:
+    """Relee storages, bridges y VNets de un nodo (CA-11.7, CA-C2.1.3) y, si hace falta, su
+    arquitectura (D2).
 
-    Devuelve ``(nodo, con_images, bridges, todos, redes)``: ``todos`` (de la misma respuesta, sin
-    GET extra) mantiene al día ``Inventario.storages_todos`` para el origen del SO y ``redes``
-    trae las VNets de SDN (la lectura es tolerante: un fallo queda en ``RedesNodo.error``).
+    Devuelve ``(nodo, con_images, bridges, todos, redes, arquitectura)``: ``todos`` (de la misma
+    respuesta, sin GET extra) mantiene al día ``Inventario.storages_todos`` para el origen del SO,
+    ``redes`` trae las VNets de SDN (la lectura es tolerante: un fallo queda en
+    ``RedesNodo.error``) y ``arquitectura`` es ``None`` si no se pidió detectarla (``detectar`` en
+    falso: la ya conocida se conserva, RNF-D4) o si ya la traía la lectura.
     """
-    con_images, todos, bridges, redes = descubrir_nodo_c(sesion, nodo)
-    return nodo, con_images, bridges, todos, redes
+    if detectar:
+        con_images, todos, bridges, redes, arquitectura = descubrir_nodo_d(sesion, nodo)
+    else:
+        con_images, todos, bridges, redes = descubrir_nodo_c(sesion, nodo)
+        arquitectura = None
+    return nodo, con_images, bridges, todos, redes, arquitectura
 
 
 def reintentar_nodos(
     sesion: Sesion, nodos: list[str]
 ) -> tuple[
-    dict[str, tuple[list[Storage], list[Bridge], list[Storage], RedesNodo]],
+    dict[
+        str,
+        tuple[list[Storage], list[Bridge], list[Storage], RedesNodo, ArquitecturaNodo | None],
+    ],
     dict[str, ErrorProxLaunch],
 ]:
     """Reintenta el descubrimiento de los nodos que fallaron (CA-11.8).
 
-    Cada nodo recuperado trae ``(con_images, bridges, todos, redes)``.
+    Cada nodo recuperado trae ``(con_images, bridges, todos, redes, arquitectura)``: un nodo que
+    estaba caído no tenía arquitectura (V-D04), así que se detecta de nuevo.
     """
-    recuperados: dict[str, tuple[list[Storage], list[Bridge], list[Storage], RedesNodo]] = {}
+    recuperados: dict[
+        str,
+        tuple[list[Storage], list[Bridge], list[Storage], RedesNodo, ArquitecturaNodo | None],
+    ] = {}
     fallidos: dict[str, ErrorProxLaunch] = {}
     for nodo in nodos:
         try:
-            con_images, todos, bridges, redes = descubrir_nodo_c(sesion, nodo)
-            recuperados[nodo] = (con_images, bridges, todos, redes)
+            con_images, todos, bridges, redes, arquitectura = descubrir_nodo_d(sesion, nodo)
+            recuperados[nodo] = (con_images, bridges, todos, redes, arquitectura)
         except ErrorProxLaunch as e:
             fallidos[nodo] = e
     return recuperados, fallidos
+
+
+def detectar_arquitectura(
+    sesion: Sesion,
+    nodo: str,
+    modelos_cpu: Sequence[ModeloCpu] | None = None,
+    recursos: Mapping[str, str | None] | None = None,
+) -> tuple[str, ArquitecturaNodo]:
+    """Vuelve a detectar la arquitectura de UN nodo tras quitar la marca manual (RF-D2.5).
+
+    Una lectura (``GET status``); ``modelos_cpu`` son los ya leídos (nunca provocan otro GET).
+    ``recursos`` es el ``/cluster/resources`` guardado en el inventario: así el resultado coincide
+    con el del descubrimiento (p. ej. ``RECURSOS_AUSENTE`` en 9.2).
+    ``detectar_nodo`` no lanza: un fallo queda como «desconocida» con su motivo (V-D04).
+    """
+    return nodo, detectar_nodo(sesion.cliente, nodo, recursos=recursos, modelos_cpu=modelos_cpu)
+
+
+# --- Fase D: hardware del clúster y XML de libvirt ------------------------------------------
+
+
+def leer_hardware_cluster(
+    sesion: Sesion, reloj: Reloj, inv: Inventario, nodos: Collection[str], *, cpus: bool = False
+) -> InfoHardwareCluster:
+    """Mapeos PCI/USB del clúster (2 GET, una vez por conexión) al abrir la sección (RNF-D4).
+
+    Con ``cpus`` lee además los modelos de CPU de ``nodos`` (≤ 1 GET por nodo). Devuelve la
+    información completa (la ya leída más lo nuevo): quien la recibe la guarda en el catálogo.
+    """
+    catalogo = ServicioCatalogo(sesion, reloj).leer_hardware_seccion(inv, nodos, cpus=cpus)
+    return catalogo.hardware if catalogo.hardware is not None else InfoHardwareCluster()
+
+
+def leer_cpus(sesion: Sesion, inv: Inventario, nodos: Collection[str]) -> InfoHardwareCluster:
+    """Modelos de CPU de ``nodos`` (≤ 1 GET por nodo y conexión) SIN leer los mapeos (RNF-D4).
+
+    Se pide al elegir un tipo de CPU personalizado; el fallo de un nodo queda en
+    ``errores_cpu`` (V-D62) y no impide leer los demás.
+    """
+    previo = inv.catalogo.hardware if inv.catalogo is not None else None
+    permisos = inv.catalogo.permisos if inv.catalogo is not None else None
+    return leer_info_hardware(
+        sesion.cliente,
+        permisos,
+        sesion.capacidades,
+        NecesidadesCatalogo(),
+        nodos,
+        previo,
+        {nodo: info.arquitectura for nodo, info in inv.arquitecturas.items()},
+        cpus_en=nodos,
+    )
+
+
+def leer_xml_libvirt(ruta: Path) -> DominioLibvirt:
+    """Lee el XML de libvirt elegido y lo interpreta, fuera del hilo de la interfaz (RNF-D6).
+
+    Solo lee el archivo indicado (``leer_archivo``: descriptor regular, ≤ 4 MiB) y nunca abre lo
+    que el XML nombre ni ejecuta nada. No se guarda el XML ni su texto: solo el dominio saneado.
+
+    Raises:
+        ErrorProxLaunch: ``XML_NO_VALIDO`` (V-D20..V-D23) o ``ARCHIVO_*`` si no se puede abrir.
+    """
+    try:
+        return interpretar_dominio(leer_xml(leer_archivo(ruta)))
+    except ErrorXml as e:
+        raise e.a_error() from None
 
 
 # --- Fase C: lecturas del firewall (solo GET) ---------------------------------------------------

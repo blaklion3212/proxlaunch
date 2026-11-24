@@ -60,6 +60,8 @@ GUION = textwrap.dedent(
     })
     # Campos nuevos de la fase C (0.8): ídem.
     NUEVOS_M4.update({"red_clon": None, "firewall": None})
+    # Campos nuevos de la fase D (0.9): ídem (la arquitectura por nodo es del ``Inventario``).
+    NUEVOS_M4.update({"hardware_cluster": None, "mac_conservada": None, "arquitecturas": {}})
 
     def norm(o):
         if isinstance(o, Enum):

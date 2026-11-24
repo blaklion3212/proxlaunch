@@ -39,7 +39,7 @@ from proxlaunch.nucleo.valores_defecto import storage_disco_por_defecto
 from .apoyo_lote import nodo, storage
 from .apoyo_mvp4 import ROL_MVP3, ROL_MVP4, inv_origen, permisos, plantilla_pve
 
-VERSIONES = [(8, 0), (8, 1), (8, 2), (8, 3), (8, 4), (9, 0), (9, 1), (9, 2)]
+VERSIONES = [(8, 4), (9, 0), (9, 1), (9, 2)]  # la mínima de 0.9.0 es 8.4
 
 
 def _caps(v: tuple[int, int], forzada: bool = False) -> Capacidades:
@@ -67,35 +67,25 @@ def test_matriz_catalogo_de_iso_subir_y_clonar_estan_en_todas_las_versiones(vers
 
 
 @pytest.mark.parametrize("version", VERSIONES, ids=lambda v: f"{v[0]}.{v[1]}")
-def test_matriz_importar_solo_desde_8_4(version):
+def test_matriz_importar_esta_en_todas_las_versiones_soportadas(version):
+    """Con la mínima 8.4 (DT-D3) importar y subir o descargar imágenes no dependen de la versión."""
     cap = _calc(version)
-    esperado = version >= (8, 4)
     for via in (Via.IMPORTAR, Via.SUBIR_IMAGEN, Via.DESCARGAR_IMAGEN):
-        assert cap.disponible(via) is esperado, (via, version)
-        if not esperado:
-            e = cap.estado(via)
-            assert e.codigo == CodigoError.IMPORTAR_VERSION_NO_SOPORTADA  # E-O01
-            assert e.params["version"] == f"{version[0]}.{version[1]}"
+        assert cap.disponible(via), (via, version)
+        assert cap.estado(via).codigo != CodigoError.IMPORTAR_VERSION_NO_SOPORTADA  # E-O01 obsoleto
 
 
 @pytest.mark.parametrize("version", VERSIONES, ids=lambda v: f"{v[0]}.{v[1]}")
-def test_matriz_descargar_url_con_sys_access_network_desde_8_2(version):
-    """Con el rol de 14 (sin Sys.Modify): ≥ 8.2 sí; 8.0 y 8.1 no (E-O03), pero subir sí."""
+def test_matriz_descargar_url_con_sys_access_network_en_todas_las_versiones(version):
+    """Con el rol de 14 (sin Sys.Modify) descargar por URL es posible desde 8.4."""
     cap = _calc(version)
-    if version >= (8, 2):
-        assert _estado(cap, Via.DESCARGAR_URL) == Disponibilidad.SI
-    else:
-        e = cap.estado(Via.DESCARGAR_URL)
-        assert e.disponibilidad == Disponibilidad.NO
-        assert e.codigo == CodigoError.DESCARGA_URL_SIN_PERMISO
-        assert e.params["privilegio"] == "Sys.Modify"
+    assert _estado(cap, Via.DESCARGAR_URL) == Disponibilidad.SI
     assert _estado(cap, Via.SUBIR_ISO) == Disponibilidad.SI  # CA-O02.4
 
 
-@pytest.mark.parametrize("version", [(8, 0), (8, 1)])
-def test_ca_o02_4_en_8_0_y_8_1_el_administrador_con_sys_modify_si_puede_descargar(version):
+def test_ca_o02_4_el_administrador_con_sys_modify_puede_descargar():
     admin = permisos(ROL_MVP4 + ("Sys.Modify",), quitar=("Sys.AccessNetwork",))
-    assert _calc(version, permisos_efectivos=admin).disponible(Via.DESCARGAR_URL)
+    assert _calc((8, 4), permisos_efectivos=admin).disponible(Via.DESCARGAR_URL)
 
 
 def test_ca_o02_5_sys_access_network_en_el_nodo_o_sys_modify_en_raiz():
@@ -114,20 +104,24 @@ def test_ca_o02_5_sys_access_network_en_el_nodo_o_sys_modify_en_raiz():
     assert _calc((9, 2), permisos_efectivos=admin).disponible(Via.DESCARGAR_URL)
 
 
+VIAS_FASE_D = (Via.ARQUITECTURA, Via.MAPEOS, Via.CPU_PERSONALIZADA)
+
+
 def test_ca_o02_1_mock_9_2_con_rol_ampliado_e_iso_import_todo_disponible():
     cap = _calc((9, 2), plantillas=(plantilla_pve(),))
-    assert all(cap.estado(v).disponibilidad == Disponibilidad.SI for v in Via), {
-        v: cap.estado(v) for v in Via
+    # El rol de 14 no incluye ``Mapping.Use``: las vías de mapeos y CPU de la fase D no son «sí».
+    previas = [v for v in Via if v not in VIAS_FASE_D]
+    assert all(cap.estado(v).disponibilidad == Disponibilidad.SI for v in previas), {
+        v: cap.estado(v) for v in previas
     }
     assert cap.version == (9, 2) and cap.forzada is False
+    assert cap.estado(Via.ARQUITECTURA).disponibilidad == Disponibilidad.SI  # host-arch (9.2)
 
 
-@pytest.mark.parametrize("version", [(8, 0), (8, 1), (8, 2), (8, 3)])
-def test_ca_o02_2_importar_no_disponible_en_8_0_a_8_3_y_las_otras_vias_no_cambian(version):
+def test_ca_o02_2_importar_disponible_en_8_4_y_las_otras_vias_no_cambian_respecto_de_9_2():
     base = _calc((9, 2))
-    cap = _calc(version)
-    assert not cap.disponible(Via.IMPORTAR)
-    assert cap.estado(Via.IMPORTAR).codigo == CodigoError.IMPORTAR_VERSION_NO_SOPORTADA
+    cap = _calc((8, 4))
+    assert cap.disponible(Via.IMPORTAR)
     for via in (Via.ISO, Via.SUBIR_ISO, Via.CLONAR, Via.ORDEN_ARRANQUE):
         assert _estado(cap, via) == _estado(base, via)
 
@@ -238,11 +232,12 @@ def test_clonar_con_vm_clone_solo_en_una_plantilla_basta():
 
 def test_ca_o02_7_version_forzada_recalcula_y_se_etiqueta():
     inv = inv_origen()
-    cap = calcular_capacidades(_caps((8, 0), forzada=True), inv, None)
-    assert cap.forzada is True and cap.version == (8, 0)
-    assert not cap.disponible(Via.IMPORTAR) and not cap.disponible(Via.DESCARGAR_URL)
+    cap = calcular_capacidades(_caps((8, 4), forzada=True), inv, None)
+    assert cap.forzada is True and cap.version == (8, 4)
+    assert cap.disponible(Via.IMPORTAR) and cap.disponible(Via.DESCARGAR_URL)
     real = calcular_capacidades(_caps((9, 2)), inv, None)
     assert real.forzada is False and real.disponible(Via.IMPORTAR)
+    assert real.version == (9, 2)
 
 
 def test_ca_o02_9_cada_via_no_disponible_trae_codigo_o_motivo_estable_y_ayuda():
@@ -277,13 +272,10 @@ def test_vias_de_origen_son_las_imprescindibles_de_cada_origen():
 
 
 def test_funcion_de_version_una_sola_tabla_sin_comparaciones_en_la_logica_de_origen():
-    """CA-09.6: la versión se consulta solo por `Funcion.*` (aquí, los umbrales del MVP 4)."""
+    """CA-09.6: la versión se consulta solo por `Funcion.*` (aquí, los umbrales de 9.1)."""
     tabla = {
-        Funcion.DESCARGAR_URL: (8, 2),
-        Funcion.IMPORTAR_DISCO: (8, 4),
-        Funcion.SUBIR_IMAGEN_DISCO: (8, 4),
-        Funcion.TPM_CLON_COMPLETO: (8, 4),
         Funcion.CLAVES_MS_2023: (9, 1),
+        Funcion.MAPEO_DRIVER_KEEP: (9, 1),
     }
     for funcion, minimo in tabla.items():
         assert _caps((9, 2)).requisito(funcion) == minimo

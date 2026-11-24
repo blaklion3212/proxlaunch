@@ -102,9 +102,11 @@ def test_la_plantilla_tiene_el_encabezado_canonico_y_cinco_filas_de_ejemplo(tmp_
         "grupo_seguridad",
         "politica_entrada",
         "politica_salida",
+        "mapeo_pci",
+        "mapeo_usb",
     ]
     assert [f[0] for f in filas[1:]] == [f"ejemplo-0{n}" for n in range(1, 6)]
-    assert all(len(f) == 40 for f in filas)
+    assert all(len(f) == 42 for f in filas)
     assert tuple(filas[0]) == ENCABEZADO_PLANTILLA
 
 

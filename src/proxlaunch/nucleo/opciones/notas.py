@@ -84,9 +84,11 @@ def bloque_automatico(ctx: ContextoNotas) -> str:
 
 
 def neutralizar_porcentajes(texto: str, version: tuple[int, int] | None) -> str:
-    """Inserta U+200B entre ``%`` y dos dígitos hex en Proxmox < 8.3 (issue 5486: lo decodifica
-    como URL). Con versión desconocida (``None``) se aplica por prudencia."""
-    if version is not None and version >= (8, 3):
+    """Inserta U+200B entre ``%`` y dos dígitos hex cuando la versión es desconocida (``None``).
+
+    El issue 5486 (Proxmox < 8.3 decodifica ``%xx`` como URL) no afecta a las versiones
+    soportadas (mínima 8.4): con versión conocida el texto no se toca; sin ella, por prudencia."""
+    if version is not None:
         return texto
     return _RE_PORCENTAJE.sub(f"%{_ZWSP}", texto)
 

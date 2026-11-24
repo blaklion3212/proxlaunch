@@ -108,7 +108,12 @@ def nombre_dns_valido(texto: Any) -> bool:
 
 def tipo_cpu_valido(texto: Any) -> bool:
     """Tipo de CPU con la forma de V-22 (va dentro de un parámetro de la API)."""
-    return isinstance(texto, str) and _RE_TIPO_CPU.fullmatch(texto) is not None
+    if not isinstance(texto, str) or _RE_TIPO_CPU.fullmatch(texto) is None:
+        return False
+    # ``custom-<nombre>``: el nombre no puede estar vacío ni pasar de 64 caracteres.
+    if texto.startswith("custom-"):
+        return 0 < len(texto) - len("custom-") <= 64
+    return True
 
 
 def etiqueta_valida(texto: Any) -> bool:
@@ -204,6 +209,7 @@ def validar_vm(cfg: ConfiguracionVM, inv: Inventario, caps: Capacidades) -> list
         _validar_opciones(cfg, inv, caps, p)
         _validar_fase_b(cfg, inv, caps, p)
         _validar_fase_c(cfg, inv, caps, p)
+        _validar_fase_d(cfg, inv, caps, p)
         return p
     discos = cfg.discos if cfg.con_disco else []
     _validar_discos(cfg, inv, discos, p)
@@ -213,7 +219,24 @@ def validar_vm(cfg: ConfiguracionVM, inv: Inventario, caps: Capacidades) -> list
     _validar_opciones(cfg, inv, caps, p)
     _validar_fase_b(cfg, inv, caps, p)
     _validar_fase_c(cfg, inv, caps, p)
+    _validar_fase_d(cfg, inv, caps, p)
     return p
+
+
+def _validar_fase_d(
+    cfg: ConfiguracionVM, inv: Inventario, caps: Capacidades, p: list[Problema]
+) -> None:
+    """Reglas V-D de la fase D: arquitectura (V-D05, V-D09), importación (V-D27, V-D33, V-D34)
+    y hardware del clúster que no necesita al servidor (importación diferida: esos módulos
+    importan este)."""
+    from proxlaunch.nucleo.arquitectura.modelos import arquitectura_efectiva
+    from proxlaunch.nucleo.arquitectura.validacion import validar_arquitectura
+    from proxlaunch.nucleo.hardware_cluster.validacion import validar_hardware_local
+    from proxlaunch.nucleo.libvirt.validacion import validar_importacion_d
+
+    p.extend(validar_arquitectura(cfg, inv))
+    p.extend(validar_importacion_d(cfg))
+    p.extend(validar_hardware_local(cfg, caps, arquitectura_efectiva(inv, cfg.nodo)))
 
 
 def _validar_fase_c(

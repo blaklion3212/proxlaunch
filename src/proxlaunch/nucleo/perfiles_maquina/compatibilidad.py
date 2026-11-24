@@ -8,8 +8,9 @@ from __future__ import annotations
 from collections.abc import Callable
 
 from proxlaunch.nucleo.capacidades import TABLA, Capacidades, Funcion
+from proxlaunch.nucleo.modelos.cpu import TIPO_CPU_HOST
 from proxlaunch.nucleo.modelos.inventario import Inventario
-from proxlaunch.nucleo.modelos.vm import ConfiguracionVM, OrigenSO
+from proxlaunch.nucleo.modelos.vm import ConfiguracionVM
 from proxlaunch.nucleo.perfiles_maquina.modelos import ConfigPerfil
 from proxlaunch.nucleo.validacion import Problema, Severidad, validar_vm
 
@@ -17,10 +18,9 @@ from proxlaunch.nucleo.validacion import Problema, Severidad, validar_vm
 def funciones_requeridas(config: ConfigPerfil) -> frozenset[Funcion]:
     """Funciones dependientes de versión que usa el perfil (CA-P07.2).
 
-    El origen «importar disco» exige ``IMPORTAR_DISCO`` (8.4).
+    Con la mínima 8.4 ninguna función de los perfiles depende ya de la versión (DT-D3); se
+    conserva el punto de extensión para futuras funciones.
     """
-    if config.origen == OrigenSO.IMPORTAR_DISCO:
-        return frozenset({Funcion.IMPORTAR_DISCO})
     return frozenset()
 
 
@@ -49,6 +49,6 @@ def evaluar_compatibilidad(
                     {"funcion": str(funcion), "version": f"{mayor}.{menor}"},
                 )
             )
-    if config.tipo_cpu == "host":
+    if config.tipo_cpu == TIPO_CPU_HOST:
         problemas.append(Problema("tipo_cpu", "V-P07.cpu_host", Severidad.AVISO, {}))
     return problemas

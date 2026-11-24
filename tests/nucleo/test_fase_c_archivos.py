@@ -22,6 +22,7 @@ from proxlaunch.nucleo.archivos.constantes import (
     VERSION_FORMATO,
     VERSION_FORMATO_FASE_A,
     VERSION_FORMATO_FASE_B,
+    VERSION_FORMATO_FASE_C,
 )
 from proxlaunch.nucleo.archivos.esquema import CodigoAvisoArchivo, ErrorArchivo, MotivoCampo
 from proxlaunch.nucleo.cloudinit.modelos import (
@@ -124,12 +125,14 @@ def leido(lote: LoteGuardado) -> LoteGuardado:
 # --- Versión 0.8.0 y constantes ---
 
 
-def test_la_version_del_paquete_es_0_8_0():
-    assert proxlaunch.__version__ == "0.8.0"
+def test_la_version_del_paquete_es_0_9_0():
+    assert proxlaunch.__version__ == "0.9.0"
 
 
-def test_rf_c6_1_la_version_maxima_es_5_y_la_de_las_fases_b_y_a_siguen_en_4_y_3():
-    assert VERSION_FORMATO == 5
+def test_rf_c6_1_la_version_maxima_es_6_y_la_de_las_fases_b_y_a_siguen_en_4_y_3():
+    # Fase D (RF-D6.1): la máxima sube a 6; el escalón de la fase C sigue siendo 5.
+    assert VERSION_FORMATO == 6
+    assert VERSION_FORMATO_FASE_C == 5
     assert VERSION_FORMATO_FASE_B == 4
     assert VERSION_FORMATO_FASE_A == 3
 
@@ -314,14 +317,14 @@ def test_ca_c6_1_2_la_planificacion_de_un_lote_migrado_no_trae_nada_de_c():
 # --- CA-C6.1.5: versión futura ---
 
 
-def test_ca_c6_1_5_un_archivo_v6_se_rechaza_como_version_futura_y_no_cambia():
-    datos = mutar(bytes_de(lote_c(firewall=FW_ACTIVO)), lambda c: c.update(version_formato=6))
+def test_ca_c6_1_5_un_archivo_v7_se_rechaza_como_version_futura_y_no_cambia():
+    datos = mutar(bytes_de(lote_c(firewall=FW_ACTIVO)), lambda c: c.update(version_formato=7))
     copia = bytes(datos)
     with pytest.raises(ErrorProxLaunch) as exc:
         leer_lote(datos)
     assert exc.value.codigo == CodigoError.ARCHIVO_VERSION_FUTURA
-    assert exc.value.params["version_archivo"] == "6"
-    assert exc.value.params["version_soportada"] == "5"
+    assert exc.value.params["version_archivo"] == "7"
+    assert exc.value.params["version_soportada"] == "6"
     assert datos == copia
 
 

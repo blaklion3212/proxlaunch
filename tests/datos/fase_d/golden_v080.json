@@ -1,0 +1,2567 @@
+{
+  "version_codigo": "0.8.0",
+  "versiones": {
+    "8.4": {
+      "vacio": [
+        [
+          "POST",
+          "/nodes/pve1/qemu",
+          "vmid=100&name=srv-web-01&sockets=1&cores=2&cpu=x86-64-v2-AES&memory=8192&scsihw=virtio-scsi-single&scsi0=datos%3A32%2Cdiscard%3Don%2Cssd%3D1%2Ciothread%3D1%2Cformat%3Dqcow2&net0=virtio%2Cbridge%3Dvmbr0"
+        ]
+      ],
+      "vacio_encender": [
+        [
+          "POST",
+          "/nodes/pve1/qemu",
+          "vmid=100&name=srv-web-01&sockets=1&cores=2&cpu=x86-64-v2-AES&memory=8192&scsihw=virtio-scsi-single&scsi0=datos%3A32%2Cdiscard%3Don%2Cssd%3D1%2Ciothread%3D1%2Cformat%3Dqcow2&net0=virtio%2Cbridge%3Dvmbr0"
+        ],
+        [
+          "POST",
+          "/nodes/pve1/qemu/100/status/start",
+          ""
+        ]
+      ],
+      "iso": [
+        [
+          "POST",
+          "/nodes/pve1/qemu",
+          "vmid=100&name=srv-web-01&sockets=1&cores=2&cpu=x86-64-v2-AES&memory=2048&scsihw=virtio-scsi-single&ostype=l26&scsi0=local-lvm%3A32%2Cdiscard%3Don%2Cssd%3D1%2Ciothread%3D1&ide2=local%3Aiso%2Falpine.iso%2Cmedia%3Dcdrom&boot=order%3Dscsi0%3Bide2%3Bnet0&net0=virtio%2Cbridge%3Dvmbr0&tags=proxlaunch%3Blote-ab12cd34"
+        ]
+      ],
+      "iso_windows_tpm_ovmf": [
+        [
+          "POST",
+          "/nodes/pve1/qemu",
+          "vmid=100&name=srv-web-01&bios=ovmf&machine=q35&efidisk0=local-lvm%3A1%2Cefitype%3D4m%2Cpre-enrolled-keys%3D1&sockets=1&cores=2&cpu=x86-64-v2-AES&memory=8192&scsihw=virtio-scsi-single&ostype=win11&scsi0=local-lvm%3A32%2Cdiscard%3Don%2Cssd%3D1%2Ciothread%3D1&tpmstate0=local-lvm%3A1%2Cversion%3Dv2.0&ide2=local%3Aiso%2Falpine.iso%2Cmedia%3Dcdrom&ide0=local%3Aiso%2Fvirtio-win-0.1.271.iso%2Cmedia%3Dcdrom&boot=order%3Dscsi0%3Bide2%3Bnet0&net0=virtio%2Cbridge%3Dvmbr0&tags=proxlaunch%3Blote-ab12cd34"
+        ]
+      ],
+      "importar_con_resize": [
+        [
+          "POST",
+          "/nodes/pve1/qemu",
+          "vmid=100&name=srv-web-01&sockets=1&cores=2&cpu=x86-64-v2-AES&memory=2048&scsihw=virtio-scsi-single&scsi0=local-lvm%3A0%2Cimport-from%3Dlocal%3Aimport%2Fcirros.qcow2%2Cdiscard%3Don%2Cssd%3D1%2Ciothread%3D1&net0=virtio%2Cbridge%3Dvmbr0&tags=proxlaunch%3Blote-ab12cd34"
+        ],
+        [
+          "PUT",
+          "/nodes/pve1/qemu/100/resize",
+          "disk=scsi0&size=64G"
+        ]
+      ],
+      "importar_sin_resize": [
+        [
+          "POST",
+          "/nodes/pve1/qemu",
+          "vmid=100&name=srv-web-01&sockets=1&cores=2&cpu=x86-64-v2-AES&memory=2048&scsihw=virtio-scsi-single&scsi0=local-lvm%3A0%2Cimport-from%3Dlocal%3Aimport%2Fcirros.qcow2%2Cdiscard%3Don%2Cssd%3D1%2Ciothread%3D1&net0=virtio%2Cbridge%3Dvmbr0&tags=proxlaunch%3Blote-ab12cd34"
+        ]
+      ],
+      "importar_dos_discos_sin_imagen": [
+        [
+          "POST",
+          "/nodes/pve1/qemu",
+          "vmid=100&name=srv-web-01&sockets=1&cores=2&cpu=x86-64-v2-AES&memory=2048&scsihw=virtio-scsi-single&scsi0=local-lvm%3A0%2Cimport-from%3Dlocal%3Aimport%2Fcirros.qcow2%2Cdiscard%3Don%2Cssd%3D1%2Ciothread%3D1&scsi1=local-lvm%3A16%2Cdiscard%3Don%2Cssd%3D1%2Ciothread%3D1&net0=virtio%2Cbridge%3Dvmbr0&tags=proxlaunch%3Blote-ab12cd34"
+        ]
+      ],
+      "clon_sin_ajustes": [
+        [
+          "POST",
+          "/nodes/pve1/qemu/9000/clone",
+          "newid=100&name=srv-web-01"
+        ],
+        [
+          "PUT",
+          "/nodes/pve1/qemu/100/config",
+          "tags=lote-ab12cd34%3Bplantilla%3Bproxlaunch"
+        ]
+      ],
+      "clon_con_ajustes": [
+        [
+          "POST",
+          "/nodes/pve1/qemu/9000/clone",
+          "newid=100&name=srv-web-01"
+        ],
+        [
+          "PUT",
+          "/nodes/pve1/qemu/100/config",
+          "cores=4&memory=4096&tags=lote-ab12cd34%3Bplantilla%3Bproxlaunch&onboot=1"
+        ],
+        [
+          "PUT",
+          "/nodes/pve1/qemu/100/resize",
+          "disk=scsi0&size=64G"
+        ],
+        [
+          "POST",
+          "/nodes/pve1/qemu/100/status/start",
+          ""
+        ]
+      ],
+      "clon_cloudinit": [
+        [
+          "POST",
+          "/nodes/pve1/qemu/9000/clone",
+          "newid=100&name=srv-web-01"
+        ],
+        [
+          "PUT",
+          "/nodes/pve1/qemu/100/config",
+          "tags=lote-ab12cd34%3Bproxlaunch"
+        ],
+        [
+          "PUT",
+          "/nodes/pve1/qemu/100/config",
+          "ciuser=deploy&sshkeys=ssh-ed25519%2520AAAAC3NzaC1lZDI1NTE5AAAAIOMqqnkVzrm0SdG6UOoqKLsabgH5C9okWi0dh2l9GKJl%2520ana%2540lab&ipconfig0=ip%3Ddhcp"
+        ]
+      ],
+      "clon_red_del_clon": [
+        [
+          "POST",
+          "/nodes/pve1/qemu/9000/clone",
+          "newid=100&name=srv-web-01"
+        ],
+        [
+          "PUT",
+          "/nodes/pve1/qemu/100/config",
+          "tags=lote-ab12cd34%3Bproxlaunch"
+        ],
+        [
+          "PUT",
+          "/nodes/pve1/qemu/100/config",
+          "net0=virtio%3DBC%3A24%3A11%3A64%3A00%3A00%2Cbridge%3Dvmbr0%2Ctag%3D30&digest=d1"
+        ]
+      ],
+      "clon_firewall": [
+        [
+          "POST",
+          "/nodes/pve1/qemu/9000/clone",
+          "newid=100&name=srv-web-01"
+        ],
+        [
+          "PUT",
+          "/nodes/pve1/qemu/100/config",
+          "tags=lote-ab12cd34%3Bproxlaunch"
+        ]
+      ],
+      "asistente_imagen_cloud": [
+        [
+          "POST",
+          "/nodes/pve1/qemu",
+          "vmid=9100&name=plantilla-ubuntu-2404&sockets=1&cores=2&cpu=x86-64-v2-AES&memory=2048&scsihw=virtio-scsi-single&ostype=l26&scsi0=local-lvm%3A0%2Cimport-from%3Dlocal%3Aimport%2Fcirros.qcow2%2Cdiscard%3Don%2Cssd%3D1%2Ciothread%3D1&net0=virtio%2Cbridge%3Dvmbr0&agent=1&ide2=local-lvm%3Acloudinit&serial0=socket&vga=serial0&boot=order%3Dscsi0"
+        ],
+        [
+          "PUT",
+          "/nodes/pve1/qemu/9100/resize",
+          "disk=scsi0&size=10G"
+        ]
+      ],
+      "lote_3_encender": [
+        [
+          "POST",
+          "/nodes/pve1/qemu",
+          "vmid=100&name=web-01&sockets=1&cores=2&cpu=x86-64-v2-AES&memory=8192&scsihw=virtio-scsi-single&scsi0=datos%3A32%2Cdiscard%3Don%2Cssd%3D1%2Ciothread%3D1%2Cformat%3Dqcow2&net0=virtio%2Cbridge%3Dvmbr0&tags=proxlaunch%3Blote-abcd1234"
+        ],
+        [
+          "POST",
+          "/nodes/pve1/qemu/100/status/start",
+          ""
+        ],
+        [
+          "POST",
+          "/nodes/pve1/qemu",
+          "vmid=101&name=web-02&sockets=1&cores=2&cpu=x86-64-v2-AES&memory=8192&scsihw=virtio-scsi-single&scsi0=datos%3A32%2Cdiscard%3Don%2Cssd%3D1%2Ciothread%3D1%2Cformat%3Dqcow2&net0=virtio%2Cbridge%3Dvmbr0&tags=proxlaunch%3Blote-abcd1234"
+        ],
+        [
+          "POST",
+          "/nodes/pve1/qemu/101/status/start",
+          ""
+        ],
+        [
+          "POST",
+          "/nodes/pve1/qemu",
+          "vmid=102&name=web-03&sockets=1&cores=2&cpu=x86-64-v2-AES&memory=8192&scsihw=virtio-scsi-single&scsi0=datos%3A32%2Cdiscard%3Don%2Cssd%3D1%2Ciothread%3D1%2Cformat%3Dqcow2&net0=virtio%2Cbridge%3Dvmbr0&tags=proxlaunch%3Blote-abcd1234"
+        ],
+        [
+          "POST",
+          "/nodes/pve1/qemu/102/status/start",
+          ""
+        ]
+      ],
+      "reintento_de_ajustes": [
+        [
+          "POST",
+          "/nodes/pve1/qemu/9000/clone",
+          "newid=100&name=srv-web-01"
+        ],
+        [
+          "PUT",
+          "/nodes/pve1/qemu/100/config",
+          "cores=4&memory=4096&tags=lote-ab12cd34%3Bplantilla%3Bproxlaunch"
+        ],
+        [
+          "PUT",
+          "/nodes/pve1/qemu/100/config",
+          "cores=4&memory=4096&tags=lote-ab12cd34%3Bplantilla%3Bproxlaunch"
+        ],
+        [
+          "POST",
+          "/nodes/pve1/qemu/100/status/start",
+          ""
+        ]
+      ],
+      "deshacer_2": [
+        [
+          "DELETE",
+          "/nodes/pve1/qemu/100?destroy-unreferenced-disks=0",
+          ""
+        ],
+        [
+          "DELETE",
+          "/nodes/pve1/qemu/101?destroy-unreferenced-disks=0",
+          ""
+        ]
+      ],
+      "simulacion_lote_vacio": [
+        {
+          "100": {
+            "vmid": "100",
+            "name": "web-01",
+            "sockets": "1",
+            "cores": "2",
+            "cpu": "x86-64-v2-AES",
+            "memory": "8192",
+            "scsihw": "virtio-scsi-single",
+            "scsi0": "datos:32,discard=on,ssd=1,iothread=1,format=qcow2",
+            "net0": "virtio,bridge=vmbr0",
+            "tags": "proxlaunch;lote-XXXXXXXX"
+          },
+          "101": {
+            "vmid": "101",
+            "name": "web-02",
+            "sockets": "1",
+            "cores": "2",
+            "cpu": "x86-64-v2-AES",
+            "memory": "8192",
+            "scsihw": "virtio-scsi-single",
+            "scsi0": "datos:32,discard=on,ssd=1,iothread=1,format=qcow2",
+            "net0": "virtio,bridge=vmbr0",
+            "tags": "proxlaunch;lote-XXXXXXXX"
+          }
+        },
+        {
+          "100": [
+            [
+              "crear",
+              "pve1",
+              {
+                "vmid": "100",
+                "name": "web-01",
+                "sockets": "1",
+                "cores": "2",
+                "cpu": "x86-64-v2-AES",
+                "memory": "8192",
+                "scsihw": "virtio-scsi-single",
+                "scsi0": "datos:32,discard=on,ssd=1,iothread=1,format=qcow2",
+                "net0": "virtio,bridge=vmbr0",
+                "tags": "proxlaunch;lote-XXXXXXXX"
+              }
+            ],
+            [
+              "encender",
+              "pve1",
+              {}
+            ]
+          ],
+          "101": [
+            [
+              "crear",
+              "pve1",
+              {
+                "vmid": "101",
+                "name": "web-02",
+                "sockets": "1",
+                "cores": "2",
+                "cpu": "x86-64-v2-AES",
+                "memory": "8192",
+                "scsihw": "virtio-scsi-single",
+                "scsi0": "datos:32,discard=on,ssd=1,iothread=1,format=qcow2",
+                "net0": "virtio,bridge=vmbr0",
+                "tags": "proxlaunch;lote-XXXXXXXX"
+              }
+            ],
+            [
+              "encender",
+              "pve1",
+              {}
+            ]
+          ]
+        }
+      ],
+      "simulacion_lote_clon": [
+        {
+          "100": {
+            "newid": "100",
+            "name": "web-01"
+          },
+          "101": {
+            "newid": "101",
+            "name": "web-02"
+          }
+        },
+        {
+          "100": [
+            [
+              "clonar",
+              "pve1",
+              {
+                "newid": "100",
+                "name": "web-01"
+              }
+            ],
+            [
+              "configurar",
+              "pve1",
+              {
+                "cores": "4",
+                "tags": "lote-XXXXXXXX;plantilla;proxlaunch",
+                "onboot": "1"
+              }
+            ],
+            [
+              "ampliar",
+              "pve1",
+              {
+                "disk": "scsi0",
+                "size": "64G"
+              }
+            ],
+            [
+              "encender",
+              "pve1",
+              {}
+            ]
+          ],
+          "101": [
+            [
+              "clonar",
+              "pve1",
+              {
+                "newid": "101",
+                "name": "web-02"
+              }
+            ],
+            [
+              "configurar",
+              "pve1",
+              {
+                "cores": "4",
+                "tags": "lote-XXXXXXXX;plantilla;proxlaunch",
+                "onboot": "1"
+              }
+            ],
+            [
+              "ampliar",
+              "pve1",
+              {
+                "disk": "scsi0",
+                "size": "64G"
+              }
+            ],
+            [
+              "encender",
+              "pve1",
+              {}
+            ]
+          ]
+        }
+      ],
+      "simulacion_guardado_lote-homogeneo-051-v1": [
+        {
+          "100": {
+            "vmid": "100",
+            "name": "aula-01",
+            "sockets": "1",
+            "cores": "2",
+            "cpu": "x86-64-v2-AES",
+            "memory": "4096",
+            "scsihw": "virtio-scsi-single",
+            "scsi0": "datos:32,discard=on,ssd=1,iothread=1,format=qcow2",
+            "net0": "virtio,bridge=vmbr0",
+            "tags": "proxlaunch;lote-XXXXXXXX"
+          },
+          "101": {
+            "vmid": "101",
+            "name": "aula-02",
+            "sockets": "1",
+            "cores": "2",
+            "cpu": "x86-64-v2-AES",
+            "memory": "4096",
+            "scsihw": "virtio-scsi-single",
+            "scsi0": "datos:32,discard=on,ssd=1,iothread=1,format=qcow2",
+            "net0": "virtio,bridge=vmbr0",
+            "tags": "proxlaunch;lote-XXXXXXXX"
+          },
+          "102": {
+            "vmid": "102",
+            "name": "aula-03",
+            "sockets": "1",
+            "cores": "2",
+            "cpu": "x86-64-v2-AES",
+            "memory": "4096",
+            "scsihw": "virtio-scsi-single",
+            "scsi0": "datos:32,discard=on,ssd=1,iothread=1,format=qcow2",
+            "net0": "virtio,bridge=vmbr0",
+            "tags": "proxlaunch;lote-XXXXXXXX"
+          },
+          "103": {
+            "vmid": "103",
+            "name": "aula-04",
+            "sockets": "1",
+            "cores": "2",
+            "cpu": "x86-64-v2-AES",
+            "memory": "4096",
+            "scsihw": "virtio-scsi-single",
+            "scsi0": "datos:32,discard=on,ssd=1,iothread=1,format=qcow2",
+            "net0": "virtio,bridge=vmbr0",
+            "tags": "proxlaunch;lote-XXXXXXXX"
+          },
+          "104": {
+            "vmid": "104",
+            "name": "aula-05",
+            "sockets": "1",
+            "cores": "2",
+            "cpu": "x86-64-v2-AES",
+            "memory": "4096",
+            "scsihw": "virtio-scsi-single",
+            "scsi0": "datos:32,discard=on,ssd=1,iothread=1,format=qcow2",
+            "net0": "virtio,bridge=vmbr0",
+            "tags": "proxlaunch;lote-XXXXXXXX"
+          }
+        },
+        {
+          "100": [
+            [
+              "crear",
+              "pve1",
+              {
+                "vmid": "100",
+                "name": "aula-01",
+                "sockets": "1",
+                "cores": "2",
+                "cpu": "x86-64-v2-AES",
+                "memory": "4096",
+                "scsihw": "virtio-scsi-single",
+                "scsi0": "datos:32,discard=on,ssd=1,iothread=1,format=qcow2",
+                "net0": "virtio,bridge=vmbr0",
+                "tags": "proxlaunch;lote-XXXXXXXX"
+              }
+            ]
+          ],
+          "101": [
+            [
+              "crear",
+              "pve1",
+              {
+                "vmid": "101",
+                "name": "aula-02",
+                "sockets": "1",
+                "cores": "2",
+                "cpu": "x86-64-v2-AES",
+                "memory": "4096",
+                "scsihw": "virtio-scsi-single",
+                "scsi0": "datos:32,discard=on,ssd=1,iothread=1,format=qcow2",
+                "net0": "virtio,bridge=vmbr0",
+                "tags": "proxlaunch;lote-XXXXXXXX"
+              }
+            ]
+          ],
+          "102": [
+            [
+              "crear",
+              "pve1",
+              {
+                "vmid": "102",
+                "name": "aula-03",
+                "sockets": "1",
+                "cores": "2",
+                "cpu": "x86-64-v2-AES",
+                "memory": "4096",
+                "scsihw": "virtio-scsi-single",
+                "scsi0": "datos:32,discard=on,ssd=1,iothread=1,format=qcow2",
+                "net0": "virtio,bridge=vmbr0",
+                "tags": "proxlaunch;lote-XXXXXXXX"
+              }
+            ]
+          ],
+          "103": [
+            [
+              "crear",
+              "pve1",
+              {
+                "vmid": "103",
+                "name": "aula-04",
+                "sockets": "1",
+                "cores": "2",
+                "cpu": "x86-64-v2-AES",
+                "memory": "4096",
+                "scsihw": "virtio-scsi-single",
+                "scsi0": "datos:32,discard=on,ssd=1,iothread=1,format=qcow2",
+                "net0": "virtio,bridge=vmbr0",
+                "tags": "proxlaunch;lote-XXXXXXXX"
+              }
+            ]
+          ],
+          "104": [
+            [
+              "crear",
+              "pve1",
+              {
+                "vmid": "104",
+                "name": "aula-05",
+                "sockets": "1",
+                "cores": "2",
+                "cpu": "x86-64-v2-AES",
+                "memory": "4096",
+                "scsihw": "virtio-scsi-single",
+                "scsi0": "datos:32,discard=on,ssd=1,iothread=1,format=qcow2",
+                "net0": "virtio,bridge=vmbr0",
+                "tags": "proxlaunch;lote-XXXXXXXX"
+              }
+            ]
+          ]
+        }
+      ],
+      "simulacion_guardado_lote-homogeneo-051-v2": [
+        {
+          "100": {
+            "vmid": "100",
+            "name": "srv-01",
+            "sockets": "1",
+            "cores": "2",
+            "cpu": "x86-64-v2-AES",
+            "memory": "4096",
+            "scsihw": "virtio-scsi-single",
+            "scsi0": "datos:32,discard=on,ssd=1,iothread=1,format=qcow2",
+            "net0": "virtio,bridge=vmbr0",
+            "tags": "proxlaunch;lote-XXXXXXXX"
+          },
+          "101": {
+            "vmid": "101",
+            "name": "srv-02",
+            "sockets": "1",
+            "cores": "2",
+            "cpu": "x86-64-v2-AES",
+            "memory": "4096",
+            "scsihw": "virtio-scsi-single",
+            "scsi0": "datos:32,discard=on,ssd=1,iothread=1,format=qcow2",
+            "net0": "virtio,bridge=vmbr0",
+            "tags": "proxlaunch;lote-XXXXXXXX"
+          },
+          "102": {
+            "vmid": "102",
+            "name": "srv-03",
+            "sockets": "1",
+            "cores": "2",
+            "cpu": "x86-64-v2-AES",
+            "memory": "4096",
+            "scsihw": "virtio-scsi-single",
+            "scsi0": "datos:32,discard=on,ssd=1,iothread=1,format=qcow2",
+            "net0": "virtio,bridge=vmbr0",
+            "tags": "proxlaunch;lote-XXXXXXXX"
+          }
+        },
+        {
+          "100": [
+            [
+              "crear",
+              "pve1",
+              {
+                "vmid": "100",
+                "name": "srv-01",
+                "sockets": "1",
+                "cores": "2",
+                "cpu": "x86-64-v2-AES",
+                "memory": "4096",
+                "scsihw": "virtio-scsi-single",
+                "scsi0": "datos:32,discard=on,ssd=1,iothread=1,format=qcow2",
+                "net0": "virtio,bridge=vmbr0",
+                "tags": "proxlaunch;lote-XXXXXXXX"
+              }
+            ]
+          ],
+          "101": [
+            [
+              "crear",
+              "pve1",
+              {
+                "vmid": "101",
+                "name": "srv-02",
+                "sockets": "1",
+                "cores": "2",
+                "cpu": "x86-64-v2-AES",
+                "memory": "4096",
+                "scsihw": "virtio-scsi-single",
+                "scsi0": "datos:32,discard=on,ssd=1,iothread=1,format=qcow2",
+                "net0": "virtio,bridge=vmbr0",
+                "tags": "proxlaunch;lote-XXXXXXXX"
+              }
+            ]
+          ],
+          "102": [
+            [
+              "crear",
+              "pve1",
+              {
+                "vmid": "102",
+                "name": "srv-03",
+                "sockets": "1",
+                "cores": "2",
+                "cpu": "x86-64-v2-AES",
+                "memory": "4096",
+                "scsihw": "virtio-scsi-single",
+                "scsi0": "datos:32,discard=on,ssd=1,iothread=1,format=qcow2",
+                "net0": "virtio,bridge=vmbr0",
+                "tags": "proxlaunch;lote-XXXXXXXX"
+              }
+            ]
+          ]
+        }
+      ],
+      "simulacion_guardado_lote-por-filas-051-v2": [
+        {
+          "100": {
+            "vmid": "100",
+            "name": "a-01",
+            "sockets": "1",
+            "cores": "2",
+            "cpu": "x86-64-v2-AES",
+            "memory": "4096",
+            "scsihw": "virtio-scsi-single",
+            "scsi0": "datos:32,discard=on,ssd=1,iothread=1,format=qcow2",
+            "net0": "virtio,bridge=vmbr0",
+            "tags": "proxlaunch;lote-XXXXXXXX"
+          },
+          "150": {
+            "vmid": "150",
+            "name": "a-02",
+            "sockets": "1",
+            "cores": "2",
+            "cpu": "x86-64-v2-AES",
+            "memory": "8192",
+            "scsihw": "virtio-scsi-single",
+            "scsi0": "datos:32,discard=on,ssd=1,iothread=1,format=qcow2",
+            "net0": "virtio,bridge=vmbr0",
+            "tags": "proxlaunch;lote-XXXXXXXX"
+          }
+        },
+        {
+          "100": [
+            [
+              "crear",
+              "pve1",
+              {
+                "vmid": "100",
+                "name": "a-01",
+                "sockets": "1",
+                "cores": "2",
+                "cpu": "x86-64-v2-AES",
+                "memory": "4096",
+                "scsihw": "virtio-scsi-single",
+                "scsi0": "datos:32,discard=on,ssd=1,iothread=1,format=qcow2",
+                "net0": "virtio,bridge=vmbr0",
+                "tags": "proxlaunch;lote-XXXXXXXX"
+              }
+            ]
+          ],
+          "150": [
+            [
+              "crear",
+              "pve2",
+              {
+                "vmid": "150",
+                "name": "a-02",
+                "sockets": "1",
+                "cores": "2",
+                "cpu": "x86-64-v2-AES",
+                "memory": "8192",
+                "scsihw": "virtio-scsi-single",
+                "scsi0": "datos:32,discard=on,ssd=1,iothread=1,format=qcow2",
+                "net0": "virtio,bridge=vmbr0",
+                "tags": "proxlaunch;lote-XXXXXXXX"
+              }
+            ]
+          ]
+        }
+      ],
+      "simulacion_guardado_p2_lote-homogeneo-060-v3": [
+        {
+          "100": {
+            "vmid": "100",
+            "name": "aula-01",
+            "sockets": "1",
+            "cores": "2",
+            "cpu": "x86-64-v2-AES",
+            "memory": "4096",
+            "scsihw": "virtio-scsi-single",
+            "scsi0": "datos:32,discard=on,ssd=1,iothread=1,format=qcow2",
+            "net0": "virtio,bridge=vmbr0,tag=20,mtu=1500,rate=100",
+            "tags": "proxlaunch;lote-XXXXXXXX;web;prod",
+            "onboot": "1",
+            "description": "Lote de 0.6.0",
+            "pool": "produccion",
+            "protection": "1"
+          },
+          "101": {
+            "vmid": "101",
+            "name": "aula-02",
+            "sockets": "1",
+            "cores": "2",
+            "cpu": "x86-64-v2-AES",
+            "memory": "4096",
+            "scsihw": "virtio-scsi-single",
+            "scsi0": "datos:32,discard=on,ssd=1,iothread=1,format=qcow2",
+            "net0": "virtio,bridge=vmbr0,tag=20,mtu=1500,rate=100",
+            "tags": "proxlaunch;lote-XXXXXXXX;web;prod",
+            "onboot": "1",
+            "description": "Lote de 0.6.0",
+            "pool": "produccion",
+            "protection": "1"
+          },
+          "102": {
+            "vmid": "102",
+            "name": "aula-03",
+            "sockets": "1",
+            "cores": "2",
+            "cpu": "x86-64-v2-AES",
+            "memory": "4096",
+            "scsihw": "virtio-scsi-single",
+            "scsi0": "datos:32,discard=on,ssd=1,iothread=1,format=qcow2",
+            "net0": "virtio,bridge=vmbr0,tag=20,mtu=1500,rate=100",
+            "tags": "proxlaunch;lote-XXXXXXXX;web;prod",
+            "onboot": "1",
+            "description": "Lote de 0.6.0",
+            "pool": "produccion",
+            "protection": "1"
+          },
+          "103": {
+            "vmid": "103",
+            "name": "aula-04",
+            "sockets": "1",
+            "cores": "2",
+            "cpu": "x86-64-v2-AES",
+            "memory": "4096",
+            "scsihw": "virtio-scsi-single",
+            "scsi0": "datos:32,discard=on,ssd=1,iothread=1,format=qcow2",
+            "net0": "virtio,bridge=vmbr0,tag=20,mtu=1500,rate=100",
+            "tags": "proxlaunch;lote-XXXXXXXX;web;prod",
+            "onboot": "1",
+            "description": "Lote de 0.6.0",
+            "pool": "produccion",
+            "protection": "1"
+          }
+        },
+        {
+          "100": [
+            [
+              "crear",
+              "pve1",
+              {
+                "vmid": "100",
+                "name": "aula-01",
+                "sockets": "1",
+                "cores": "2",
+                "cpu": "x86-64-v2-AES",
+                "memory": "4096",
+                "scsihw": "virtio-scsi-single",
+                "scsi0": "datos:32,discard=on,ssd=1,iothread=1,format=qcow2",
+                "net0": "virtio,bridge=vmbr0,tag=20,mtu=1500,rate=100",
+                "tags": "proxlaunch;lote-XXXXXXXX;web;prod",
+                "onboot": "1",
+                "description": "Lote de 0.6.0",
+                "pool": "produccion",
+                "protection": "1"
+              }
+            ],
+            [
+              "encender",
+              "pve1",
+              {}
+            ]
+          ],
+          "101": [
+            [
+              "crear",
+              "pve1",
+              {
+                "vmid": "101",
+                "name": "aula-02",
+                "sockets": "1",
+                "cores": "2",
+                "cpu": "x86-64-v2-AES",
+                "memory": "4096",
+                "scsihw": "virtio-scsi-single",
+                "scsi0": "datos:32,discard=on,ssd=1,iothread=1,format=qcow2",
+                "net0": "virtio,bridge=vmbr0,tag=20,mtu=1500,rate=100",
+                "tags": "proxlaunch;lote-XXXXXXXX;web;prod",
+                "onboot": "1",
+                "description": "Lote de 0.6.0",
+                "pool": "produccion",
+                "protection": "1"
+              }
+            ],
+            [
+              "encender",
+              "pve1",
+              {}
+            ]
+          ],
+          "102": [
+            [
+              "crear",
+              "pve1",
+              {
+                "vmid": "102",
+                "name": "aula-03",
+                "sockets": "1",
+                "cores": "2",
+                "cpu": "x86-64-v2-AES",
+                "memory": "4096",
+                "scsihw": "virtio-scsi-single",
+                "scsi0": "datos:32,discard=on,ssd=1,iothread=1,format=qcow2",
+                "net0": "virtio,bridge=vmbr0,tag=20,mtu=1500,rate=100",
+                "tags": "proxlaunch;lote-XXXXXXXX;web;prod",
+                "onboot": "1",
+                "description": "Lote de 0.6.0",
+                "pool": "produccion",
+                "protection": "1"
+              }
+            ],
+            [
+              "encender",
+              "pve1",
+              {}
+            ]
+          ],
+          "103": [
+            [
+              "crear",
+              "pve1",
+              {
+                "vmid": "103",
+                "name": "aula-04",
+                "sockets": "1",
+                "cores": "2",
+                "cpu": "x86-64-v2-AES",
+                "memory": "4096",
+                "scsihw": "virtio-scsi-single",
+                "scsi0": "datos:32,discard=on,ssd=1,iothread=1,format=qcow2",
+                "net0": "virtio,bridge=vmbr0,tag=20,mtu=1500,rate=100",
+                "tags": "proxlaunch;lote-XXXXXXXX;web;prod",
+                "onboot": "1",
+                "description": "Lote de 0.6.0",
+                "pool": "produccion",
+                "protection": "1"
+              }
+            ],
+            [
+              "encender",
+              "pve1",
+              {}
+            ]
+          ]
+        }
+      ],
+      "simulacion_guardado_p2_lote-por-filas-060-v3": [
+        {
+          "100": {
+            "vmid": "100",
+            "name": "a-01",
+            "sockets": "1",
+            "cores": "2",
+            "cpu": "x86-64-v2-AES",
+            "memory": "4096",
+            "scsihw": "virtio-scsi-single",
+            "scsi0": "datos:32,discard=on,ssd=1,iothread=1,format=qcow2",
+            "net0": "virtio,bridge=vmbr0,tag=20,mtu=1500,rate=100",
+            "tags": "proxlaunch;lote-XXXXXXXX;web;prod",
+            "onboot": "1",
+            "description": "Lote de 0.6.0",
+            "pool": "produccion",
+            "protection": "1"
+          },
+          "150": {
+            "vmid": "150",
+            "name": "a-02",
+            "sockets": "1",
+            "cores": "2",
+            "cpu": "x86-64-v2-AES",
+            "memory": "8192",
+            "scsihw": "virtio-scsi-single",
+            "scsi0": "datos:32,discard=on,ssd=1,iothread=1,format=qcow2",
+            "net0": "virtio,bridge=vmbr0,tag=20,mtu=1500,rate=100",
+            "tags": "proxlaunch;lote-XXXXXXXX;db",
+            "onboot": "1",
+            "description": "solo esta",
+            "pool": "produccion",
+            "protection": "1"
+          }
+        },
+        {
+          "100": [
+            [
+              "crear",
+              "pve1",
+              {
+                "vmid": "100",
+                "name": "a-01",
+                "sockets": "1",
+                "cores": "2",
+                "cpu": "x86-64-v2-AES",
+                "memory": "4096",
+                "scsihw": "virtio-scsi-single",
+                "scsi0": "datos:32,discard=on,ssd=1,iothread=1,format=qcow2",
+                "net0": "virtio,bridge=vmbr0,tag=20,mtu=1500,rate=100",
+                "tags": "proxlaunch;lote-XXXXXXXX;web;prod",
+                "onboot": "1",
+                "description": "Lote de 0.6.0",
+                "pool": "produccion",
+                "protection": "1"
+              }
+            ],
+            [
+              "encender",
+              "pve1",
+              {}
+            ]
+          ],
+          "150": [
+            [
+              "crear",
+              "pve2",
+              {
+                "vmid": "150",
+                "name": "a-02",
+                "sockets": "1",
+                "cores": "2",
+                "cpu": "x86-64-v2-AES",
+                "memory": "8192",
+                "scsihw": "virtio-scsi-single",
+                "scsi0": "datos:32,discard=on,ssd=1,iothread=1,format=qcow2",
+                "net0": "virtio,bridge=vmbr0,tag=20,mtu=1500,rate=100",
+                "tags": "proxlaunch;lote-XXXXXXXX;db",
+                "onboot": "1",
+                "description": "solo esta",
+                "pool": "produccion",
+                "protection": "1"
+              }
+            ],
+            [
+              "encender",
+              "pve2",
+              {}
+            ]
+          ]
+        }
+      ],
+      "simulacion_guardado_p4_lote-homogeneo-070-v1": [
+        {
+          "100": {
+            "vmid": "100",
+            "name": "web-01",
+            "sockets": "1",
+            "cores": "2",
+            "cpu": "x86-64-v2-AES",
+            "memory": "4096",
+            "scsihw": "virtio-scsi-single",
+            "scsi0": "datos:32,discard=on,ssd=1,iothread=1,format=qcow2",
+            "net0": "virtio,bridge=vmbr0",
+            "tags": "proxlaunch;lote-XXXXXXXX"
+          },
+          "101": {
+            "vmid": "101",
+            "name": "web-02",
+            "sockets": "1",
+            "cores": "2",
+            "cpu": "x86-64-v2-AES",
+            "memory": "4096",
+            "scsihw": "virtio-scsi-single",
+            "scsi0": "datos:32,discard=on,ssd=1,iothread=1,format=qcow2",
+            "net0": "virtio,bridge=vmbr0",
+            "tags": "proxlaunch;lote-XXXXXXXX"
+          },
+          "102": {
+            "vmid": "102",
+            "name": "web-03",
+            "sockets": "1",
+            "cores": "2",
+            "cpu": "x86-64-v2-AES",
+            "memory": "4096",
+            "scsihw": "virtio-scsi-single",
+            "scsi0": "datos:32,discard=on,ssd=1,iothread=1,format=qcow2",
+            "net0": "virtio,bridge=vmbr0",
+            "tags": "proxlaunch;lote-XXXXXXXX"
+          }
+        },
+        {
+          "100": [
+            [
+              "crear",
+              "pve1",
+              {
+                "vmid": "100",
+                "name": "web-01",
+                "sockets": "1",
+                "cores": "2",
+                "cpu": "x86-64-v2-AES",
+                "memory": "4096",
+                "scsihw": "virtio-scsi-single",
+                "scsi0": "datos:32,discard=on,ssd=1,iothread=1,format=qcow2",
+                "net0": "virtio,bridge=vmbr0",
+                "tags": "proxlaunch;lote-XXXXXXXX"
+              }
+            ]
+          ],
+          "101": [
+            [
+              "crear",
+              "pve1",
+              {
+                "vmid": "101",
+                "name": "web-02",
+                "sockets": "1",
+                "cores": "2",
+                "cpu": "x86-64-v2-AES",
+                "memory": "4096",
+                "scsihw": "virtio-scsi-single",
+                "scsi0": "datos:32,discard=on,ssd=1,iothread=1,format=qcow2",
+                "net0": "virtio,bridge=vmbr0",
+                "tags": "proxlaunch;lote-XXXXXXXX"
+              }
+            ]
+          ],
+          "102": [
+            [
+              "crear",
+              "pve1",
+              {
+                "vmid": "102",
+                "name": "web-03",
+                "sockets": "1",
+                "cores": "2",
+                "cpu": "x86-64-v2-AES",
+                "memory": "4096",
+                "scsihw": "virtio-scsi-single",
+                "scsi0": "datos:32,discard=on,ssd=1,iothread=1,format=qcow2",
+                "net0": "virtio,bridge=vmbr0",
+                "tags": "proxlaunch;lote-XXXXXXXX"
+              }
+            ]
+          ]
+        }
+      ],
+      "simulacion_guardado_p4_lote-homogeneo-070-v4": [
+        {
+          "100": {
+            "vmid": "100",
+            "name": "srv-01",
+            "sockets": "1",
+            "cores": "2",
+            "cpu": "x86-64-v2-AES",
+            "memory": "4096",
+            "scsihw": "virtio-scsi-single",
+            "scsi0": "datos:32,discard=on,ssd=1,iothread=1,format=qcow2",
+            "net0": "virtio,bridge=vmbr0,tag=20,mtu=1500,rate=100",
+            "tags": "proxlaunch;lote-XXXXXXXX"
+          },
+          "101": {
+            "vmid": "101",
+            "name": "srv-02",
+            "sockets": "1",
+            "cores": "2",
+            "cpu": "x86-64-v2-AES",
+            "memory": "4096",
+            "scsihw": "virtio-scsi-single",
+            "scsi0": "datos:32,discard=on,ssd=1,iothread=1,format=qcow2",
+            "net0": "virtio,bridge=vmbr0,tag=20,mtu=1500,rate=100",
+            "tags": "proxlaunch;lote-XXXXXXXX"
+          },
+          "102": {
+            "vmid": "102",
+            "name": "srv-03",
+            "sockets": "1",
+            "cores": "2",
+            "cpu": "x86-64-v2-AES",
+            "memory": "4096",
+            "scsihw": "virtio-scsi-single",
+            "scsi0": "datos:32,discard=on,ssd=1,iothread=1,format=qcow2",
+            "net0": "virtio,bridge=vmbr0,tag=20,mtu=1500,rate=100",
+            "tags": "proxlaunch;lote-XXXXXXXX"
+          }
+        },
+        {
+          "100": [
+            [
+              "crear",
+              "pve1",
+              {
+                "vmid": "100",
+                "name": "srv-01",
+                "sockets": "1",
+                "cores": "2",
+                "cpu": "x86-64-v2-AES",
+                "memory": "4096",
+                "scsihw": "virtio-scsi-single",
+                "scsi0": "datos:32,discard=on,ssd=1,iothread=1,format=qcow2",
+                "net0": "virtio,bridge=vmbr0,tag=20,mtu=1500,rate=100",
+                "tags": "proxlaunch;lote-XXXXXXXX"
+              }
+            ],
+            [
+              "encender",
+              "pve1",
+              {}
+            ],
+            [
+              "sondear_ip",
+              "pve1",
+              {
+                "plazo_s": "90"
+              }
+            ]
+          ],
+          "101": [
+            [
+              "crear",
+              "pve1",
+              {
+                "vmid": "101",
+                "name": "srv-02",
+                "sockets": "1",
+                "cores": "2",
+                "cpu": "x86-64-v2-AES",
+                "memory": "4096",
+                "scsihw": "virtio-scsi-single",
+                "scsi0": "datos:32,discard=on,ssd=1,iothread=1,format=qcow2",
+                "net0": "virtio,bridge=vmbr0,tag=20,mtu=1500,rate=100",
+                "tags": "proxlaunch;lote-XXXXXXXX"
+              }
+            ],
+            [
+              "encender",
+              "pve1",
+              {}
+            ],
+            [
+              "sondear_ip",
+              "pve1",
+              {
+                "plazo_s": "90"
+              }
+            ]
+          ],
+          "102": [
+            [
+              "crear",
+              "pve1",
+              {
+                "vmid": "102",
+                "name": "srv-03",
+                "sockets": "1",
+                "cores": "2",
+                "cpu": "x86-64-v2-AES",
+                "memory": "4096",
+                "scsihw": "virtio-scsi-single",
+                "scsi0": "datos:32,discard=on,ssd=1,iothread=1,format=qcow2",
+                "net0": "virtio,bridge=vmbr0,tag=20,mtu=1500,rate=100",
+                "tags": "proxlaunch;lote-XXXXXXXX"
+              }
+            ],
+            [
+              "encender",
+              "pve1",
+              {}
+            ],
+            [
+              "sondear_ip",
+              "pve1",
+              {
+                "plazo_s": "90"
+              }
+            ]
+          ]
+        }
+      ],
+      "simulacion_guardado_p4_lote-por-filas-070-v4": [
+        {
+          "100": {
+            "vmid": "100",
+            "name": "a-01",
+            "sockets": "1",
+            "cores": "2",
+            "cpu": "x86-64-v2-AES",
+            "memory": "4096",
+            "scsihw": "virtio-scsi-single",
+            "scsi0": "datos:32,discard=on,ssd=1,iothread=1,format=qcow2",
+            "net0": "virtio,bridge=vmbr0,tag=20,mtu=1500,rate=100",
+            "tags": "proxlaunch;lote-XXXXXXXX"
+          },
+          "150": {
+            "vmid": "150",
+            "name": "a-02",
+            "sockets": "1",
+            "cores": "2",
+            "cpu": "x86-64-v2-AES",
+            "memory": "4096",
+            "scsihw": "virtio-scsi-single",
+            "scsi0": "datos:32,discard=on,ssd=1,iothread=1,format=qcow2",
+            "net0": "virtio,bridge=vmbr0,tag=20,mtu=1500,rate=100",
+            "tags": "proxlaunch;lote-XXXXXXXX",
+            "description": "solo esta"
+          }
+        },
+        {
+          "100": [
+            [
+              "crear",
+              "pve1",
+              {
+                "vmid": "100",
+                "name": "a-01",
+                "sockets": "1",
+                "cores": "2",
+                "cpu": "x86-64-v2-AES",
+                "memory": "4096",
+                "scsihw": "virtio-scsi-single",
+                "scsi0": "datos:32,discard=on,ssd=1,iothread=1,format=qcow2",
+                "net0": "virtio,bridge=vmbr0,tag=20,mtu=1500,rate=100",
+                "tags": "proxlaunch;lote-XXXXXXXX"
+              }
+            ],
+            [
+              "encender",
+              "pve1",
+              {}
+            ],
+            [
+              "sondear_ip",
+              "pve1",
+              {
+                "plazo_s": "90"
+              }
+            ]
+          ],
+          "150": [
+            [
+              "crear",
+              "pve2",
+              {
+                "vmid": "150",
+                "name": "a-02",
+                "sockets": "1",
+                "cores": "2",
+                "cpu": "x86-64-v2-AES",
+                "memory": "4096",
+                "scsihw": "virtio-scsi-single",
+                "scsi0": "datos:32,discard=on,ssd=1,iothread=1,format=qcow2",
+                "net0": "virtio,bridge=vmbr0,tag=20,mtu=1500,rate=100",
+                "tags": "proxlaunch;lote-XXXXXXXX",
+                "description": "solo esta"
+              }
+            ],
+            [
+              "encender",
+              "pve2",
+              {}
+            ],
+            [
+              "sondear_ip",
+              "pve2",
+              {
+                "plazo_s": "90"
+              }
+            ]
+          ]
+        }
+      ]
+    },
+    "9.2": {
+      "vacio": [
+        [
+          "POST",
+          "/nodes/pve1/qemu",
+          "vmid=100&name=srv-web-01&sockets=1&cores=2&cpu=x86-64-v2-AES&memory=8192&scsihw=virtio-scsi-single&scsi0=datos%3A32%2Cdiscard%3Don%2Cssd%3D1%2Ciothread%3D1%2Cformat%3Dqcow2&net0=virtio%2Cbridge%3Dvmbr0"
+        ]
+      ],
+      "vacio_encender": [
+        [
+          "POST",
+          "/nodes/pve1/qemu",
+          "vmid=100&name=srv-web-01&sockets=1&cores=2&cpu=x86-64-v2-AES&memory=8192&scsihw=virtio-scsi-single&scsi0=datos%3A32%2Cdiscard%3Don%2Cssd%3D1%2Ciothread%3D1%2Cformat%3Dqcow2&net0=virtio%2Cbridge%3Dvmbr0"
+        ],
+        [
+          "POST",
+          "/nodes/pve1/qemu/100/status/start",
+          ""
+        ]
+      ],
+      "iso": [
+        [
+          "POST",
+          "/nodes/pve1/qemu",
+          "vmid=100&name=srv-web-01&sockets=1&cores=2&cpu=x86-64-v2-AES&memory=2048&scsihw=virtio-scsi-single&ostype=l26&scsi0=local-lvm%3A32%2Cdiscard%3Don%2Cssd%3D1%2Ciothread%3D1&ide2=local%3Aiso%2Falpine.iso%2Cmedia%3Dcdrom&boot=order%3Dscsi0%3Bide2%3Bnet0&net0=virtio%2Cbridge%3Dvmbr0&tags=proxlaunch%3Blote-ab12cd34"
+        ]
+      ],
+      "iso_windows_tpm_ovmf": [
+        [
+          "POST",
+          "/nodes/pve1/qemu",
+          "vmid=100&name=srv-web-01&bios=ovmf&machine=q35&efidisk0=local-lvm%3A1%2Cefitype%3D4m%2Cpre-enrolled-keys%3D1&sockets=1&cores=2&cpu=x86-64-v2-AES&memory=8192&scsihw=virtio-scsi-single&ostype=win11&scsi0=local-lvm%3A32%2Cdiscard%3Don%2Cssd%3D1%2Ciothread%3D1&tpmstate0=local-lvm%3A1%2Cversion%3Dv2.0&ide2=local%3Aiso%2Falpine.iso%2Cmedia%3Dcdrom&ide0=local%3Aiso%2Fvirtio-win-0.1.271.iso%2Cmedia%3Dcdrom&boot=order%3Dscsi0%3Bide2%3Bnet0&net0=virtio%2Cbridge%3Dvmbr0&tags=proxlaunch%3Blote-ab12cd34"
+        ]
+      ],
+      "importar_con_resize": [
+        [
+          "POST",
+          "/nodes/pve1/qemu",
+          "vmid=100&name=srv-web-01&sockets=1&cores=2&cpu=x86-64-v2-AES&memory=2048&scsihw=virtio-scsi-single&scsi0=local-lvm%3A0%2Cimport-from%3Dlocal%3Aimport%2Fcirros.qcow2%2Cdiscard%3Don%2Cssd%3D1%2Ciothread%3D1&net0=virtio%2Cbridge%3Dvmbr0&tags=proxlaunch%3Blote-ab12cd34"
+        ],
+        [
+          "PUT",
+          "/nodes/pve1/qemu/100/resize",
+          "disk=scsi0&size=64G"
+        ]
+      ],
+      "importar_sin_resize": [
+        [
+          "POST",
+          "/nodes/pve1/qemu",
+          "vmid=100&name=srv-web-01&sockets=1&cores=2&cpu=x86-64-v2-AES&memory=2048&scsihw=virtio-scsi-single&scsi0=local-lvm%3A0%2Cimport-from%3Dlocal%3Aimport%2Fcirros.qcow2%2Cdiscard%3Don%2Cssd%3D1%2Ciothread%3D1&net0=virtio%2Cbridge%3Dvmbr0&tags=proxlaunch%3Blote-ab12cd34"
+        ]
+      ],
+      "importar_dos_discos_sin_imagen": [
+        [
+          "POST",
+          "/nodes/pve1/qemu",
+          "vmid=100&name=srv-web-01&sockets=1&cores=2&cpu=x86-64-v2-AES&memory=2048&scsihw=virtio-scsi-single&scsi0=local-lvm%3A0%2Cimport-from%3Dlocal%3Aimport%2Fcirros.qcow2%2Cdiscard%3Don%2Cssd%3D1%2Ciothread%3D1&scsi1=local-lvm%3A16%2Cdiscard%3Don%2Cssd%3D1%2Ciothread%3D1&net0=virtio%2Cbridge%3Dvmbr0&tags=proxlaunch%3Blote-ab12cd34"
+        ]
+      ],
+      "clon_sin_ajustes": [
+        [
+          "POST",
+          "/nodes/pve1/qemu/9000/clone",
+          "newid=100&name=srv-web-01"
+        ],
+        [
+          "PUT",
+          "/nodes/pve1/qemu/100/config",
+          "tags=lote-ab12cd34%3Bplantilla%3Bproxlaunch"
+        ]
+      ],
+      "clon_con_ajustes": [
+        [
+          "POST",
+          "/nodes/pve1/qemu/9000/clone",
+          "newid=100&name=srv-web-01"
+        ],
+        [
+          "PUT",
+          "/nodes/pve1/qemu/100/config",
+          "cores=4&memory=4096&tags=lote-ab12cd34%3Bplantilla%3Bproxlaunch&onboot=1"
+        ],
+        [
+          "PUT",
+          "/nodes/pve1/qemu/100/resize",
+          "disk=scsi0&size=64G"
+        ],
+        [
+          "POST",
+          "/nodes/pve1/qemu/100/status/start",
+          ""
+        ]
+      ],
+      "clon_cloudinit": [
+        [
+          "POST",
+          "/nodes/pve1/qemu/9000/clone",
+          "newid=100&name=srv-web-01"
+        ],
+        [
+          "PUT",
+          "/nodes/pve1/qemu/100/config",
+          "tags=lote-ab12cd34%3Bproxlaunch"
+        ],
+        [
+          "PUT",
+          "/nodes/pve1/qemu/100/config",
+          "ciuser=deploy&sshkeys=ssh-ed25519%2520AAAAC3NzaC1lZDI1NTE5AAAAIOMqqnkVzrm0SdG6UOoqKLsabgH5C9okWi0dh2l9GKJl%2520ana%2540lab&ipconfig0=ip%3Ddhcp"
+        ]
+      ],
+      "clon_red_del_clon": [
+        [
+          "POST",
+          "/nodes/pve1/qemu/9000/clone",
+          "newid=100&name=srv-web-01"
+        ],
+        [
+          "PUT",
+          "/nodes/pve1/qemu/100/config",
+          "tags=lote-ab12cd34%3Bproxlaunch"
+        ],
+        [
+          "PUT",
+          "/nodes/pve1/qemu/100/config",
+          "net0=virtio%3DBC%3A24%3A11%3A64%3A00%3A00%2Cbridge%3Dvmbr0%2Ctag%3D30&digest=d1"
+        ]
+      ],
+      "clon_firewall": [
+        [
+          "POST",
+          "/nodes/pve1/qemu/9000/clone",
+          "newid=100&name=srv-web-01"
+        ],
+        [
+          "PUT",
+          "/nodes/pve1/qemu/100/config",
+          "tags=lote-ab12cd34%3Bproxlaunch"
+        ]
+      ],
+      "asistente_imagen_cloud": [
+        [
+          "POST",
+          "/nodes/pve1/qemu",
+          "vmid=9100&name=plantilla-ubuntu-2404&sockets=1&cores=2&cpu=x86-64-v2-AES&memory=2048&scsihw=virtio-scsi-single&ostype=l26&scsi0=local-lvm%3A0%2Cimport-from%3Dlocal%3Aimport%2Fcirros.qcow2%2Cdiscard%3Don%2Cssd%3D1%2Ciothread%3D1&net0=virtio%2Cbridge%3Dvmbr0&agent=1&ide2=local-lvm%3Acloudinit&serial0=socket&vga=serial0&boot=order%3Dscsi0"
+        ],
+        [
+          "PUT",
+          "/nodes/pve1/qemu/9100/resize",
+          "disk=scsi0&size=10G"
+        ]
+      ],
+      "lote_3_encender": [
+        [
+          "POST",
+          "/nodes/pve1/qemu",
+          "vmid=100&name=web-01&sockets=1&cores=2&cpu=x86-64-v2-AES&memory=8192&scsihw=virtio-scsi-single&scsi0=datos%3A32%2Cdiscard%3Don%2Cssd%3D1%2Ciothread%3D1%2Cformat%3Dqcow2&net0=virtio%2Cbridge%3Dvmbr0&tags=proxlaunch%3Blote-abcd1234"
+        ],
+        [
+          "POST",
+          "/nodes/pve1/qemu/100/status/start",
+          ""
+        ],
+        [
+          "POST",
+          "/nodes/pve1/qemu",
+          "vmid=101&name=web-02&sockets=1&cores=2&cpu=x86-64-v2-AES&memory=8192&scsihw=virtio-scsi-single&scsi0=datos%3A32%2Cdiscard%3Don%2Cssd%3D1%2Ciothread%3D1%2Cformat%3Dqcow2&net0=virtio%2Cbridge%3Dvmbr0&tags=proxlaunch%3Blote-abcd1234"
+        ],
+        [
+          "POST",
+          "/nodes/pve1/qemu/101/status/start",
+          ""
+        ],
+        [
+          "POST",
+          "/nodes/pve1/qemu",
+          "vmid=102&name=web-03&sockets=1&cores=2&cpu=x86-64-v2-AES&memory=8192&scsihw=virtio-scsi-single&scsi0=datos%3A32%2Cdiscard%3Don%2Cssd%3D1%2Ciothread%3D1%2Cformat%3Dqcow2&net0=virtio%2Cbridge%3Dvmbr0&tags=proxlaunch%3Blote-abcd1234"
+        ],
+        [
+          "POST",
+          "/nodes/pve1/qemu/102/status/start",
+          ""
+        ]
+      ],
+      "reintento_de_ajustes": [
+        [
+          "POST",
+          "/nodes/pve1/qemu/9000/clone",
+          "newid=100&name=srv-web-01"
+        ],
+        [
+          "PUT",
+          "/nodes/pve1/qemu/100/config",
+          "cores=4&memory=4096&tags=lote-ab12cd34%3Bplantilla%3Bproxlaunch"
+        ],
+        [
+          "PUT",
+          "/nodes/pve1/qemu/100/config",
+          "cores=4&memory=4096&tags=lote-ab12cd34%3Bplantilla%3Bproxlaunch"
+        ],
+        [
+          "POST",
+          "/nodes/pve1/qemu/100/status/start",
+          ""
+        ]
+      ],
+      "deshacer_2": [
+        [
+          "DELETE",
+          "/nodes/pve1/qemu/100?destroy-unreferenced-disks=0",
+          ""
+        ],
+        [
+          "DELETE",
+          "/nodes/pve1/qemu/101?destroy-unreferenced-disks=0",
+          ""
+        ]
+      ],
+      "simulacion_lote_vacio": [
+        {
+          "100": {
+            "vmid": "100",
+            "name": "web-01",
+            "sockets": "1",
+            "cores": "2",
+            "cpu": "x86-64-v2-AES",
+            "memory": "8192",
+            "scsihw": "virtio-scsi-single",
+            "scsi0": "datos:32,discard=on,ssd=1,iothread=1,format=qcow2",
+            "net0": "virtio,bridge=vmbr0",
+            "tags": "proxlaunch;lote-XXXXXXXX"
+          },
+          "101": {
+            "vmid": "101",
+            "name": "web-02",
+            "sockets": "1",
+            "cores": "2",
+            "cpu": "x86-64-v2-AES",
+            "memory": "8192",
+            "scsihw": "virtio-scsi-single",
+            "scsi0": "datos:32,discard=on,ssd=1,iothread=1,format=qcow2",
+            "net0": "virtio,bridge=vmbr0",
+            "tags": "proxlaunch;lote-XXXXXXXX"
+          }
+        },
+        {
+          "100": [
+            [
+              "crear",
+              "pve1",
+              {
+                "vmid": "100",
+                "name": "web-01",
+                "sockets": "1",
+                "cores": "2",
+                "cpu": "x86-64-v2-AES",
+                "memory": "8192",
+                "scsihw": "virtio-scsi-single",
+                "scsi0": "datos:32,discard=on,ssd=1,iothread=1,format=qcow2",
+                "net0": "virtio,bridge=vmbr0",
+                "tags": "proxlaunch;lote-XXXXXXXX"
+              }
+            ],
+            [
+              "encender",
+              "pve1",
+              {}
+            ]
+          ],
+          "101": [
+            [
+              "crear",
+              "pve1",
+              {
+                "vmid": "101",
+                "name": "web-02",
+                "sockets": "1",
+                "cores": "2",
+                "cpu": "x86-64-v2-AES",
+                "memory": "8192",
+                "scsihw": "virtio-scsi-single",
+                "scsi0": "datos:32,discard=on,ssd=1,iothread=1,format=qcow2",
+                "net0": "virtio,bridge=vmbr0",
+                "tags": "proxlaunch;lote-XXXXXXXX"
+              }
+            ],
+            [
+              "encender",
+              "pve1",
+              {}
+            ]
+          ]
+        }
+      ],
+      "simulacion_lote_clon": [
+        {
+          "100": {
+            "newid": "100",
+            "name": "web-01"
+          },
+          "101": {
+            "newid": "101",
+            "name": "web-02"
+          }
+        },
+        {
+          "100": [
+            [
+              "clonar",
+              "pve1",
+              {
+                "newid": "100",
+                "name": "web-01"
+              }
+            ],
+            [
+              "configurar",
+              "pve1",
+              {
+                "cores": "4",
+                "tags": "lote-XXXXXXXX;plantilla;proxlaunch",
+                "onboot": "1"
+              }
+            ],
+            [
+              "ampliar",
+              "pve1",
+              {
+                "disk": "scsi0",
+                "size": "64G"
+              }
+            ],
+            [
+              "encender",
+              "pve1",
+              {}
+            ]
+          ],
+          "101": [
+            [
+              "clonar",
+              "pve1",
+              {
+                "newid": "101",
+                "name": "web-02"
+              }
+            ],
+            [
+              "configurar",
+              "pve1",
+              {
+                "cores": "4",
+                "tags": "lote-XXXXXXXX;plantilla;proxlaunch",
+                "onboot": "1"
+              }
+            ],
+            [
+              "ampliar",
+              "pve1",
+              {
+                "disk": "scsi0",
+                "size": "64G"
+              }
+            ],
+            [
+              "encender",
+              "pve1",
+              {}
+            ]
+          ]
+        }
+      ],
+      "simulacion_guardado_lote-homogeneo-051-v1": [
+        {
+          "100": {
+            "vmid": "100",
+            "name": "aula-01",
+            "sockets": "1",
+            "cores": "2",
+            "cpu": "x86-64-v2-AES",
+            "memory": "4096",
+            "scsihw": "virtio-scsi-single",
+            "scsi0": "datos:32,discard=on,ssd=1,iothread=1,format=qcow2",
+            "net0": "virtio,bridge=vmbr0",
+            "tags": "proxlaunch;lote-XXXXXXXX"
+          },
+          "101": {
+            "vmid": "101",
+            "name": "aula-02",
+            "sockets": "1",
+            "cores": "2",
+            "cpu": "x86-64-v2-AES",
+            "memory": "4096",
+            "scsihw": "virtio-scsi-single",
+            "scsi0": "datos:32,discard=on,ssd=1,iothread=1,format=qcow2",
+            "net0": "virtio,bridge=vmbr0",
+            "tags": "proxlaunch;lote-XXXXXXXX"
+          },
+          "102": {
+            "vmid": "102",
+            "name": "aula-03",
+            "sockets": "1",
+            "cores": "2",
+            "cpu": "x86-64-v2-AES",
+            "memory": "4096",
+            "scsihw": "virtio-scsi-single",
+            "scsi0": "datos:32,discard=on,ssd=1,iothread=1,format=qcow2",
+            "net0": "virtio,bridge=vmbr0",
+            "tags": "proxlaunch;lote-XXXXXXXX"
+          },
+          "103": {
+            "vmid": "103",
+            "name": "aula-04",
+            "sockets": "1",
+            "cores": "2",
+            "cpu": "x86-64-v2-AES",
+            "memory": "4096",
+            "scsihw": "virtio-scsi-single",
+            "scsi0": "datos:32,discard=on,ssd=1,iothread=1,format=qcow2",
+            "net0": "virtio,bridge=vmbr0",
+            "tags": "proxlaunch;lote-XXXXXXXX"
+          },
+          "104": {
+            "vmid": "104",
+            "name": "aula-05",
+            "sockets": "1",
+            "cores": "2",
+            "cpu": "x86-64-v2-AES",
+            "memory": "4096",
+            "scsihw": "virtio-scsi-single",
+            "scsi0": "datos:32,discard=on,ssd=1,iothread=1,format=qcow2",
+            "net0": "virtio,bridge=vmbr0",
+            "tags": "proxlaunch;lote-XXXXXXXX"
+          }
+        },
+        {
+          "100": [
+            [
+              "crear",
+              "pve1",
+              {
+                "vmid": "100",
+                "name": "aula-01",
+                "sockets": "1",
+                "cores": "2",
+                "cpu": "x86-64-v2-AES",
+                "memory": "4096",
+                "scsihw": "virtio-scsi-single",
+                "scsi0": "datos:32,discard=on,ssd=1,iothread=1,format=qcow2",
+                "net0": "virtio,bridge=vmbr0",
+                "tags": "proxlaunch;lote-XXXXXXXX"
+              }
+            ]
+          ],
+          "101": [
+            [
+              "crear",
+              "pve1",
+              {
+                "vmid": "101",
+                "name": "aula-02",
+                "sockets": "1",
+                "cores": "2",
+                "cpu": "x86-64-v2-AES",
+                "memory": "4096",
+                "scsihw": "virtio-scsi-single",
+                "scsi0": "datos:32,discard=on,ssd=1,iothread=1,format=qcow2",
+                "net0": "virtio,bridge=vmbr0",
+                "tags": "proxlaunch;lote-XXXXXXXX"
+              }
+            ]
+          ],
+          "102": [
+            [
+              "crear",
+              "pve1",
+              {
+                "vmid": "102",
+                "name": "aula-03",
+                "sockets": "1",
+                "cores": "2",
+                "cpu": "x86-64-v2-AES",
+                "memory": "4096",
+                "scsihw": "virtio-scsi-single",
+                "scsi0": "datos:32,discard=on,ssd=1,iothread=1,format=qcow2",
+                "net0": "virtio,bridge=vmbr0",
+                "tags": "proxlaunch;lote-XXXXXXXX"
+              }
+            ]
+          ],
+          "103": [
+            [
+              "crear",
+              "pve1",
+              {
+                "vmid": "103",
+                "name": "aula-04",
+                "sockets": "1",
+                "cores": "2",
+                "cpu": "x86-64-v2-AES",
+                "memory": "4096",
+                "scsihw": "virtio-scsi-single",
+                "scsi0": "datos:32,discard=on,ssd=1,iothread=1,format=qcow2",
+                "net0": "virtio,bridge=vmbr0",
+                "tags": "proxlaunch;lote-XXXXXXXX"
+              }
+            ]
+          ],
+          "104": [
+            [
+              "crear",
+              "pve1",
+              {
+                "vmid": "104",
+                "name": "aula-05",
+                "sockets": "1",
+                "cores": "2",
+                "cpu": "x86-64-v2-AES",
+                "memory": "4096",
+                "scsihw": "virtio-scsi-single",
+                "scsi0": "datos:32,discard=on,ssd=1,iothread=1,format=qcow2",
+                "net0": "virtio,bridge=vmbr0",
+                "tags": "proxlaunch;lote-XXXXXXXX"
+              }
+            ]
+          ]
+        }
+      ],
+      "simulacion_guardado_lote-homogeneo-051-v2": [
+        {
+          "100": {
+            "vmid": "100",
+            "name": "srv-01",
+            "sockets": "1",
+            "cores": "2",
+            "cpu": "x86-64-v2-AES",
+            "memory": "4096",
+            "scsihw": "virtio-scsi-single",
+            "scsi0": "datos:32,discard=on,ssd=1,iothread=1,format=qcow2",
+            "net0": "virtio,bridge=vmbr0",
+            "tags": "proxlaunch;lote-XXXXXXXX"
+          },
+          "101": {
+            "vmid": "101",
+            "name": "srv-02",
+            "sockets": "1",
+            "cores": "2",
+            "cpu": "x86-64-v2-AES",
+            "memory": "4096",
+            "scsihw": "virtio-scsi-single",
+            "scsi0": "datos:32,discard=on,ssd=1,iothread=1,format=qcow2",
+            "net0": "virtio,bridge=vmbr0",
+            "tags": "proxlaunch;lote-XXXXXXXX"
+          },
+          "102": {
+            "vmid": "102",
+            "name": "srv-03",
+            "sockets": "1",
+            "cores": "2",
+            "cpu": "x86-64-v2-AES",
+            "memory": "4096",
+            "scsihw": "virtio-scsi-single",
+            "scsi0": "datos:32,discard=on,ssd=1,iothread=1,format=qcow2",
+            "net0": "virtio,bridge=vmbr0",
+            "tags": "proxlaunch;lote-XXXXXXXX"
+          }
+        },
+        {
+          "100": [
+            [
+              "crear",
+              "pve1",
+              {
+                "vmid": "100",
+                "name": "srv-01",
+                "sockets": "1",
+                "cores": "2",
+                "cpu": "x86-64-v2-AES",
+                "memory": "4096",
+                "scsihw": "virtio-scsi-single",
+                "scsi0": "datos:32,discard=on,ssd=1,iothread=1,format=qcow2",
+                "net0": "virtio,bridge=vmbr0",
+                "tags": "proxlaunch;lote-XXXXXXXX"
+              }
+            ]
+          ],
+          "101": [
+            [
+              "crear",
+              "pve1",
+              {
+                "vmid": "101",
+                "name": "srv-02",
+                "sockets": "1",
+                "cores": "2",
+                "cpu": "x86-64-v2-AES",
+                "memory": "4096",
+                "scsihw": "virtio-scsi-single",
+                "scsi0": "datos:32,discard=on,ssd=1,iothread=1,format=qcow2",
+                "net0": "virtio,bridge=vmbr0",
+                "tags": "proxlaunch;lote-XXXXXXXX"
+              }
+            ]
+          ],
+          "102": [
+            [
+              "crear",
+              "pve1",
+              {
+                "vmid": "102",
+                "name": "srv-03",
+                "sockets": "1",
+                "cores": "2",
+                "cpu": "x86-64-v2-AES",
+                "memory": "4096",
+                "scsihw": "virtio-scsi-single",
+                "scsi0": "datos:32,discard=on,ssd=1,iothread=1,format=qcow2",
+                "net0": "virtio,bridge=vmbr0",
+                "tags": "proxlaunch;lote-XXXXXXXX"
+              }
+            ]
+          ]
+        }
+      ],
+      "simulacion_guardado_lote-por-filas-051-v2": [
+        {
+          "100": {
+            "vmid": "100",
+            "name": "a-01",
+            "sockets": "1",
+            "cores": "2",
+            "cpu": "x86-64-v2-AES",
+            "memory": "4096",
+            "scsihw": "virtio-scsi-single",
+            "scsi0": "datos:32,discard=on,ssd=1,iothread=1,format=qcow2",
+            "net0": "virtio,bridge=vmbr0",
+            "tags": "proxlaunch;lote-XXXXXXXX"
+          },
+          "150": {
+            "vmid": "150",
+            "name": "a-02",
+            "sockets": "1",
+            "cores": "2",
+            "cpu": "x86-64-v2-AES",
+            "memory": "8192",
+            "scsihw": "virtio-scsi-single",
+            "scsi0": "datos:32,discard=on,ssd=1,iothread=1,format=qcow2",
+            "net0": "virtio,bridge=vmbr0",
+            "tags": "proxlaunch;lote-XXXXXXXX"
+          }
+        },
+        {
+          "100": [
+            [
+              "crear",
+              "pve1",
+              {
+                "vmid": "100",
+                "name": "a-01",
+                "sockets": "1",
+                "cores": "2",
+                "cpu": "x86-64-v2-AES",
+                "memory": "4096",
+                "scsihw": "virtio-scsi-single",
+                "scsi0": "datos:32,discard=on,ssd=1,iothread=1,format=qcow2",
+                "net0": "virtio,bridge=vmbr0",
+                "tags": "proxlaunch;lote-XXXXXXXX"
+              }
+            ]
+          ],
+          "150": [
+            [
+              "crear",
+              "pve2",
+              {
+                "vmid": "150",
+                "name": "a-02",
+                "sockets": "1",
+                "cores": "2",
+                "cpu": "x86-64-v2-AES",
+                "memory": "8192",
+                "scsihw": "virtio-scsi-single",
+                "scsi0": "datos:32,discard=on,ssd=1,iothread=1,format=qcow2",
+                "net0": "virtio,bridge=vmbr0",
+                "tags": "proxlaunch;lote-XXXXXXXX"
+              }
+            ]
+          ]
+        }
+      ],
+      "simulacion_guardado_p2_lote-homogeneo-060-v3": [
+        {
+          "100": {
+            "vmid": "100",
+            "name": "aula-01",
+            "sockets": "1",
+            "cores": "2",
+            "cpu": "x86-64-v2-AES",
+            "memory": "4096",
+            "scsihw": "virtio-scsi-single",
+            "scsi0": "datos:32,discard=on,ssd=1,iothread=1,format=qcow2",
+            "net0": "virtio,bridge=vmbr0,tag=20,mtu=1500,rate=100",
+            "tags": "proxlaunch;lote-XXXXXXXX;web;prod",
+            "onboot": "1",
+            "description": "Lote de 0.6.0",
+            "pool": "produccion",
+            "protection": "1"
+          },
+          "101": {
+            "vmid": "101",
+            "name": "aula-02",
+            "sockets": "1",
+            "cores": "2",
+            "cpu": "x86-64-v2-AES",
+            "memory": "4096",
+            "scsihw": "virtio-scsi-single",
+            "scsi0": "datos:32,discard=on,ssd=1,iothread=1,format=qcow2",
+            "net0": "virtio,bridge=vmbr0,tag=20,mtu=1500,rate=100",
+            "tags": "proxlaunch;lote-XXXXXXXX;web;prod",
+            "onboot": "1",
+            "description": "Lote de 0.6.0",
+            "pool": "produccion",
+            "protection": "1"
+          },
+          "102": {
+            "vmid": "102",
+            "name": "aula-03",
+            "sockets": "1",
+            "cores": "2",
+            "cpu": "x86-64-v2-AES",
+            "memory": "4096",
+            "scsihw": "virtio-scsi-single",
+            "scsi0": "datos:32,discard=on,ssd=1,iothread=1,format=qcow2",
+            "net0": "virtio,bridge=vmbr0,tag=20,mtu=1500,rate=100",
+            "tags": "proxlaunch;lote-XXXXXXXX;web;prod",
+            "onboot": "1",
+            "description": "Lote de 0.6.0",
+            "pool": "produccion",
+            "protection": "1"
+          },
+          "103": {
+            "vmid": "103",
+            "name": "aula-04",
+            "sockets": "1",
+            "cores": "2",
+            "cpu": "x86-64-v2-AES",
+            "memory": "4096",
+            "scsihw": "virtio-scsi-single",
+            "scsi0": "datos:32,discard=on,ssd=1,iothread=1,format=qcow2",
+            "net0": "virtio,bridge=vmbr0,tag=20,mtu=1500,rate=100",
+            "tags": "proxlaunch;lote-XXXXXXXX;web;prod",
+            "onboot": "1",
+            "description": "Lote de 0.6.0",
+            "pool": "produccion",
+            "protection": "1"
+          }
+        },
+        {
+          "100": [
+            [
+              "crear",
+              "pve1",
+              {
+                "vmid": "100",
+                "name": "aula-01",
+                "sockets": "1",
+                "cores": "2",
+                "cpu": "x86-64-v2-AES",
+                "memory": "4096",
+                "scsihw": "virtio-scsi-single",
+                "scsi0": "datos:32,discard=on,ssd=1,iothread=1,format=qcow2",
+                "net0": "virtio,bridge=vmbr0,tag=20,mtu=1500,rate=100",
+                "tags": "proxlaunch;lote-XXXXXXXX;web;prod",
+                "onboot": "1",
+                "description": "Lote de 0.6.0",
+                "pool": "produccion",
+                "protection": "1"
+              }
+            ],
+            [
+              "encender",
+              "pve1",
+              {}
+            ]
+          ],
+          "101": [
+            [
+              "crear",
+              "pve1",
+              {
+                "vmid": "101",
+                "name": "aula-02",
+                "sockets": "1",
+                "cores": "2",
+                "cpu": "x86-64-v2-AES",
+                "memory": "4096",
+                "scsihw": "virtio-scsi-single",
+                "scsi0": "datos:32,discard=on,ssd=1,iothread=1,format=qcow2",
+                "net0": "virtio,bridge=vmbr0,tag=20,mtu=1500,rate=100",
+                "tags": "proxlaunch;lote-XXXXXXXX;web;prod",
+                "onboot": "1",
+                "description": "Lote de 0.6.0",
+                "pool": "produccion",
+                "protection": "1"
+              }
+            ],
+            [
+              "encender",
+              "pve1",
+              {}
+            ]
+          ],
+          "102": [
+            [
+              "crear",
+              "pve1",
+              {
+                "vmid": "102",
+                "name": "aula-03",
+                "sockets": "1",
+                "cores": "2",
+                "cpu": "x86-64-v2-AES",
+                "memory": "4096",
+                "scsihw": "virtio-scsi-single",
+                "scsi0": "datos:32,discard=on,ssd=1,iothread=1,format=qcow2",
+                "net0": "virtio,bridge=vmbr0,tag=20,mtu=1500,rate=100",
+                "tags": "proxlaunch;lote-XXXXXXXX;web;prod",
+                "onboot": "1",
+                "description": "Lote de 0.6.0",
+                "pool": "produccion",
+                "protection": "1"
+              }
+            ],
+            [
+              "encender",
+              "pve1",
+              {}
+            ]
+          ],
+          "103": [
+            [
+              "crear",
+              "pve1",
+              {
+                "vmid": "103",
+                "name": "aula-04",
+                "sockets": "1",
+                "cores": "2",
+                "cpu": "x86-64-v2-AES",
+                "memory": "4096",
+                "scsihw": "virtio-scsi-single",
+                "scsi0": "datos:32,discard=on,ssd=1,iothread=1,format=qcow2",
+                "net0": "virtio,bridge=vmbr0,tag=20,mtu=1500,rate=100",
+                "tags": "proxlaunch;lote-XXXXXXXX;web;prod",
+                "onboot": "1",
+                "description": "Lote de 0.6.0",
+                "pool": "produccion",
+                "protection": "1"
+              }
+            ],
+            [
+              "encender",
+              "pve1",
+              {}
+            ]
+          ]
+        }
+      ],
+      "simulacion_guardado_p2_lote-por-filas-060-v3": [
+        {
+          "100": {
+            "vmid": "100",
+            "name": "a-01",
+            "sockets": "1",
+            "cores": "2",
+            "cpu": "x86-64-v2-AES",
+            "memory": "4096",
+            "scsihw": "virtio-scsi-single",
+            "scsi0": "datos:32,discard=on,ssd=1,iothread=1,format=qcow2",
+            "net0": "virtio,bridge=vmbr0,tag=20,mtu=1500,rate=100",
+            "tags": "proxlaunch;lote-XXXXXXXX;web;prod",
+            "onboot": "1",
+            "description": "Lote de 0.6.0",
+            "pool": "produccion",
+            "protection": "1"
+          },
+          "150": {
+            "vmid": "150",
+            "name": "a-02",
+            "sockets": "1",
+            "cores": "2",
+            "cpu": "x86-64-v2-AES",
+            "memory": "8192",
+            "scsihw": "virtio-scsi-single",
+            "scsi0": "datos:32,discard=on,ssd=1,iothread=1,format=qcow2",
+            "net0": "virtio,bridge=vmbr0,tag=20,mtu=1500,rate=100",
+            "tags": "proxlaunch;lote-XXXXXXXX;db",
+            "onboot": "1",
+            "description": "solo esta",
+            "pool": "produccion",
+            "protection": "1"
+          }
+        },
+        {
+          "100": [
+            [
+              "crear",
+              "pve1",
+              {
+                "vmid": "100",
+                "name": "a-01",
+                "sockets": "1",
+                "cores": "2",
+                "cpu": "x86-64-v2-AES",
+                "memory": "4096",
+                "scsihw": "virtio-scsi-single",
+                "scsi0": "datos:32,discard=on,ssd=1,iothread=1,format=qcow2",
+                "net0": "virtio,bridge=vmbr0,tag=20,mtu=1500,rate=100",
+                "tags": "proxlaunch;lote-XXXXXXXX;web;prod",
+                "onboot": "1",
+                "description": "Lote de 0.6.0",
+                "pool": "produccion",
+                "protection": "1"
+              }
+            ],
+            [
+              "encender",
+              "pve1",
+              {}
+            ]
+          ],
+          "150": [
+            [
+              "crear",
+              "pve2",
+              {
+                "vmid": "150",
+                "name": "a-02",
+                "sockets": "1",
+                "cores": "2",
+                "cpu": "x86-64-v2-AES",
+                "memory": "8192",
+                "scsihw": "virtio-scsi-single",
+                "scsi0": "datos:32,discard=on,ssd=1,iothread=1,format=qcow2",
+                "net0": "virtio,bridge=vmbr0,tag=20,mtu=1500,rate=100",
+                "tags": "proxlaunch;lote-XXXXXXXX;db",
+                "onboot": "1",
+                "description": "solo esta",
+                "pool": "produccion",
+                "protection": "1"
+              }
+            ],
+            [
+              "encender",
+              "pve2",
+              {}
+            ]
+          ]
+        }
+      ],
+      "simulacion_guardado_p4_lote-homogeneo-070-v1": [
+        {
+          "100": {
+            "vmid": "100",
+            "name": "web-01",
+            "sockets": "1",
+            "cores": "2",
+            "cpu": "x86-64-v2-AES",
+            "memory": "4096",
+            "scsihw": "virtio-scsi-single",
+            "scsi0": "datos:32,discard=on,ssd=1,iothread=1,format=qcow2",
+            "net0": "virtio,bridge=vmbr0",
+            "tags": "proxlaunch;lote-XXXXXXXX"
+          },
+          "101": {
+            "vmid": "101",
+            "name": "web-02",
+            "sockets": "1",
+            "cores": "2",
+            "cpu": "x86-64-v2-AES",
+            "memory": "4096",
+            "scsihw": "virtio-scsi-single",
+            "scsi0": "datos:32,discard=on,ssd=1,iothread=1,format=qcow2",
+            "net0": "virtio,bridge=vmbr0",
+            "tags": "proxlaunch;lote-XXXXXXXX"
+          },
+          "102": {
+            "vmid": "102",
+            "name": "web-03",
+            "sockets": "1",
+            "cores": "2",
+            "cpu": "x86-64-v2-AES",
+            "memory": "4096",
+            "scsihw": "virtio-scsi-single",
+            "scsi0": "datos:32,discard=on,ssd=1,iothread=1,format=qcow2",
+            "net0": "virtio,bridge=vmbr0",
+            "tags": "proxlaunch;lote-XXXXXXXX"
+          }
+        },
+        {
+          "100": [
+            [
+              "crear",
+              "pve1",
+              {
+                "vmid": "100",
+                "name": "web-01",
+                "sockets": "1",
+                "cores": "2",
+                "cpu": "x86-64-v2-AES",
+                "memory": "4096",
+                "scsihw": "virtio-scsi-single",
+                "scsi0": "datos:32,discard=on,ssd=1,iothread=1,format=qcow2",
+                "net0": "virtio,bridge=vmbr0",
+                "tags": "proxlaunch;lote-XXXXXXXX"
+              }
+            ]
+          ],
+          "101": [
+            [
+              "crear",
+              "pve1",
+              {
+                "vmid": "101",
+                "name": "web-02",
+                "sockets": "1",
+                "cores": "2",
+                "cpu": "x86-64-v2-AES",
+                "memory": "4096",
+                "scsihw": "virtio-scsi-single",
+                "scsi0": "datos:32,discard=on,ssd=1,iothread=1,format=qcow2",
+                "net0": "virtio,bridge=vmbr0",
+                "tags": "proxlaunch;lote-XXXXXXXX"
+              }
+            ]
+          ],
+          "102": [
+            [
+              "crear",
+              "pve1",
+              {
+                "vmid": "102",
+                "name": "web-03",
+                "sockets": "1",
+                "cores": "2",
+                "cpu": "x86-64-v2-AES",
+                "memory": "4096",
+                "scsihw": "virtio-scsi-single",
+                "scsi0": "datos:32,discard=on,ssd=1,iothread=1,format=qcow2",
+                "net0": "virtio,bridge=vmbr0",
+                "tags": "proxlaunch;lote-XXXXXXXX"
+              }
+            ]
+          ]
+        }
+      ],
+      "simulacion_guardado_p4_lote-homogeneo-070-v4": [
+        {
+          "100": {
+            "vmid": "100",
+            "name": "srv-01",
+            "sockets": "1",
+            "cores": "2",
+            "cpu": "x86-64-v2-AES",
+            "memory": "4096",
+            "scsihw": "virtio-scsi-single",
+            "scsi0": "datos:32,discard=on,ssd=1,iothread=1,format=qcow2",
+            "net0": "virtio,bridge=vmbr0,tag=20,mtu=1500,rate=100",
+            "tags": "proxlaunch;lote-XXXXXXXX"
+          },
+          "101": {
+            "vmid": "101",
+            "name": "srv-02",
+            "sockets": "1",
+            "cores": "2",
+            "cpu": "x86-64-v2-AES",
+            "memory": "4096",
+            "scsihw": "virtio-scsi-single",
+            "scsi0": "datos:32,discard=on,ssd=1,iothread=1,format=qcow2",
+            "net0": "virtio,bridge=vmbr0,tag=20,mtu=1500,rate=100",
+            "tags": "proxlaunch;lote-XXXXXXXX"
+          },
+          "102": {
+            "vmid": "102",
+            "name": "srv-03",
+            "sockets": "1",
+            "cores": "2",
+            "cpu": "x86-64-v2-AES",
+            "memory": "4096",
+            "scsihw": "virtio-scsi-single",
+            "scsi0": "datos:32,discard=on,ssd=1,iothread=1,format=qcow2",
+            "net0": "virtio,bridge=vmbr0,tag=20,mtu=1500,rate=100",
+            "tags": "proxlaunch;lote-XXXXXXXX"
+          }
+        },
+        {
+          "100": [
+            [
+              "crear",
+              "pve1",
+              {
+                "vmid": "100",
+                "name": "srv-01",
+                "sockets": "1",
+                "cores": "2",
+                "cpu": "x86-64-v2-AES",
+                "memory": "4096",
+                "scsihw": "virtio-scsi-single",
+                "scsi0": "datos:32,discard=on,ssd=1,iothread=1,format=qcow2",
+                "net0": "virtio,bridge=vmbr0,tag=20,mtu=1500,rate=100",
+                "tags": "proxlaunch;lote-XXXXXXXX"
+              }
+            ],
+            [
+              "encender",
+              "pve1",
+              {}
+            ],
+            [
+              "sondear_ip",
+              "pve1",
+              {
+                "plazo_s": "90"
+              }
+            ]
+          ],
+          "101": [
+            [
+              "crear",
+              "pve1",
+              {
+                "vmid": "101",
+                "name": "srv-02",
+                "sockets": "1",
+                "cores": "2",
+                "cpu": "x86-64-v2-AES",
+                "memory": "4096",
+                "scsihw": "virtio-scsi-single",
+                "scsi0": "datos:32,discard=on,ssd=1,iothread=1,format=qcow2",
+                "net0": "virtio,bridge=vmbr0,tag=20,mtu=1500,rate=100",
+                "tags": "proxlaunch;lote-XXXXXXXX"
+              }
+            ],
+            [
+              "encender",
+              "pve1",
+              {}
+            ],
+            [
+              "sondear_ip",
+              "pve1",
+              {
+                "plazo_s": "90"
+              }
+            ]
+          ],
+          "102": [
+            [
+              "crear",
+              "pve1",
+              {
+                "vmid": "102",
+                "name": "srv-03",
+                "sockets": "1",
+                "cores": "2",
+                "cpu": "x86-64-v2-AES",
+                "memory": "4096",
+                "scsihw": "virtio-scsi-single",
+                "scsi0": "datos:32,discard=on,ssd=1,iothread=1,format=qcow2",
+                "net0": "virtio,bridge=vmbr0,tag=20,mtu=1500,rate=100",
+                "tags": "proxlaunch;lote-XXXXXXXX"
+              }
+            ],
+            [
+              "encender",
+              "pve1",
+              {}
+            ],
+            [
+              "sondear_ip",
+              "pve1",
+              {
+                "plazo_s": "90"
+              }
+            ]
+          ]
+        }
+      ],
+      "simulacion_guardado_p4_lote-por-filas-070-v4": [
+        {
+          "100": {
+            "vmid": "100",
+            "name": "a-01",
+            "sockets": "1",
+            "cores": "2",
+            "cpu": "x86-64-v2-AES",
+            "memory": "4096",
+            "scsihw": "virtio-scsi-single",
+            "scsi0": "datos:32,discard=on,ssd=1,iothread=1,format=qcow2",
+            "net0": "virtio,bridge=vmbr0,tag=20,mtu=1500,rate=100",
+            "tags": "proxlaunch;lote-XXXXXXXX"
+          },
+          "150": {
+            "vmid": "150",
+            "name": "a-02",
+            "sockets": "1",
+            "cores": "2",
+            "cpu": "x86-64-v2-AES",
+            "memory": "4096",
+            "scsihw": "virtio-scsi-single",
+            "scsi0": "datos:32,discard=on,ssd=1,iothread=1,format=qcow2",
+            "net0": "virtio,bridge=vmbr0,tag=20,mtu=1500,rate=100",
+            "tags": "proxlaunch;lote-XXXXXXXX",
+            "description": "solo esta"
+          }
+        },
+        {
+          "100": [
+            [
+              "crear",
+              "pve1",
+              {
+                "vmid": "100",
+                "name": "a-01",
+                "sockets": "1",
+                "cores": "2",
+                "cpu": "x86-64-v2-AES",
+                "memory": "4096",
+                "scsihw": "virtio-scsi-single",
+                "scsi0": "datos:32,discard=on,ssd=1,iothread=1,format=qcow2",
+                "net0": "virtio,bridge=vmbr0,tag=20,mtu=1500,rate=100",
+                "tags": "proxlaunch;lote-XXXXXXXX"
+              }
+            ],
+            [
+              "encender",
+              "pve1",
+              {}
+            ],
+            [
+              "sondear_ip",
+              "pve1",
+              {
+                "plazo_s": "90"
+              }
+            ]
+          ],
+          "150": [
+            [
+              "crear",
+              "pve2",
+              {
+                "vmid": "150",
+                "name": "a-02",
+                "sockets": "1",
+                "cores": "2",
+                "cpu": "x86-64-v2-AES",
+                "memory": "4096",
+                "scsihw": "virtio-scsi-single",
+                "scsi0": "datos:32,discard=on,ssd=1,iothread=1,format=qcow2",
+                "net0": "virtio,bridge=vmbr0,tag=20,mtu=1500,rate=100",
+                "tags": "proxlaunch;lote-XXXXXXXX",
+                "description": "solo esta"
+              }
+            ],
+            [
+              "encender",
+              "pve2",
+              {}
+            ],
+            [
+              "sondear_ip",
+              "pve2",
+              {
+                "plazo_s": "90"
+              }
+            ]
+          ]
+        }
+      ]
+    }
+  }
+}

@@ -484,12 +484,12 @@ def test_v_o02_windows_sin_drivers_resueltos_pide_drivers_o_confirmar_sin_ellos(
     assert "V-O02.drivers" not in _cods(validar_origen(sin, inv_origen(), CAPS))
 
 
-def test_v_o03_importar_en_una_version_sin_soporte_da_error_de_version():
-    inv = inv_origen(version=Version("8.2.1", 8, 2, 1))
-    caps = capacidades_para(Version("8.2.1", 8, 2, 1), None)
+def test_v_o03_importar_en_la_version_minima_no_da_error_de_version():
+    """DT-D3: con la mínima 8.4 ya no existe el motivo ``version`` de V-O03."""
+    inv = inv_origen(version=Version("8.4.1", 8, 4, 1))
+    caps = capacidades_para(Version("8.4.1", 8, 4, 1), None)
     problemas = validar_origen(cfg_import(), inv, caps)
-    (p,) = [p for p in problemas if p.codigo == "V-O03" and p.params["motivo"] == "version"]
-    assert p.params["requerida"] == "8.4"
+    assert not [p for p in problemas if p.codigo == "V-O03" and p.params.get("motivo") == "version"]
 
 
 def test_v_o03_volid_de_imagen_con_ruta_absoluta_o_inyeccion():

@@ -1,0 +1,2 @@
+<domain type='kvm'><name>vacia</name><memory unit='MiB'>512</memory><vcpu>1</vcpu><os><type arch='x86_64'>hvm</type></os>
+<devices><interface type='bridge'><source bridge='vmbr0'/></interface></devices></domain>

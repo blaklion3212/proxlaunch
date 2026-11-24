@@ -24,6 +24,7 @@ from proxlaunch.nucleo.csv_importacion.interpretacion import interpretar
 from proxlaunch.nucleo.csv_importacion.lectura import leer_archivo_csv
 from proxlaunch.nucleo.csv_importacion.modelos import EstadoFila, ResultadoImportacion
 from proxlaunch.nucleo.lotes_guardados.formato import guardar_lote, leer_archivo_lote
+from proxlaunch.nucleo.modelos.origen import DetalleImportacion
 from proxlaunch.nucleo.perfiles_maquina.fabrica import perfiles_fabrica
 from proxlaunch.nucleo.perfiles_maquina.formato import (
     exportar_perfiles,
@@ -49,6 +50,7 @@ CSV_VALIDOS = {
     "mvs-opciones.csv": 4,
     "mvs-cloudinit.csv": 4,
     "mvs-red-firewall.csv": 4,
+    "mvs-hardware-cluster.csv": 4,
 }
 LOTES = (
     "lote-homogeneo.proxlaunch-lote.json",
@@ -56,6 +58,7 @@ LOTES = (
     "lote-con-opciones.proxlaunch-lote.json",
     "lote-cloudinit.proxlaunch-lote.json",
     "lote-red-firewall.proxlaunch-lote.json",
+    "lote-libvirt.proxlaunch-lote.json",
 )
 PERFILES = "perfiles-ejemplo.proxlaunch-perfiles.json"
 
@@ -264,7 +267,7 @@ def _archivos_ejemplo() -> list[Path]:
     return sorted(p for p in EJEMPLOS.iterdir() if p.is_file())
 
 
-def test_hay_los_quince_archivos_esperados() -> None:
+def test_hay_los_diecisiete_archivos_esperados() -> None:
     nombres = {p.name for p in _archivos_ejemplo()}
     assert nombres == {"LEEME.md", "mvs-con-errores.csv", *CSV_VALIDOS, *LOTES, PERFILES}
 
@@ -375,3 +378,32 @@ def test_csv_red_firewall_usa_las_columnas_de_la_fase_c() -> None:
     fw = {f.nombre: f.opciones.firewall for f in res.filas if f.opciones is not None}
     assert fw["lab-01"] is not None and fw["lab-01"].activo is False
     assert fw["web-01"] is not None and fw["web-01"].grupo == "web"
+
+
+def test_lote_libvirt_es_formato_6_con_dos_discos_y_mac_conservada() -> None:
+    leido = leer_archivo_lote(EJEMPLOS / "lote-libvirt.proxlaunch-lote.json")
+    assert leido.avisos == ()
+    cfg = leido.lote.definicion.plantilla
+    assert leido.lote.definicion.cantidad == 1
+    assert len(cfg.discos) == 2
+    detalle = cfg.detalle_origen
+    assert isinstance(detalle, DetalleImportacion)
+    assert [o.indice for o in detalle.otras] == [1]  # imagen del segundo disco
+    assert cfg.redes[0].mac_conservada == "52:54:00:12:34:56"
+    datos = json.loads((EJEMPLOS / "lote-libvirt.proxlaunch-lote.json").read_text("utf-8"))
+    assert datos["version_formato"] == 6
+
+
+def test_csv_hardware_cluster_usa_las_columnas_de_la_fase_d() -> None:
+    res = _importar("mvs-hardware-cluster.csv")
+    for columna in ("mapeo_pci", "mapeo_usb"):
+        assert columna in res.columnas.posiciones, columna
+    hw = {f.nombre: f.cfg.hardware_cluster for f in res.filas if f.cfg is not None}
+    assert hw["grafico-01"] is not None
+    assert [a.mapeo for a in hw["grafico-01"].pci] == ["gpu-ejemplo"]
+    assert [a.mapeo for a in hw["grafico-01"].usb] == ["llave-ejemplo"]
+    assert hw["licencias-01"] is not None and hw["licencias-01"].pci == ()
+    assert hw["doble-gpu-01"] is not None
+    assert [a.mapeo for a in hw["doble-gpu-01"].pci] == ["gpu-ejemplo", "gpu-secundaria"]
+    cpus = {f.nombre: f.cfg.tipo_cpu for f in res.filas if f.cfg is not None}
+    assert cpus["grafico-01"] == "custom-ejemplo"

@@ -63,6 +63,7 @@ from proxlaunch.nucleo.csv_importacion.modelos import (
     TablaCsv,
 )
 from proxlaunch.nucleo.errores import ErrorProxLaunch
+from proxlaunch.nucleo.hardware_cluster.modelos import HardwareCluster
 from proxlaunch.nucleo.modelos.inventario import Inventario
 from proxlaunch.nucleo.perfiles_maquina.modelos import ID_PREDETERMINADO, PerfilMaquina
 
@@ -85,6 +86,7 @@ def leer_e_interpretar(
     nodo_referencia: str | None,
     alias_extra: Mapping[str, str] | None,
     encender_base: bool | None = None,
+    hardware_base: HardwareCluster | None = None,
 ) -> tuple[TablaCsv, ResultadoImportacion]:
     """Lee el archivo y lo interpreta. Pura salvo la lectura (solo ``O_RDONLY``).
 
@@ -100,6 +102,7 @@ def leer_e_interpretar(
         nodo_referencia=nodo_referencia,
         alias_extra=alias_extra,
         encender_base=encender_base,
+        hardware_base=hardware_base,
     )
     return tabla, resultado
 
@@ -112,6 +115,7 @@ def reinterpretar(
     nodo_referencia: str | None,
     alias_extra: Mapping[str, str] | None,
     encender_base: bool | None = None,
+    hardware_base: HardwareCluster | None = None,
 ) -> ResultadoImportacion:
     """Vuelve a interpretar una tabla ya leída (cambio de perfil base)."""
     return interpretar(
@@ -122,6 +126,7 @@ def reinterpretar(
         nodo_referencia=nodo_referencia,
         alias_extra=alias_extra,
         encender_base=encender_base,
+        hardware_base=hardware_base,
     )
 
 
@@ -156,6 +161,7 @@ class DialogoImportarCsv(QDialog):
         tema: str = "oscuro",
         al_resultado_tardio: Callable[[str, bool], None] | None = None,
         encender_base: bool | None = None,
+        hardware_base: HardwareCluster | None = None,
     ) -> None:
         super().__init__(parent)
         self.setWindowTitle(self.tr("Importar desde CSV"))
@@ -168,6 +174,8 @@ class DialogoImportarCsv(QDialog):
         self._avanzado = avanzado
         self._alias_extra = alias_extra
         self._encender_base = encender_base
+        # Hardware del clúster del formulario: las celdas de mapeos vacías lo heredan (RF-D6.3).
+        self._hardware_base = hardware_base
         self._ruta: Path | None = None
         self._nombre_archivo = ""
         self._tabla: TablaCsv | None = None
@@ -244,8 +252,9 @@ class DialogoImportarCsv(QDialog):
                     "nombre de un grupo que ya exista en Proxmox). Para cambiar la red de una "
                     "copia al clonar, pon «reescribir_red» en sí: se aplican «red», «vlan», "
                     "«modelo_red», «mtu» y «limite_red» a la tarjeta net0 de la copia. «red» "
-                    "puede ser un bridge o una red virtual (VNet). Una celda vacía usa el valor "
-                    "del formulario."
+                    "puede ser un bridge o una red virtual (VNet). Para dar tarjetas PCI o USB "
+                    "del clúster usa «mapeo_pci» y «mapeo_usb» (los nombres de los mapeos, "
+                    "separados por «;»). Una celda vacía usa el valor del formulario."
                 )
             )
         )
@@ -560,6 +569,7 @@ class DialogoImportarCsv(QDialog):
             self._nodo_referencia,
             self._alias_extra,
             self._encender_base,
+            self._hardware_base,
             al_terminar=lambda r: self._si_vigente(
                 generacion, lambda: self._al_leer(r), descartable=r
             ),
@@ -581,6 +591,7 @@ class DialogoImportarCsv(QDialog):
             self._nodo_referencia,
             self._alias_extra,
             self._encender_base,
+            self._hardware_base,
             al_terminar=lambda r: self._si_vigente(
                 generacion, lambda: self._al_reinterpretar(r), descartable=r
             ),

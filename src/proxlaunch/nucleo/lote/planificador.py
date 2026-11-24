@@ -12,11 +12,16 @@ from concurrent.futures import FIRST_COMPLETED, Future, ThreadPoolExecutor, wait
 from dataclasses import replace
 
 from proxlaunch import __version__ as VERSION_APP
+from proxlaunch.nucleo.arquitectura.modelos import arquitectura_efectiva
+from proxlaunch.nucleo.arquitectura.perfil import CambioArquitectura, adaptar_a_arquitectura
+from proxlaunch.nucleo.arquitectura.validacion import avisos_arquitectura, validar_mezcla
 from proxlaunch.nucleo.capacidades import Capacidades
 from proxlaunch.nucleo.cloudinit.modelos import INFO_DESCONOCIDA
 from proxlaunch.nucleo.cloudinit.serie import expandir_serie, problemas_serie_lote
 from proxlaunch.nucleo.cloudinit.snippets import volid_snippet_valido
 from proxlaunch.nucleo.errores import CodigoError, ErrorProxLaunch
+from proxlaunch.nucleo.hardware_cluster.validacion import validar_hardware_servidor
+from proxlaunch.nucleo.libvirt.validacion import conserva_mac, normalizar_mac, validar_importacion_d
 from proxlaunch.nucleo.lote import presupuesto
 from proxlaunch.nucleo.lote.constantes import (
     ETIQUETA_APP,
@@ -58,6 +63,9 @@ from proxlaunch.nucleo.validacion import validar_vm
 
 # Reglas de M1 que el espacio acumulado del lote (V-L09/V-L10) ya cubre y supera.
 _REGLAS_M1_SUBSUMIDAS = frozenset({"V-14", "V-14.thin"})
+# V-D05 la emite ``validar_arquitectura`` por MV y ``avisos_arquitectura`` una vez por nodo: en el
+# plan solo cuenta la segunda (sin duplicados). V-D33 se evalúa aparte con la cantidad del lote.
+_REGLAS_D_APARTE = frozenset({"V-D05", "V-D33"})
 # Límites de Proxmox para ``cicustom`` (V-B52): 1 MiB por archivo y 3 MiB en total.
 MAX_BYTES_SNIPPET = 1024 * 1024
 MAX_BYTES_SUMA_SNIPPETS = 3 * 1024 * 1024
@@ -256,12 +264,14 @@ def _agrupar_vb20(problemas: Sequence[Problema]) -> list[Problema]:
     return resultado
 
 
-_REGLAS_POR_PLANTILLA = frozenset({"V-C19", "V-C35"})
+# V-D07, V-D58 y V-D58b (fase D) se agrupan por plantilla como V-C19 y V-C35 (CA-D11.2).
+_REGLAS_POR_PLANTILLA = frozenset({"V-C19", "V-C35", "V-D07", "V-D58", "V-D58b"})
 
 
 def _agrupar_vc_por_plantilla(problemas: Sequence[Problema]) -> list[Problema]:
-    """Une los V-C19 y V-C35 iguales (misma severidad y mismos ``params``, o sea, de la misma
-    plantilla y motivo) en uno solo: primera fila + ``elementos`` (CA-C12.2)."""
+    """Une los V-C19, V-C35, V-D07, V-D58 y V-D58b iguales (misma severidad y mismos ``params``,
+    o sea, de la misma plantilla y motivo) en uno solo: primera fila + ``elementos`` (CA-C12.2,
+    CA-D11.2)."""
     Clave = tuple[str, str, tuple[tuple[str, str], ...]]
 
     def clave(pr: Problema) -> Clave:
@@ -443,6 +453,127 @@ def _problema_de_m1(pm: ProblemaM1, indice: int) -> Problema:
     return Problema(pm.codigo, sev, pm.campo, dict(pm.params), indice)
 
 
+def _problema_de_adaptacion(
+    cambios: Sequence[CambioArquitectura], nodo: str, indice: int
+) -> Problema:
+    """V-D08 (aviso): lo que se adaptó de la configuración x86 para un nodo ARM64 (DT-D8).
+
+    ``params``: ``nodo``, ``lista`` (campos cambiados, separados por coma) y ``cambios``
+    (``campo:antes>despues`` separados por ``;``, para que la interfaz escriba cada cambio).
+    """
+    return Problema(
+        "V-D08",
+        Severidad.AVISO,
+        cambios[0].campo,
+        {
+            "nodo": nodo,
+            "lista": ", ".join(c.campo for c in cambios),
+            "cambios": ";".join(f"{c.campo}:{c.antes}>{c.despues}" for c in cambios),
+        },
+        indice=indice,
+    )
+
+
+def _problemas_mac(elementos: Sequence[ElementoPlan], por_filas: bool) -> list[Problema]:
+    """V-D33: una MAC conservada solo vale con una sola máquina (DT-D15).
+
+    Lote homogéneo: con más de una copia, todas llevan la misma MAC. Por filas: la misma MAC en
+    más de una fila. ``validar_vm`` evalúa cada MV con ``cantidad=1``, así que esto va aparte.
+    """
+    if not elementos:
+        return []
+    p: list[Problema] = []
+    if not por_filas:
+        n = len(elementos)
+        if n > 1:
+            for pm in validar_importacion_d(elementos[0].cfg, n):
+                if pm.codigo == "V-D33":
+                    p.append(_problema_de_m1(pm, elementos[0].indice))
+        return p
+    por_mac: dict[str, list[ElementoPlan]] = {}
+    for e in elementos:
+        for r in e.cfg.redes:
+            if r.mac_conservada is not None and conserva_mac(e.cfg):
+                por_mac.setdefault(r.mac_conservada, []).append(e)
+    for repetidos in por_mac.values():
+        if len(repetidos) > 1:
+            for e in repetidos:
+                for pm in validar_importacion_d(e.cfg, len(repetidos)):
+                    if pm.codigo == "V-D33":
+                        p.append(_problema_de_m1(pm, e.indice))
+                        break
+    return p
+
+
+def _avisos_mac_existente(
+    elementos: Sequence[ElementoPlan], por_filas: bool, inv: Inventario
+) -> list[Problema]:
+    """V-D33b (aviso): una MAC conservada ya figura en un ``netN`` de una MV ya leída.
+
+    Solo se mira lo ya leído (las plantillas del catálogo con su config); sin MAC conservada no
+    se hace nada y nunca se piden lecturas nuevas. Params: ``mac`` (minúsculas) y ``vmid`` de la
+    MV que la tiene. Por filas, un aviso por fila; lote homogéneo, uno solo (todas las copias
+    comparten la configuración).
+    """
+    catalogo = inv.catalogo
+    if not elementos or catalogo is None or not catalogo.plantillas:
+        return []
+    existentes: dict[str, list[int]] = {}
+    for pl in catalogo.plantillas:
+        if pl.detalle is None:
+            continue
+        for t in pl.detalle.tarjetas:
+            if t.legible and t.mac:
+                vmids = existentes.setdefault(t.mac.lower(), [])
+                if pl.vmid not in vmids:
+                    vmids.append(pl.vmid)
+    if not existentes:
+        return []
+    p: list[Problema] = []
+    for e in elementos if por_filas else elementos[:1]:
+        if not conserva_mac(e.cfg):
+            continue
+        for i, r in enumerate(e.cfg.redes):
+            if r.mac_conservada is None:
+                continue
+            mac = normalizar_mac(r.mac_conservada)
+            for vmid in existentes.get(mac or "", ()):
+                p.append(
+                    Problema(
+                        "V-D33b",
+                        Severidad.AVISO,
+                        f"redes[{i}].mac_conservada",
+                        {"mac": mac or "", "vmid": str(vmid)},
+                        indice=e.indice,
+                    )
+                )
+    return p
+
+
+def _problemas_hardware_servidor(
+    elementos: Sequence[ElementoPlan], inv: Inventario
+) -> list[Problema]:
+    """V-D50..V-D63 del lote (mapeos y CPU), una vez por mapeo o nodo, no por MV (RF-D3)."""
+    por_nodo: dict[str, list[ConfiguracionVM]] = {}
+    for e in elementos:
+        por_nodo.setdefault(e.nodo, []).append(e.cfg)
+    catalogo = inv.catalogo
+    encontrados = validar_hardware_servidor(
+        por_nodo,
+        catalogo.hardware if catalogo is not None else None,
+        catalogo.permisos if catalogo is not None else None,
+    )
+    return [
+        Problema(
+            pm.codigo,
+            Severidad.ERROR if pm.severidad == SeveridadM1.ERROR else Severidad.AVISO,
+            pm.campo,
+            dict(pm.params),
+        )
+        for pm in encontrados
+    ]
+
+
 def construir_plan(
     definicion: DefinicionLote,
     inv: Inventario,
@@ -534,6 +665,7 @@ def construir_plan(
 
     elementos: list[ElementoPlan] = []
     de_origen: list[Problema] = []
+    adaptaciones: list[Problema] = []
     hay_origen = False
     for i, fila in enumerate(filas):
         cfg = copy.deepcopy(fila.cfg)
@@ -547,6 +679,19 @@ def construir_plan(
             hay_origen = True
             cfg, resueltos = resolver_origen(cfg, inv, nodos[i])
             de_origen.extend(_problema_de_m1(pm, i) for pm in resueltos)
+        if cfg.origen != OrigenSO.CLONAR_PLANTILLA:
+            # Fase D (DT-D8): fuente única para crear y simular. Con un nodo ARM64 los valores x86
+            # se adaptan aquí; con x86 o arquitectura no legible no se toca nada (golden 0.8.0).
+            cpus = (
+                None
+                if inv.catalogo is None or inv.catalogo.hardware is None
+                else (inv.catalogo.hardware.cpus.get(nodos[i]))
+            )
+            cfg, cambios = adaptar_a_arquitectura(
+                cfg, arquitectura_efectiva(inv, nodos[i]), cpus_nodo=cpus
+            )
+            if cambios:
+                adaptaciones.append(_problema_de_adaptacion(cambios, nodos[i], i))
         if contexto_notas is not None:
             # La descripción se calcula ANTES de validar (V-A07/V-A08 miden ``cfg.descripcion``).
             ctx_mv = replace(
@@ -597,7 +742,7 @@ def construir_plan(
     de_m1: list[Problema] = []
     for e in elementos:
         for pm in validar_vm(e.cfg, inv, caps):
-            if pm.codigo in _REGLAS_M1_SUBSUMIDAS:
+            if pm.codigo in _REGLAS_M1_SUBSUMIDAS or pm.codigo in _REGLAS_D_APARTE:
                 continue
             de_m1.append(_problema_de_m1(pm, e.indice))
     de_m1.extend(_problemas_snippets(elementos, inv))  # V-B51 y V-B52 (fase B, B4)
@@ -608,10 +753,21 @@ def construir_plan(
         if por_filas
         else _agrupar_m1(de_m1)
     )
+    # Fase D: adaptaciones ARM (V-D08), mezcla de arquitecturas (V-D06), avisos de arquitectura
+    # (V-D04/V-D05, una vez por nodo), MAC conservada (V-D33) y hardware del clúster del servidor.
+    problemas.extend(adaptaciones)
+    problemas.extend(validar_mezcla({e.indice: e.nodo for e in elementos}, inv))
+    # Un nodo sin entrada en ``inv.arquitecturas`` no se detectó nunca (inventario anterior a D):
+    # no se avisa; el descubrimiento deja entrada, aunque sea ``DESCONOCIDA`` (V-D04).
+    detectados = {e.nodo for e in elementos if e.nodo in inv.arquitecturas}
+    problemas.extend(avisos_arquitectura(inv, detectados, caps))
+    problemas.extend(_problemas_mac(elementos, por_filas))
+    problemas.extend(_avisos_mac_existente(elementos, por_filas, inv))
+    problemas.extend(_problemas_hardware_servidor(elementos, inv))
     # Fase B (DT-B3): V-B30, V-B31 y V-B38 miran todas las IP del lote ya expandidas.
     problemas.extend(problemas_serie_lote(elementos))
     # Los problemas de resolución del origen llevan siempre su fila (V-O02, V-O03, V-O04...).
-    problemas.extend(de_origen)
+    problemas.extend(_agrupar_vc_por_plantilla(de_origen))  # V-D58/V-D58b: una por plantilla
 
     resultado = plan(elementos, problemas, dict(reparto), uso, capacidad, excedentes)
     # El catálogo viaja con el plan solo si hubo orígenes: sin ellos el plan es el de M3.

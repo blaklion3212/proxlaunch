@@ -54,6 +54,10 @@ ENCABEZADO_PLANTILLA: tuple[str, ...] = (
     "grupo_seguridad",
     "politica_entrada",
     "politica_salida",
+    # Fase D (CA-D6.3.7): mapeos PCI/USB del clúster (ids separados por «;»); vacío = los del
+    # formulario. Los ids de muestra son ficticios: el usuario los sustituye por los de su servidor.
+    "mapeo_pci",
+    "mapeo_usb",
 )
 SEPARADORES_PLANTILLA = (";", ",")  # «;» Excel en español (por defecto), «,» Excel en inglés
 
@@ -104,10 +108,13 @@ def filas_plantilla() -> list[list[str | int]]:
     fase_c: list[list[str | int]] = [["", "", "", "", ""] for _ in filas]
     fase_c[1] = ["", "no", "", "", ""]
     fase_c[4] = ["no", "si", "", "permitir", "permitir"]
+    # Fase D: solo ``ejemplo-02`` lleva ids de muestra (uno por columna); el resto hereda.
+    fase_d: list[list[str | int]] = [["", ""] for _ in filas]
+    fase_d[1] = ["ejemplo-gpu", "ejemplo-llave"]
     return [
-        fila + extra + ops + ci + fc
-        for fila, extra, ops, ci, fc in zip(
-            filas, origenes, opciones, cloudinit, fase_c, strict=True
+        fila + extra + ops + ci + fc + fd
+        for fila, extra, ops, ci, fc, fd in zip(
+            filas, origenes, opciones, cloudinit, fase_c, fase_d, strict=True
         )
     ]
 

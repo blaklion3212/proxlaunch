@@ -54,6 +54,7 @@ from proxlaunch.interfaz.dialogos.guardar_lote import AccionGuardarLote, Dialogo
 from proxlaunch.interfaz.dialogos.guardar_perfil import DialogoGuardarPerfil
 from proxlaunch.interfaz.dialogos.guia_token import DialogoGuiaToken
 from proxlaunch.interfaz.dialogos.importar_csv import DialogoImportarCsv
+from proxlaunch.interfaz.dialogos.importar_libvirt import DialogoImportarLibvirt
 from proxlaunch.interfaz.dialogos.informe import DialogoInforme
 from proxlaunch.interfaz.dialogos.inventario_lotes import DialogoInventarioLotes
 from proxlaunch.interfaz.dialogos.lote_no_encaja import PanelLoteNoEncaja
@@ -90,6 +91,7 @@ from proxlaunch.interfaz.textos_b import (
     texto_espera_ip_en_uno,
     texto_ip_en_uno,
 )
+from proxlaunch.interfaz.textos_d import texto_version_forzada_descartada
 from proxlaunch.interfaz.textos_inventario import (
     texto_lote_en_deshacer_inventario,
     texto_sin_conexion_inventario,
@@ -108,6 +110,7 @@ from proxlaunch.interfaz.trabajadores import (
     crear_espera_ip,
     descubrir_y_comprobar_permisos,
     deshacer_lotes,
+    detectar_arquitectura,
     ejecutar_lote,
     escribir_informe_csv,
     guardar_ips,
@@ -117,6 +120,7 @@ from proxlaunch.interfaz.trabajadores import (
     leer_grupos_firewall,
     leer_lote_guardado,
     leer_reglas_grupo,
+    leer_xml_libvirt,
     olvidar_secretos_de_filas,
     olvidar_secretos_de_plan,
     planificar_lote,
@@ -142,12 +146,20 @@ from proxlaunch.interfaz.vistas.resumen import ResumenVM, nombre_campo
 from proxlaunch.interfaz.vistas.resumen_lote import ResumenLote
 from proxlaunch.interfaz.vistas.selector_perfil import PanelAvisos, SelectorPerfil
 from proxlaunch.nucleo.agente.espera import EsperaIp
-from proxlaunch.nucleo.capacidades import Capacidades, Funcion, asistente_plantilla_disponible
+from proxlaunch.nucleo.arquitectura.deteccion import forzar
+from proxlaunch.nucleo.arquitectura.modelos import (
+    Arquitectura,
+    ArquitecturaNodo,
+)
+from proxlaunch.nucleo.capacidades import Capacidades, Funcion
 from proxlaunch.nucleo.cloudinit.disponibilidad import disponibilidad_fase_b
 from proxlaunch.nucleo.csv_importacion.interpretacion import filas_lote, interpretar
 from proxlaunch.nucleo.csv_importacion.modelos import ResultadoImportacion, TablaCsv
 from proxlaunch.nucleo.errores import CodigoError, ErrorProxLaunch
 from proxlaunch.nucleo.firewall.modelos import LecturaGrupos, ReglaFirewall
+from proxlaunch.nucleo.hardware_cluster.modelos import InfoHardwareCluster
+from proxlaunch.nucleo.libvirt.correspondencias import proponer
+from proxlaunch.nucleo.libvirt.modelos import DominioLibvirt
 from proxlaunch.nucleo.lote.ajustes import tiene_ajustes_pendientes
 from proxlaunch.nucleo.lote.constantes import (
     ACTUALIZACIONES_POR_S,
@@ -205,6 +217,7 @@ from proxlaunch.nucleo.modelos.tarea import Desenlace, Etapa, ResultadoCreacion
 from proxlaunch.nucleo.modelos.vm import ConfiguracionVM, OrigenSO
 from proxlaunch.nucleo.opciones.disponibilidad import disponibilidad_opciones
 from proxlaunch.nucleo.opciones.disponibilidad_c import disponibilidad_fase_c
+from proxlaunch.nucleo.opciones.disponibilidad_d import disponibilidad_fase_d
 from proxlaunch.nucleo.opciones.modelos import (
     ContextoNotas,
     EstadoOpcion,
@@ -448,6 +461,14 @@ class VentanaPrincipal(QMainWindow):
         # Fase C (C1): diálogo «Lotes en el servidor» y códigos de lote que está borrando (DT-C16).
         self._dialogo_inventario: DialogoInventarioLotes | None = None
         self._codigos_en_deshacer_inventario: set[str] = set()
+        # Fase D: asistente «Importar desde libvirt» abierto, generación de sus lecturas (un
+        # resultado de otra sesión o de otro archivo se descarta) y la versión forzada anterior a
+        # la mínima que se descartó al cargar las preferencias (V-D03, se avisa una sola vez).
+        self._dialogo_libvirt: DialogoImportarLibvirt | None = None
+        self._gen_libvirt = 0
+        self._version_descartada: str | None = getattr(
+            deps.preferencias, "version_forzada_descartada", None
+        )
 
         self._construir()
         self._crear_menus()
@@ -474,6 +495,12 @@ class VentanaPrincipal(QMainWindow):
         self.formulario.pide_grupos_firewall.connect(self._al_pedir_grupos_firewall)
         self.formulario.pide_reglas_grupo.connect(self._al_pedir_reglas_grupo)
         self.formulario.vmid_confirmado.connect(self._al_confirmar_vmid)
+        # Fase D: el formulario pide modelos de CPU y mapeos (RNF-D4) y el usuario puede fijar la
+        # arquitectura de un servidor; las lecturas van en trabajadores (RNF-D6).
+        self.formulario.pide_cpus.connect(self._al_pedir_cpus)
+        self.formulario.pide_mapeos.connect(self._al_pedir_mapeos)
+        self.formulario.arquitectura_forzada.connect(self._al_forzar_arquitectura)
+        self.formulario.selector_origen.pedir_libvirt.connect(self._abrir_importar_libvirt)
         self.resumen.crear_solicitado.connect(self._crear)
         self.bloque_lote.cambiado.connect(self._timer_validar.start)
         self.bloque_lote.cambiado.connect(self._al_editar_plantilla)
@@ -656,6 +683,9 @@ class VentanaPrincipal(QMainWindow):
         )
         self._accion_plantilla_imagen.triggered.connect(self._abrir_plantilla_imagen)
         self._accion_plantilla_imagen.setEnabled(False)
+        self._accion_importar_libvirt = QAction(self.tr("Importar desde libvirt…"), self)
+        self._accion_importar_libvirt.triggered.connect(self._abrir_importar_libvirt)
+        self._accion_importar_libvirt.setEnabled(False)
         m_archivo.addActions(
             [
                 a_conectar,
@@ -664,6 +694,7 @@ class VentanaPrincipal(QMainWindow):
                 self._accion_archivos_subidos,
                 self._accion_inventario,
                 self._accion_plantilla_imagen,
+                self._accion_importar_libvirt,
             ]
         )
         m_archivo.addSeparator()
@@ -802,6 +833,7 @@ class VentanaPrincipal(QMainWindow):
         self.origen.fallo.connect(lambda e: self._manejar_fallo(e, durante="al leer el catálogo"))
         self.origen.mensaje.connect(self.statusBar().showMessage)
         self.origen.storage_mv_elegido.connect(self.formulario.usar_storage_mv)
+        self.origen.hardware_leido.connect(self._al_leer_hardware)
         self.origen.transferencia_terminada.connect(lambda _r: self._timer_validar.start())
 
     @property
@@ -834,9 +866,15 @@ class VentanaPrincipal(QMainWindow):
             version_forzada=self._prefs.version_forzada,
             perfil_id=self._perfil_id,
             motivo=motivo,
+            aviso_version=(
+                None
+                if self._version_descartada is None
+                else texto_version_forzada_descartada(self._version_descartada)
+            ),
             parent=self,
         )
         self._dialogo_conexion = dialogo
+        self._version_descartada = None  # V-D03: se muestra una sola vez por arranque
         dialogo.accepted.connect(lambda: self._al_conectar(dialogo))
         dialogo.finished.connect(lambda _r: self._dialogo_cerrado(dialogo))
         dialogo.open()
@@ -863,6 +901,8 @@ class VentanaPrincipal(QMainWindow):
         if sesion is None or perfil is None:
             return
         cambio_perfil = perfil.id != self._perfil_id
+        self._version_descartada = None  # V-D03 ya se mostró en el diálogo: una sola vez
+        self._cerrar_dialogo_libvirt()  # una sesión nueva: lo leído del XML es de la anterior
         self._sesion = sesion
         self._perfil_id = perfil.id
         self.origen.establecer_sesion(sesion, None if cambio_perfil else self._inv)
@@ -956,6 +996,7 @@ class VentanaPrincipal(QMainWindow):
             self._olvidar_secretos(lt)
         self._olvidar_filas_en_pantalla()  # QA-M4: las de un lote importado o «por filas»
         self._cerrar_inventario_por_cambio_de_servidor()
+        self._cerrar_dialogo_libvirt()
         sesion = self._sesion
         if sesion is not None:
             try:
@@ -1151,11 +1192,13 @@ class VentanaPrincipal(QMainWindow):
             reintentar_nodos,
             sesion,
             sorted(inv.errores_por_nodo),
-            al_terminar=self._tras_reintento,
+            al_terminar=lambda r: self._tras_reintento(sesion, r),
             al_fallar=lambda e: self._manejar_fallo(e, durante="al reintentar nodos"),
         )
 
-    def _tras_reintento(self, resultado: Any) -> None:
+    def _tras_reintento(self, sesion: Sesion, resultado: Any) -> None:
+        if sesion is not self._sesion:
+            return  # otra sesión: lo leído ya no vale
         recuperados, _fallidos = resultado
         inv = self._inv
         self._refrescar_botones_red()
@@ -1173,6 +1216,8 @@ class VentanaPrincipal(QMainWindow):
                     inv.errores_sdn[nodo] = redes.error
                 else:
                     inv.errores_sdn.pop(nodo, None)
+            if len(resto) > 2 and resto[2] is not None:  # fase D: arquitectura recién detectada
+                inv.arquitecturas[nodo] = resto[2]
             inv.errores_por_nodo.pop(nodo, None)
         if recuperados:
             nodos = tuple(
@@ -1190,19 +1235,28 @@ class VentanaPrincipal(QMainWindow):
         sesion = self._sesion
         if sesion is None:
             return
+        # La arquitectura se lee de nuevo solo si no se conoce (≤ 1 lectura por nodo, RNF-D4).
+        info = self._inv.arquitecturas.get(nodo) if self._inv is not None else None
+        conocida = info is not None and info.arquitectura != Arquitectura.DESCONOCIDA
+        argumentos: tuple[Any, ...] = (sesion, nodo, False) if conocida else (sesion, nodo)
         self._lanzador.lanzar(
             recargar_nodo,
-            sesion,
-            nodo,
-            al_terminar=self._tras_recargar_nodo,
+            *argumentos,
+            al_terminar=lambda r: self._tras_recargar_nodo(sesion, r),
             al_fallar=lambda e: self._manejar_fallo(e, durante="al cambiar de nodo"),
         )
 
-    def _tras_recargar_nodo(self, r: tuple[Any, ...]) -> None:
+    def _tras_recargar_nodo(self, sesion: Sesion, r: tuple[Any, ...]) -> None:
+        if sesion is not self._sesion:
+            return  # otra sesión: el nodo leído ya no corresponde al inventario actual
         if self._inv is not None and len(r) > 3:
             self._inv.storages_todos[r[0]] = tuple(r[3])
         # Fase C: «Recargar nodo» trae también las VNets (RedesNodo) del nodo.
         self.formulario.actualizar_recursos_nodo(r[0], r[1], r[2], r[4] if len(r) > 4 else None)
+        # Fase D: la lectura trajo la arquitectura del nodo (solo si no se conocía).
+        if self._inv is not None and len(r) > 5 and r[5] is not None:
+            self._inv.arquitecturas[r[0]] = r[5]
+            self.formulario.establecer_arquitecturas(self._inv)
 
     def _al_confirmar_vmid(self, vmid: int) -> None:
         """V-03: comprueba en segundo plano que el VMID escrito está libre (CA-13.2)."""
@@ -1233,6 +1287,8 @@ class VentanaPrincipal(QMainWindow):
             return
         self._actualizar_disponibilidad_opciones(sesion, inv)
         self._actualizar_disponibilidad_c(sesion, inv)
+        self._actualizar_disponibilidad_d(sesion, inv)
+        self._sincronizar_fase_d()
         if self.bloque_lote.es_por_filas:
             self._revalidar_por_filas()
             return
@@ -1303,6 +1359,8 @@ class VentanaPrincipal(QMainWindow):
             nodo=nodo,
             cambios_asistente=self.formulario.selector_origen.cambios_asistente,
             permisos=inv.catalogo.permisos if inv.catalogo is not None else None,
+            arquitectura=self.formulario.arquitectura_actual,
+            cambios_arquitectura=self.formulario.cambios_arquitectura,
         )
 
     # --- Creación ---------------------------------------------------------------------
@@ -1393,6 +1451,23 @@ class VentanaPrincipal(QMainWindow):
         permisos = catalogo.permisos if catalogo is not None else None
         caps = sesion.capacidades
         self.formulario.establecer_disponibilidad_c(disponibilidad_fase_c(permisos, caps), caps)
+
+    def _actualizar_disponibilidad_d(self, sesion: Sesion, inv: Inventario) -> None:
+        """Fase D: habilita o no el hardware del clúster y la CPU personalizada según permisos y
+        versión (RF-D0.3). Es puro y barato y el formulario ignora lo que no cambió."""
+        catalogo = inv.catalogo
+        permisos = catalogo.permisos if catalogo is not None else None
+        self.formulario.establecer_disponibilidad_d(
+            disponibilidad_fase_d(sesion.capacidades, permisos, inv)
+        )
+
+    def _sincronizar_fase_d(self) -> None:
+        """Lo que une el formulario con sus tablas: en ARM64 no existen SATA/IDE ni E1000 y, con
+        el formulario rellenado desde libvirt, cada disco adicional lleva su imagen (D1, D2)."""
+        arq = self.formulario.arquitectura_actual
+        self.formulario.tabla_discos.establecer_arquitectura(arq)
+        self.formulario.tabla_redes.establecer_arquitectura(arq)
+        self.formulario.selector_origen.establecer_discos(self.formulario.etiquetas_discos())
 
     def _nodos_destino_lote(self, cfg: ConfiguracionVM) -> tuple[str, ...]:
         """Nodos elegidos del lote: con varios, la tabla de redes ofrece solo las comunes (C2.3).
@@ -3169,6 +3244,7 @@ class VentanaPrincipal(QMainWindow):
         self.origen.establecer_ocupado(not libre or not sin_plan)
         self._accion_capacidades.setEnabled(listo)
         self._actualizar_accion_plantilla_imagen(listo and libre and sin_plan)
+        self._actualizar_accion_importar_libvirt(listo and libre and sin_plan)
         self._actualizar_accion_inventario()
         self._accion_recordados.setEnabled(
             listo and self.origen.hay_recordado_no_disponible(self.formulario.nodo_efectivo())
@@ -3277,18 +3353,13 @@ class VentanaPrincipal(QMainWindow):
     # --- Fase B: asistente «Crear plantilla desde imagen cloud» (B2) ---
 
     def _actualizar_accion_plantilla_imagen(self, libre: bool) -> None:
-        """Habilita «Crear plantilla desde imagen cloud…» (RF-B2.1): solo con Proxmox 8.4 o más y
-        sin una transferencia, un lote o un asistente ya en marcha."""
+        """Habilita «Crear plantilla desde imagen cloud…» (RF-B2.1): con conexión y sin una
+        transferencia, un lote o un asistente ya en marcha."""
         sesion = self._sesion
-        version_ok = sesion is not None and asistente_plantilla_disponible(sesion.capacidades)
+        # Con la mínima 8.4 (D2) el asistente no depende de la versión: basta con conexión.
         ocupado = self.origen.transferencia_activa or self._dialogo_b2 is not None
-        self._accion_plantilla_imagen.setEnabled(bool(version_ok and libre and not ocupado))
-        if sesion is not None and not version_ok:
-            self._accion_plantilla_imagen.setToolTip(
-                self.tr("Necesita Proxmox 8.4 o una versión posterior.")
-            )
-        else:
-            self._accion_plantilla_imagen.setToolTip("")
+        self._accion_plantilla_imagen.setEnabled(bool(sesion is not None and libre and not ocupado))
+        self._accion_plantilla_imagen.setToolTip("")
 
     def _abrir_plantilla_imagen(self) -> None:
         sesion, inv = self._sesion, self._inv
@@ -3330,6 +3401,214 @@ class VentanaPrincipal(QMainWindow):
             self._dialogo_b2 = None
         dialogo.deleteLater()
         self._actualizar_acciones()
+        self._timer_validar.start()
+
+    # --- Fase D (D1): «Importar desde libvirt» ---
+
+    def _actualizar_accion_importar_libvirt(self, libre: bool) -> None:
+        """Habilita «Importar desde libvirt…» (RF-D1.1): con conexión, sin un lote por filas y sin
+        otro asistente o trabajo en marcha; sin conexión dice por qué."""
+        sesion = self._sesion
+        libre = libre and not self.bloque_lote.es_por_filas
+        self._accion_importar_libvirt.setEnabled(
+            bool(sesion is not None and self._inv is not None and libre)
+            and self._dialogo_libvirt is None
+        )
+        motivo = (
+            ""
+            if sesion is not None
+            else self.tr("Conéctate a un servidor para traer una máquina de libvirt.")
+        )
+        self._accion_importar_libvirt.setStatusTip(motivo)
+        self._accion_importar_libvirt.setToolTip(motivo)
+
+    def _formulario_modificado(self) -> bool:
+        """¿El usuario ya escribió algo en el formulario? (el origen elegido no cuenta)."""
+        cfg = self.formulario.configuracion()
+        if cfg.nombre.strip():
+            return True
+        base = self._cfg_ultima_aplicada
+        if base is None:
+            return False
+        sin_origen = dataclasses.replace(
+            cfg, origen=base.origen, detalle_origen=base.detalle_origen, tipo_so=base.tipo_so
+        )
+        return not hardware_igual(sin_origen, base)
+
+    def _nodos_de_destino_libvirt(self) -> tuple[str, ...]:
+        """Servidores donde puede acabar la máquina: los elegidos del lote o, si no hay, todos los
+        que están en línea (RF-D1.6)."""
+        inv = self._inv
+        if inv is None:
+            return ()
+        elegidos = self._nodos_destino_lote(self.formulario.configuracion())
+        if elegidos:
+            return elegidos
+        return tuple(n.nombre for n in inv.topologia.nodos if n.en_linea)
+
+    def _abrir_importar_libvirt(self) -> None:
+        sesion, inv = self._sesion, self._inv
+        if sesion is None or inv is None or self._dialogo_libvirt is not None:
+            return
+        if (
+            self._creando
+            or self._lote_en_curso
+            or self._planificando
+            or self._iniciando_lote
+            or self.bloque_lote.es_por_filas
+        ):
+            return
+        self._gen_libvirt += 1
+        dialogo = DialogoImportarLibvirt(
+            self,
+            inv=inv,
+            nodos=self._nodos_de_destino_libvirt(),
+            nodo=self.formulario.nodo_efectivo() or None,
+            cantidad=self.bloque_lote.cantidad_valor(),
+            formulario_modificado=self._formulario_modificado(),
+        )
+        self._dialogo_libvirt = dialogo
+        gen = self._gen_libvirt
+        dialogo.pide_lectura.connect(lambda ruta: self._leer_libvirt(dialogo, gen, ruta))
+        dialogo.pide_propuesta.connect(
+            lambda dominio, mac, nodo: self._proponer_libvirt(dialogo, dominio, mac, nodo)
+        )
+        dialogo.accepted.connect(lambda: self._aplicar_libvirt(dialogo))
+        dialogo.finished.connect(lambda _r: self._libvirt_cerrado(dialogo))
+        self._actualizar_acciones()
+        dialogo.open()
+
+    def _leer_libvirt(self, dialogo: DialogoImportarLibvirt, gen: int, ruta: Path) -> None:
+        """Lee el XML en un trabajador (RNF-D6); un resultado de otra lectura se descarta."""
+        self._gen_libvirt += 1
+        gen = self._gen_libvirt
+        self._lanzador.lanzar(
+            leer_xml_libvirt,
+            ruta,
+            al_terminar=lambda d: self._libvirt_leido(dialogo, gen, d, None),
+            al_fallar=lambda e: self._libvirt_leido(dialogo, gen, None, e),
+        )
+
+    def _libvirt_leido(
+        self,
+        dialogo: DialogoImportarLibvirt,
+        gen: int,
+        dominio: DominioLibvirt | None,
+        error: ErrorProxLaunch | None,
+    ) -> None:
+        if gen != self._gen_libvirt or dialogo is not self._dialogo_libvirt:
+            return  # archivo abandonado, sesión nueva o diálogo cerrado
+        if error is not None and error.codigo == CodigoError.SESION_EXPIRADA:
+            self._manejar_fallo(error, durante="al leer el XML")
+        dialogo.establecer_resultado(dominio, error)
+
+    def _proponer_libvirt(
+        self,
+        dialogo: DialogoImportarLibvirt,
+        dominio: DominioLibvirt,
+        conservar_mac: bool,
+        nodo: str,
+    ) -> None:
+        """Calcula la vista previa (puro y rápido: no abre archivos ni usa la red)."""
+        if dialogo is not self._dialogo_libvirt:
+            return
+        propuesta = proponer(
+            dominio,
+            self.formulario.configuracion(),
+            self._inv,
+            nodo or None,
+            conservar_mac=conservar_mac,
+        )
+        dialogo.establecer_propuesta(propuesta)
+
+    def _aplicar_libvirt(self, dialogo: DialogoImportarLibvirt) -> None:
+        """«Rellenar el formulario»: una sola aplicación de la propuesta (CL-D23)."""
+        propuesta = dialogo.propuesta_aceptada
+        if propuesta is None or dialogo is not self._dialogo_libvirt:
+            return
+        nodo = dialogo.nodo_elegido
+        if nodo and nodo != self.formulario.nodo_efectivo() and not self.bloque_lote.es_lote:
+            # La vista previa se evaluó contra ese servidor: el formulario pasa a usarlo.
+            self.formulario.usar_nodo_manual(nodo)
+        self.formulario.aplicar_propuesta_libvirt(propuesta, dialogo.macs_origen)
+        self.statusBar().showMessage(
+            self.tr("Formulario rellenado desde libvirt. Elige la imagen de cada disco.")
+        )
+        self._timer_validar.start()
+
+    def _libvirt_cerrado(self, dialogo: DialogoImportarLibvirt) -> None:
+        if self._dialogo_libvirt is dialogo:
+            self._dialogo_libvirt = None
+        dialogo.deleteLater()
+        self._actualizar_acciones()
+
+    def _cerrar_dialogo_libvirt(self) -> None:
+        """Cierra el asistente (otro servidor o sesión cerrada) y descarta lo que aún llegue."""
+        self._gen_libvirt += 1
+        dialogo = self._dialogo_libvirt
+        if dialogo is not None:
+            dialogo.reject()
+
+    # --- Fase D (D2, D3): arquitectura del servidor, mapeos y modelos de CPU ---
+
+    def _al_pedir_mapeos(self) -> None:
+        """La sección «Hardware del clúster» se abrió: se leen los mapeos (RNF-D4)."""
+        self.origen.cargar_mapeos()
+
+    def _al_pedir_cpus(self, nodos: object) -> None:
+        """El tipo de CPU pide los modelos de los nodos elegidos (RNF-D4)."""
+        if isinstance(nodos, (tuple, list, set, frozenset)):
+            self.origen.cargar_cpus([str(n) for n in nodos])
+
+    def _al_leer_hardware(self, info: object) -> None:
+        """Mapeos y modelos de CPU leídos: se entregan a la sección y al desplegable de CPU."""
+        if info is None or isinstance(info, InfoHardwareCluster):
+            self.formulario.establecer_hardware(info)
+            if info is not None and (info.cpus or info.errores_cpu):
+                self.formulario.establecer_cpus(info.cpus, info.errores_cpu)
+            self._timer_validar.start()
+
+    def _al_forzar_arquitectura(self, nodo: str, arq: object) -> None:
+        """El usuario fijó a mano la arquitectura de un servidor (solo en memoria, DT-D6) o pidió
+        volver a detectarla (``None``)."""
+        inv, sesion = self._inv, self._sesion
+        if inv is None or sesion is None:
+            return
+        elegida = arq if isinstance(arq, Arquitectura) else None
+        nuevo = forzar(inv, nodo, elegida)
+        inv.arquitecturas = dict(nuevo.arquitecturas)
+        self.formulario.establecer_arquitecturas(inv)
+        if elegida is None:
+            # Sin marca manual el nodo queda sin dato: se detecta de nuevo, fuera del hilo de la
+            # interfaz y con los modelos de CPU ya leídos (nunca provocan otra lectura).
+            cpus = (
+                inv.catalogo.hardware.cpus.get(nodo)
+                if inv.catalogo and inv.catalogo.hardware
+                else None
+            )
+            self._lanzador.lanzar(
+                detectar_arquitectura,
+                sesion,
+                nodo,
+                cpus,
+                inv.recursos_arquitectura,
+                al_terminar=lambda r: self._tras_detectar_arquitectura(sesion, r),
+                al_fallar=lambda e: self._manejar_fallo(e, durante="al detectar la arquitectura"),
+            )
+        self._timer_validar.start()
+
+    def _tras_detectar_arquitectura(
+        self, sesion: Sesion, resultado: tuple[str, ArquitecturaNodo]
+    ) -> None:
+        inv = self._inv
+        if inv is None or sesion is not self._sesion:
+            return  # otra sesión: lo leído ya no vale
+        nodo, info = resultado
+        actual = inv.arquitecturas.get(nodo)
+        if actual is not None and actual.fuente.value == "manual":
+            return  # el usuario fijó otra mientras tanto: manda la suya
+        inv.arquitecturas[nodo] = info
+        self.formulario.establecer_arquitecturas(inv)
         self._timer_validar.start()
 
     # --- Fase B: espera de la IP de cada máquina (B3) ---
@@ -3616,9 +3895,16 @@ class VentanaPrincipal(QMainWindow):
                 actual.origen,
                 actual.detalle_origen,
             )
+        # Fase D (CA-D6.2.2): un perfil no toca el hardware del clúster ni la MAC conservada de
+        # cada tarjeta (las que ya había se mantienen por posición).
+        for i, red in enumerate(resultado.cfg.redes):
+            if i < len(actual.redes):
+                red.mac_conservada = actual.redes[i].mac_conservada
         self._aplicando = True
         try:
-            self.formulario.aplicar_hardware(resultado.cfg, asistente=True, conservar_fase_c=True)
+            self.formulario.aplicar_hardware(
+                resultado.cfg, asistente=True, conservar_fase_c=True, conservar_fase_d=True
+            )
         finally:
             self._aplicando = False
         self._cfg_ultima_aplicada = self.formulario.configuracion()
@@ -4165,6 +4451,7 @@ class VentanaPrincipal(QMainWindow):
             alias_extra=alias_columnas_csv(),
             tema=self._deps.gestor_tema.tema_actual,
             al_resultado_tardio=self._mostrar_resultado_tardio,
+            hardware_base=self.formulario.configuracion().hardware_cluster,
         )
 
     def _mostrar_resultado_tardio(self, texto: str, es_error: bool) -> None:
@@ -4209,6 +4496,7 @@ class VentanaPrincipal(QMainWindow):
                 inv=self._inv,
                 nodo_referencia=self.formulario.nodo_efectivo() or None,
                 alias_extra=alias_columnas_csv(),
+                hardware_base=self.formulario.configuracion().hardware_cluster,
             )
         dialogo.mostrar_resultado(
             origen.tabla,

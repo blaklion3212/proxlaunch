@@ -30,16 +30,22 @@ from proxlaunch.interfaz.modelos_tabla_origen import (
     texto_explicacion_via,
 )
 from proxlaunch.interfaz.tema.paleta import TOKENS_CLARO, TOKENS_OSCURO
-from proxlaunch.interfaz.textos import texto_disponibilidad, texto_via
+from proxlaunch.interfaz.textos import texto_disponibilidad, texto_via, tooltip_plano
 from proxlaunch.interfaz.textos_c import (
     VIAS_FASE_C,
     texto_estado_fila_c,
     texto_explicacion_fila_c,
 )
+from proxlaunch.interfaz.textos_d import (
+    VIAS_FASE_D,
+    texto_estado_fila_d,
+    texto_explicacion_fila_d,
+)
 from proxlaunch.nucleo.capacidades import Capacidades
 from proxlaunch.nucleo.origen.capacidades_origen import (
     CapacidadesOrigen,
     Disponibilidad,
+    EstadoVia,
     Via,
 )
 
@@ -56,6 +62,8 @@ _ORDEN_VIAS: tuple[Via, ...] = (
     Via.AMPLIAR_DISCO,
     # Fase C (0.8): lotes en el servidor, redes virtuales, firewall y red de las copias.
     *VIAS_FASE_C,
+    # Fase D (0.9): arquitectura del servidor, mapeos PCI/USB y CPU personalizadas.
+    *VIAS_FASE_D,
 )
 _TOKEN_DISPONIBILIDAD = {
     Disponibilidad.SI: "exito",
@@ -75,11 +83,18 @@ def texto_faltante_para_administrador(caps: CapacidadesOrigen) -> str:
         estado = caps.vias.get(via)
         if estado is None or estado.disponibilidad != Disponibilidad.NO:
             continue
-        explicacion = (
-            texto_explicacion_fila_c(via, estado) if via in VIAS_FASE_C else ""
-        ) or texto_explicacion_via(estado)
+        explicacion = _explicacion_fila(via, estado) or texto_explicacion_via(estado)
         lineas.append(f"- {texto_via(via)}: {explicacion}")
     return "\n".join(lineas)
+
+
+def _explicacion_fila(via: Via, estado: EstadoVia) -> str:
+    """Explicación propia de las filas de la fase C o D; vacía para las demás."""
+    if via in VIAS_FASE_C:
+        return texto_explicacion_fila_c(via, estado)
+    if via in VIAS_FASE_D:
+        return texto_explicacion_fila_d(via, estado)
+    return ""
 
 
 class DialogoCapacidades(QDialog):
@@ -222,15 +237,20 @@ class DialogoCapacidades(QDialog):
         disp = estado.disponibilidad
         simbolo = simbolo_disponibilidad(disp)
         es_c = via in VIAS_FASE_C
-        # Las filas de la fase C dicen «Sí», «No» o «No se pudo comprobar» (RF-C5.2).
-        texto_estado = texto_estado_fila_c(estado) if es_c else texto_disponibilidad(disp)
+        es_d = via in VIAS_FASE_D
+        # Las filas de la fase C dicen «Sí», «No» o «No se pudo comprobar» (RF-C5.2); las de la
+        # D, «Sí», «No» o «No lo sé» (RF-D5.2).
+        if es_d:
+            texto_estado = texto_estado_fila_d(estado)
+        elif es_c:
+            texto_estado = texto_estado_fila_c(estado)
+        else:
+            texto_estado = texto_disponibilidad(disp)
         if es_c and estado.codigo is not None and disp == Disponibilidad.CON_AVISO:
             simbolo = simbolo_disponibilidad(Disponibilidad.NO)
         item_estado = QTableWidgetItem(f"{simbolo} {texto_estado}")
         item_estado.setForeground(QColor(self._tokens[_TOKEN_DISPONIBILIDAD[disp]]))
-        motivo = (texto_explicacion_fila_c(via, estado) if es_c else "") or texto_explicacion_via(
-            estado
-        )
+        motivo = _explicacion_fila(via, estado) or texto_explicacion_via(estado)
         item_via = QTableWidgetItem(texto_via(via))
         item_motivo = QTableWidgetItem(motivo)
         accesible = f"{texto_via(via)}: {texto_estado}"
@@ -240,7 +260,7 @@ class DialogoCapacidades(QDialog):
             item.setFlags(Qt.ItemFlag.ItemIsEnabled | Qt.ItemFlag.ItemIsSelectable)
             item.setData(Qt.ItemDataRole.AccessibleTextRole, accesible)
             if motivo:
-                item.setToolTip(motivo)
+                item.setToolTip(tooltip_plano(motivo))
         self.tabla.setItem(fila, self.COL_VIA, item_via)
         self.tabla.setItem(fila, self.COL_ESTADO, item_estado)
         self.tabla.setItem(fila, self.COL_MOTIVO, item_motivo)

@@ -8,7 +8,7 @@ from __future__ import annotations
 import logging
 import re
 import threading
-from collections.abc import Callable
+from collections.abc import Callable, Sequence
 from dataclasses import dataclass
 from typing import Any, Final
 from urllib.parse import quote
@@ -22,7 +22,16 @@ from proxlaunch.nucleo.capacidades import interpretar_version
 from proxlaunch.nucleo.cloudinit.snippets import nombre_de_snippet, volid_snippet_valido
 from proxlaunch.nucleo.errores import CodigoError, ErrorProxLaunch
 from proxlaunch.nucleo.firewall.modelos import RE_GRUPO, GrupoSeguridad, ReglaFirewall
+from proxlaunch.nucleo.hardware_cluster.modelos import (
+    RE_ID_MAPEO,
+    ComprobacionNodo,
+    EntradaMapeo,
+    Mapeo,
+    ModeloCpu,
+    TipoMapeo,
+)
 from proxlaunch.nucleo.modelos.catalogo import Contenido, Plantilla, Snippet, Volumen
+from proxlaunch.nucleo.modelos.cpu import RE_CPU_PERSONALIZADA
 from proxlaunch.nucleo.modelos.inventario import (
     Bridge,
     Nodo,
@@ -67,6 +76,17 @@ MAX_BLOQUEO_VM: Final = 64  # lock mostrado
 MAX_REGLAS_FIREWALL: Final = 200  # tope de reglas leídas de un grupo o de una MV
 MAX_ETIQUETAS_VM: Final = 1024  # cadena de etiquetas
 _RE_ETIQUETAS = re.compile(r"[;, ]+")
+# Fase D (0.9): topes de lo que se lee de los mapeos y de las CPU (datos no confiables, RNF-D2).
+MAX_NODO_RECURSOS: Final = 64  # nombre de nodo en /cluster/resources
+MAX_ARQUITECTURA: Final = 32  # ``host-arch``
+MAX_TEXTO_MAPEO: Final = 256  # descripción de un mapeo o de una entrada, y mensajes de check-node
+MAX_MAPEOS: Final = 512  # mapeos leídos por tipo
+MAX_ENTRADAS_MAPEO: Final = 64  # líneas ``map[]`` por mapeo
+MAX_MENSAJES_COMPROBACION: Final = 16  # mensajes de ``check-node`` por mapeo y nodo
+MAX_MODELOS_CPU: Final = 512  # modelos de CPU leídos por nodo
+MAX_FABRICANTE_CPU: Final = 32
+_RE_NOMBRE_CPU = re.compile(r"[A-Za-z0-9._-]{1,71}")
+_RE_ARCH_CONSULTA = re.compile(r"[a-z0-9_]{1,16}")
 
 
 def _texto_saneado(valor: Any, maximo: int) -> str:
@@ -129,6 +149,23 @@ def _nombre_en_storage(volid: str) -> str | None:
         return None
     _, barra, nombre = resto.partition("/")
     return nombre if barra and nombre else None
+
+
+def _entrada_mapeo(linea: Any) -> EntradaMapeo | None:
+    """Una línea ``map[]`` (``node=pve1,path=0000:01:00.0,id=10de:2204``) saneada; ``None`` si no
+    trae un nodo de aspecto válido. Solo se muestran ``path`` e ``id``."""
+    if not isinstance(linea, str):
+        return None
+    campos: dict[str, str] = {}
+    for trozo in linea.split(","):
+        clave, igual, valor = trozo.partition("=")
+        if igual:
+            campos.setdefault(clave.strip(), valor.strip())
+    nodo = _texto_saneado(campos.get("node"), MAX_NODO_RECURSOS)
+    if not nodo:
+        return None
+    detalle = " ".join(x for x in (campos.get("path", ""), campos.get("id", "")) if x)
+    return EntradaMapeo(nodo=nodo, descripcion=_texto_saneado(detalle, MAX_TEXTO_MAPEO))
 
 
 @dataclass(frozen=True)
@@ -601,6 +638,158 @@ class ClienteProxmox:
         """``GET /nodes/{n}/status``: sonda barata de que el nodo responde (595/596 si cayó)."""
         data = self._llamar("GET", f"/nodes/{_seg(nodo)}/status")
         return data if isinstance(data, dict) else {}
+
+    def recursos_nodos(self) -> dict[str, str | None]:
+        """``GET /cluster/resources?type=node`` → ``{nodo: host-arch | None}`` (9.2, DT-D6).
+
+        Un nodo con fila pero sin ``host-arch`` (en 9.2 solo se publica en nodos no x86) queda con
+        ``None`` solo si su fila trae ``status == "online"``; si no, queda fuera. El texto va
+        saneado (≤ 32) y la clave del nodo también.
+        """
+        data = self._llamar("GET", "/cluster/resources", params={"type": "node"})
+        resultado: dict[str, str | None] = {}
+        for e in data if isinstance(data, list) else []:
+            if not isinstance(e, dict):
+                continue
+            nodo = _texto_saneado(e.get("node"), MAX_NODO_RECURSOS)
+            if not nodo:
+                continue
+            arq = _texto_saneado(e.get("host-arch"), MAX_ARQUITECTURA)
+            if arq:
+                resultado[nodo] = arq
+            elif e.get("host-arch") is None and e.get("status") == "online":
+                # Solo un nodo en línea sin ``host-arch`` se toma por x86 (LAB-D-1): sin
+                # ``status`` o fuera de línea no se sabe nada.
+                resultado.setdefault(nodo, None)
+        return resultado
+
+    def arquitecturas_nodos(self) -> dict[str, str]:
+        """Solo los nodos de ``recursos_nodos()`` que traen ``host-arch``.
+
+        Quien llama normaliza el valor a ``Arquitectura``.
+        """
+        return {n: a for n, a in self.recursos_nodos().items() if a}
+
+    def modelos_cpu(self, nodo: str, *, arch: str | None = None) -> list[ModeloCpu]:
+        """``GET /nodes/{n}/capabilities/qemu/cpu[?arch=]`` (D3, CPU personalizada).
+
+        Descarta los modelos ``abstract=1`` y los nombres fuera de ``[A-Za-z0-9._-]{1,64}``.
+        Es personalizado si ``custom`` es verdadero y el nombre cumple ``RE_CPU_PERSONALIZADA``.
+        ``arch`` solo se manda si lo pide quien llama (``CAPACIDADES_POR_ARCH``, 9.2).
+
+        Raises:
+            ValueError: ``arch`` con un formato que no puede ser una arquitectura.
+        """
+        params: dict[str, Any] | None = None
+        if arch is not None:
+            if _RE_ARCH_CONSULTA.fullmatch(arch) is None:
+                raise ValueError("arquitectura con formato no válido")
+            params = {"arch": arch}
+        data = self._llamar("GET", f"/nodes/{_seg(nodo)}/capabilities/qemu/cpu", params=params)
+        resultado: list[ModeloCpu] = []
+        for e in data if isinstance(data, list) else []:
+            if len(resultado) >= MAX_MODELOS_CPU:
+                break
+            if not isinstance(e, dict) or _como_bool(e.get("abstract")):
+                continue
+            nombre = e.get("name")
+            if not isinstance(nombre, str) or _RE_NOMBRE_CPU.fullmatch(nombre) is None:
+                continue
+            resultado.append(
+                ModeloCpu(
+                    nombre=nombre,
+                    personalizado=_como_bool(e.get("custom"))
+                    and RE_CPU_PERSONALIZADA.fullmatch(nombre) is not None,
+                    fabricante=_texto_saneado(e.get("vendor"), MAX_FABRICANTE_CPU),
+                )
+            )
+        return resultado
+
+    def mapeos(self, tipo: TipoMapeo) -> list[Mapeo]:
+        """``GET /cluster/mapping/{pci|usb}`` (D3).
+
+        Los identificadores inválidos se descartan y se registran sin su valor. Las líneas
+        ``map[]`` son cadenas ``node=…,path=…,id=…``: solo se conservan el nodo (válido) y un
+        texto descriptivo saneado.
+        """
+        data = self._llamar("GET", f"/cluster/mapping/{_seg(tipo.value)}")
+        resultado: list[Mapeo] = []
+        for e in data if isinstance(data, list) else []:
+            if len(resultado) >= MAX_MAPEOS:
+                break
+            if not isinstance(e, dict):
+                continue
+            id_mapeo = e.get("id")
+            if not isinstance(id_mapeo, str) or RE_ID_MAPEO.fullmatch(id_mapeo) is None:
+                _log.warning("Mapeo %s con identificador no válido: se descarta", tipo.value)
+                continue
+            lineas = e.get("map")
+            entradas = tuple(
+                entrada
+                for entrada in (
+                    _entrada_mapeo(x)
+                    for x in (lineas[:MAX_ENTRADAS_MAPEO] if isinstance(lineas, list) else [])
+                )
+                if entrada is not None
+            )
+            resultado.append(
+                Mapeo(
+                    tipo=tipo,
+                    id=id_mapeo,
+                    descripcion=_texto_saneado(e.get("description"), MAX_TEXTO_MAPEO),
+                    entradas=entradas,
+                    mdev=_como_bool(e.get("mdev")),
+                    migrable_en_vivo=_como_bool(e.get("live-migration-capable")),
+                )
+            )
+        return resultado
+
+    def comprobar_mapeo(self, tipo: TipoMapeo, id_mapeo: str, nodo: str) -> ComprobacionNodo:
+        """Errores de un mapeo en un nodo (un ``GET``); ver ``comprobar_mapeos``.
+
+        Raises:
+            ValueError: ``id_mapeo`` no cumple ``RE_ID_MAPEO`` (nunca llega a la ruta).
+        """
+        return self.comprobar_mapeos(tipo, nodo, (id_mapeo,))[id_mapeo]
+
+    def comprobar_mapeos(
+        self, tipo: TipoMapeo, nodo: str, ids: Sequence[str]
+    ) -> dict[str, ComprobacionNodo]:
+        """``GET /cluster/mapping/{tipo}?check-node=<nodo>``: errores de varios mapeos en un nodo.
+
+        Una sola petición por (tipo, nodo) sirve a todos los ids pedidos. Extrae ``checks[]``
+        (PCI) o ``errors[]``/``error[]`` (USB) de cada id; solo cuentan los mensajes de gravedad
+        ``error``. Mensajes saneados (≤ 256).
+
+        Raises:
+            ValueError: algún id no cumple ``RE_ID_MAPEO`` (nunca llega a la ruta).
+        """
+        if any(RE_ID_MAPEO.fullmatch(i) is None for i in ids):
+            raise ValueError("identificador de mapeo no válido")
+        data = self._llamar(
+            "GET", f"/cluster/mapping/{_seg(tipo.value)}", params={"check-node": nodo}
+        )
+        errores: dict[str, list[str]] = {i: [] for i in ids}
+        for e in data if isinstance(data, list) else []:
+            if not isinstance(e, dict) or not isinstance(e.get("id"), str):
+                continue
+            lista = errores.get(e["id"])
+            if lista is None:
+                continue
+            for clave in ("checks", "errors", "error"):
+                mensajes = e.get(clave)
+                for m in mensajes if isinstance(mensajes, list) else []:
+                    if len(lista) >= MAX_MENSAJES_COMPROBACION or not isinstance(m, dict):
+                        continue
+                    if str(m.get("severity", "error")).lower() != "error":
+                        continue
+                    texto = _texto_saneado(m.get("message"), MAX_TEXTO_MAPEO)
+                    if texto:
+                        lista.append(texto)
+        return {
+            i: ComprobacionNodo(mapeo=i, nodo=nodo, errores=tuple(msgs), tipo=tipo)
+            for i, msgs in errores.items()
+        }
 
     def estado_actual_vm(self, nodo: str, vmid: int) -> dict[str, Any]:
         """``GET /nodes/{n}/qemu/{vmid}/status/current`` (``VM.Audit``): ``status``, ``lock``..."""

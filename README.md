@@ -9,12 +9,38 @@ Solutions GmbH. La aplicación solo se presenta como «Compatible con Proxmox VE
 
 ## Estado del proyecto
 
-**Versión `0.8.0`.** Hay instaladores para Ubuntu (`.deb`) y Windows
+**Versión `0.9.0`.** Hay instaladores para Ubuntu (`.deb`) y Windows
 (`-setup.exe`), además de poder ejecutarse desde el código fuente. Se apoya en el MVP 5 (instaladores), el MVP 4 (origen del
 sistema operativo), el MVP 3 (perfiles de máquina, lotes guardados e importación CSV), el MVP 2
 (creación por lotes) y el MVP 1. Las secciones «Qué hace/añade» de más abajo describen cada
 etapa; la del MVP 4 está en la [guía de usuario](docs/guia-usuario.md#elegir-el-origen-del-sistema-operativo).
 Las novedades de cada versión están en las [releases](https://github.com/blaklion3212/proxlaunch/releases).
+
+Novedades de la versión 0.9.0 (**Proxmox 8.4 a 9.2, migrar desde libvirt, hardware del clúster y ARM64 experimental**):
+
+- **Versión mínima de Proxmox: 8.4.** Las versiones 8.0 a 8.3 ya no se admiten (ProxLaunch lo dice al conectar). Con la rama 8
+  verás un aviso de que ya no recibe actualizaciones de seguridad. En servidores x86, el tipo de CPU por defecto es
+  `x86-64-v2-AES` (en ARM64, `host`).
+- **Migrar desde libvirt/KVM** (**Archivo > Importar desde libvirt…** o el botón **Rellenar desde un XML de libvirt…** del
+  origen «Usar un disco existente»): lee el XML de `virsh dumpxml`, enseña una **vista previa** fila por fila (**Migrado**,
+  **Aproximado**, **No se migra**, **Bloquea**) y rellena el formulario. **Una imagen por disco** (o **Crear vacío**), varios
+  discos, **MAC de origen** opcional (desmarcada por defecto y solo con una copia), avisos de backing file, instantáneas y
+  NVRAM/TPM. ProxLaunch **nunca ejecuta** `virsh` ni `qemu-img`: te da las órdenes con un botón **Copiar**. La contraseña de
+  consola que pueda traer el XML no se lee. Ver la [guía](docs/guia-usuario.md#migrar-una-máquina-desde-libvirt).
+- **Hardware del clúster:** dar a la máquina **tarjetas PCI y dispositivos USB** que el administrador mapeó (opciones PCIe,
+  gráfica principal, ROM y USB 3; hasta 16 PCI y 5 USB; se comprueba en cada nodo y se avisa de que una tarjeta solo la usa una
+  máquina encendida), y elegir **CPU personalizadas** (`custom-…`). Necesita el permiso opcional `Mapping.Use`. En clones
+  hay un paso de ajuste «hardware» con **Reintentar ajustes**. Ver la
+  [guía](docs/guia-usuario.md#hardware-del-clúster-y-cpu-personalizadas).
+- **Servidores ARM64 (experimental, sin probar en un servidor ARM64 real):** detecta el tipo de cada servidor (o lo eliges en
+  **Arquitectura de este servidor**), adapta el hardware (UEFI, CPU `host`, discos SCSI o VirtIO), no mezcla servidores x86 y
+  ARM64 en un lote y no clona plantillas de otro tipo. Ver la [guía](docs/guia-usuario.md#servidores-arm64-experimental).
+- **CSV:** columnas nuevas `mapeo_pci` y `mapeo_usb` (la plantilla tiene ahora 42 columnas).
+- **Formato de archivo 6** solo para los lotes que usan mapeos, MAC conservada o varias imágenes de disco; si no, se escriben
+  como en 0.8.0. 0.9.0 abre los archivos de 0.5 a 0.8; **0.8.0 no abre los de formato 6** (ver
+  [compatibilidad](docs/guia-usuario.md#compatibilidad-con-versiones-anteriores)).
+- El rol no cambia. `Mapping.Use` (por mapeo, o `/mapping/cpu/<modelo>` en Proxmox 9.2) es opcional y `Sys.Audit` permite
+  detectar la arquitectura en Proxmox 8.4 a 9.1 (en 9.2 la indica el clúster). **Qué puedo hacer en este servidor** tiene tres filas nuevas.
 
 Novedades de la versión 0.8.0 (**lotes en el servidor, redes virtuales, firewall y red del clon**):
 
@@ -74,7 +100,7 @@ Novedades de la versión 0.6.0 (**opciones de la máquina**, todas explicadas en
 
 Qué hace el MVP 1:
 
-- Conecta con un servidor Proxmox VE 8.0 a 9.2, con **API Token** o con **usuario y
+- Conecta con un servidor Proxmox VE 8.4 a 9.2, con **API Token** o con **usuario y
   contraseña** (con segundo factor TOTP o clave de recuperación si el servidor lo pide).
 - Guarda **perfiles de conexión** con varias IP o nombres de servidor (si el primero no
   responde, prueba el siguiente).
@@ -142,7 +168,7 @@ editar o borrar MV que no creó un lote, instaladores (MVP 5), interfaz en otros
 
 ### Permisos de Proxmox
 
-El **rol mínimo no cambia** en la versión 0.8.0: son los mismos 10 privilegios del MVP 1 (`VM.Allocate`, `VM.Audit`,
+El **rol mínimo no cambia** en la versión 0.9.0: son los mismos 10 privilegios del MVP 1 (`VM.Allocate`, `VM.Audit`,
 `VM.Config.Options`, `VM.Config.HWType`, `VM.Config.CPU`, `VM.Config.Memory`,
 `VM.Config.Network`, `Datastore.AllocateSpace`, `SDN.Use` y `Sys.Audit`) más los 4 de orígenes del MVP 4 (`VM.Config.Disk`,
 `VM.Clone`, `Datastore.AllocateTemplate` y `Sys.AccessNetwork`); lista y pasos en la
@@ -155,7 +181,7 @@ deshacer no piden ninguno más:
 - Crear en un **pool** no necesita ningún privilegio nuevo: basta `VM.Allocate` en la máquina o en el pool.
 - Si el administrador restringió la política de etiquetas del centro de datos (`user-tag-access`,
   `registered-tags`), ProxLaunch la lee antes de crear (con `Sys.Audit` en `/`) y **bloquea** si alguna etiqueta no
-  está permitida, nombrándola. Si no pudo comprobarla y Proxmox falla dentro de la tarea, pausa el lote y ofrece
+  está permitida, nombrándola. Sin `Sys.Audit` en `/` la política se ve incompleta y solo avisa. Si no pudo comprobarla y Proxmox falla dentro de la tarea, pausa el lote y ofrece
   «Seguir sin etiquetas».
 
 **Privilegios opcionales (no forman parte del rol).** Sin ellos ProxLaunch funciona igual y solo desactiva la
@@ -169,6 +195,8 @@ opción afectada, explicando qué falta:
 | `VM.Monitor` (Proxmox 8.x) o `VM.GuestAgent.Audit` (Proxmox 9.x) | `/vms` | **Esperar la IP** de cada máquina. |
 | `Datastore.AllocateSpace` (Proxmox 8.x) | `/storage/<almacén de snippets>` | Elegir scripts (*snippets*); ya está en el rol, pero hay que tenerlo también sobre ese almacén. |
 | `SDN.Use` | `/sdn/zones/<zona>` o `/sdn/zones/<zona>/<red>` | Usar redes virtuales (VNets) de esa zona; con la asignación acotada solo cubre `localnetwork`. `SDN.Audit` (opcional) muestra su alias y estado. |
+| `Mapping.Use` | `/mapping/pci/<mapeo>`, `/mapping/usb/<mapeo>` (o `/mapping`) | Dar a una máquina tarjetas PCI o dispositivos USB mapeados por el administrador (rol `PVEMappingUser`); también clonar una plantilla que ya los usa. |
+| `Mapping.Use` | `/mapping/cpu/<modelo>` | Solo Proxmox 9.2: usar una CPU personalizada. En Proxmox 8.4 a 9.1 basta `Sys.Audit` en `/nodes`, que ya está en el rol. |
 
 `Sys.Modify` y `Pool.Allocate` nunca se piden. El asistente **Crear plantilla desde imagen cloud** usa solo privilegios que
 ya están en el rol; detalles por versión en la
@@ -180,7 +208,7 @@ ya están en el rol; detalles por versión en la
 |---|---|
 | Python | 3.11 o superior |
 | Sistemas | Ubuntu 22.04 / 24.04 y Windows 10 / 11 (64 bits) |
-| Proxmox VE | 8.0 hasta 9.2 (una versión mayor se admite con un aviso) |
+| Proxmox VE | 8.4 hasta 9.2 (una versión mayor se admite con un aviso) |
 | Llavero (opcional) | Servicio de secretos del sistema, para «Recordar credenciales» |
 
 Notas:
@@ -205,8 +233,8 @@ Los artefactos están en `dist/` (se generan con los scripts de [`empaquetado/`]
 
 | Sistema | Archivo |
 |---|---|
-| Ubuntu 22.04 / 24.04 (64 bits) | `proxlaunch_0.8.0_amd64.deb` |
-| Windows 10 / 11 (64 bits) | `proxlaunch-0.8.0-windows-x64-setup.exe` |
+| Ubuntu 22.04 / 24.04 (64 bits) | `proxlaunch_0.9.0_amd64.deb` |
+| Windows 10 / 11 (64 bits) | `proxlaunch-0.9.0-windows-x64-setup.exe` |
 | Comprobación | `SHA256SUMS` (suma SHA-256 de cada instalador) |
 
 Comprueba la descarga y luego instala:
@@ -214,12 +242,12 @@ Comprueba la descarga y luego instala:
 ```bash
 # Ubuntu
 sha256sum -c SHA256SUMS --ignore-missing
-sudo apt install ./proxlaunch_0.8.0_amd64.deb
+sudo apt install ./proxlaunch_0.9.0_amd64.deb
 ```
 
 ```powershell
 # Windows (PowerShell): compara el Hash con la línea de SHA256SUMS y ejecuta el instalador
-Get-FileHash -Algorithm SHA256 .\proxlaunch-0.8.0-windows-x64-setup.exe
+Get-FileHash -Algorithm SHA256 .\proxlaunch-0.9.0-windows-x64-setup.exe
 ```
 
 Los instaladores incluyen su propio Python: no hace falta instalar nada más (en Ubuntu, `apt` instala las
@@ -341,11 +369,15 @@ recursos/marca/  Logos originales y el generador (generador/generar_logo.py)
   [opciones de la máquina](docs/guia-usuario.md#opciones-de-la-máquina), la
   [configuración inicial con cloud-init](docs/guia-usuario.md#configuración-inicial-con-cloud-init), la
   [espera de la IP](docs/guia-usuario.md#esperar-la-ip) y el
-  [asistente de plantillas desde imágenes cloud](docs/guia-usuario.md#crear-una-plantilla-desde-una-imagen-cloud)).
+  [asistente de plantillas desde imágenes cloud](docs/guia-usuario.md#crear-una-plantilla-desde-una-imagen-cloud), la
+  [migración desde libvirt](docs/guia-usuario.md#migrar-una-máquina-desde-libvirt), el
+  [hardware del clúster y las CPU personalizadas](docs/guia-usuario.md#hardware-del-clúster-y-cpu-personalizadas) y los
+  [servidores ARM64 (experimental)](docs/guia-usuario.md#servidores-arm64-experimental)).
 - [Archivos de ejemplo](docs/ejemplos/LEEME.md): CSV, lotes y perfiles listos para abrir (incluidos `mvs-opciones.csv` y
   `lote-con-opciones.proxlaunch-lote.json`, con las opciones de la versión 0.6.0, y `mvs-cloudinit.csv` y
   `lote-cloudinit.proxlaunch-lote.json`, con cloud-init y esperar la IP de la versión 0.7.0, y `mvs-red-firewall.csv` y
-  `lote-red-firewall.proxlaunch-lote.json`, con la red del clon y el firewall de la versión 0.8.0).
+  `lote-red-firewall.proxlaunch-lote.json`, con la red del clon y el firewall de la versión 0.8.0, y `mvs-hardware-cluster.csv` y
+  `lote-libvirt.proxlaunch-lote.json`, con el hardware del clúster y una máquina traída de libvirt de la versión 0.9.0).
 - [Instalar y desinstalar](docs/guia-usuario.md#instalar-y-desinstalar-proxlaunch): `.deb` y
   `-setup.exe`, SmartScreen, datos y verificación de `SHA256SUMS`.
 - [Empaquetado](docs/empaquetado.md): construcción y verificación de los instaladores
@@ -379,7 +411,8 @@ Detalles para usuarios en la [guía](docs/guia-usuario.md#privacidad-y-seguridad
 
 ## Licencia del proyecto
 
-ProxLaunch es software libre bajo la [licencia MIT](LICENSE): puedes usarlo, modificarlo y
+ProxLaunch es software libre bajo la [licencia MIT](LICENSE) (en español, con el original en
+inglés, que es el que tiene validez legal): puedes usarlo, modificarlo y
 redistribuirlo, también con fines comerciales, siempre que conserves el aviso de copyright.
 Se entrega sin garantía.
 

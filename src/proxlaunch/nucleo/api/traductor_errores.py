@@ -32,7 +32,10 @@ _RE_PERMISO = re.compile(
     r"Permission check failed \(\s*(?P<ruta>[^,)]*?)\s*,\s*(?P<priv>[^)]*?)\s*\)", re.IGNORECASE
 )
 _RE_VMID_EXISTE = re.compile(
-    r"(?:VM|CT)\s+(?P<vmid>\d+)\s+already exists(?:\s+on node\s+'(?P<nodo>[^']*)')?", re.IGNORECASE
+    r"(?:VM|CT)\s+(?P<vmid>\d+)\s+already exists(?:\s+on node\s+'(?P<nodo>[^']*)')?"
+    # PVE 9.2.32+ en /cluster/nextid?vmid=: «guest ID N is already in use».
+    r"|guest ID\s+(?P<vmid2>\d+)\s+is already in use",
+    re.IGNORECASE,
 )
 _RE_SIN_ESPACIO = re.compile(
     r"out of (?:data )?space|insufficient free space|no space left", re.IGNORECASE
@@ -235,7 +238,7 @@ def _clasificar_texto(
 
     m = _RE_VMID_EXISTE.search(texto)
     if m:
-        params = {"vmid": m.group("vmid")}
+        params = {"vmid": m.group("vmid") or m.group("vmid2")}
         if m.group("nodo"):
             params["nodo"] = m.group("nodo")
         return ErrorProxLaunch(CodigoError.VMID_OCUPADO, params, detalle)

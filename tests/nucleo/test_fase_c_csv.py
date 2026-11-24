@@ -117,10 +117,11 @@ def reglas_plan(plan, prefijo="V-C"):
 # --- RF-C6.3: las 5 columnas, sus alias y su posición ---
 
 
-def test_rf_c6_3_las_cinco_columnas_canonicas_existen_y_el_total_es_59():
+def test_rf_c6_3_las_cinco_columnas_canonicas_existen_y_el_total_es_61():
+    # Fase D (RF-D6.3): dos columnas más (59 → 61).
     canonicas = [c.canonica for c in COLUMNAS]
     assert set(COLUMNAS_C) <= set(canonicas)
-    assert len(canonicas) == 59 and len(set(canonicas)) == 59
+    assert len(canonicas) == 61 and len(set(canonicas)) == 61
 
 
 def test_rf_c6_3_las_marcadas_avanzadas_son_las_de_la_tabla():
@@ -330,13 +331,13 @@ def test_ca_c6_3_4_un_grupo_que_no_existe_se_marca_en_comprobar_con_su_nombre():
 # --- CA-C6.3.5 y P-C4: el tope de columnas ---
 
 
-def test_ca_c6_3_5_p_c4_un_csv_con_las_59_columnas_canonicas_se_acepta():
+def test_ca_c6_3_5_p_c4_un_csv_con_las_61_columnas_canonicas_se_acepta():
     cabecera = [c.canonica for c in COLUMNAS]
     datos = csv_bytes(
         [";".join(cabecera), ";".join("a" if c == "nombre" else "" for c in cabecera)]
     )
     tabla = leer_tabla(datos)
-    assert len(tabla.encabezado) == 59
+    assert len(tabla.encabezado) == 61
     r = interpretar(
         tabla, perfil_base=perfil_base(), perfiles=tuple(perfiles_fabrica()), inv=None,
         nodo_referencia=None,
@@ -391,7 +392,7 @@ def test_ca_c6_3_6_el_csv_de_errores_neutraliza_las_celdas_de_la_fase_c_con_form
 
 def test_ca_c6_3_7_la_plantilla_incluye_las_cinco_columnas_nuevas():
     assert all(c in ENCABEZADO_PLANTILLA for c in COLUMNAS_C)
-    assert len(ENCABEZADO_PLANTILLA) == 40
+    assert len(ENCABEZADO_PLANTILLA) == 42  # fase D: 2 columnas más
     assert len(ENCABEZADO_PLANTILLA) <= MAX_COLUMNAS_CSV
 
 

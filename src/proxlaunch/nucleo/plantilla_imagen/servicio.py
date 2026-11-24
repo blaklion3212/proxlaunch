@@ -25,6 +25,7 @@ from collections.abc import Callable
 from typing import Any
 
 from proxlaunch.nucleo.api.traductor_errores import CODIGOS_DE_RED, traducir_exitstatus
+from proxlaunch.nucleo.arquitectura.modelos import Arquitectura, arquitectura_efectiva
 from proxlaunch.nucleo.cloudinit.deteccion import info_cloudinit
 from proxlaunch.nucleo.cloudinit.peticion import construir_put_cloudinit
 from proxlaunch.nucleo.errores import CodigoError, ErrorProxLaunch
@@ -110,6 +111,15 @@ def _como_entero(valor: Any) -> int | None:
         return int(valor)
     except (TypeError, ValueError):
         return None
+
+
+def _arquitectura(ctx: _Ejecucion) -> Arquitectura:
+    """Arquitectura del nodo de destino (x86 si no se conoce): en aarch64 la máquina y el
+    cloud-init del asistente se adaptan (OVMF, SCSI, ``scsi1``)."""
+    if ctx.inv is None:
+        return Arquitectura.X86_64
+    nodo = ctx.estado.nodo_reservado or ctx.sol.nodo
+    return arquitectura_efectiva(ctx.inv, nodo)
 
 
 def _es_plantilla(config: dict[str, Any]) -> bool:
@@ -453,7 +463,9 @@ class ServicioPlantillaImagen:
             estado.nombre_reservado = None
             estado.nodo_reservado = None
             estado.upid = None
-        cfg = cfg_de_creacion(sol, estado.volid_imagen or volid_de_imagen(sol))
+        cfg = cfg_de_creacion(
+            sol, estado.volid_imagen or volid_de_imagen(sol), arquitectura=_arquitectura(ctx)
+        )
         inv = self._inventario_con_imagen(ctx, cfg)
         servicio = self._fabrica(self._sesion, self._reloj)
         self._poner(ctx, PasoB2.CREAR, EstadoPaso.EN_CURSO)
@@ -479,7 +491,9 @@ class ServicioPlantillaImagen:
             al_cambiar_etapa,
             ctx.cancelado,
             al_enviar=al_enviar,
-            parametros_extra=parametros_extra(sol.fijas, sol.storage_destino),
+            parametros_extra=parametros_extra(
+                sol.fijas, sol.storage_destino, arquitectura=_arquitectura(ctx)
+            ),
         )
         return self._aplicar_creacion(ctx, cfg, resultado)
 
@@ -558,7 +572,9 @@ class ServicioPlantillaImagen:
     def _paso_ampliar(self, ctx: _Ejecucion) -> bool:
         """Reintento del paso 3 (``resize`` absoluto, idempotente): ``reintentar_ajustes``."""
         sol, estado = ctx.sol, ctx.estado
-        cfg = cfg_de_creacion(sol, estado.volid_imagen or volid_de_imagen(sol))
+        cfg = cfg_de_creacion(
+            sol, estado.volid_imagen or volid_de_imagen(sol), arquitectura=_arquitectura(ctx)
+        )
         detalle = cfg.detalle_origen
         if not isinstance(detalle, DetalleImportacion) or detalle.ampliar_a_gib is None:
             estado.pasos[PasoB2.AMPLIAR] = EstadoPaso.OMITIDO
@@ -762,7 +778,9 @@ class ServicioPlantillaImagen:
 
     def _comprobar_creacion(self, ctx: _Ejecucion) -> None:
         sol, estado = ctx.sol, ctx.estado
-        cfg = cfg_de_creacion(sol, estado.volid_imagen or volid_de_imagen(sol))
+        cfg = cfg_de_creacion(
+            sol, estado.volid_imagen or volid_de_imagen(sol), arquitectura=_arquitectura(ctx)
+        )
         servicio = self._fabrica(self._sesion, self._reloj)
         if estado.upid is not None:
             res = servicio.comprobar_ahora(cfg, estado.upid, inv=ctx.inv)

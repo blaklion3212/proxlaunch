@@ -9,10 +9,12 @@ from typing import cast
 from PySide6.QtCore import QCoreApplication, Qt, Signal
 from PySide6.QtGui import QFont, QStandardItem, QStandardItemModel
 from PySide6.QtWidgets import (
+    QCheckBox,
     QComboBox,
     QGridLayout,
     QLabel,
     QLineEdit,
+    QListView,
     QPushButton,
     QVBoxLayout,
     QWidget,
@@ -35,7 +37,9 @@ from proxlaunch.interfaz.textos_c import (
     texto_vlan_no_vlanaware,
     texto_vnet_con_alias,
 )
+from proxlaunch.interfaz.textos_d import texto_nombre_opcion_d
 from proxlaunch.interfaz.vistas.campos import etiqueta, mensaje, poner_mensaje, poner_propiedad
+from proxlaunch.nucleo.arquitectura.modelos import Arquitectura
 from proxlaunch.nucleo.constructor_peticion import formato_limite
 from proxlaunch.nucleo.modelos.inventario import Bridge, RedVirtual
 from proxlaunch.nucleo.modelos.vm import MTU_IGUAL_BRIDGE, InterfazRed, ModeloRed
@@ -44,7 +48,7 @@ from proxlaunch.nucleo.origen.capacidades_origen import Disponibilidad
 from proxlaunch.nucleo.validacion import Problema, Severidad
 from proxlaunch.nucleo.valores_defecto import bridge_por_defecto
 
-_C_INDICE, _C_BRIDGE, _C_MODELO, _C_VLAN, _C_MTU, _C_LIMITE, _C_QUITAR = range(7)
+_C_INDICE, _C_BRIDGE, _C_MODELO, _C_VLAN, _C_MTU, _C_LIMITE, _C_MAC, _C_QUITAR = range(8)
 
 
 def _cabecera_grupo(combo: QComboBox, titulo: str) -> None:
@@ -150,6 +154,12 @@ class _FilaRed:
         self.limite = QLineEdit()
         self.limite.setMaximumWidth(90)
         self.limite.setPlaceholderText(QCoreApplication.translate("TablaRedes", "Sin límite"))
+        # Fase D (D1): MAC de la tarjeta original de libvirt; solo existe si el formulario se
+        # rellenó con el asistente y el usuario pidió conservarla (DT-D15).
+        self.mac_origen: str | None = None
+        self.chk_mac = QCheckBox(texto_nombre_opcion_d("conservar_mac"))
+        self.chk_mac.setToolTip(ayuda("mac_origen"))
+        self.chk_mac.hide()
         self.quitar = QPushButton(QCoreApplication.translate("TablaRedes", "Quitar"))
 
     def widgets(self) -> list[tuple[int, QWidget]]:
@@ -160,6 +170,7 @@ class _FilaRed:
             (_C_VLAN, self.vlan),
             (_C_MTU, self.mtu),
             (_C_LIMITE, self.limite),
+            (_C_MAC, self.chk_mac),
             (_C_QUITAR, self.quitar),
         ]
 
@@ -182,6 +193,7 @@ class TablaRedes(QWidget):
         # Disponibilidad de las opciones de red de la fase A (privilegio VM.Config.Network).
         self._mtu_ok = True
         self._limite_ok = True
+        self._arm = False  # el servidor elegido es ARM64: sin la tarjeta Intel E1000
         self._texto_mtu_bloqueado = ""
         self._texto_limite_bloqueado = ""
         self._rejilla = QGridLayout()
@@ -205,6 +217,12 @@ class TablaRedes(QWidget):
         self._avanzados.append(self._cabeceras[_C_MODELO])
         self._avanzados.append(self._cabeceras[_C_MTU])
         self._avanzados.append(self._cabeceras[_C_LIMITE])
+        cab_mac = QLabel(QCoreApplication.translate("TablaRedes", "MAC"))
+        cab_mac.setProperty("secundario", True)
+        cab_mac.setToolTip(ayuda("mac_origen"))
+        cab_mac.hide()  # solo hay columna si alguna tarjeta trae la MAC de origen
+        self._cabeceras[_C_MAC] = cab_mac
+        self._rejilla.addWidget(cab_mac, 0, _C_MAC)
         self._rejilla.setColumnStretch(_C_BRIDGE, 1)
         self._agregar = QPushButton(QCoreApplication.translate("TablaRedes", "Agregar interfaz"))
         self._agregar.clicked.connect(lambda: self.agregar_red())
@@ -323,6 +341,43 @@ class TablaRedes(QWidget):
         self._refrescar_opciones(emitir=False)
         self.cambiado.emit()
 
+    def establecer_macs_origen(self, macs: Sequence[str | None]) -> None:
+        """Ofrece la casilla «Conservar la MAC» en cada tarjeta que trae MAC de origen (la del
+        XML de libvirt), aunque no se haya pedido en el asistente: queda desmarcada, salvo en
+        las tarjetas que ya la conservan. Las filas se emparejan por posición."""
+        for f, mac in zip(self._filas, macs, strict=False):
+            if not mac or f.mac_origen:
+                continue
+            f.mac_origen = mac
+            f.chk_mac.setText(f"{texto_nombre_opcion_d('conservar_mac')} ({mac})")
+            f.chk_mac.blockSignals(True)
+            f.chk_mac.setChecked(False)
+            f.chk_mac.blockSignals(False)
+            f.chk_mac.show()
+        self._refrescar_columna_mac()
+
+    def establecer_arquitectura(self, arq: Arquitectura) -> None:
+        """En un servidor ARM64 no existe la tarjeta Intel E1000: se oculta de la lista.
+
+        Solo oculta la opción; el valor de una tarjeta no cambia aquí (lo adapta el formulario
+        con V-D08 y avisa).
+        """
+        arm = arq == Arquitectura.AARCH64
+        if arm == self._arm:
+            return
+        self._arm = arm
+        for f in self._filas:
+            self._aplicar_arquitectura(f)
+
+    def _aplicar_arquitectura(self, f: _FilaRed) -> None:
+        posicion = f.modelo.findData(ModeloRed.E1000)
+        if posicion < 0:
+            return
+        cast(QListView, f.modelo.view()).setRowHidden(posicion, self._arm)
+        item = cast(QStandardItemModel, f.modelo.model()).item(posicion)
+        if item is not None:
+            item.setEnabled(not self._arm)
+
     def establecer_modelo_todas(self, modelo: ModeloRed) -> None:
         """Pone la misma tarjeta en todas las redes (lo usa el asistente de SO)."""
         for f in self._filas:
@@ -362,6 +417,7 @@ class TablaRedes(QWidget):
                 vlan=vlan_desde_texto(f.vlan.text()),
                 mtu=self._mtu_de(f),
                 limite_mb=limite_desde_texto(f.limite.text()),
+                mac_conservada=f.mac_origen if f.chk_mac.isChecked() else None,
             )
             for f in self._filas
         ]
@@ -523,6 +579,7 @@ class TablaRedes(QWidget):
         con_vlan: set[int] = set()
         con_mtu: set[int] = set()
         con_limite: set[int] = set()
+        con_mac: set[int] = set()
         for p in problemas:
             if p.severidad != Severidad.ERROR:
                 continue
@@ -547,10 +604,13 @@ class TablaRedes(QWidget):
                 con_mtu.add(i)
             elif p.campo.endswith(".limite_mb"):
                 con_limite.add(i)
+            elif p.campo.endswith(".mac_conservada"):
+                con_mac.add(i)
         for i, f in enumerate(self._filas):
             poner_propiedad(f.vlan, "invalido", i in con_vlan)
             poner_propiedad(f.mtu, "invalido", i in con_mtu)
             poner_propiedad(f.limite, "invalido", i in con_limite)
+            poner_propiedad(f.chk_mac, "invalido", i in con_mac)
         poner_mensaje(self._errores, "\n".join(dict.fromkeys(errores)))
 
     def mostrar_aviso_nodo(self, texto: str | None) -> None:
@@ -583,6 +643,12 @@ class TablaRedes(QWidget):
         f.vlan.setText("" if red.vlan is None else str(red.vlan))
         self._poner_mtu(f, red.mtu)
         f.limite.setText(texto_limite(red.limite_mb))
+        if red.mac_conservada:
+            f.mac_origen = red.mac_conservada
+            f.chk_mac.setText(f"{texto_nombre_opcion_d('conservar_mac')} ({red.mac_conservada})")
+            f.chk_mac.setChecked(True)
+            f.chk_mac.show()
+        f.chk_mac.toggled.connect(lambda _v: self.cambiado.emit())
         f.bridge.currentIndexChanged.connect(lambda _i, fila=f: self._al_cambiar_bridge(fila))
         f.modelo.currentIndexChanged.connect(lambda _i, fila=f: self._al_cambiar_modelo(fila))
         f.vlan.textEdited.connect(lambda _t: self.cambiado.emit())
@@ -590,9 +656,11 @@ class TablaRedes(QWidget):
         f.mtu.editTextChanged.connect(lambda _t: self.cambiado.emit())
         f.limite.textEdited.connect(lambda _t: self.cambiado.emit())
         f.quitar.clicked.connect(lambda _c=False, fila=f: self._quitar_fila(fila))
+        self._aplicar_arquitectura(f)
         self._filas.append(f)
         for col, w in f.widgets():
             self._rejilla.addWidget(w, len(self._filas), col)
+        self._refrescar_columna_mac()
         for w in (f.modelo, f.mtu, f.limite):
             self._avanzados.append(w)
             w.setVisible(self._avanzado)
@@ -630,9 +698,14 @@ class TablaRedes(QWidget):
             for col, w in resto.widgets():
                 self._rejilla.addWidget(w, n, col)
         self._refrescar_nota_mtu()
+        self._refrescar_columna_mac()
         if emitir:
             self._renumerar()
             self.cambiado.emit()
+
+    def _refrescar_columna_mac(self) -> None:
+        """La cabecera «MAC» solo se ve si alguna tarjeta trae la MAC de origen."""
+        self._cabeceras[_C_MAC].setVisible(any(f.mac_origen for f in self._filas))
 
     def _renumerar(self) -> None:
         for n, f in enumerate(self._filas):
@@ -643,6 +716,11 @@ class TablaRedes(QWidget):
             f.limite.setAccessibleName(
                 QCoreApplication.translate(
                     "TablaRedes", "Límite de velocidad de net{n} (MB/s)"
+                ).format(n=n)
+            )
+            f.chk_mac.setAccessibleName(
+                QCoreApplication.translate(
+                    "TablaRedes", "Conservar la MAC de origen de net{n}"
                 ).format(n=n)
             )
         self._refrescar_motivo_vlan()

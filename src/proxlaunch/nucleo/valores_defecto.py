@@ -2,6 +2,7 @@
 
 from collections.abc import Sequence
 
+from proxlaunch.nucleo.modelos.cpu import TIPO_CPU_X86_DEFECTO
 from proxlaunch.nucleo.modelos.inventario import Bridge, Storage
 from proxlaunch.nucleo.modelos.vm import (
     Bus,
@@ -18,7 +19,7 @@ PUERTO = 8006
 REALM = "pam"
 SOCKETS = 1
 CORES = 2
-TIPO_CPU = "x86-64-v2-AES"
+TIPO_CPU = TIPO_CPU_X86_DEFECTO  # alias: el valor lo fija ``modelos.cpu`` (DT-D5)
 MEMORIA_MIB = 2048
 TAMANO_DISCO_GIB = 32
 BRIDGE_PREFERIDO = "vmbr0"

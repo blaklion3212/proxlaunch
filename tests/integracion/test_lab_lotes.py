@@ -417,7 +417,11 @@ def test_l03_ventana_hasta_que_nextid_marca_ocupado_tras_el_post(plc, vmids):
             primera = resp.status_code
         if resp.status_code == 400:
             ventana = time.monotonic() - t0
-            assert f"VM {vmid} already exists" in resp.text
+            # PVE 9.2.32 devuelve {"errors":{"vmid":"guest ID N is already in use"}};
+            # versiones anteriores, "VM N already exists".
+            assert (
+                "vmid" in resp.json().get("errors", {}) or f"VM {vmid} already exists" in resp.text
+            )
             break
         time.sleep(0.02)
     evidencia("L03-ventana", primera_consulta_tras_post=primera, ventana_s=ventana)
@@ -522,7 +526,7 @@ def test_l04_tamano_real_del_efidisk_en_lvmthin(sesion_plc, vmids):
     assert _estados(c.libro) == {9045: EstadoMV.OK}
     conf = sesion_plc.cliente.config_vm(lab.NODO, 9045)
     efi = conf["efidisk0"].split(",")[0].split(":")[1]
-    tam = _tamano_lv("lab", efi)
+    tam = _tamano_lv(lab.VG_LAB, efi)
     evidencia("L04-efidisk-lvmthin", mib=tam / 2**20, efidisk=conf["efidisk0"])
     assert tam == 4 * 2**20
 
@@ -746,7 +750,7 @@ def test_l05_rollback_del_lote_con_omisiones_reales(sesion_plc, vmids):
         errores={v: str(r.error.codigo) for v, r in por_vmid.items() if r.error},
     )
     assert por_vmid[9060].estado == EstadoRollback.OMITIDA
-    assert por_vmid[9060].error.codigo == CodigoError.ROLLBACK_BLOQUEADA
+    assert por_vmid[9060].error.codigo == CodigoError.ROLLBACK_PROTEGIDA
     assert por_vmid[9061].estado == EstadoRollback.OMITIDA
     assert por_vmid[9061].error.codigo == CodigoError.ROLLBACK_ENCENDIDA
     assert por_vmid[9062].estado == EstadoRollback.OMITIDA

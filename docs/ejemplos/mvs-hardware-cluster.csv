@@ -1,0 +1,5 @@
+"nombre";"nodo";"origen";"tipo_cpu";"mapeo_pci";"mapeo_usb"
+"grafico-01";"pve1";"vacio";"custom-ejemplo";"gpu-ejemplo";"llave-ejemplo"
+"grafico-02";"pve2";"vacio";"";"gpu-ejemplo";""
+"licencias-01";"pve1";"vacio";"";"";"llave-ejemplo"
+"doble-gpu-01";"pve1";"vacio";"";"gpu-ejemplo;gpu-secundaria";""

@@ -68,6 +68,9 @@ ALIAS = {
     "grupo_seguridad": ["security_group", "firewall_group"],
     "politica_entrada": ["policy_in"],
     "politica_salida": ["policy_out"],
+    # fase D (RF-D6.3)
+    "mapeo_pci": ["pci_mapping"],
+    "mapeo_usb": ["usb_mapping"],
     **{f"disco{n}": [] for n in range(2, 9)},
     **{f"almacenamiento{n}": [f"storage{n}"] for n in range(2, 9)},
 }
@@ -105,6 +108,9 @@ def test_la_tabla_de_columnas_es_la_de_los_requisitos():
         "reescribir_red",
         "politica_entrada",
         "politica_salida",
+        # fase D (RF-D6.3)
+        "mapeo_pci",
+        "mapeo_usb",
     }
     assert len(canonicas) == len(COLUMNAS)  # sin duplicados
 
@@ -121,6 +127,8 @@ def test_el_encabezado_de_la_plantilla_usa_nombres_canonicos():
         "ci_snippet_usuario", "ci_snippet_vendor", "ci_snippet_red", "ci_snippet_meta", "esperar_ip",  # noqa: E501
         # Fase C (CA-C6.3.7): red del clon y firewall.
         "reescribir_red", "cortafuegos", "grupo_seguridad", "politica_entrada", "politica_salida",  # noqa: E501
+        # Fase D (CA-D6.3.7): mapeos PCI/USB del clúster.
+        "mapeo_pci", "mapeo_usb",
     )  # fmt: skip
     assert "ci_contrasena" not in ENCABEZADO_PLANTILLA
 

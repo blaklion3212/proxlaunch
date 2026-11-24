@@ -14,6 +14,7 @@ from collections.abc import Mapping
 from dataclasses import dataclass
 from enum import StrEnum
 
+from proxlaunch.nucleo.modelos.cpu import TIPOS_CPU_X86_V3
 from proxlaunch.nucleo.modelos.origen import DetalleIso, TipoSO
 from proxlaunch.nucleo.modelos.vm import (
     Bus,
@@ -68,8 +69,6 @@ TABLA_SO: Mapping[TipoSO, PerfilSO] = {
     TipoSO.OTRO: PerfilSO("other", None, False, False, False, False, False, None),
 }
 
-# Tipos de CPU que ya cumplen x86-64-v3 (o lo exponen todo): no necesitan el aviso de RHEL 10.
-_CPU_V3 = frozenset({"x86-64-v3", "x86-64-v4", "host"})
 _RE_RHEL10 = re.compile(r"(rhel|rocky|alma(linux)?|centos)[-_ .]*(stream[-_ .]*)?10", re.IGNORECASE)
 
 
@@ -194,7 +193,7 @@ def avisos_so(cfg: ConfiguracionVM) -> list[Problema]:
             avisos.append(Problema("discos[0].tamano_gib", "V-O07", Severidad.AVISO, dict(params)))
     if (
         cfg.tipo_so == TipoSO.LINUX
-        and cfg.tipo_cpu not in _CPU_V3
+        and cfg.tipo_cpu not in TIPOS_CPU_X86_V3
         and _RE_RHEL10.search(_nombre_iso(cfg)) is not None
     ):
         coincide = True

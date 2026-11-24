@@ -1,7 +1,7 @@
 # Manual de usuario de ProxLaunch
 
 ProxLaunch es una aplicación de escritorio para crear máquinas virtuales (MV) en un servidor
-**Proxmox VE** (versiones 8.0 a 9.2) sin tener que conocer todos sus detalles. Este manual explica,
+**Proxmox VE** (versiones 8.4 a 9.2) sin tener que conocer todos sus detalles. Este manual explica,
 pantalla por pantalla, **todas las opciones** que verás, qué hace cada una, qué valores admite y cuál
 es su valor por defecto. Está pensado para administradores de sistemas que no son necesariamente
 expertos en Proxmox: cada término se explica la primera vez que aparece, y al final hay un
@@ -31,7 +31,15 @@ Con ProxLaunch puedes:
 - **activar el firewall de la máquina** con un grupo de seguridad ya preparado y decidir qué pasa con el tráfico que ninguna
   regla menciona (ver [Firewall de la máquina](#firewall-de-la-máquina));
 - **encontrar, exportar y deshacer los lotes que ProxLaunch creó en el servidor**, aunque los crearas en otra sesión (ver
-  [Lotes en el servidor (inventario)](#lotes-en-el-servidor-inventario)).
+  [Lotes en el servidor (inventario)](#lotes-en-el-servidor-inventario));
+- **traer una máquina que ya tienes en libvirt/KVM** (virt-manager, `virsh`): ProxLaunch lee su archivo XML, te enseña qué se
+  traslada y qué no, y rellena el formulario; los discos los conviertes y subes tú (ver
+  [Migrar una máquina desde libvirt](#migrar-una-máquina-desde-libvirt));
+- **darle a la máquina una tarjeta PCI o un dispositivo USB del clúster** (una gráfica, una llave de licencias) y **elegir una
+  CPU personalizada**, siempre que tu administrador los haya preparado (ver
+  [Hardware del clúster y CPU personalizadas](#hardware-del-clúster-y-cpu-personalizadas));
+- **crear máquinas en un servidor ARM64**, con la ayuda de ProxLaunch para adaptar el hardware (**experimental**, ver
+  [Servidores ARM64 (experimental)](#servidores-arm64-experimental)).
 
 Por defecto todas las máquinas se crean **detenidas**: solo se encienden si marcas **Encender al terminar**. ProxLaunch
 nunca instala el sistema operativo por ti (con un ISO, la instalación la terminas tú desde la consola de Proxmox).
@@ -43,8 +51,9 @@ nunca instala el sistema operativo por ti (con un ISO, la instalación la termin
 > la versión 0.6 (encender, notas, etiquetas, pool, protección, MTU y límite, y el Deshacer con apagado y desprotección) se
 > verificaron con respuestas simuladas de Proxmox, no contra un servidor real. Lo mismo vale para las funciones de la
 > versión 0.7 (cloud-init, esperar la IP y crear una plantilla desde una imagen cloud) y para las de la versión 0.8 (lotes en
-> el servidor, redes virtuales, firewall de la máquina y red del clon). Si usas esos casos, revisa siempre el
-> resumen y simula antes de crear.
+> el servidor, redes virtuales, firewall de la máquina y red del clon) y de la versión 0.9 (migrar desde libvirt, hardware
+> del clúster y CPU personalizadas). **Los servidores ARM64 son experimentales: ProxLaunch nunca se ha probado en un
+> servidor ARM64 real.** Si usas esos casos, revisa siempre el resumen y simula antes de crear.
 
 ## Cómo leer este manual
 
@@ -81,23 +90,26 @@ nunca instala el sistema operativo por ti (con un ISO, la instalación la termin
 10. [Redes virtuales (SDN)](#redes-virtuales-sdn): usar una VNet como si fuera un bridge
 11. [Red del clon](#red-del-clon): cambiar la red de las copias de una plantilla
 12. [Firewall de la máquina](#firewall-de-la-máquina): grupo de seguridad y políticas
-13. [Transferencias: subir y descargar archivos](#transferencias-subir-y-descargar-archivos)
-14. [Entender el progreso y los resultados](#entender-el-progreso-y-los-resultados): tiempo agotado,
+13. [Migrar una máquina desde libvirt](#migrar-una-máquina-desde-libvirt): leer el XML, vista previa, discos y MAC
+14. [Hardware del clúster y CPU personalizadas](#hardware-del-clúster-y-cpu-personalizadas): tarjetas PCI, USB y modelos de CPU
+15. [Servidores ARM64 (experimental)](#servidores-arm64-experimental)
+16. [Transferencias: subir y descargar archivos](#transferencias-subir-y-descargar-archivos)
+17. [Entender el progreso y los resultados](#entender-el-progreso-y-los-resultados): tiempo agotado,
     «Comprobar» y deshacer
-15. [Crear varias máquinas de una vez (lotes)](#crear-varias-máquinas-de-una-vez-lotes)
-16. [Lotes en el servidor (inventario)](#lotes-en-el-servidor-inventario): encontrar, exportar y deshacer lotes
-17. [Perfiles de máquina](#perfiles-de-máquina)
-18. [Guardar y abrir lotes](#guardar-y-abrir-lotes)
-19. [Importar máquinas desde un CSV](#importar-máquinas-desde-un-csv): formato y validación
-20. [Lote por filas](#lote-por-filas)
-21. [Cambios sin guardar](#cambios-sin-guardar)
-22. [Menús y ajustes](#menús-y-ajustes)
-23. [Referencia de ventanas y menús](#referencia-de-ventanas-y-menús)
-24. [Formatos de archivo](#formatos-de-archivo): CSV, lotes y perfiles, versiones del formato y
-    [compatibilidad con 0.5.1, 0.6 y 0.7](#compatibilidad-con-versiones-anteriores)
-25. [Solución de problemas](#solución-de-problemas): mensajes de error y preguntas frecuentes
-26. [Privacidad y seguridad](#privacidad-y-seguridad)
-27. [Glosario](#glosario)
+18. [Crear varias máquinas de una vez (lotes)](#crear-varias-máquinas-de-una-vez-lotes)
+19. [Lotes en el servidor (inventario)](#lotes-en-el-servidor-inventario): encontrar, exportar y deshacer lotes
+20. [Perfiles de máquina](#perfiles-de-máquina)
+21. [Guardar y abrir lotes](#guardar-y-abrir-lotes)
+22. [Importar máquinas desde un CSV](#importar-máquinas-desde-un-csv): formato y validación
+23. [Lote por filas](#lote-por-filas)
+24. [Cambios sin guardar](#cambios-sin-guardar)
+25. [Menús y ajustes](#menús-y-ajustes)
+26. [Referencia de ventanas y menús](#referencia-de-ventanas-y-menús)
+27. [Formatos de archivo](#formatos-de-archivo): CSV, lotes y perfiles, versiones del formato y
+    [compatibilidad con 0.5.1, 0.6, 0.7 y 0.8](#compatibilidad-con-versiones-anteriores)
+28. [Solución de problemas](#solución-de-problemas): mensajes de error y preguntas frecuentes
+29. [Privacidad y seguridad](#privacidad-y-seguridad)
+30. [Glosario](#glosario)
 
 ### Ejemplo que se repite en el manual
 
@@ -124,6 +136,9 @@ el formulario ([lotes](#crear-varias-máquinas-de-una-vez-lotes)), cómo se guar
 | Que las copias de una plantilla salgan en otra red, otra VLAN o con otra tarjeta | **Red de las copias** | [Red del clon](#red-del-clon) |
 | Que las máquinas salgan con el firewall activado y un grupo de reglas | **Firewall de la máquina** | [Firewall de la máquina](#firewall-de-la-máquina) |
 | Ver, exportar o deshacer lotes que creé otro día | **Archivo > Lotes en el servidor…** | [Lotes en el servidor](#lotes-en-el-servidor-inventario) |
+| Traer una máquina que tengo en libvirt/KVM (virt-manager, `virsh`) | **Archivo > Importar desde libvirt…** | [Migrar desde libvirt](#migrar-una-máquina-desde-libvirt) |
+| Dar a la máquina una gráfica, una llave USB o una CPU «a medida» del clúster | **Hardware del clúster** y la lista **Tipo de CPU** | [Hardware del clúster](#hardware-del-clúster-y-cpu-personalizadas) |
+| Crear máquinas en un servidor ARM64 (experimental) | El formulario, con **Arquitectura de este servidor** | [Servidores ARM64](#servidores-arm64-experimental) |
 
 ---
 
@@ -311,7 +326,7 @@ opciones, indicando qué permiso falta. Donde asignar estos permisos (en todo el
 donde hacen falta) se explica en
 [Permisos para el administrador: alcance acotado](#permisos-para-el-administrador-alcance-acotado).
 
-**El rol no cambia en las versiones 0.6, 0.7 ni 0.8**: sigue siendo la misma lista de 14 privilegios. Crear lotes, etiquetar
+**El rol no cambia en las versiones 0.6, 0.7, 0.8 ni 0.9**: sigue siendo la misma lista de 14 privilegios. Crear lotes, etiquetar
 las máquinas, deshacer un lote, casi todas las [opciones de la máquina](#opciones-de-la-máquina), el
 [asistente de plantillas](#privilegios-del-asistente), el [firewall de la máquina](#firewall-de-la-máquina), la
 [red del clon](#red-del-clon) y los [lotes en el servidor](#lotes-en-el-servidor-inventario) usan privilegios que ya están
@@ -356,7 +371,7 @@ ProxLaunch solo te muestra y te pide los que existen en la versión a la que est
   `Datastore.AllocateSpace` en `/storage`. Si no lo tienes, la sección de scripts sale desactivada.
 - **`VM.Config.Cloudinit` y `VM.Config.Network` se miran en `/vms`**, igual que `VM.PowerMgmt`: al rellenar el formulario la
   máquina todavía no existe. **DNS y dominio** aceptan siempre `VM.Config.Network`, sin aviso.
-- **Para dar de golpe los de la 0.7 a un rol que ya existe**, el texto que genera la aplicación (**Copiar texto para mi
+- **Para dar de golpe los de la 0.7 a un rol que ya existe**, el texto que genera la aplicación (**Copiar texto para el
   administrador**) incluye la orden `pveum role modify <rol> --privs "…" --append 1` con los privilegios que corresponden
   a tu versión; el administrador la ejecuta en un nodo de Proxmox.
 - Los privilegios que usa el asistente de plantillas están en [Privilegios del asistente](#privilegios-del-asistente).
@@ -381,6 +396,33 @@ pveum acl modify /sdn/zones/dc1/prod --roles PVESDNUser --users ana@pve
 ```
 
 Para toda la zona, la ruta es `/sdn/zones/dc1`; para una sola VLAN de esa red, `/sdn/zones/dc1/prod/20`.
+
+**Privilegios de la versión 0.9.** Importar desde libvirt usa los privilegios de importar discos, que ya están en el rol. Lo
+nuevo es el **hardware del clúster** y las **CPU personalizadas**, que piden un privilegio que **no** está en el rol:
+`Mapping.Use`. ProxLaunch solo desactiva la opción afectada y dice qué falta.
+
+| Privilegio | Ruta | Qué habilita | Sin él |
+|---|---|---|---|
+| `Mapping.Use` | `/mapping/pci/<mapeo>` o `/mapping/usb/<mapeo>` (o `/mapping/pci`, `/mapping/usb` o `/mapping` para todos) | Dar a una máquina una tarjeta PCI o un dispositivo USB mapeado (ver [Hardware del clúster](#hardware-del-clúster-y-cpu-personalizadas)). También **clonar** una plantilla que ya lleva mapeos. Se concede con el rol `PVEMappingUser`. Además hace falta `VM.Config.HWType`, que ya está en el rol. | Ese mapeo sale **desactivado** en la lista con «Falta el permiso Mapping.Use en /mapping/pci/…». Si no tienes permiso sobre ninguno, la sección entera sale desactivada. |
+| `Mapping.Use` | `/mapping/cpu/<modelo>` | Solo en **Proxmox 9.2**: usar una CPU personalizada. | El modelo no se ofrece o Proxmox lo rechaza con «No tienes permiso para usar la CPU personalizada…». |
+| `Sys.Audit` | `/nodes` | **Proxmox 8.4 a 9.1:** listar y usar CPU personalizadas (junto a `VM.Config.CPU`, que ya está en el rol). **Proxmox 8.4 a 9.1:** saber si un servidor es x86 o ARM64 (desde 9.2 no hace falta). Ya está en el rol (`Sys.Audit` en `/`). | Las CPU personalizadas no aparecen. Y ProxLaunch no puede saber si el servidor es ARM64: **lo trata como x86** y avisa (ver [Servidores ARM64](#servidores-arm64-experimental)). |
+
+Para dar el acceso a un mapeo, el administrador ejecuta en un nodo de Proxmox (con la tarjeta `gpu-a2`, la llave USB
+`llave-hasp` y la CPU `gamer`):
+
+```text
+pveum acl modify /mapping/pci/gpu-a2 --roles PVEMappingUser --users ana@pve
+pveum acl modify /mapping/usb/llave-hasp --roles PVEMappingUser --users ana@pve
+pveum acl modify /mapping/cpu/gamer --roles PVEMappingUser --users ana@pve
+```
+
+Para todos los mapeos PCI la ruta es `/mapping/pci`; para todos los del clúster, `/mapping`. **Qué puedo hacer en este
+servidor** tiene tres filas nuevas («Saber si un servidor es ARM», «Usar tarjetas PCI y USB del clúster» y «Usar modelos de CPU
+personalizados») que dicen «Sí», «No» o «No lo sé» y, cuando falta un permiso, le dan al administrador la orden con un
+ejemplo. Los mapeos y los modelos de CPU los **crea** el administrador en Proxmox (**Datacenter → Mapeo de recursos**):
+ProxLaunch solo los usa. La guía del token (**Ayuda > ¿Cómo creo un API Token?**) incluye este paso como el punto 7
+(«Opcional, para usar tarjetas PCI o USB del clúster y CPUs personalizadas…») y **Copiar texto para el administrador** lo añade
+al mensaje.
 
 - **`VM.PowerMgmt` debe concederse en `/vms`** (con propagar), no solo en una máquina concreta: al rellenar el formulario
   todavía no existe el número de la máquina, así que ProxLaunch solo mira `/vms` para habilitar **Encender al terminar**.
@@ -479,7 +521,7 @@ En **modo avanzado** se añaden dos opciones y los almacenamientos recordados pa
 | **Contraseña** | Básico (método contraseña) | Tu contraseña. | Texto enmascarado. | Vacío. | Obligatoria: «Escribe tu contraseña.» |
 | **Recordar credenciales** | Básico | Guarda el token o la contraseña en el llavero del sistema. | Casilla. | **Desmarcada.** | Ver [más abajo](#la-casilla-recordar-credenciales). |
 | **Ignorar verificación SSL** | Avanzado | Conectar sin comprobar la huella del servidor. **Es inseguro**: solo en redes de prueba que controles. | Casilla (con botón de ayuda «?»). | Desmarcada. | Con contraseña pide confirmar «Conexión sin verificar» en cada conexión. La barra superior muestra «⚠ Conexión sin verificar». |
-| **Forzar compatibilidad con la versión...** | Avanzado | Hace que ProxLaunch se comporte como si el servidor tuviera otra versión de Proxmox. | «Detectada» o una versión conocida. | «Detectada». | Solo para casos especiales. La barra superior lo marca como «(forzada)». |
+| **Forzar compatibilidad con la versión...** | Avanzado | Hace que ProxLaunch se comporte como si el servidor tuviera otra versión de Proxmox. | «Detectada» o una de las versiones conocidas: 8.4, 9.0, 9.1 o 9.2. | «Detectada». | Solo para casos especiales. La barra superior lo marca como «(forzada)». Desde la 0.9 ya no se ofrecen las versiones 8.0 a 8.3; si tu configuración guardaba una de ellas, al abrir ProxLaunch vuelve a «Detectada» y te lo dice: «La versión forzada 8.2 ya no se admite; uso «Detectar» en su lugar.» |
 | **Almacenamientos recordados de este servidor** | Básico (texto) / Avanzado (listas) | Muestra el almacenamiento que elegiste recordar para **Discos de las máquinas**, **Archivos ISO** y **Discos para importar**. | Nombre o «Detectar automáticamente». | «Detectar automáticamente». | En avanzado, **Dejar de recordar** lo olvida. Si el recordado ya no existe aparece «x (no disponible)». |
 | **Guardar perfil** | Básico | Guarda los datos sin conectar. | Botón. | | No exige credenciales; no guarda el secreto salvo que marques «Recordar credenciales». |
 | **Cancelar** | Básico | Cierra la ventana sin conectar. | Botón. | | |
@@ -600,7 +642,14 @@ Avisos que pueden aparecer arriba:
 - «Topología desconocida (N nodos): a tu usuario le falta el permiso Sys.Audit en «/» para ver el clúster. Puedes
   seguir trabajando.»
 - Un aviso si el servidor es más nuevo que la última versión que ProxLaunch ha probado. Puedes continuar.
-- Con Proxmox VE 7 o anterior, ProxLaunch no puede usarse: «ProxLaunch requiere Proxmox VE 8.0 o superior».
+- Con Proxmox VE 8.3 o anterior, ProxLaunch no puede usarse: «Este servidor usa Proxmox 8.2. ProxLaunch necesita la versión
+  8.4 o posterior. Actualiza el servidor (las versiones 8.0 a 8.3 ya no se admiten) y vuelve a conectar.» (el número
+  cambia según tu servidor). Desde la 0.9 la versión mínima es la **8.4**.
+- Con Proxmox 8.4 (la única de la rama 8 que se admite) verás **una sola vez por conexión** el aviso: «La rama 8 de Proxmox ya
+  no recibe actualizaciones de seguridad desde agosto de 2026. ProxLaunch sigue funcionando con la 8.4, pero conviene
+  actualizar a la versión 9.» No impide trabajar. No aparece con Proxmox 9.
+- Si ProxLaunch no puede saber si algún servidor del clúster es x86 o ARM64, lo avisa (ver
+  [Servidores ARM64](#servidores-arm64-experimental)).
 - **Reintentar**: si algún nodo de un clúster no respondió, ver [Un nodo que no responde](#un-nodo-que-no-responde).
 
 ---
@@ -667,7 +716,7 @@ muestra un aviso con el botón **Reintentar** (junto a **Actualizar**), que vuel
 |---|---|---|---|---|---|
 | **Sockets** | Básico | Procesadores virtuales «físicos». | Lista. | 1 | 1 a 4. |
 | **Núcleos por socket** | Básico | Núcleos de cada socket. Debajo ves el total («2 procesadores virtuales en total»). | Entero. | 2 | 1 a 128. |
-| **Tipo de CPU** | Avanzado | Qué procesador «ve» la máquina. | `x86-64-v2-AES`, `x86-64-v2`, `x86-64-v3`, `x86-64-v4`, `host`, `kvm64`. | `x86-64-v2-AES` | `host` rinde más pero impide mover la máquina entre nodos con procesadores diferentes (muestra un aviso). |
+| **Tipo de CPU** | Avanzado | Qué procesador «ve» la máquina. | `x86-64-v2-AES`, `x86-64-v2`, `x86-64-v3`, `x86-64-v4`, `host`, `kvm64` y, desde la 0.9, el grupo **Personalizados del clúster** (ver [CPU personalizadas](#cpu-personalizadas)). | `x86-64-v2-AES` (en un servidor ARM64, `host`) | `host` rinde más pero impide mover la máquina entre nodos con procesadores diferentes (muestra un aviso). El valor por defecto es el mismo en todo ProxLaunch (formulario, perfiles de fábrica y nuevos). |
 | **Memoria (GiB)** | Básico | Memoria RAM. | Número; admite decimales con coma o punto (`0,5` = 512 MiB). | 2 | Mínimo 16 MiB. |
 | **Ballooning** | Avanzado | Deja que el servidor recupere memoria que la máquina no usa. | **Predeterminado de Proxmox**, **Activado**, **Desactivado**. | Predeterminado de Proxmox. | |
 | **Memoria mínima (GiB)** | Avanzado, con Ballooning **Activado** | La memoria que la máquina conserva siempre. | Número. | 1 | Entre 16 MiB y la memoria total. |
@@ -820,7 +869,7 @@ columnas de red. Con el modo básico, lo que hayas fijado en avanzado se sigue a
 
 «Un perfil» guarda solo el hardware (y, de las opciones, las dos marcadas con **Sí**); ver
 [Perfiles de máquina](#perfiles-de-máquina). Ninguna de las opciones nuevas depende de la versión de Proxmox: funcionan
-de la 8.0 a la 9.2.
+de la 8.4 a la 9.2.
 
 ### Cuando una opción está desactivada
 
@@ -967,7 +1016,12 @@ Detalles de la comprobación:
 - **En un clon** solo se evalúan las etiquetas **que añades** respecto a las que ya tiene la plantilla.
 - **Con permisos desconocidos.** Si ProxLaunch no puede saber si tienes `Sys.Modify`, el rechazo pasa a ser solo un
   **aviso** (se añade «No se pudieron leer tus permisos, así que quizá Proxmox sí la acepte.») y no bloquea.
-- **Si no se puede leer la política** (por ejemplo, falta `Sys.Audit`), solo avisa: «No se pudo leer la política de etiquetas
+- **Si tu usuario no tiene `Sys.Audit` en `/`**, Proxmox solo le enseña parte de la política y ProxLaunch no puede fiarse
+  de ella: avisa por cada etiqueta, sin bloquear, con «No se pudo leer la política de etiquetas porque tu usuario no tiene
+  Sys.Audit en «/». Quizá Proxmox rechace la etiqueta «…»; si lo hace, las máquinas se crearán sin ella y el lote no
+  aparecerá en «Lotes en el servidor».» Si quieres poder deshacer el lote desde la app, pide `Sys.Audit` en `/` o que el
+  administrador permita las etiquetas `lote-…` y `proxlaunch`.
+- **Si no se puede leer la política** por otro motivo, solo avisa: «No se pudo leer la política de etiquetas
   del centro de datos, así que no se pudo comprobar si tus etiquetas están permitidas. Si Proxmox las rechaza, la máquina
   no se creará.»
 - **En un lote por filas**, una etiqueta no permitida sale **una sola vez**, con la lista de filas afectadas.
@@ -1080,7 +1134,7 @@ un ISO, tú terminas la instalación desde la consola de Proxmox.
 #### ¿Por qué no puedo usar alguna opción?
 
 Ese botón (o **Ayuda > Qué puedo hacer en este servidor…**) abre una tabla con las cosas que ProxLaunch puede
-hacer (nueve de siempre y, desde la 0.8, cinco más; ver la tabla de abajo), si están disponibles en *tu* servidor y por qué
+hacer (nueve de siempre, desde la 0.8 cinco más y desde la 0.9 tres más; ver la tabla de abajo), si están disponibles en *tu* servidor y por qué
 no:
 
 ![Ventana «Qué puedo hacer en este servidor»: versión «Proxmox VE 9.2 · nodo pve», tabla con las columnas «Qué quieres hacer», «Estado» y «Por qué» y nueve filas (usar un ISO y importar un disco disponibles; subir y descargar ISO, subir y descargar imagen de disco, clonar, fijar el orden de arranque y ampliar el disco no disponibles, cada una con el permiso que falta), el texto «Qué pedirle a tu administrador» y los botones «Copiar texto para el administrador» y «Cerrar».](img/37-capacidades-servidor.png)
@@ -1089,6 +1143,7 @@ no:
 |---|---|
 | Tabla | Una fila por vía: usar un ISO, subir un ISO, descargar un ISO desde una dirección web, importar un disco del servidor, subir una imagen de disco, descargar una imagen de disco, clonar una plantilla, fijar el orden de arranque y ampliar el disco. **Estado**: «Disponible», «Con aviso» o «No disponible». |
 | Filas de la versión 0.8 | **Ver y deshacer mis lotes en el servidor** (necesita `VM.Audit`), **Usar redes virtuales (SDN)** (necesita `SDN.Use` fuera de la zona `localnetwork`), **Activar el firewall de las máquinas** y **Cambiar la red de las copias** (las dos, `VM.Config.Network` en `/vms`) y **Saber si el firewall general está encendido** (`Sys.Audit` en `/`; sin él solo pierdes un aviso). **Estado** de estas filas: «Sí», «No» o «No se pudo comprobar» (cuando ProxLaunch no puede leer tus permisos: puedes intentarlo y, si falta alguno, te dirá cuál). Con la fila de redes virtuales en «No», la explicación lleva el comando `pveum acl modify …` para tu administrador. |
+| Filas de la versión 0.9 | **Saber si un servidor es ARM** (en 8.4 a 9.1 necesita `Sys.Audit`; sin él ProxLaunch trata el servidor como x86), **Usar tarjetas PCI y USB del clúster** (necesita `Mapping.Use` en un mapeo) y **Usar modelos de CPU personalizados** (`Sys.Audit` en `/nodes` en Proxmox 8.4 a 9.1; `Mapping.Use` en `/mapping/cpu/<modelo>` en 9.2). **Estado:** «Sí», «No» o «No lo sé». Con «No», la explicación lleva la orden `pveum acl modify …` con un ejemplo para tu administrador. Ver [Privilegios de la versión 0.9](#privilegios-opcionales-no-forman-parte-del-rol). |
 | **Qué pedirle a tu administrador** | Un texto listo para enviar con lo que falta (permisos, contenido «Import», plantillas). |
 | **Copiar texto para el administrador** | Lo copia al portapapeles. |
 | **Cerrar** | Cierra la ventana. |
@@ -1181,8 +1236,8 @@ Crea la máquina con un disco que ya tiene un sistema instalado (qcow2, vmdk o r
 
 **Qué necesita tu servidor:**
 
-- Proxmox **8.4 o superior**. En 8.0 a 8.3 verás: «Tu Proxmox … no permite importar discos sin ser administrador del
-  servidor. Puedes instalar desde un ISO o clonar una plantilla. Desde la versión 8.4 sí se puede importar.»
+- Proxmox **8.4 o superior**, que desde la 0.9 es la versión mínima de ProxLaunch: esta opción está disponible en todos los
+  servidores que se admiten. (Los mensajes que antes explicaban que Proxmox 8.0 a 8.3 no permitía importar ya no existen.)
 - Un almacenamiento de tipo **directorio, NFS o CIFS** con el contenido **«Import»** activado (lo activa un
   administrador en **Datacenter → Almacenamiento → Editar → Contenido**). Si no hay: «Para importar discos, pide a tu
   administrador que active el contenido «Import» en un almacenamiento de tipo directorio, NFS o CIFS.»
@@ -1194,6 +1249,10 @@ Crea la máquina con un disco que ya tiene un sistema instalado (qcow2, vmdk o r
 | **Sistema operativo** | El asistente (opcional). | Igual que en ISO. | Sin asistente. | |
 
 Nota de la ventana: «El primer disco de la máquina será la copia del disco importado.»
+
+**¿Vienes de libvirt/KVM (virt-manager, `virsh`)?** En este mismo origen hay un botón **Rellenar desde un XML de libvirt…**
+(y el menú **Archivo > Importar desde libvirt…**) que lee la descripción de tu máquina y rellena el formulario por ti, incluidos
+varios discos. Se explica en [Migrar una máquina desde libvirt](#migrar-una-máquina-desde-libvirt).
 
 **Qué discos no se pueden importar.** ProxLaunch revisa el archivo antes de subirlo y te dice por qué no sirve: depende
 de otro archivo (un disco base), está cifrado, está formado por varios archivos, es una **OVA** («Un archivo OVA no se
@@ -1782,9 +1841,8 @@ Se abre desde **Archivo > Crear plantilla desde imagen cloud…** (ver [el menú
 
 ### Cuándo está disponible
 
-- **Proxmox 8.4 o superior.** Antes de la 8.4 Proxmox no permite subir imágenes de disco al contenido «Importar» del
-  almacenamiento. En una versión anterior la opción del menú sale desactivada, con la ayuda «Necesita Proxmox 8.4 o una
-  versión posterior.»
+- **Proxmox 8.4 o superior.** Es la versión mínima de ProxLaunch desde la 0.9, así que está disponible en todos los
+  servidores que se admiten (antes de la 8.4 Proxmox no permite subir imágenes de disco al contenido «Importar»).
 - **Un almacenamiento con el contenido «Importar»** en el nodo (de tipo directorio, NFS o CIFS). Si no hay: «Ningún
   almacenamiento de este nodo admite el contenido «Importar». Pide al administrador que lo active (Centro de datos →
   Almacenamiento) en uno de tipo directorio, NFS o CIFS.»
@@ -2035,7 +2093,7 @@ bridge: eliges su nombre en la lista **Red**.
 *Ejemplo:* el administrador creó la VNet `prod` en la zona `dc1`, con la VLAN 20 ya incluida. En el formulario eliges `prod`
 y la máquina queda en esa red, sin que tú tengas que saber qué zona ni qué VLAN hay detrás.
 
-![Tabla «Red» del formulario en modo avanzado con tres tarjetas: net0 en vmbr0; net1 en «prod — Producción» con VLAN 30; net2 en «lab — Pruebas», con la VLAN desactivada y el aviso «Esta red virtual no admite VLAN (no es «vlanaware»). La VLAN ya viene definida en la propia red virtual.»](img/80-redes-con-vnets.png)
+![Tabla «Red» del formulario en modo avanzado con tres tarjetas: net0 en vmbr0; net1 en «prod — Producción» con VLAN 30; net2 en «lab — Pruebas», con la VLAN desactivada y el aviso «net2: Esta red virtual no admite VLAN (no es «vlanaware»).»](img/80-redes-con-vnets.png)
 
 *La tabla **Red** con dos redes virtuales: se ven por su nombre y su alias, sin la zona.*
 
@@ -2058,8 +2116,7 @@ y la máquina queda en esa red, sin que tú tengas que saber qué zona ni qué V
   Puede que no haya ninguna o que tu usuario no tenga permiso para usarlas. Pide al administrador el permiso «SDN.Use» en la
   zona (/sdn/zones/<zona>) o en la red virtual que quieras usar. Si la acaba de crear, pídele también que aplique la
   configuración de SDN.»
-- **Versión de Proxmox.** Desde la 8.1 el SDN viene incluido. En la **8.0** solo hay redes virtuales si el administrador
-  instaló el paquete `libpve-network-perl` en cada nodo; si no, ProxLaunch lo explica y puedes seguir usando bridges.
+- **Versión de Proxmox.** El SDN viene incluido en todas las versiones que ProxLaunch admite (8.4 o posterior).
 - **Si no se pudo leer.** «No se pudieron leer las redes virtuales (SDN) del nodo pve2; solo se muestran los bridges.» No
   bloquea: sigues pudiendo usar los bridges.
 - **VLAN.** Con una VNet que **no** es *vlanaware* el campo **VLAN** se desactiva y se vacía («Esta red virtual no admite VLAN
@@ -2124,7 +2181,7 @@ tarjeta (la «matrícula» de la tarjeta: un identificador único que usan el ro
 en las 4 copias la segunda esté en la VNet `prod`, VLAN 20, y añadirles una tercera en `vmbr0`. Eliges **Personalizar la red
 de las copias**, cambias la red de `net1` y pulsas **Añadir tarjeta** (aparece `net2`).
 
-![Grupo «Red de las copias» con «Personalizar la red de las copias» marcada: una tabla con las columnas Interfaz, Red, Tarjeta, VLAN, MTU y Límite (MB/s), la tarjeta net1 cambiada a la red «prod — Producción» con VLAN 20 y MTU 1400, net0 en vmbr0 con MTU 1500 y net2 en vmbr0 con MTU «Heredar», las casillas «Generar una MAC nueva» sin marcar, los botones «Quitar» y el botón «Añadir tarjeta».](img/83-seccion-red-clon.png)
+![Grupo «Red de las copias» con «Personalizar la red de las copias» seleccionada: una tabla con las columnas Interfaz, Red, Tarjeta, VLAN, MTU y Límite (MB/s), la tarjeta net1 cambiada a la red «prod — Producción» con VLAN 20 y MTU 1400, net0 en vmbr0 con MTU 1500 y net2 en vmbr0 con MTU «Heredar», las casillas «Generar una MAC nueva» sin marcar, los botones «Quitar» y el botón «Añadir tarjeta».](img/83-seccion-red-clon.png)
 
 *El grupo **Red de las copias** con la tarjeta `net1` cambiada. Las columnas MTU y Límite solo se ven en modo avanzado.*
 
@@ -2138,7 +2195,7 @@ de las copias**, cambias la red de `net1` y pulsas **Añadir tarjeta** (aparece 
 - **Por defecto no se toca nada.** El modo **Como la plantilla** (el valor por defecto) deja la red exactamente como en 0.7.
 - **Privilegio.** `VM.Config.Network` en `/vms` (ya está en el rol). Sin él, **Personalizar la red de las copias** queda
   desactivado con el motivo; si ya lo habías elegido, vuelve a **Como la plantilla** con un aviso.
-- **Versión.** Proxmox 8.0 o posterior (todas las admitidas).
+- **Versión.** Todas las admitidas (Proxmox 8.4 o posterior).
 - **Cómo se aplica.** ProxLaunch **clona** la plantilla y **después** lee la configuración de la copia y le envía los
   cambios de red de una sola vez, partiendo de lo que la copia **ya tiene**. Así la tarjeta **conserva la MAC que la copia ya
   recibió** y solo cambia lo que tú pediste. Si ese último paso falla, la máquina **existe** y no se enciende: ves «Se creó,
@@ -2321,6 +2378,493 @@ traía firewall y reglas; las copias las heredan y se sumará el grupo que elija
 
 ---
 
+## Migrar una máquina desde libvirt
+
+**libvirt** es el programa que usan **virt-manager** y la orden **`virsh`** para manejar máquinas **KVM** en un servidor Linux
+que no es Proxmox. Cada máquina de libvirt se describe en un archivo **XML**. Si tienes máquinas así y quieres pasarlas a
+Proxmox, ProxLaunch **lee ese XML, te enseña qué se puede trasladar y qué no, y rellena el formulario por ti**. Tú revisas el
+resultado, subes los discos y creas la máquina como siempre.
+
+Dos ideas que conviene tener claras desde el principio:
+
+- **ProxLaunch no se conecta a libvirt ni ejecuta nada en tu equipo.** Nunca lanza `virsh` ni `qemu-img`. Solo **lee el archivo
+  XML** que tú eliges y te **muestra órdenes de texto** (con un botón **Copiar**) para que las ejecutes tú, en el servidor
+  de libvirt, cuando haga falta.
+- **Los discos los conviertes y los subes tú.** El XML dice qué discos tiene la máquina, pero no los contiene. ProxLaunch te
+  ayuda a elegir (o subir) la imagen de cada disco, igual que en [Usar un disco existente](#usar-un-disco-existente-importar).
+
+![Ventana «Importar desde libvirt» con un archivo XML leído: la lista «Servidor de destino» y la casilla «Conservar la MAC de origen» (desmarcada), la tabla «Concepto · En libvirt · En Proxmox · Estado» con filas como Nombre, Memoria, Tipo de CPU, Arranque y Discos, cada una con su estado («✔ Migrado», «⚠ Aproximado», «– No se migra») y, debajo, el recuadro de avisos y los botones «Cancelar» y «Rellenar el formulario».](img/86-libvirt-vista-previa.png)
+
+*La vista previa de una máquina de libvirt. Nada cambia en el formulario hasta que pulsas **Rellenar el formulario**.*
+
+### Palabras que conviene conocer
+
+| Palabra | Qué es, con un ejemplo |
+|---|---|
+| **libvirt / KVM** | libvirt es el programa que gestiona máquinas KVM (virtualización de Linux). *Ejemplo:* la máquina que ves en virt-manager. |
+| **XML de la máquina** | Un archivo de texto con la configuración de **una** máquina: memoria, procesadores, discos, redes… *Ejemplo:* `app-linux-ejemplo.xml`. |
+| **`virsh dumpxml`** | La orden que genera ese archivo. *Ejemplo:* `virsh dumpxml --inactive app-linux-ejemplo > maquina.xml`. |
+| **Imagen de disco** | El archivo que contiene el disco (qcow2, raw o vmdk). *Ejemplo:* `app-sistema.qcow2`. |
+| **Backing file (disco «en capas»)** | Un disco qcow2 que no está completo: depende de otro archivo base. Proxmox no lo admite; hay que **aplanarlo** a un solo archivo. |
+| **Snapshot interno** | Una «foto» del disco guardada dentro del mismo archivo. Al importar solo se copia el estado actual: **las fotos se pierden**. |
+| **NVRAM** | La memoria donde el arranque UEFI guarda con qué disco arrancar. No se traslada; Proxmox crea una nueva. |
+| **TPM** | Un chip virtual de seguridad (Windows 11 lo pide). Se crea uno **nuevo y vacío**: no se traslada lo que había dentro. |
+| **MAC** | La «matrícula» de una tarjeta de red (por ejemplo `52:54:00:12:34:56`). Ver [la dirección MAC](#la-dirección-mac-conservarla-o-no). |
+
+### Qué necesitas
+
+- Una **conexión lista** a un servidor Proxmox. Sin ella la opción sale desactivada: «Conéctate a un servidor para traer una
+  máquina de libvirt.» También se desactiva si tienes abierto un [lote por filas](#lote-por-filas) o hay otro asistente o
+  trabajo en marcha.
+- **El XML de la máquina.** Se genera en el servidor de libvirt (ver el apartado siguiente).
+- **Los discos**, convertidos a **un solo archivo** y subidos al servidor Proxmox (o listos en tu equipo para subirlos desde
+  ProxLaunch). Se necesitan los mismos permisos y el mismo almacenamiento con contenido «Import» que para
+  [importar un disco](#usar-un-disco-existente-importar): ya están en el rol.
+- Proxmox 8.4 o posterior (la versión mínima de ProxLaunch).
+
+### Cómo obtener el XML y preparar los discos
+
+Todo esto se hace **en el servidor de libvirt**, no en ProxLaunch. El asistente tiene un enlace **Cómo obtener el XML** que
+muestra estas cuatro órdenes con un botón **Copiar** al lado de cada una (solo copian el texto al portapapeles; no las
+ejecutan):
+
+| Orden | Para qué sirve |
+|---|---|
+| `virsh dumpxml --inactive nombre-de-la-maquina > maquina.xml` | Guarda la descripción de la máquina en un archivo. **No uses `--security-info`**: añadiría las contraseñas al archivo. |
+| `virsh domblklist nombre-de-la-maquina` | Lista los discos de la máquina y los archivos que usan. |
+| `qemu-img info --backing-chain disco.qcow2` | Comprueba si un disco depende de otra imagen. Si salen **varios archivos**, hay que aplanarlo. |
+| `qemu-img convert -O qcow2 entrada.qcow2 salida.qcow2` | **Aplana** el disco en un solo archivo, listo para subirlo a Proxmox. |
+
+![Ventana «Importar desde libvirt» con el enlace «Cómo obtener el XML» abierto: las cuatro órdenes (virsh dumpxml --inactive nombre-de-la-maquina > maquina.xml, virsh domblklist, qemu-img info --backing-chain y qemu-img convert) con su explicación y un botón «Copiar» junto a cada una.](img/87-libvirt-como-obtener-xml.png)
+
+*Cada orden se puede copiar con su botón **Copiar**. ProxLaunch nunca las ejecuta.*
+
+Consejos:
+
+- **Apaga la máquina original** antes de copiar sus discos: una copia hecha con la máquina encendida puede quedar
+  inconsistente.
+- Si la máquina tiene **instantáneas o discos «en capas»**, aplana el disco con `qemu-img convert` (sin la opción `-B`).
+- Un disco **raw** o **vmdk** también sirve, pero ProxLaunch no puede comprobar si depende de otro archivo; si Proxmox lo
+  rechaza, aplánalo.
+- El XML **no debe llevar contraseñas**. ProxLaunch nunca lee la contraseña de la consola (VNC o SPICE) que pueda traer el
+  archivo, pero tú no compartas ese archivo.
+
+### Paso a paso
+
+1. Abre el asistente con **Archivo > Importar desde libvirt…**, o con el botón **Rellenar desde un XML de libvirt…** del
+   origen **Usar un disco existente**. Se abre la ventana **Importar desde libvirt**: «Elige el archivo XML de una máquina de
+   libvirt (la que genera «virsh dumpxml»). Aquí solo se revisa: el formulario no cambia hasta que pulses «Rellenar el
+   formulario». Nada del archivo se guarda.»
+2. Pulsa **Elegir archivo XML…** y elige tu `maquina.xml`. Mientras lo lee verás «Leyendo el archivo…». Se lee **solo ese
+   archivo**, de hasta 4 MiB.
+3. Elige el **Servidor de destino** (los nodos del formulario; en un clúster, el que usarás). Sirve para comprobar el tipo de
+   procesador y las redes.
+4. Decide si marcas **Conservar la MAC de origen** (por defecto está **desmarcada**; ver
+   [la dirección MAC](#la-dirección-mac-conservarla-o-no)).
+5. Revisa la **vista previa** (ver abajo). Si todo está bien, pulsa **Rellenar el formulario**. Si el formulario ya tenía datos
+   tuyos, ProxLaunch pregunta antes (**Reemplazar lo que escribiste**): «El formulario ya tiene datos tuyos. Al rellenarlo se
+   reemplazan el nombre, la CPU, la memoria, los discos y las redes por los de la máquina de libvirt.» **Reemplazar** o
+   **Cancelar**.
+6. En la ventana principal verás «Formulario rellenado desde libvirt. Elige la imagen de cada disco.» Falta **elegir la imagen
+   de cada disco** (ver [Una imagen por disco](#una-imagen-por-disco)) y revisar el resto.
+7. Pulsa **Crear máquina** como siempre. Antes verás el [resumen](#el-resumen-con-lo-nuevo-de-la-versión-09).
+
+### La vista previa: qué se traslada y qué no
+
+La tabla tiene cuatro columnas: **Concepto**, **En libvirt**, **En Proxmox** y **Estado**. El estado se escribe con palabras y
+un símbolo (no depende solo del color):
+
+| Estado | Qué significa |
+|---|---|
+| **✔ Migrado** | Se traslada tal cual. |
+| **⚠ Aproximado** | Se traslada con un cambio o una aproximación; lee el aviso. Ejemplo: un modelo de CPU sin equivalente exacto. |
+| **– No se migra** | Proxmox no puede o ProxLaunch no lo traslada; **se pierde** salvo que lo repongas a mano. Ejemplo: la pantalla remota, el sonido. |
+| **✖ Bloquea** | Hay algo que impide rellenar. **Rellenar el formulario** queda desactivado y la ventana te dice «Rellenar el formulario» no está disponible por esto: con cada motivo, a la vista (no solo al pasar el ratón). |
+
+Debajo de la tabla, un recuadro reúne los **avisos y explicaciones** de cada fila. Si cambias el **Servidor de destino** o la
+casilla de la MAC, la tabla se recalcula.
+
+Qué se traslada y qué no, en llano:
+
+| En libvirt | En Proxmox |
+|---|---|
+| **Nombre** | Nombre de la máquina, limpiado para que sea un nombre válido (espacios a guiones, sin símbolos raros). *Ejemplo:* «Web Server #1 (prod)» pasa a `Web-Server-1-prod`. Si no queda nada válido, `migrada`. |
+| **Memoria** | La misma, redondeada hacia arriba a MiB. Mínimo 16 MiB. |
+| **Procesadores** | Sockets y núcleos. Si la máquina usaba hilos (hyper-threading), se multiplican los núcleos y te avisa. |
+| **Tipo de CPU** | `host` si usaba «host-passthrough» (avisa: no permite mover la máquina entre servidores distintos). Un modelo concreto sin equivalente exacto pasa a la CPU por defecto o a una parecida (**Aproximado**). Las opciones avanzadas de CPU **no se trasladan**. |
+| **Arranque** | UEFI (OVMF) si la máquina arrancaba con UEFI; si no, SeaBIOS. La **NVRAM no se traslada**. |
+| **TPM** | Se activa un TPM v2.0 **nuevo y vacío**. |
+| **Discos** | Un disco de Proxmox por cada disco de libvirt, con su tipo de conexión (VirtIO, SCSI, SATA, IDE). Ver [Una imagen por disco](#una-imagen-por-disco). Los CD y disquetes **no se trasladan**. |
+| **Tarjetas de red** | Una tarjeta por cada una de libvirt (VirtIO, o e1000 si la origen lo era), con VLAN, MTU y límite de velocidad si los traía. La red (bridge) la eliges tú. |
+| **Sistema operativo** | Se propone Linux, Windows 10, Windows 11 u «Otro», según lo que diga el XML. Si no está claro, se marca **Aproximado** y puedes cambiarlo. |
+| **Agente de la máquina** | Se activa el agente invitado si el XML lo traía. |
+| Pantalla remota, sonido, vigilante (watchdog), generador de números, consolas serie… | **No se migra.** |
+| Tarjetas PCI o dispositivos USB físicos (`hostdev`) | **No se migra.** Si necesitas uno, usa [Hardware del clúster](#hardware-del-clúster-y-cpu-personalizadas) (necesita que tu administrador haya creado un mapeo). |
+
+**Un XML que ProxLaunch no acepta.** Estos son los mensajes de la lectura, y qué hacer:
+
+| Mensaje | Qué hacer |
+|---|---|
+| El archivo es demasiado grande para ser la descripción de una máquina (…). El límite es de 4 MiB. ¿Es el archivo correcto? | Elige el XML de la máquina, no un disco ni otro archivo. |
+| El archivo contiene instrucciones que ProxLaunch no acepta por seguridad (DOCTYPE o ENTITY). Un XML normal de libvirt no las trae; vuelve a generarlo con «virsh dumpxml». | Genera el XML de nuevo con `virsh dumpxml`. |
+| No pude leer el archivo como la descripción de una máquina de libvirt (…). Genera uno nuevo con «virsh dumpxml --inactive nombre > maquina.xml». | El archivo está incompleto, mal formado o no es un XML de libvirt. |
+| Esta máquina no es de tipo KVM (…); ProxLaunch solo sabe traer máquinas KVM. | Máquinas Xen, LXC, etc. no se pueden traer. |
+| La máquina es … pero el servidor … es …. Elige un servidor del mismo tipo. | La máquina es de otra arquitectura (por ejemplo ARM64 y el servidor es x86). Elige otro **Servidor de destino**. |
+| Esta máquina usaba emulación completa (sin KVM). En Proxmox se creará con KVM y puede comportarse distinto. | Aviso; revisa que arranque. |
+
+**Avisos que verás en las filas** (casi todos en **Aproximado** o **No se migra**; ninguno impide rellenar):
+
+- «La memoria de arranque (NVRAM) no se traslada. Si la máquina no arranca, entra al menú UEFI (Esc al arrancar) y añade la
+  entrada de arranque, por ejemplo \EFI\ubuntu\shimx64.efi.»
+- «El TPM se crea nuevo (v2.0); su contenido no se traslada (BitLocker y claves guardadas se pierden).»
+- «La CPU «…» no tiene equivalente exacto en Proxmox; uso «…». Las opciones avanzadas de CPU no se trasladan.»
+- «El tipo de disco «…» no existe en la app; uso «…». En Windows necesitas los drivers VirtIO.» (también para una tarjeta de
+  red de un modelo antiguo).
+- «No estoy seguro del sistema operativo («…»). Elige el tipo correcto en la lista.»
+- «Estos elementos no se trasladan: …. Si necesitas una tarjeta PCI o USB, usa «Hardware del clúster».»
+- «Este archivo contiene contraseñas (VNC/SPICE). No las he leído; no compartas el archivo y, si lo subiste a algún sitio,
+  cámbialas.»
+
+**Redes.** Si en el servidor de destino existe un bridge con **el mismo nombre** que usaba la máquina (por ejemplo `vmbr0`),
+se propone ya elegido. Si no, la tarjeta queda **sin red** y **Crear** no se habilita hasta que elijas una. Dos casos
+frecuentes: «La tarjeta 0 era la red NAT de libvirt, que Proxmox no tiene. Elige un bridge o una red virtual del servidor.» y
+«La tarjeta 0 usaba una conexión directa a la tarjeta física (macvtap), que Proxmox no tiene. Elige un bridge del servidor.»
+
+### Una imagen por disco
+
+Cada disco de la máquina de libvirt es una fila de la tabla de **Discos** del formulario. El primero (o el marcado como de
+arranque) es el **disco del sistema**: su imagen se elige con **Elegir disco…**, como siempre. Para los demás aparece el
+apartado **Imagen de cada disco que no es el del sistema**, con una fila por disco: su nombre (por ejemplo «Disco 2
+(virtio1)»), la imagen elegida y dos controles:
+
+| Control | Qué hace |
+|---|---|
+| **Elegir imagen…** | Abre el catálogo de imágenes del servidor, con **Subir desde mi equipo…** y **Descargar en el servidor…** (ver [Transferencias](#transferencias-subir-y-descargar-archivos)). |
+| **Crear vacío** | En lugar de importar una imagen, crea un disco **nuevo y vacío** del tamaño que tenga la fila. Útil para un disco de datos que ya no necesitas copiar. Elegir una imagen y marcar **Crear vacío** se excluyen: manda la última elección. |
+
+Mientras no elijas, la fila dice «Sin imagen elegida» y la máquina **no se puede crear**: «Elige la imagen del disco «…» (o
+márcalo «Crear vacío» o «No migrar»). El disco del sistema no se puede omitir.» Una vez elegida se ve su nombre; con **Crear
+vacío**, «Se creará vacío».
+
+![Formulario en el origen «Usar un disco existente» tras rellenar desde libvirt: la imagen del disco del sistema «debian-12-generic.qcow2» y, en «Imagen de cada disco que no es el del sistema», dos filas: «Disco 2 (virtio1)» con la imagen «ubuntu-24.04-cloudimg.qcow2» y «Disco 3 (virtio2)» con el texto «Se creará vacío» y la casilla «Crear vacío» marcada.](img/88-libvirt-imagenes-por-disco.png)
+
+*Un disco con su imagen y otro que se creará vacío.*
+
+- **ProxLaunch propone la imagen por ti** cuando en el almacenamiento «Import» del servidor **ya hay un archivo con el mismo
+  nombre** que el de la máquina original (por ejemplo `app-datos.qcow2`). Queda elegida, pero **compruébalo**: ProxLaunch no
+  puede mirar dentro de una imagen que ya está en el servidor y lo dice («No puedo comprobar si «…» depende de otra imagen. Si
+  Proxmox la rechaza, aplánala con: qemu-img convert -O qcow2 origen.qcow2 plano.qcow2.»).
+- **Varios discos.** Se admiten todos los que quepan en cada tipo de conexión: hasta 31 SCSI, 16 VirtIO, 6 SATA y 4 IDE. Si no
+  caben: «Hay N discos … y ese tipo admite como máximo M. Cambia el tipo de algunos discos.»
+- **Espacio.** ProxLaunch suma el tamaño de **todos** los discos y avisa si no caben en el almacenamiento destino: «Los discos
+  necesitan … y en «…» quedan ….»
+- **Discos que no son archivos.** Un disco de red, un directorio o una unidad de bloque no se puede traer: «El disco «…» es de
+  tipo …; ProxLaunch solo sabe traer discos que sean archivos. Copia su contenido a un archivo y elige ese.»
+- **Un lote de varias copias** usa **las mismas imágenes** en cada copia (cada copia las importa por separado, así que ocupa
+  espacio propio).
+
+**Imágenes con problemas.** Al elegir una imagen **qcow2 de tu equipo** ProxLaunch lee solo su cabecera y avisa:
+
+| Mensaje | Qué significa | Qué hacer |
+|---|---|---|
+| Este disco depende de otro archivo (backing file) y Proxmox no lo admite. Aplánalo antes con: qemu-img convert -O qcow2 origen.qcow2 plano.qcow2 (sin la opción -B). | **Bloquea.** El disco está «en capas». | Aplánalo con la orden indicada y elige el archivo nuevo. |
+| Este disco tiene fotos (snapshots) internas. Solo se copia el estado actual; las fotos se pierden. | Aviso; se puede seguir. | Nada, o guarda aparte lo que necesites. |
+| libvirt indica que el disco «…» puede depender de otra imagen. Asegúrate de usar una imagen aplanada. | Aviso del XML. | Comprueba con `qemu-img info --backing-chain`. |
+
+### La dirección MAC: conservarla o no
+
+La **MAC** identifica a una tarjeta de red. **Por defecto la máquina nueva recibe una MAC nueva**, que genera Proxmox; es lo
+más seguro. Marca **Conservar la MAC de origen** solo si necesitas que la máquina conserve la misma (por ejemplo, porque tu
+DHCP le da una IP según su MAC o por una licencia atada a la tarjeta).
+
+- Al marcarla verás: «Apaga la máquina original antes de encender la nueva: dos máquinas con la misma MAC en la misma red se
+  estorban.»
+- **Solo con una copia.** Con varias copias se repetiría la MAC: «No puedes conservar la MAC si creas N copias (se repetiría).
+  Crea una sola o usa una MAC nueva.» La casilla sale desactivada.
+- Cada tarjeta que trae MAC en el XML tiene su casilla **Conservar la MAC de origen** en la tabla de **Redes** del formulario
+  (con la MAC entre paréntesis, por ejemplo `52:54:00:12:34:56`); puedes decidir tarjeta por tarjeta. Sin MAC en el XML, no hay
+  casilla.
+- Formato: `52:54:00:ab:cd:ef` con el primer byte **par**. Si no, «La MAC «…» no es válida (usa el formato 52:54:00:ab:cd:ef y que
+  el primer byte sea par).»
+- Si la MAC ya está en una máquina del clúster que ProxLaunch ha leído, avisa: «La MAC conservada «…» ya la usa la máquina N del
+  clúster. Si la máquina original sigue encendida habrá un conflicto de red.»
+
+### El resumen con lo nuevo de la versión 0.9
+
+El **Resumen** muestra líneas nuevas solo cuando las usas: **Discos importados** («disco 2: copia de «app-datos.qcow2»; disco
+3: vacío»), **MAC conservada** («net0 (52:54:00:12:34:56)»), **Hardware del clúster** (con **Tipo de máquina** `q35` si hay una
+tarjeta PCIe), **CPU** («personalizada «custom-ejemplo»») y, en un servidor ARM64, **Servidor** y **Valores adaptados a
+ARM64**. Si no usas nada de esto, el resumen es el de siempre.
+
+![Resumen de una máquina traída de libvirt con las líneas nuevas de la versión 0.9: «Discos importados» (disco 2: copia de «ubuntu-24.04-cloudimg.qcow2»; disco 3: vacío), «MAC conservada» (net0 con su MAC), «Hardware del clúster» (tarjeta PCI «gpu-ejemplo» con «pcie, pantalla principal» y USB «llave-ejemplo»), «Tipo de máquina» q35 y los avisos correspondientes.](img/93-resumen-fase-d.png)
+
+*El resumen enseña lo que ProxLaunch va a pedir a Proxmox con lo nuevo de la 0.9. Los datos son inventados.*
+
+### Qué se guarda (y qué no)
+
+- **El XML y su contenido no se guardan** en ningún archivo, ni la ruta del archivo. La ruta tampoco se recuerda.
+- Un **lote guardado** de una máquina traída de libvirt lleva las imágenes de cada disco y, si la elegiste, la MAC conservada:
+  se escribe en el **formato 6** (ver [Lote guardado](#lote-guardado-archivo-de-lote)). Ejemplo:
+  [`lote-libvirt.proxlaunch-lote.json`](ejemplos/lote-libvirt.proxlaunch-lote.json).
+- Un **perfil** guarda el hardware (CPU, memoria, tipo de arranque, discos y redes), pero **no** las imágenes, las rutas ni la
+  MAC.
+- El **CSV** no importa XML ni varias imágenes: una fila con origen `importar` usa una sola imagen, como antes.
+
+### Si algo sale mal
+
+- **No arranca después de migrar.** Entra a la consola de la máquina en Proxmox. Con UEFI, la memoria de arranque (NVRAM) es
+  nueva: pulsa **Esc** al arrancar, entra al menú UEFI y añade la entrada de arranque del sistema (por ejemplo
+  `\EFI\ubuntu\shimx64.efi`). En Windows, un disco o una tarjeta de red de tipo VirtIO necesitan los drivers de virtio-win
+  (ProxLaunch lo avisa cuando cambia el tipo de un disco o de una tarjeta).
+- **La red no funciona.** Comprueba que elegiste el bridge correcto y, si conservaste la MAC, que apagaste la máquina original.
+- **Crear no se habilita.** Mira el aviso rojo del formulario: lo más habitual es un disco sin imagen elegida o una tarjeta
+  sin red.
+
+---
+
+## Hardware del clúster y CPU personalizadas
+
+Esta sección reúne dos funciones que dependen de lo que tu administrador haya preparado en Proxmox. Las dos son
+**opcionales**: si no las usas, las máquinas se crean exactamente como en la 0.8.
+
+- **Hardware del clúster:** darle a la máquina una **tarjeta PCI** (por ejemplo, una gráfica) o un **dispositivo USB** (por
+  ejemplo, una llave de licencias) del servidor.
+- **CPU personalizadas:** elegir un tipo de procesador «a medida» que el administrador definió para todo el clúster.
+
+### Palabras que conviene conocer
+
+| Palabra | Qué es, con un ejemplo |
+|---|---|
+| **Mapeo de recursos** | Un nombre que el administrador le pone a una tarjeta PCI o a un dispositivo USB de un servidor, para que **puedas dárselo a una máquina sin ser administrador**. *Ejemplo:* `gpu-ejemplo` (una gráfica) y `llave-ejemplo` (una llave USB de licencias). Se crean en **Datacenter → Mapeo de recursos**. |
+| **PCI / PCIe** | La ranura de la placa donde van las tarjetas (gráficas, tarjetas de red, controladoras). PCIe es la versión moderna; casi todas las gráficas actuales lo son. |
+| **USB** | Un dispositivo conectado por USB al servidor. *Ejemplo:* una llave de licencias. |
+| **Passthrough (paso directo)** | Entregar una pieza física del servidor **entera** a una máquina virtual, para que la use como si fuera suya. Mientras la máquina esté encendida, **nadie más** puede usarla. |
+| **Gráfica principal** | La tarjeta pasa a ser la pantalla de la máquina: necesitas conectar un monitor a la propia tarjeta; la consola de Proxmox deja de mostrar imagen. |
+| **q35** | Un tipo de máquina virtual moderno que las tarjetas PCIe necesitan. ProxLaunch lo pone por ti. |
+| **Migración en vivo** | Mover una máquina **encendida** a otro servidor sin apagarla. Con una tarjeta o un USB asignados normalmente no es posible. |
+| **Modelo de CPU personalizado** | Un procesador «a medida» definido por el administrador para todo el clúster. *Ejemplo:* `custom-ejemplo`. Su nombre siempre empieza por `custom-`. |
+
+### Qué necesita tu cuenta
+
+- El administrador tiene que haber **creado el mapeo** y haberte dado el permiso **`Mapping.Use`** sobre él (rol
+  `PVEMappingUser`). No forma parte del rol `ProxLaunchCreador`. Ver
+  [Privilegios de la versión 0.9](#privilegios-opcionales-no-forman-parte-del-rol).
+- Además, `VM.Config.HWType` (ya está en el rol).
+- **Sin permiso**, ese mapeo aparece **desactivado** en la lista con el motivo («Falta el permiso Mapping.Use en
+  /mapping/pci/gpu-ejemplo»). Si no tienes permiso sobre ninguno, la sección entera queda desactivada con la explicación y
+  se te da la orden que debe ejecutar el administrador. ProxLaunch **solo ve los mapeos sobre los que tienes algún permiso**:
+  si el administrador creó uno y no lo ves, falta el permiso.
+- «Qué puedo hacer en este servidor» tiene la fila **Usar tarjetas PCI y USB del clúster** (y **Usar modelos de CPU
+  personalizados**): **Sí**, **No** o **No lo sé**, con el motivo.
+
+![Ventana «Qué puedo hacer en este servidor» con las tres filas nuevas de la versión 0.9: «Saber si un servidor es ARM», «Usar tarjetas PCI y USB del clúster» y «Usar modelos de CPU personalizados», cada una con su estado y, si algo falta, el permiso y la orden que debe ejecutar el administrador.](img/92-capacidades-fase-d.png)
+
+*Las tres filas de la versión 0.9 en **Qué puedo hacer en este servidor**.*
+
+### El grupo «Hardware del clúster»
+
+Está en el formulario y se ve igual en modo básico y avanzado. Empieza con una explicación («Un mapeo es un nombre que el
+administrador le pone a una tarjeta PCI (por ejemplo, una gráfica) o a un dispositivo USB (por ejemplo, una llave de licencias)
+del servidor, para que puedas dárselo a una máquina sin ser administrador.») y una casilla:
+
+1. Marca **Dar a la máquina tarjetas PCI o USB del clúster**. ProxLaunch lee entonces los mapeos del clúster («Leyendo los
+   mapeos del clúster…»). Se leen **una sola vez por conexión**, solo cuando abres la sección.
+2. Pulsa **Añadir tarjeta PCI** o **Añadir dispositivo USB** y elige un mapeo en la lista (**Elige un mapeo**). Cada mapeo se
+   ve así: `gpu-ejemplo — Tarjeta gráfica de la sala de pruebas (en pve1, pve2)`, con los servidores donde existe.
+3. Marca las opciones que necesite (ver la tabla).
+4. Repite para más dispositivos. **Quitar** borra una fila. **Releer** vuelve a leer los mapeos del clúster.
+
+![Grupo «Hardware del clúster» del formulario: la casilla «Dar a la máquina tarjetas PCI o USB del clúster» marcada, una fila de tarjeta PCI con el mapeo «gpu-ejemplo» y las casillas «Es una tarjeta PCIe» y «Es la gráfica principal» marcadas, una fila USB con «llave-ejemplo», y los botones «Añadir tarjeta PCI», «Añadir dispositivo USB» y «Releer» junto a los avisos.](img/89-seccion-hardware-cluster.png)
+
+*Una gráfica PCIe como pantalla principal y una llave USB. Los nombres son inventados.*
+
+| Opción | Se aplica a | Para qué sirve | Defecto | Notas |
+|---|---|---|---|---|
+| **Es una tarjeta PCIe** | PCI | La tarjeta es PCIe (la mayoría de gráficas modernas). | Desmarcada | Obliga al tipo de máquina **q35**: ProxLaunch lo pone por ti y lo avisa («La tarjeta PCIe necesita el tipo de máquina «q35»; lo pongo yo.»). No existe en servidores ARM64. |
+| **Es la gráfica principal** | PCI | La tarjeta física es la pantalla principal de la máquina. | Desmarcada | Necesita **Es una tarjeta PCIe** («Para usar la tarjeta como gráfica principal, marca también «Es una tarjeta PCIe».»). La consola de Proxmox deja de mostrar pantalla («pongo «sin pantalla virtual»»): conecta un monitor a la tarjeta. |
+| **Mostrar la ROM** | PCI | Enseña a la máquina la ROM de la tarjeta. | **Marcada** | Desmárcala solo si el sistema no arranca o la tarjeta falla al iniciarse. |
+| **Mantener el controlador del servidor** | PCI | El servidor conserva el controlador de la tarjeta mientras la máquina está apagada. | Desmarcada | Solo con **Proxmox 9.1 o posterior** (si no, no se ofrece: «Necesita Proxmox 9.1 o posterior.»). |
+| **USB 3** | USB | Presenta el dispositivo como USB 3 (más rápido). | Desmarcada | Una llave de licencias suele funcionar igual en USB 2. |
+
+**Límites.** Hasta **16 tarjetas PCI** y **5 dispositivos USB** por máquina («Ya tienes 16 tarjetas PCI, el máximo de una
+máquina.»). No puedes elegir el mismo mapeo dos veces en la misma máquina: «El mapeo «…» está dos veces en la misma máquina;
+quita una.»
+
+### Lo que ProxLaunch comprueba
+
+- **Que el mapeo existe en cada servidor del lote.** «El mapeo «gpu-ejemplo» no tiene dispositivo en pve3. Quita esos servidores
+  del lote o elige otro mapeo.» Un mapeo que ya no existe (por ejemplo, al abrir un lote guardado en otro servidor): «El mapeo
+  «…» ya no existe en este servidor. Elige otro.»
+- **Que Proxmox lo da por válido en ese servidor** (la comprobación **por nodo**, que se hace una vez por mapeo y servidor, no
+  una por máquina): «Proxmox dice que el mapeo «…» no es válido en pve1: …. Avisa al administrador.» (suele significar que
+  cambió el hardware del servidor). Si no se pudo comprobar: «No pude comprobar si el mapeo «…» es válido en …. Lo intentaré
+  igualmente al crear la máquina.» No bloquea.
+- **Un dispositivo por máquina encendida.** Una tarjeta física solo puede usarla **una máquina encendida a la vez**. Si el lote
+  tiene más máquinas en un servidor que dispositivos, avisa: «Solo podrán arrancar 2 de las 5 máquinas de pve1 a la vez con el
+  mapeo «gpu-ejemplo»: cada dispositivo lo usa una sola máquina encendida.» Las máquinas se **crean todas**; lo que no cabe es
+  encenderlas a la vez.
+- **Sin migración en vivo:** «Con hardware asignado la máquina no se podrá migrar encendida a otro servidor.» (salvo mapeos que
+  admiten migración en vivo, que la lista marca como «[admite migración en vivo]»).
+- **Permiso:** «Falta el permiso «Mapping.Use» en /mapping/pci/gpu-ejemplo.»
+- **ProxLaunch nunca asigna un dispositivo por su dirección real** (solo mapeos con nombre), porque eso solo lo puede hacer el
+  administrador.
+
+### Plantillas y clones con hardware
+
+- Si **clonas una plantilla que ya trae mapeos**, ProxLaunch avisa: «La plantilla usa mapeos (…); necesitas «Mapping.Use» en
+  ellos y no podrán arrancar dos copias a la vez con el mismo dispositivo.»
+- Si la plantilla trae un dispositivo **asignado directamente** (sin mapeo), **no se puede clonar**: «La plantilla usa
+  dispositivos asignados directamente; solo el administrador puede clonarla. Crea una plantilla con mapeos.»
+- Al clonar, el hardware se aplica **después de clonar**, en un paso aparte («asignar el hardware del clúster»). Si ese paso
+  falla, la máquina queda creada pero **no se enciende**, y puedes usar **Reintentar ajustes**. Causas conocidas: «La plantilla ya
+  usa todas las ranuras PCI o USB que admite una máquina; quita alguna del hardware del clúster o elige otra plantilla.» y «Uno de
+  los mapeos elegidos ya no es válido; revisa el hardware del clúster y reintenta.»
+
+### Si Proxmox lo rechaza al crear o encender
+
+| Mensaje | Qué significa | Qué hacer |
+|---|---|---|
+| No tienes permiso para usar el mapeo «…» (falta «Mapping.Use» en /mapping/pci/…). Pide al administrador que te lo dé. | Falta el permiso. | Pásale al administrador la ruta indicada (ver [Permisos](#privilegios-opcionales-no-forman-parte-del-rol)). |
+| El mapeo «…» no tiene dispositivo en este servidor (…). | El mapeo no existe en el servidor donde se creó la máquina. | Elige otro servidor o mapeo. |
+| El hardware del servidor cambió y el mapeo «…» ya no es válido. Avisa al administrador. | El administrador debe revisar el mapeo. | Avísale. |
+| La tarjeta PCIe del mapeo «…» necesita que la máquina sea de tipo «q35». | La máquina no es q35. | Marca **Es una tarjeta PCIe** o cambia el tipo de máquina. |
+| El dispositivo USB del mapeo «…» ya lo usa otra máquina encendida. | Un USB mapeado solo admite una máquina encendida por servidor. | Apaga la otra o usa otro dispositivo. |
+
+Cuando Proxmox da un texto propio, ProxLaunch lo muestra a continuación («Proxmox dijo: …»), siempre saneado y recortado.
+
+### CPU personalizadas
+
+Con el modo **avanzado**, la lista **Tipo de CPU** gana un grupo **Personalizados del clúster** con los modelos `custom-…` que
+el administrador definió (por ejemplo `custom-ejemplo`). Se leen **por servidor**, solo cuando eliges nodo, y **solo se ofrecen
+los que existen en todos los servidores donde se crearán las máquinas**.
+
+![Lista «Tipo de CPU» desplegada con los tipos fijos (x86-64-v2-AES, x86-64-v3, host, kvm64…) y, debajo, el grupo «Personalizados del clúster» con «custom-ejemplo» y «custom-laboratorio»; «custom-ejemplo» está elegido.](img/90-cpu-personalizada.png)
+
+*La lista **Tipo de CPU** con el grupo **Personalizados del clúster**.*
+
+| Aviso | Qué significa |
+|---|---|
+| «1 modelo no se muestra por no existir en todos los servidores.» (plural: «N modelos no se muestran por no existir en todos los servidores.») | Hay modelos que solo existen en algunos nodos del lote; no se ofrecen para no fallar a mitad. |
+| El clúster no tiene CPUs personalizadas que puedas usar. | No hay ninguna, o falta el permiso. |
+| No pude leer las CPUs personalizadas del servidor; solo se ofrecen los tipos fijos. | Falló la lectura (por ejemplo, un 403). Puedes seguir con los tipos fijos. |
+| En servidores ARM64 de esta versión de Proxmox no se pueden listar las CPUs personalizadas. | Limitación de la versión de Proxmox. |
+| La CPU personalizada «…» no existe en pve2. Elige otra o pide al administrador que la cree. | Pasa al abrir un perfil, un lote guardado o un CSV con un modelo que este clúster no tiene. |
+| No pude leer las CPUs personalizadas del servidor; no puedo asegurar que «…» exista. | Aviso: podrás crear, pero Proxmox puede rechazarlo. |
+
+**Permisos de las CPU personalizadas** (ver [Privilegios de la versión 0.9](#privilegios-opcionales-no-forman-parte-del-rol)):
+
+- **Proxmox 8.4 a 9.1:** `Sys.Audit` en `/nodes` (ya está en el rol) y `VM.Config.CPU` (también).
+- **Proxmox 9.2:** `Mapping.Use` en `/mapping/cpu/<modelo>`. Si falta, Proxmox responde «No tienes permiso para usar la CPU
+  personalizada «…» (falta «Mapping.Use» en /mapping/cpu/…). Pide al administrador que te lo dé.»
+
+Un **perfil** guarda el tipo de CPU (también `custom-…`), pero **no guarda los mapeos** (dependen del clúster). En un CSV se
+escribe en la columna `tipo_cpu`.
+
+### En lotes, CSV y archivos
+
+- **Lote.** Las mismas tarjetas y dispositivos para todas las máquinas del lote. En el **Resumen**, la línea **Hardware del
+  clúster**: «tarjeta PCI «gpu-ejemplo» (pcie, pantalla principal), USB «llave-ejemplo»» y, con PCIe, **Tipo de máquina: q35**.
+- **CSV.** Las columnas `mapeo_pci` y `mapeo_usb` (ids separados por `;`) permiten fijarlo fila por fila (ver
+  [Columnas de hardware del clúster](#columnas-de-hardware-del-clúster)). Ejemplo:
+  [`mvs-hardware-cluster.csv`](ejemplos/mvs-hardware-cluster.csv).
+- **Lote guardado.** Guarda los mapeos y sus opciones en el [formato 6](#lote-guardado-archivo-de-lote).
+- **Perfiles.** No guardan mapeos.
+
+---
+
+## Servidores ARM64 (experimental)
+
+> **Experimental.** ProxLaunch **nunca se ha probado en un servidor ARM64 real**. Lo que se explica aquí funciona *en teoría*
+> y está verificado solo con respuestas simuladas. Puede que la máquina **no arranque**. Si te pasa, mira su consola en Proxmox.
+> No uses esta función para algo importante sin probarla antes.
+
+Los servidores Proxmox casi siempre son **x86** (procesadores Intel o AMD). Existen servidores **ARM64** (también llamados
+**aarch64**, como los procesadores de muchos móviles y de algunos servidores). Una máquina virtual de un tipo **solo funciona
+en un servidor del mismo tipo**, y las ARM64 necesitan un hardware virtual distinto. ProxLaunch lo adapta por ti.
+
+### Palabras que conviene conocer
+
+| Palabra | Qué es, con un ejemplo |
+|---|---|
+| **x86 / x86_64** | El tipo de procesador de casi todos los servidores y PC (Intel, AMD). |
+| **ARM64 / aarch64** | Otro tipo de procesador. Un servidor ARM64 solo ejecuta máquinas ARM64. |
+| **UEFI (OVMF)** | El arranque moderno. En ARM64 es el **único** que existe (no hay SeaBIOS). |
+| **Experimental** | Que aún no se ha probado en un servidor real. |
+
+### Cómo reconoce ProxLaunch un servidor ARM64
+
+Al conectar, ProxLaunch averigua el tipo de procesador de **cada servidor** del clúster, sin que hagas nada. Primero mira lo que
+dice el propio clúster (Proxmox 9.2) y, si no, pregunta al servidor por su sistema. Para esto último necesita el permiso
+**`Sys.Audit`** (ya está en el rol).
+Con Proxmox 9.2 o posterior no le hace falta ese permiso: el clúster solo anuncia la arquitectura de los servidores que no
+son x86, así que un servidor que no la anuncia es x86 y ProxLaunch no avisa.
+
+- En la lista **Nodo destino**, un servidor ARM64 aparece como **pve-arm (ARM64, experimental)**. Uno x86 sale con su nombre
+  de siempre.
+- Si no puede saberlo (falta `Sys.Audit`, el servidor no responde…), lo **trata como x86** y te lo dice: «No pude saber si el
+  servidor … es x86 o ARM (falta el permiso «Sys.Audit»). Lo trato como x86. Si es ARM64, indícalo en Opciones avanzadas.»
+- En el **modo avanzado**, en **Arquitectura de este servidor**, puedes decírselo tú:
+
+| Opción | Qué hace |
+|---|---|
+| **Detectarla automáticamente** (defecto) | ProxLaunch lo averigua. Debajo ves lo que ha encontrado: «Detectada: ARM64 (por el sistema del servidor).», «No pude saber el tipo de procesador del servidor; lo trato como x86. Si es ARM64, elígelo aquí.» |
+| **x86 (Intel o AMD)** | Lo fuerzas a x86. |
+| **ARM64 (experimental, sin probar en un servidor arm64)** | Lo fuerzas a ARM64. Se muestra «Elegida por ti: ARM64.» |
+
+![Formulario con el nodo «pve-arm (ARM64, experimental)» elegido en «Nodo destino» y, en modo avanzado, la lista «Arquitectura de este servidor» en «Detectarla automáticamente» con el texto «Detectada: ARM64», el aviso «ARM64: experimental, sin probar en un servidor arm64» y los valores adaptados (tipo de arranque UEFI, tipo de CPU host, conexión de disco SCSI).](img/91-nodo-arm64-experimental.png)
+
+*Un nodo ARM64 elegido: ProxLaunch muestra la marca «experimental» y adapta el hardware.*
+
+### Qué adapta ProxLaunch en un servidor ARM64
+
+Cuando el servidor elegido es ARM64, ProxLaunch cambia **automáticamente** estos valores y te lo cuenta, en un aviso y en el
+resumen: «Cambié estos valores porque el servidor es ARM64: tipo de arranque: seabios → ovmf; tipo de CPU: x86-64-v2-AES →
+host. Revisa que te sirvan.» (así lo muestra la aplicación, con los nombres técnicos de cada valor)
+
+| Valor | En x86 (como siempre) | En ARM64 |
+|---|---|---|
+| **Tipo de arranque** | SeaBIOS o UEFI | **Siempre UEFI**, sin tipo de máquina `q35` (se omite). |
+| **Tipo de CPU** | `x86-64-v2-AES` y los demás | **`host`** por defecto (también `max`). Los tipos x86 no existen. |
+| **Discos** | SCSI, VirtIO, SATA, IDE | Solo **SCSI** (`virtio-scsi-single`) o **VirtIO**. No hay SATA ni IDE. |
+| **CD (ISO, drivers, cloud-init)** | En IDE | Como un disco **SCSI**; el de cloud-init, en `scsi1`. |
+| **Tarjeta de red** | VirtIO o e1000 | Solo **VirtIO**. |
+| **Pantalla** | La de siempre | Pantalla virtual **VirtIO**. |
+| **TPM** | v2.0 | v2.0 (igual). Las claves de arranque seguro se preparan solo para Windows. |
+| **Tarjetas PCIe** | Sí | **No**: en ARM64 no existe el tipo de máquina q35. |
+
+- **Opciones que desaparecen.** En un servidor ARM64 la interfaz **oculta** las opciones IDE, SATA, SeaBIOS, los tipos de CPU
+  x86 y la tarjeta e1000, y las que quedan fijas se ven desactivadas con el motivo («en ARM64 el firmware es siempre UEFI»). En
+  **Hardware del clúster**, **Es una tarjeta PCIe** y **Es la gráfica principal** salen desactivadas: «No disponible en
+  servidores ARM64: allí no existe el tipo de máquina «q35».»
+- **Un valor que no se puede adaptar** es un error: «…» no existe en servidores ARM64 (…). Elige …. Por ejemplo, un CSV que
+  pida `sata` o `seabios` para una fila de un nodo ARM64, o una tarjeta PCIe.
+- **Perfiles, lotes guardados y CSV hechos para x86** se abren en un nodo ARM64 **sin error**: los valores x86 se adaptan en
+  memoria y se listan en el aviso de arriba. **El archivo no cambia** hasta que lo guardes tú.
+- **CPU personalizadas** en ARM64: ver [CPU personalizadas](#cpu-personalizadas).
+
+### Lo que no se mezcla
+
+- **Un lote usa servidores de un solo tipo.** Si eliges nodos x86 y ARM64 a la vez: «Un lote no puede mezclar servidores x86 y
+  ARM64 (pve1 es x86; pve-arm es ARM64). Crea un lote para cada tipo.» En el reparto automático, los nodos de otro tipo no se
+  eligen; con nodos elegidos a mano, es un error; y en un CSV el error se asocia a la fila que corresponde.
+- **No se clona una plantilla de otro tipo.** «La plantilla «…» es de un servidor x86 y no se puede clonar en pve-arm (ARM64).
+  Elige un servidor del mismo tipo.» (y a la inversa). Para clonar en ARM64 hace falta una plantilla creada en un servidor ARM64.
+- **Importar desde libvirt:** una máquina ARM64 solo se puede traer a un servidor ARM64 («La máquina es aarch64 pero el servidor
+  pve1 es x86_64. Elige un servidor del mismo tipo.»). Una máquina de 32 bits (i686) se crea como x86 de 64 bits.
+
+### Avisos de la 0.9 sobre ARM64
+
+| Dónde | Mensaje |
+|---|---|
+| Al comprobar y en el formulario | «El servidor pve-arm es ARM64. Esto es experimental: ProxLaunch aún no se ha probado en un servidor ARM64 y la máquina podría no arrancar. Si pasa, mira la consola en Proxmox.» |
+| Resumen e informe del lote | «ARM64: experimental, sin probar en un servidor arm64». |
+| Ayuda «?» de **Arquitectura de este servidor** | Explica qué es ARM64 y qué hacer si no arranca. |
+
+Si tu máquina ARM64 **no arranca**: abre su consola en Proxmox y mira qué dice; comprueba que el disco, el ISO y el tipo de
+arranque son los de la tabla anterior. Cuéntale a tu administrador lo que ves en la consola.
+
+---
+
 ## Transferencias: subir y descargar archivos
 
 Si el ISO o el disco que necesitas no está en el servidor, puedes **subirlo desde tu equipo** o hacer que **el servidor
@@ -2381,9 +2925,8 @@ Aquí el propio servidor de Proxmox descarga el archivo, sin pasar por tu equipo
 Textos fijos de la ventana: «La descarga la hace el servidor: una vez empezada, no se puede cancelar desde ProxLaunch.
 Solo puedes dejar de esperar.» y «La dirección quedará en el registro de tareas del servidor.»
 
-Descargar desde una dirección web necesita Proxmox **8.2 o superior** y el permiso `Sys.AccessNetwork` en el nodo. En
-8.0 y 8.1 exige permisos de administrador y ProxLaunch te lo explica: «Descargar desde una dirección web exige permisos
-de administrador en esta versión de Proxmox. Descarga el archivo en tu equipo y súbelo.»
+Descargar desde una dirección web necesita el permiso `Sys.AccessNetwork` en el nodo; está disponible en todas las
+versiones que ProxLaunch admite (8.4 o posterior).
 
 ### Dejar de esperar
 
@@ -2913,13 +3456,13 @@ exportarlos a CSV y deshacerlos**.
 ¿Cómo los reconoce? ProxLaunch marca cada máquina que crea con **dos etiquetas**: `proxlaunch` y `lote-<código>` (por
 ejemplo `lote-ab12cd34`). El **código** de 8 caracteres identifica al lote. La ventana busca esas etiquetas en el servidor.
 
-![Menú «Archivo» desplegado con «Conectar...», «Cerrar sesión», «Ver el último lote», «Archivos subidos en esta sesión…», «Lotes en el servidor…», «Crear plantilla desde imagen cloud…» y «Salir».](img/85-menu-lotes-servidor.png)
+![Menú «Archivo» desplegado con «Conectar...», «Cerrar sesión», «Ver el último lote», «Archivos subidos en esta sesión…», «Lotes en el servidor…», «Crear plantilla desde imagen cloud…», «Importar desde libvirt…» y «Salir».](img/85-menu-lotes-servidor.png)
 
 *El menú **Archivo** con la entrada nueva **Lotes en el servidor…**.*
 
 ### Cuándo está disponible
 
-- **Archivo > Lotes en el servidor…** se activa con una conexión lista y Proxmox 8.0 o posterior (todas las admitidas). Sin
+- **Archivo > Lotes en el servidor…** se activa con una conexión lista (en todas las versiones de Proxmox admitidas). Sin
   conexión: «Conéctate a un servidor para ver sus lotes.»
 - Necesitas **`VM.Audit`** en `/vms` para ver las máquinas (ya está en el rol). Sin él la lista sale vacía: «No ves ninguna
   máquina en este servidor. Puede que no haya ninguna o que tu usuario no tenga el permiso «VM.Audit». Pide al
@@ -3019,7 +3562,7 @@ Nunca se decide por el nombre de la máquina. Cada máquina que no cumple sale *
    **desactivado** hasta que el texto coincide con el código (no distingue mayúsculas ni espacios en los extremos). **Cancelar**
    es el botón predeterminado (y el de **Esc**).
 
-![Ventana «Confirmar el borrado» con el aviso en rojo «Se borrarán 3 máquinas del lote e5f60718 y sus discos. No se puede deshacer.», el texto «Escribe el código del lote (e5f60718) para confirmar», un campo de texto y los botones «Borrar definitivamente» (desactivado) y «Cancelar».](img/79-inventario-deshacer-codigo.png)
+![Panel de confirmación dentro de la ventana «Lotes en el servidor», con el aviso en rojo «Se borrarán 3 máquinas del lote e5f60718 y sus discos. No se puede deshacer.», el texto «Escribe el código del lote (e5f60718) para confirmar», un campo de texto y los botones «Borrar definitivamente» (desactivado) y «Cancelar».](img/79-inventario-deshacer-codigo.png)
 
 5. Se borra máquina por máquina, **releyendo su configuración justo antes de cada borrado** (si ya no cumple el control 1, se
    omite). Ves una tabla **Resultado del borrado** con el estado de cada una y el botón **Detener el borrado** (no se envía
@@ -3233,6 +3776,19 @@ y el [firewall de la máquina](#firewall-de-la-máquina) (activado, grupo, polí
 > 0.7.0 no abre** (ni 0.6.0 ni 0.5.1). Un lote que no usa nada de la 0.8 se sigue guardando en el formato de antes. Ejemplo
 > listo para abrir: [`lote-red-firewall.proxlaunch-lote.json`](ejemplos/lote-red-firewall.proxlaunch-lote.json).
 
+**Desde la versión 0.9**, el lote guarda también el [hardware del clúster](#hardware-del-clúster-y-cpu-personalizadas) (los
+mapeos PCI y USB con sus opciones) y, si vienes de [libvirt](#migrar-una-máquina-desde-libvirt), las **imágenes de cada disco** y
+la **MAC conservada**. **No se guarda** el archivo XML ni su contenido ni su ruta. Una CPU personalizada se guarda como un tipo
+de CPU más. Si al abrir el lote el servidor ya no tiene un mapeo o una CPU, ProxLaunch lo dice («El mapeo «…» ya no existe en
+este servidor. Elige otro.») y no crea nada hasta que lo corrijas.
+
+> **Compatibilidad (0.9).** Un lote que usa mapeos PCI o USB, una MAC conservada o más de una imagen de disco se guarda en el
+> **formato 6**, que **ProxLaunch 0.8.0 no abre** (ni las anteriores). Un lote que no usa nada de la 0.9 se sigue guardando en
+> el formato de antes. Ejemplo listo para abrir:
+> [`lote-libvirt.proxlaunch-lote.json`](ejemplos/lote-libvirt.proxlaunch-lote.json) (una máquina de libvirt con dos discos y
+> la MAC conservada). Si lo abres en un servidor ARM64, los valores x86 se adaptan en pantalla (ver
+> [Servidores ARM64](#servidores-arm64-experimental)).
+
 **No se guarda nunca:** datos de conexión (servidor, usuario, token, contraseña), la contraseña de cloud-init, el resumen,
 los números ya reservados, el código del lote ni la casilla de sobreasignar espacio. Si algún texto que escribiste parece una credencial
 (`usuario@realm!token=...`), ProxLaunch **no guarda** y te dice en qué campo (sin mostrar el valor).
@@ -3305,7 +3861,8 @@ después hay un resumen que debes confirmar, como en cualquier lote.
 > [`mvs-minimo.csv`](ejemplos/mvs-minimo.csv) · [`mvs-mixtas.csv`](ejemplos/mvs-mixtas.csv) ·
 > [`mvs-multidisco-cluster.csv`](ejemplos/mvs-multidisco-cluster.csv) · [`mvs-con-errores.csv`](ejemplos/mvs-con-errores.csv) ·
 > [`mvs-escrito-a-mano.csv`](ejemplos/mvs-escrito-a-mano.csv) · [`mvs-opciones.csv`](ejemplos/mvs-opciones.csv) ·
-> [`mvs-cloudinit.csv`](ejemplos/mvs-cloudinit.csv) · [`mvs-red-firewall.csv`](ejemplos/mvs-red-firewall.csv)
+> [`mvs-cloudinit.csv`](ejemplos/mvs-cloudinit.csv) · [`mvs-red-firewall.csv`](ejemplos/mvs-red-firewall.csv) ·
+> [`mvs-hardware-cluster.csv`](ejemplos/mvs-hardware-cluster.csv)
 
 ### Paso a paso
 
@@ -3422,6 +3979,8 @@ Solo **`nombre`** es obligatoria. Las demás son opcionales.
 | `grupo_seguridad` (`security_group`, `firewall_group`) | No | Nombre de un grupo de seguridad: 2 a 18 caracteres, empieza por letra; letras, números, `-` y `_`. | — | `web` | Si el grupo no existe en el servidor, da error al comprobar. Vacío = el del formulario. |
 | `politica_entrada` (`policy_in`) | No | `bloquear` (o `drop`) o `permitir` (o `accept`). | — | `bloquear` | Vacío = la del formulario (por defecto, Bloquear). Uso avanzado. |
 | `politica_salida` (`policy_out`) | No | `bloquear` (o `drop`) o `permitir` (o `accept`). | — | `permitir` | Vacío = la del formulario (por defecto, Permitir). Uso avanzado. |
+| `mapeo_pci` (`pci_mapping`) | No | Identificadores de mapeos PCI separados por `;` (hasta 16). Letras, números, `.`, `_` y `-` (hasta 64 caracteres). | — | `gpu-ejemplo` o `gpu-ejemplo;gpu-secundaria` | Vacío = lo del formulario. Uso avanzado. Ver [Columnas de hardware del clúster](#columnas-de-hardware-del-clúster). |
+| `mapeo_usb` (`usb_mapping`) | No | Identificadores de mapeos USB separados por `;` (hasta 5). Mismas reglas. | — | `llave-ejemplo` | Vacío = lo del formulario. Uso avanzado. |
 
 **Equivalencias que enseñan los ejemplos:**
 
@@ -3588,6 +4147,44 @@ Ejemplo: [`mvs-red-firewall.csv`](ejemplos/mvs-red-firewall.csv), con cuatro má
 Qué enseña cada fila: `web-01` cambia `net0` a `vmbr1` con VLAN 20 y activa el firewall con el grupo `web`; `web-02` deja la red
 **como la plantilla** (`no`) pero activa el firewall con el grupo `ssh`; `bd-01` mueve `net0` a la VNet `prod` y bloquea
 también la salida; `lab-01` no clona (disco vacío), usa `vmbr0` de forma normal y deja el firewall apagado.
+
+#### Columnas de hardware del clúster
+
+Las dos columnas nuevas de la versión 0.9, `mapeo_pci` y `mapeo_usb`, dan a cada fila las tarjetas PCI y los dispositivos USB
+del clúster (ver [Hardware del clúster](#hardware-del-clúster-y-cpu-personalizadas)). Cómo se comportan:
+
+- Cada celda lleva los **identificadores de los mapeos** separados por **`;`**: `gpu-ejemplo;gpu-secundaria`. Son los nombres
+  que el administrador puso en **Datacenter → Mapeo de recursos**; no son las direcciones del hardware.
+- **Celda vacía = lo del formulario.** Si el formulario ya tiene tarjetas o USB, la fila las hereda; si no, no lleva ninguna.
+  Una celda con identificadores **sustituye** a lo del formulario para esa fila, y cada identificador toma las opciones
+  (**Es una tarjeta PCIe**, **Es la gráfica principal**, **USB 3**…) que ya tenga en el formulario; uno nuevo usa las de por
+  defecto. Las opciones de cada mapeo se fijan en el formulario, no en el CSV.
+- **La CPU personalizada** va en la columna que ya existe, `tipo_cpu`: `custom-ejemplo`.
+- Un identificador mal escrito o más de 16 PCI o 5 USB dan error en esa fila (y solo en esa), con el motivo: «Fila 3, columna
+  «mapeo_pci»: el identificador del mapeo no es válido (usa letras, números, «.», «_» y «-», hasta 64 caracteres).» o «Una máquina
+  admite como máximo 5 dispositivos USB (hay 6).» Si el mapeo no existe en el servidor, ProxLaunch lo marca con el
+  error «El mapeo «…» ya no existe en este servidor. Elige otro.»
+- En una fila de un nodo **ARM64**, un mapeo PCI con **Es una tarjeta PCIe** en el formulario da error («las tarjetas PCIe no
+  existen en servidores ARM64»).
+- **La plantilla CSV** que descarga ProxLaunch incluye las dos columnas. La fila `ejemplo-02` lleva `ejemplo-gpu` y
+  `ejemplo-llave` como muestra: son ficticios, sustitúyelos por los de tu servidor (o bórralos). Un CSV de 0.8 (sin estas
+  columnas) se lee igual que antes.
+- **Con una versión anterior:** ProxLaunch 0.8.0 **ignora** estas columnas con un aviso («columnas desconocidas»): un CSV con
+  `mapeo_pci` abierto en 0.8.0 **crearía las máquinas sin la tarjeta**. Usa 0.9.
+
+Ejemplo: [`mvs-hardware-cluster.csv`](ejemplos/mvs-hardware-cluster.csv), con cuatro máquinas. Como texto:
+
+```text
+"nombre";"nodo";"origen";"tipo_cpu";"mapeo_pci";"mapeo_usb"
+"grafico-01";"pve1";"vacio";"custom-ejemplo";"gpu-ejemplo";"llave-ejemplo"
+"grafico-02";"pve2";"vacio";"";"gpu-ejemplo";""
+"licencias-01";"pve1";"vacio";"";"";"llave-ejemplo"
+"doble-gpu-01";"pve1";"vacio";"";"gpu-ejemplo;gpu-secundaria";""
+```
+
+Qué enseña cada fila: `grafico-01` usa una CPU personalizada, una gráfica y una llave USB en `pve1`; `grafico-02` usa la misma
+gráfica en `pve2`; `licencias-01` solo lleva la llave USB; `doble-gpu-01` lleva **dos** tarjetas PCI. Los mapeos
+`gpu-ejemplo`, `gpu-secundaria` y `llave-ejemplo` y la CPU `custom-ejemplo` son inventados: sustitúyelos por los de tu clúster.
 
 #### Unidades y números
 
@@ -3819,8 +4416,9 @@ La barra de menús tiene cinco menús. Los de **Lote** y el detalle de cada opci
 | **Cerrar sesión** | | Cierra la sesión actual (con [cambios sin guardar](#cambios-sin-guardar), pregunta). |
 | **Ver el último lote** | | Vuelve a mostrar el último lote. Desactivada hasta que haya uno. |
 | **Archivos subidos en esta sesión…** | | Ver [Archivos subidos](#archivos-subidos-en-esta-sesión). |
-| **Lotes en el servidor…** | | Abre la ventana [Lotes en el servidor](#lotes-en-el-servidor-inventario): encuentra, exporta y deshace los lotes que ProxLaunch creó. Activa con sesión lista y Proxmox 8.0 o posterior; sin conexión dice «Conéctate a un servidor para ver sus lotes.» |
-| **Crear plantilla desde imagen cloud…** | | Abre el [asistente](#crear-una-plantilla-desde-una-imagen-cloud) que convierte una imagen cloud (Ubuntu, Debian…) en una plantilla. Desactivada con Proxmox anterior a la 8.4 («Necesita Proxmox 8.4 o una versión posterior.») y mientras haya una transferencia, un lote o un asistente en marcha. |
+| **Lotes en el servidor…** | | Abre la ventana [Lotes en el servidor](#lotes-en-el-servidor-inventario): encuentra, exporta y deshace los lotes que ProxLaunch creó. Activa con sesión lista; sin conexión dice «Conéctate a un servidor para ver sus lotes.» |
+| **Crear plantilla desde imagen cloud…** | | Abre el [asistente](#crear-una-plantilla-desde-una-imagen-cloud) que convierte una imagen cloud (Ubuntu, Debian…) en una plantilla. Desactivada sin conexión y mientras haya una transferencia, un lote o un asistente en marcha. |
+| **Importar desde libvirt…** | | Abre el asistente de [Migrar una máquina desde libvirt](#migrar-una-máquina-desde-libvirt). Desactivada sin conexión: «Conéctate a un servidor para traer una máquina de libvirt.» |
 | **Salir** | Atajo estándar de salir | Cierra ProxLaunch. |
 
 ![Menú «Archivo» desplegado con «Conectar...», «Cerrar sesión», «Ver el último lote», «Archivos subidos en esta sesión…», «Crear plantilla desde imagen cloud…» y «Salir».](img/76-menu-archivo-plantilla.png)
@@ -3927,12 +4525,20 @@ opciones.
 | **Red de las copias** (grupo del formulario) | Origen **Copiar una plantilla de Proxmox** | [83](img/83-seccion-red-clon.png) | Cambiar, quitar o añadir tarjetas de las copias | [Red del clon](#red-del-clon) |
 | Resumen con red y firewall | **Crear máquina** / **Ver resumen** | [84](img/84-resumen-red-firewall.png) | Ver lo que se pidió | [Red del clon](#lo-que-ves-en-el-resumen-y-el-informe) |
 | Menú **Archivo** con «Lotes en el servidor…» | **Archivo** | [85](img/85-menu-lotes-servidor.png) | Abrir el inventario | [Archivo](#archivo) |
+| **Importar desde libvirt** (vista previa) | **Archivo > Importar desde libvirt…** | [86](img/86-libvirt-vista-previa.png) | Leer el XML, revisar qué se traslada y rellenar el formulario | [Migrar desde libvirt](#la-vista-previa-qué-se-traslada-y-qué-no) |
+| **Importar desde libvirt** con «Cómo obtener el XML» | El enlace **Cómo obtener el XML** | [87](img/87-libvirt-como-obtener-xml.png) | Copiar las órdenes de `virsh` y `qemu-img` | [Cómo obtener el XML](#cómo-obtener-el-xml-y-preparar-los-discos) |
+| Imagen de cada disco | Origen **Usar un disco existente** tras rellenar desde libvirt | [88](img/88-libvirt-imagenes-por-disco.png) | Elegir la imagen de cada disco o marcar **Crear vacío** | [Una imagen por disco](#una-imagen-por-disco) |
+| **Hardware del clúster** (grupo del formulario) | Ventana de trabajo | [89](img/89-seccion-hardware-cluster.png) | Dar tarjetas PCI y dispositivos USB mapeados | [Hardware del clúster](#el-grupo-hardware-del-clúster) |
+| Lista **Tipo de CPU** con «Personalizados del clúster» | Modo avanzado | [90](img/90-cpu-personalizada.png) | Elegir una CPU `custom-…` | [CPU personalizadas](#cpu-personalizadas) |
+| Servidor ARM64 (experimental) | Elegir un nodo ARM64 | [91](img/91-nodo-arm64-experimental.png) | Ver la marca «experimental» y los valores adaptados | [Servidores ARM64](#servidores-arm64-experimental) |
+| **Qué puedo hacer en este servidor** con las filas de la 0.9 | **Ayuda > Qué puedo hacer en este servidor…** | [92](img/92-capacidades-fase-d.png) | Saber si puedes usar ARM, mapeos y CPU personalizadas | [Qué necesita tu cuenta](#qué-necesita-tu-cuenta) |
+| Resumen con lo nuevo de la 0.9 | **Crear máquina** / **Ver resumen** | [93](img/93-resumen-fase-d.png) | Ver discos importados, MAC, hardware y CPU | [El resumen](#el-resumen-con-lo-nuevo-de-la-versión-09) |
 
 ### Menús
 
 | Menú | Capturas | Opciones | Sección |
 |---|---|---|---|
-| **Archivo** | [76](img/76-menu-archivo-plantilla.png), [85](img/85-menu-lotes-servidor.png) | Conectar..., Cerrar sesión, Ver el último lote, Archivos subidos en esta sesión…, Lotes en el servidor…, Crear plantilla desde imagen cloud…, Salir | [Archivo](#archivo) |
+| **Archivo** | [76](img/76-menu-archivo-plantilla.png), [85](img/85-menu-lotes-servidor.png) | Conectar..., Cerrar sesión, Ver el último lote, Archivos subidos en esta sesión…, Lotes en el servidor…, Crear plantilla desde imagen cloud…, Importar desde libvirt…, Salir | [Archivo](#archivo) |
 | **Lote** | [02](img/02-menu-lote.png) | Abrir lote…, Guardar lote…, Guardar lote como…, Importar desde CSV…, Descargar plantilla CSV…, Guardar el informe del lote como CSV… | [Guardar y abrir lotes](#guardar-y-abrir-lotes) |
 | **Perfiles** | — | Guardar como perfil de máquina…, Administrar perfiles… (solo avanzado) | [Perfiles](#perfiles) |
 | **Ajustes** | [03](img/03-menu-ajustes.png) | Almacenamientos recordados…, Tema, Modo | [Ajustes](#ajustes) |
@@ -3966,8 +4572,8 @@ y no se comparte. Los ejemplos están en la carpeta [`ejemplos/`](ejemplos/LEEME
 
 | # | Archivo | Extensión sugerida | Cómo se importa | Cómo se exporta | ¿Sirve para crear MVs? | Ejemplo |
 |---|---|---|---|---|---|---|
-| 1 | CSV de máquinas | `.csv` (filtro `*.csv *.txt`) | **Lote > Importar desde CSV…** | **Lote > Descargar plantilla CSV…** (plantilla) | **Sí:** una fila = una MV (lote por filas) | [`mvs-*.csv`](ejemplos/LEEME.md#qué-es-cada-archivo) |
-| 2 | Lote guardado | `.proxlaunch-lote.json` | **Lote > Abrir lote…** (`Ctrl+O`) | **Lote > Guardar lote…** (`Ctrl+S`) | **Sí:** lote homogéneo o por filas | [`lote-homogeneo`](ejemplos/lote-homogeneo.proxlaunch-lote.json), [`lote-por-filas`](ejemplos/lote-por-filas.proxlaunch-lote.json), [`lote-cloudinit`](ejemplos/lote-cloudinit.proxlaunch-lote.json), [`lote-red-firewall`](ejemplos/lote-red-firewall.proxlaunch-lote.json) |
+| 1 | CSV de máquinas | `.csv` (filtro `*.csv *.txt`) | **Lote > Importar desde CSV…** | **Lote > Descargar plantilla CSV…** (plantilla) | **Sí:** una fila = una MV (lote por filas) | [`mvs-*.csv`](ejemplos/LEEME.md#qué-es-cada-archivo) (también [`mvs-hardware-cluster.csv`](ejemplos/mvs-hardware-cluster.csv)) |
+| 2 | Lote guardado | `.proxlaunch-lote.json` | **Lote > Abrir lote…** (`Ctrl+O`) | **Lote > Guardar lote…** (`Ctrl+S`) | **Sí:** lote homogéneo o por filas | [`lote-homogeneo`](ejemplos/lote-homogeneo.proxlaunch-lote.json), [`lote-por-filas`](ejemplos/lote-por-filas.proxlaunch-lote.json), [`lote-cloudinit`](ejemplos/lote-cloudinit.proxlaunch-lote.json), [`lote-red-firewall`](ejemplos/lote-red-firewall.proxlaunch-lote.json), [`lote-libvirt`](ejemplos/lote-libvirt.proxlaunch-lote.json) |
 | 3 | Perfiles de máquina | `.proxlaunch-perfiles.json` | **Administrar perfiles… > Importar…** | **Administrar perfiles… > Exportar…** | **Indirecto:** aporta hardware; no crea nada por sí solo | [`perfiles-ejemplo`](ejemplos/perfiles-ejemplo.proxlaunch-perfiles.json) |
 | 4 | Perfiles de conexión | `perfiles.json` (carpeta de configuración) | **No hay importar** | **No hay exportar** | **No** (solo servidor y credenciales) | — |
 
@@ -3976,7 +4582,7 @@ y no se comparte. Los ejemplos están en la carpeta [`ejemplos/`](ejemplos/LEEME
 
 **Límites comunes:** CSV hasta 1 MiB, 70 columnas, 256 caracteres por celda (8192 en las columnas `notas` y `ci_claves`) y 100 filas; lote
 guardado hasta 1 MiB; archivo de perfiles hasta 256 KiB y 100 perfiles (también 100 perfiles propios en total); nombre de
-perfil o de lote hasta 60 caracteres; descripción hasta 200; versión máxima de formato legible: 5. Las cadenas que parecen
+perfil o de lote hasta 60 caracteres; descripción hasta 200; versión máxima de formato legible: 6. Las cadenas que parecen
 credenciales se descartan y avisan. Un lote guardado de 100 máquinas con notas muy largas en cada fila puede acercarse al
 límite de 1 MiB: si lo supera, ProxLaunch no lo guarda y lo dice. Un archivo creado por una versión más nueva de ProxLaunch no se abre: «Este archivo lo creó una versión más nueva
 de ProxLaunch. Actualiza la aplicación para abrirlo.»
@@ -3987,20 +4593,21 @@ Reglas, [columnas](#columnas-del-csv), unidades y [validación](#validación-un-
 [Importar máquinas desde un CSV](#importar-máquinas-desde-un-csv). La plantilla que descarga ProxLaunch tiene las columnas
 más usadas (en 0.6, también las de [opciones de la máquina](#columnas-de-opciones-de-la-máquina); en 0.7, las de
 [cloud-init y esperar la IP](#columnas-de-cloud-init-y-esperar-la-ip), **salvo `ci_contrasena`**, que nunca está en la
-plantilla; en 0.8, las de [red del clon y firewall](#columnas-de-red-del-clon-y-firewall)) y cinco filas de ejemplo
+plantilla; en 0.8, las de [red del clon y firewall](#columnas-de-red-del-clon-y-firewall); en 0.9, las de
+[hardware del clúster](#columnas-de-hardware-del-clúster)). En total son **42 columnas** y cinco filas de ejemplo
 (dos con disco vacío y una por cada origen: ISO, disco existente y plantilla). Sus nombres empiezan por `ejemplo-`; si las
 importas tal cual, ProxLaunch avisa «Parece una fila de ejemplo de la plantilla.» Las dos primeras filas muestran algunas
 opciones (`arranque_auto`, `notas`, `etiquetas`, `pool`, `mtu`, `limite_red`…) y la que clona una plantilla (`ejemplo-05`)
-un ejemplo de cloud-init (`ci_usuario` = `ubuntu` y `ci_ip` = `dhcp`) y de firewall (`cortafuegos` = `si`, sin grupo y con las dos políticas en `permitir`; `reescribir_red` = `no`). `ejemplo-02` lleva `cortafuegos` = `no`. Las demás celdas quedan vacías. El texto del archivo
+un ejemplo de cloud-init (`ci_usuario` = `ubuntu` y `ci_ip` = `dhcp`) y de firewall (`cortafuegos` = `si`, sin grupo y con las dos políticas en `permitir`; `reescribir_red` = `no`). `ejemplo-02` lleva `cortafuegos` = `no` y los dos ejemplos ficticios de mapeos (`ejemplo-gpu` en `mapeo_pci` y `ejemplo-llave` en `mapeo_usb`: sustitúyelos por los de tu servidor o bórralos). Las demás celdas quedan vacías. El texto del archivo
 (separador `;`; ProxLaunch escribe **todas las celdas entre comillas**, en UTF-8 con BOM):
 
 ```text
-"nombre";"perfil";"cpu";"memoria";"disco";"almacenamiento";"red";"vlan";"nodo";"vmid";"origen";"fuente";"so";"virtio";"modo_clon";"encender";"arranque_auto";"notas";"etiquetas";"pool";"proteger";"mtu";"limite_red";"ci_usuario";"ci_claves";"ci_ip";"ci_puerta";"ci_dns";"ci_dominio";"ci_actualizar";"ci_snippet_usuario";"ci_snippet_vendor";"ci_snippet_red";"ci_snippet_meta";"esperar_ip";"reescribir_red";"cortafuegos";"grupo_seguridad";"politica_entrada";"politica_salida"
-"ejemplo-01";"fabrica.servidor-mediano";"";"8";"100";"local-lvm";"vmbr0";"";"";"";"vacio";"";"";"";"";"";"si";"Servidor de ejemplo";"web,prod";"";"";"";"";"";"";"";"";"";"";"";"";"";"";"";"";"";"";"";"";""
-"ejemplo-02";"";"2";"4 GiB";"40";"";"vmbr1";"20";"pve2";"250";"vacio";"";"";"";"";"no";"";"";"";"ninguno";"no";"heredar";"50";"";"";"";"";"";"";"";"";"";"";"";"";"";"no";"";"";""
-"ejemplo-03";"";"2";"4";"32";"";"";"";"";"";"iso";"ejemplo-instalador.iso";"linux";"";"";"";"";"";"";"";"";"";"";"";"";"";"";"";"";"";"";"";"";"";"";"";"";"";"";""
-"ejemplo-04";"";"2";"4";"40";"";"";"";"";"";"importar";"ejemplo-disco.qcow2";"";"";"";"";"";"";"";"";"";"";"";"";"";"";"";"";"";"";"";"";"";"";"";"";"";"";"";""
-"ejemplo-05";"";"4";"8";"80";"";"";"";"";"";"clonar";"ejemplo-plantilla";"";"";"auto";"";"";"";"";"";"";"";"";"ubuntu";"";"dhcp";"";"";"";"";"";"";"";"";"";"no";"si";"";"permitir";"permitir"
+"nombre";"perfil";"cpu";"memoria";"disco";"almacenamiento";"red";"vlan";"nodo";"vmid";"origen";"fuente";"so";"virtio";"modo_clon";"encender";"arranque_auto";"notas";"etiquetas";"pool";"proteger";"mtu";"limite_red";"ci_usuario";"ci_claves";"ci_ip";"ci_puerta";"ci_dns";"ci_dominio";"ci_actualizar";"ci_snippet_usuario";"ci_snippet_vendor";"ci_snippet_red";"ci_snippet_meta";"esperar_ip";"reescribir_red";"cortafuegos";"grupo_seguridad";"politica_entrada";"politica_salida";"mapeo_pci";"mapeo_usb"
+"ejemplo-01";"fabrica.servidor-mediano";"";"8";"100";"local-lvm";"vmbr0";"";"";"";"vacio";"";"";"";"";"";"si";"Servidor de ejemplo";"web,prod";"";"";"";"";"";"";"";"";"";"";"";"";"";"";"";"";"";"";"";"";"";"";""
+"ejemplo-02";"";"2";"4 GiB";"40";"";"vmbr1";"20";"pve2";"250";"vacio";"";"";"";"";"no";"";"";"";"ninguno";"no";"heredar";"50";"";"";"";"";"";"";"";"";"";"";"";"";"";"no";"";"";"";"ejemplo-gpu";"ejemplo-llave"
+"ejemplo-03";"";"2";"4";"32";"";"";"";"";"";"iso";"ejemplo-instalador.iso";"linux";"";"";"";"";"";"";"";"";"";"";"";"";"";"";"";"";"";"";"";"";"";"";"";"";"";"";"";"";""
+"ejemplo-04";"";"2";"4";"40";"";"";"";"";"";"importar";"ejemplo-disco.qcow2";"";"";"";"";"";"";"";"";"";"";"";"";"";"";"";"";"";"";"";"";"";"";"";"";"";"";"";"";"";""
+"ejemplo-05";"";"4";"8";"80";"";"";"";"";"";"clonar";"ejemplo-plantilla";"";"";"auto";"";"";"";"";"";"";"";"";"ubuntu";"";"dhcp";"";"";"";"";"";"";"";"";"";"no";"si";"";"permitir";"permitir";"";""
 ```
 
 #### Informe del lote en CSV
@@ -4059,7 +4666,7 @@ completo.)
 
 | Clave | Qué es | Unidad o valores |
 |---|---|---|
-| `formato`, `version_formato`, `app_version` | Tipo de archivo y versión del formato (1 a 5) y de ProxLaunch que lo guardó. | `proxlaunch.lote` |
+| `formato`, `version_formato`, `app_version` | Tipo de archivo y versión del formato (1 a 6) y de ProxLaunch que lo guardó. | `proxlaunch.lote` |
 | `nombre` | Nombre del lote (el de **Guardar lote**). | Hasta 60 caracteres. |
 | `tipo` | `homogeneo` o `por_filas`. | |
 | `version_proxmox` | Versión de Proxmox con la que se guardó. | Texto, por ejemplo `9.2`. |
@@ -4079,8 +4686,36 @@ completo.)
 | `config.esperar_ip` (y `opciones.esperar_ip`) | [Esperar la IP](#esperar-la-ip): `activo` y `plazo_s`. *(Formato 4.)* | `true` y de 10 a 1800. Solo se escribe si está activa. |
 | `config.red_clon` (y `opciones.red_clon`) | La [red del clon](#red-del-clon): `modo` (`plantilla` o `personalizar`) y `tarjetas`, cada una con `indice` (0 a 31), `accion` (`conservar`, `cambiar`, `quitar` o `añadir`), `bridge`, `modelo` (`virtio` o `e1000`), `vlan`, `mtu`, `limite_mb` y `mac_nueva`. *(Formato 5.)* | En una tarjeta `cambiar`, **una clave presente es un campo que se cambia** (con `null` se **quita** ese valor, por ejemplo `"vlan": null`) y una **ausente se conserva**. En `añadir` se usan todos los valores escritos. `mac_nueva` solo se escribe si vale `true`. Solo se escribe si la red se personaliza. |
 | `config.firewall` (y `opciones.firewall`) | El [firewall de la máquina](#firewall-de-la-máquina): `activo`, `grupo` (solo si hay uno), `politica_entrada`, `politica_salida` y `dhcp`. *(Formato 5.)* | `politica_*`: `bloquear` o `permitir` (por defecto, entrada `bloquear` y salida `permitir`). `dhcp`: `auto`, `si` o `no`. **Nunca lleva la confirmación «Entiendo…»** (se ignora si un archivo antiguo la trae). Solo se escribe si difiere del valor por defecto. |
+| `config.hardware_cluster` | Las tarjetas y dispositivos del [hardware del clúster](#hardware-del-clúster-y-cpu-personalizadas): `pci` (lista; cada una con `mapeo` y, solo si valen distinto del defecto, `pcie`, `x_vga`, `rombar` y `driver_keep`) y `usb` (cada uno con `mapeo` y `usb3`). *(Formato 6.)* | Hasta 16 `pci` y 5 `usb`. `mapeo`: letras, números, `.`, `_` y `-`. `rombar` solo se escribe si es `false`. |
+| `config.redes[].mac_conservada` | La MAC de origen que se conserva en esa tarjeta ([importar desde libvirt](#la-dirección-mac-conservarla-o-no)). *(Formato 6, solo en lotes.)* | Texto `52:54:00:12:34:56` en minúsculas, con el primer byte par. Solo cuenta con el origen **Usar un disco existente**. |
+| `config.detalle_origen.imagenes` | Las imágenes de los discos segundo en adelante de una máquina traída de [libvirt](#una-imagen-por-disco): cada una con `disco` (la posición del disco contando desde 0: `1` es el segundo disco), `imagen` (`nombre` y `volid`, o `null` = pendiente de elegir) y, solo si es `true`, `crear_vacio`. *(Formato 6.)* | El primer disco (posición 0, el del sistema) sigue en `detalle_origen.imagen`. |
 | `homogeneo.opciones` (o `por_filas.opciones`) | Las opciones que valen para todo el lote. | Mismas claves que arriba (sin las de arranque ni las de red). |
 | `por_filas.filas[].opciones` | Lo que **una fila** sobrescribe de las opciones del lote. | `encender`, `arranque_auto`, `notas`, `etiquetas_usuario`, `pool` y `proteger` y, desde la 0.7, `cloudinit` (con `tarjeta0`: solo la primera tarjeta) y `esperar_ip`; desde la 0.8, `red_clon` y `firewall` (este con solo `activo`, `grupo`, `politica_entrada` y `politica_salida`: lo que falta se hereda); lo que no aparece, se hereda. |
+
+**Un lote de formato 6.** [`lote-libvirt.proxlaunch-lote.json`](ejemplos/lote-libvirt.proxlaunch-lote.json) es una máquina traída
+de libvirt con **dos discos**: el primero, el del sistema, va en `detalle_origen.imagen`; el segundo, en `imagenes`; y la tarjeta
+de red conserva la MAC de origen (una `52:54:00:…` inventada). Fragmento, abreviado:
+
+```json
+{
+  "config": {
+    "origen": "importar_disco",
+    "detalle_origen": {
+      "imagen": { "nombre": "app-sistema.qcow2", "volid": "local:import/app-sistema.qcow2" },
+      "imagenes": [
+        { "disco": 1, "imagen": { "nombre": "app-datos.qcow2", "volid": "local:import/app-datos.qcow2" } }
+      ]
+    },
+    "redes": [
+      { "bridge": "vmbr0", "mac_conservada": "52:54:00:12:34:56", "modelo": "virtio", "vlan": null }
+    ]
+  },
+  "version_formato": 6
+}
+```
+
+Con mapeos del clúster, la `config` lleva además, por ejemplo,
+`"hardware_cluster": { "pci": [{ "mapeo": "gpu-ejemplo", "pcie": true }], "usb": [{ "mapeo": "llave-ejemplo" }] }`.
 
 El lote **por filas** ([`lote-por-filas.proxlaunch-lote.json`](ejemplos/lote-por-filas.proxlaunch-lote.json)) usa la clave
 `por_filas` con `destino.algoritmo`, `etiquetar`, `vmid_inicial` y una lista `filas`; cada fila tiene `nombre`, `vmid`,
@@ -4157,19 +4792,27 @@ ni importarlos**; para llevar un servidor a otro equipo se crea de nuevo su perf
 ### Compatibilidad con versiones anteriores
 
 Los lotes guardados y los archivos de perfiles llevan un número de versión del formato (`version_formato`). Desde ProxLaunch
-0.8 la versión más alta es la **5**. **ProxLaunch 0.8.0 abre los archivos de las versiones 0.5, 0.6 y 0.7.**
+0.9 la versión más alta es la **6**. **ProxLaunch 0.9.0 abre los archivos de las versiones 0.5, 0.6, 0.7 y 0.8.**
 
-| Archivo | ¿Lo abre 0.8.0? | ¿Lo abre 0.7.0? | ¿Lo abre 0.6.0? | ¿Lo abre 0.5.1? |
-|---|---|---|---|---|
-| Lote o perfiles de versión **1** o **2** (de 0.5.x o anteriores) | Sí. Las opciones nuevas toman su valor por defecto y se crea **igual que antes**. | Sí. | Sí. | Sí. |
-| Lote o perfiles de versión **3** (usan alguna opción de la 0.6) | Sí. | Sí. | Sí. | **No**: «Este archivo lo creó una versión más nueva de ProxLaunch. Actualiza la aplicación para abrirlo.» |
-| Lote de versión **4** (usa **cloud-init** o **Esperar la IP**) | Sí. | Sí. | **No**: el mismo mensaje de «versión más nueva». | **No**. |
-| Lote de versión **5** (usa la **red del clon** o el **firewall de la máquina**) | Sí. | **No**: el mismo mensaje. | **No**. | **No**. |
-| Perfiles de máquina | Sí (los perfiles **no guardan** cloud-init, esperar la IP, red del clon ni firewall, así que **no suben** a la versión 4 ni a la 5). | Sí. | Sí. | Según su versión (ver arriba). |
-| CSV de 0.5.1, 0.6 o 0.7 (sin las columnas nuevas) | Sí, se lee igual que antes. | — | — | — |
-| CSV con columnas de cloud-init o `esperar_ip` | Sí. | Sí. | Lo abre, pero **ignora** las columnas que no conoce con un aviso (las de cloud-init **no se aplican**). | Igual. |
-| CSV con `reescribir_red`, `cortafuegos`, `grupo_seguridad`, `politica_entrada` o `politica_salida` | Sí. | Lo abre, pero **ignora** esas columnas con un aviso: **no se aplica el firewall ni la red del clon**. | Igual. | Igual. |
+| Archivo | ¿Lo abre 0.9.0? | ¿Lo abre 0.8.0? | ¿Lo abre 0.7.0? | ¿Lo abre 0.6.0? | ¿Lo abre 0.5.1? |
+|---|---|---|---|---|---|
+| Lote o perfiles de versión **1** o **2** (de 0.5.x o anteriores) | Sí. Las opciones nuevas toman su valor por defecto y se crea **igual que antes**. | Sí. | Sí. | Sí. | Sí. |
+| Lote o perfiles de versión **3** (usan alguna opción de la 0.6) | Sí. | Sí. | Sí. | Sí. | **No**: «Este archivo lo creó una versión más nueva de ProxLaunch. Actualiza la aplicación para abrirlo.» |
+| Lote de versión **4** (usa **cloud-init** o **Esperar la IP**) | Sí. | Sí. | Sí. | **No**: el mismo mensaje de «versión más nueva». | **No**. |
+| Lote de versión **5** (usa la **red del clon** o el **firewall de la máquina**) | Sí. | Sí. | **No**: el mismo mensaje. | **No**. | **No**. |
+| Lote de versión **6** (usa **hardware del clúster**, **MAC conservada** o **más de una imagen** al importar desde libvirt) | Sí. | **No**: el mismo mensaje. | **No**. | **No**. | **No**. |
+| Perfiles de máquina | Sí (los perfiles **no guardan** cloud-init, esperar la IP, red del clon, firewall, mapeos, MAC ni imágenes, así que **no suben** de versión). | Sí. | Sí. | Sí. | Según su versión (ver arriba). |
+| CSV de 0.5.1 a 0.8 (sin las columnas nuevas) | Sí, se lee igual que antes. | — | — | — | — |
+| CSV con columnas de cloud-init o `esperar_ip` | Sí. | Sí. | Sí. | Lo abre, pero **ignora** las columnas que no conoce con un aviso (las de cloud-init **no se aplican**). | Igual. |
+| CSV con `reescribir_red`, `cortafuegos`, `grupo_seguridad`, `politica_entrada` o `politica_salida` | Sí. | Sí. | Lo abre, pero **ignora** esas columnas con un aviso: **no se aplica el firewall ni la red del clon**. | Igual. | Igual. |
+| CSV con `mapeo_pci` o `mapeo_usb` | Sí. | Lo abre, pero **ignora** esas columnas con un aviso: **no se asignan las tarjetas ni los USB**. | Igual. | Igual. | Igual. |
 
+- **Cuándo se escribe la versión 6.** ProxLaunch 0.9 escribe un **lote** en versión 6 **solo si usa** tarjetas PCI o dispositivos
+  USB del clúster, una **MAC conservada** o **más de una imagen** de disco al importar desde libvirt (en el lote o en alguna
+  fila). Si no usa nada de esto lo escribe **como lo hacía la 0.8** (versión 1 a 5) y las versiones anteriores lo siguen
+  abriendo. Una **CPU personalizada** (`custom-…`) y los valores de **ARM64** no suben el formato: son textos que ya existían.
+  Un archivo con datos fuera de rango (por ejemplo, 17 tarjetas PCI o una MAC mal escrita) se marca como no válido y nombra el
+  campo (`…hardware_cluster.pci[0].mapeo`) sin ejecutar nada. **Nunca se guardan** el XML de libvirt, su contenido ni su ruta.
 - **Cuándo se escribe la versión 5.** ProxLaunch 0.8 escribe un **lote** en versión 5 **solo si usa la red del clon
   personalizada o el firewall de la máquina** (activado o con algo distinto del valor por defecto, en el lote o en alguna
   fila). Si no usa nada de la 0.8, lo escribe en la versión que le tocaba antes (1 a 4) y las versiones anteriores lo siguen
@@ -4188,9 +4831,10 @@ Los lotes guardados y los archivos de perfiles llevan un número de versión del
 - **La casilla «Añadir notas de origen».** Viene marcada por defecto, pero **por sí sola no sube el formato**: se guarda en el
   archivo, y un lote que solo la usa sigue siendo de versión 1 o 2. 0.5.1 lo abre y, al no conocer ese dato, lo ignora y
   muestra el aviso de campos desconocidos («Se ignoró 1 campo que ProxLaunch no conoce.»).
-- **Abrir un archivo antiguo no lo modifica.** Los archivos de terceros solo se leen. Si lo vuelves a guardar con 0.8, se
-  escribe con la versión que le corresponda según lo que use.
-- **Un archivo de una versión futura** (más de 5) se rechaza con el mismo mensaje de «versión más nueva».
+- **Abrir un archivo antiguo no lo modifica.** Los archivos de terceros solo se leen. Si lo vuelves a guardar con 0.9, se
+  escribe con la versión que le corresponda según lo que use. Esto vale también para un perfil o un lote hecho para x86 que
+  abres con un servidor ARM64: los valores se adaptan **en pantalla**, pero el archivo no cambia hasta que lo guardes.
+- **Un archivo de una versión futura** (más de 6) se rechaza con el mismo mensaje de «versión más nueva».
 - **Perfiles exportados** con alguna opción de la 0.6 (versión 3) tampoco se pueden importar en 0.5.1; los demás sí.
 
 ---
@@ -4215,7 +4859,9 @@ junto al campo o en la vista previa (captura 58).
 | El código no es correcto o ya venció. … | Código de 2FA incorrecto o caducado. | Espera al siguiente código; revisa la hora de tu equipo. |
 | Este usuario exige un método de segundo factor que ProxLaunch no admite. Usa un API Token. | El usuario usa llaves de seguridad u otro método no admitido. | Conecta con un API Token. |
 | Tu sesión expiró. Vuelve a iniciar sesión. | La sesión caducó (por ejemplo, tras suspender el equipo). | Se abre la ventana de conexión; entra de nuevo. **No pierdes lo escrito.** |
-| ProxLaunch requiere Proxmox VE 8.0 o superior (el servidor tiene 7.4) | Versión no compatible. | Pide actualizar Proxmox o usa otro servidor. |
+| Este servidor usa Proxmox 8.2. ProxLaunch necesita la versión 8.4 o posterior. Actualiza el servidor (las versiones 8.0 a 8.3 ya no se admiten) y vuelve a conectar. | Versión no compatible (el número es el de tu servidor). Desde la 0.9 la mínima es la 8.4. | Pide actualizar Proxmox o usa otro servidor. |
+| La rama 8 de Proxmox ya no recibe actualizaciones de seguridad desde agosto de 2026. ProxLaunch sigue funcionando con la 8.4, pero conviene actualizar a la versión 9. | Aviso (una vez por conexión) con Proxmox 8.4. No impide nada. | Planifica actualizar a Proxmox 9. |
+| La versión forzada 8.2 ya no se admite; uso «Detectar» en su lugar. | Tu configuración guardaba una versión forzada anterior a la 8.4. | Nada: ya se usa **Detectada**. |
 | Tu usuario no tiene permiso para realizar esta acción. Falta VM.Allocate en /vms/100. … | Falta un permiso (el mensaje dice cuál y dónde). | Pídelo a tu administrador ([Permisos](#permisos-que-hacen-falta)). |
 | El número 100 ya lo usa otra máquina. Prueba con 101 | El VMID está ocupado. | Usa el sugerido o escribe otro. |
 | No hay espacio suficiente en «local-lvm» para crear el disco. Libera espacio o elige otro almacenamiento. | El almacenamiento se llenó. | Reduce el tamaño, elige otro almacenamiento o libera espacio. |
@@ -4346,7 +4992,6 @@ una clave: solo nombra el número de línea, el campo o el motivo.
 
 | Mensaje | Qué significa | Qué hacer |
 |---|---|---|
-| Este asistente necesita Proxmox 8.4 o una versión posterior; este servidor es el 8.2. | Versión anterior a la 8.4. | Actualiza Proxmox o crea la plantilla a mano. |
 | Ningún almacenamiento de este nodo admite el contenido «Importar». … / El almacenamiento elegido para la imagen no admite el contenido «Importar» en este nodo. | No hay almacenamiento con «Importar». | Pide que lo activen (tipo directorio, NFS o CIFS). |
 | El archivo debe terminar en .qcow2, .img, .raw o .vmdk. Otros formatos (ISO, OVA, ZIP…) no se pueden importar como disco. | Extensión no admitida. | Convierte la imagen. |
 | El archivo «.img» no es una imagen qcow2 ni un disco en bruto: no se renombra a ciegas. Conviértelo antes a qcow2. / El contenido del archivo no corresponde a su extensión. … | El contenido no es lo que dice la extensión. | Conviértelo o renómbralo al formato correcto. |
@@ -4405,10 +5050,8 @@ Los puntos suspensivos (…) son datos que cambian en cada caso.
 
 | Mensaje | Qué significa | Qué hacer |
 |---|---|---|
-| Tu Proxmox … no permite importar discos sin ser administrador del servidor. … Desde la versión 8.4 sí se puede importar. | El servidor es Proxmox 8.0 a 8.3. | Instala desde un ISO, clona una plantilla o actualiza a 8.4 o superior. |
 | Para importar discos, pide a tu administrador que active el contenido «Import» en un almacenamiento de tipo directorio, NFS o CIFS. | No hay almacenamiento con contenido «Import». | Pide al administrador que lo active. Puedes copiar el texto desde **Qué puedo hacer en este servidor**. |
 | Falta el permiso Sys.AccessNetwork en el nodo «…» para descargar desde una dirección web. … | Tu cuenta no puede hacer que el servidor descargue de Internet. | Pide el permiso o usa **Subir desde mi equipo…**. |
-| Descargar desde una dirección web exige permisos de administrador en esta versión de Proxmox. … | Proxmox 8.0 o 8.1. | Sube el archivo desde tu equipo. |
 | Falta el permiso … en «…» para …. | Falta un privilegio del rol en esa ruta. | Ver [Permisos](#permisos-que-hacen-falta). |
 | Para guardar el disco importado necesitas el permiso Datastore.AllocateSpace en «…». | La cuenta no puede crear discos allí. | Pide el permiso o elige otro almacenamiento. |
 | No puedes ver los archivos de «…»: falta el permiso Datastore.Audit o Datastore.AllocateSpace. | El catálogo de ese almacenamiento no se puede leer. | Pide el permiso o elige otro almacenamiento. |
@@ -4433,6 +5076,45 @@ Los puntos suspensivos (…) son datos que cambian en cada caso.
 | La máquina «…» se clonó, pero no se pudo …. Puedes reintentar los ajustes o deshacer. | La copia existe, pero un ajuste falló. | **Reintentar ajustes** o **Deshacer…**. |
 | Se usará el CD de drivers «…», que no es la versión que conoce ProxLaunch. … | Aviso: no es virtio-win 0.1.302. No impide crear. | Comprueba el origen del ISO. |
 
+#### Mensajes de libvirt, hardware del clúster, CPU personalizadas y ARM64
+
+Los puntos suspensivos (…) son datos que cambian en cada caso. Los avisos no impiden crear; los errores sí.
+
+| Mensaje | Qué significa | Qué hacer |
+|---|---|---|
+| El archivo es demasiado grande para ser la descripción de una máquina (…). El límite es de 4 MiB. ¿Es el archivo correcto? | Elegiste un archivo que no es un XML de máquina. | Elige el XML que genera `virsh dumpxml`. |
+| El archivo contiene instrucciones que ProxLaunch no acepta por seguridad (DOCTYPE o ENTITY). … | El XML trae instrucciones que un XML de libvirt normal no tiene. | Genera el XML de nuevo con `virsh dumpxml`. |
+| No pude leer el archivo como la descripción de una máquina de libvirt (…). Genera uno nuevo con «virsh dumpxml --inactive nombre > maquina.xml». | El archivo está mal formado, incompleto o no es de libvirt. | Genéralo de nuevo. |
+| Esta máquina no es de tipo KVM (…); ProxLaunch solo sabe traer máquinas KVM. | Es otro tipo de virtualización (Xen, LXC…). | No se puede traer con ProxLaunch. |
+| La máquina es … pero el servidor … es …. Elige un servidor del mismo tipo. | Arquitecturas distintas (por ejemplo, una máquina ARM64 y un servidor x86). | Elige otro **Servidor de destino**. |
+| Elige la imagen del disco «…» (o márcalo «Crear vacío» o «No migrar»). El disco del sistema no se puede omitir. | Un disco de la máquina no tiene imagen. | **Elegir imagen…** o **Crear vacío** (el del sistema necesita su imagen). Ver [Una imagen por disco](#una-imagen-por-disco). |
+| Este disco depende de otro archivo (backing file) y Proxmox no lo admite. Aplánalo antes con: qemu-img convert -O qcow2 origen.qcow2 plano.qcow2 (sin la opción -B). | El disco está «en capas». | Aplánalo y elige el archivo nuevo. |
+| Hay N discos … y ese tipo admite como máximo M. Cambia el tipo de algunos discos. | Demasiados discos del mismo tipo de conexión. | Pasa algunos a otro tipo. |
+| Los discos necesitan … y en «…» quedan …. | No caben los discos en el almacenamiento. | Libera espacio o elige otro. |
+| La tarjeta N era la red NAT de libvirt, que Proxmox no tiene. Elige un bridge o una red virtual del servidor. / …usaba una conexión directa a la tarjeta física (macvtap)… / …usaba Open vSwitch… | La red de origen no tiene equivalente. | Elige un bridge (o una red virtual) del servidor. |
+| No puedes conservar la MAC si creas N copias (se repetiría). Crea una sola o usa una MAC nueva. | **Conservar la MAC de origen** con varias copias. | Crea una sola copia o desmarca la casilla. |
+| La MAC «…» no es válida (usa el formato 52:54:00:ab:cd:ef y que el primer byte sea par). | MAC mal escrita. | Corrígela o deja que Proxmox genere una nueva. |
+| El mapeo «…» ya no existe en este servidor. Elige otro. | Un lote guardado, un perfil o un CSV nombra un mapeo que este servidor no tiene. | Elige otro mapeo. |
+| El mapeo «…» no tiene dispositivo en …. Quita esos servidores del lote o elige otro mapeo. | El mapeo existe, pero no en todos los servidores del lote. | Quita esos servidores o elige otro mapeo. |
+| No hay mapeos que puedas usar (o no pude leerlos). Pide al administrador que cree un mapeo y te dé el permiso «Mapping.Use» sobre él. | La lista sale vacía. | Pídelo; ver [Permisos](#privilegios-opcionales-no-forman-parte-del-rol). |
+| No pude leer los mapeos de PCI (o USB). | Falló la lectura de una de las dos listas; la otra se muestra. | **Releer**. |
+| No tienes permiso para usar el mapeo «…» (falta «Mapping.Use» en /mapping/pci/…). Pide al administrador que te lo dé. | Falta `Mapping.Use`. | Pásale al administrador la orden de la guía de permisos. |
+| Para usar la tarjeta como gráfica principal, marca también «Es una tarjeta PCIe». | **Es la gráfica principal** sin PCIe. | Marca **Es una tarjeta PCIe**. |
+| Una máquina admite como máximo 16 tarjetas PCI y 5 dispositivos USB. | Demasiados dispositivos. | Quita alguno. |
+| El mapeo «…» está dos veces en la misma máquina; quita una. | Mapeo repetido. | Quita la fila repetida. |
+| Solo podrán arrancar K de las N máquinas de … a la vez con el mapeo «…»… | Aviso: hay menos dispositivos que máquinas. | Se crean todas; enciende solo las que quepan. |
+| «Mantener el controlador del servidor» necesita Proxmox 9.1 o posterior (esta versión es …). | Opción de PCI no disponible en esta versión. | Desmárcala. |
+| La CPU personalizada «…» no existe en …. Elige otra o pide al administrador que la cree. | El modelo `custom-…` no existe en algún servidor. | Elige otro tipo de CPU. |
+| No tienes permiso para usar la CPU personalizada «…» (falta «Mapping.Use» en /mapping/cpu/…). / (falta «Sys.Audit» en /nodes) | Falta el permiso de CPU personalizadas (según tu versión de Proxmox). | Pídelo; ver [Permisos](#privilegios-opcionales-no-forman-parte-del-rol). |
+| No pude saber si el servidor … es x86 o ARM (falta el permiso «Sys.Audit»). Lo trato como x86. Si es ARM64, indícalo en Opciones avanzadas. | No se pudo leer el tipo de procesador. | Pide `Sys.Audit` o elige **Arquitectura de este servidor** en modo avanzado. |
+| El servidor no tiene IOMMU activado: no puede pasar tarjetas PCI a las máquinas. El administrador debe activarlo en la BIOS y en el arranque de Proxmox. | Al encender, Proxmox no pudo preparar la tarjeta PCI porque el servidor no tiene IOMMU. | Pide al administrador que active la virtualización de E/S (VT-d o AMD-Vi) y IOMMU en Proxmox. |
+| La tarjeta PCIe del mapeo «…» necesita que la máquina sea de tipo «q35». | Al encender, la tarjeta se marcó como PCIe en una máquina que no es q35. | Elige el tipo de máquina q35 o desmarca PCIe. |
+| Un lote no puede mezclar servidores x86 y ARM64 (… es x86; … es ARM64). Crea un lote para cada tipo. | El lote usa nodos de los dos tipos. | Haz un lote por tipo de servidor. |
+| La plantilla «…» es de un servidor x86 y no se puede clonar en … (ARM64). Elige un servidor del mismo tipo. | Plantilla y servidor de distinto tipo. | Elige un servidor del mismo tipo que la plantilla. |
+| «…» no existe en servidores ARM64 (…). Elige …. | Un valor x86 que no se puede adaptar (por ejemplo, PCIe, SATA o SeaBIOS en un CSV). | Cambia el valor. |
+| Cambié estos valores porque el servidor es ARM64: …. Revisa que te sirvan. | Aviso: se adaptaron valores x86. | Revisa la lista. |
+| El servidor … es ARM64. Esto es experimental… | Aviso permanente de ARM64. | Si no arranca, mira la consola en Proxmox. |
+
 ### Preguntas frecuentes
 
 **¿ProxLaunch instala el sistema operativo en la máquina?**
@@ -4456,6 +5138,10 @@ centro de datos, o quita tus etiquetas propias. Ver
 
 **Guardé un lote con 0.6 y 0.5.1 no lo abre.** Los lotes y perfiles que usan opciones nuevas son de formato 3, que
 0.5.1 no entiende. Abre ese archivo con 0.6 o 0.7 (ver [Compatibilidad](#compatibilidad-con-versiones-anteriores)).
+
+**Guardé un lote con mapeos, MAC conservada o varios discos de libvirt y 0.8.0 no lo abre.** Es de formato 6, que 0.8.0 no
+entiende («Este archivo lo creó una versión más nueva de ProxLaunch»). Ábrelo con 0.9. Un CSV con `mapeo_pci` o `mapeo_usb`
+abierto en 0.8.0 no da error, pero **ignora** esas columnas con un aviso y crea las máquinas sin las tarjetas.
 
 **Guardé un lote con cloud-init en 0.7 y 0.6.0 no lo abre.** Un lote que usa cloud-init o **Esperar la IP** es de formato 4,
 que 0.6.0 no entiende («Este archivo lo creó una versión más nueva de ProxLaunch»). Ábrelo con 0.7. Los lotes que no usan
@@ -4483,8 +5169,7 @@ y **Sin grupo**. Elige un grupo, pon la entrada en **Permitir** o marca **Entien
 la red** si lo quieres así.
 
 **No veo redes virtuales en la lista Red.** Tu usuario no tiene `SDN.Use` sobre ellas, o no hay ninguna aplicada. Pídele al
-administrador `SDN.Use` en `/sdn/zones/<zona>` (rol `PVESDNUser`) y que aplique la configuración de SDN. En Proxmox 8.0 hace
-falta además el paquete `libpve-network-perl`. Ver [Redes virtuales (SDN)](#redes-virtuales-sdn).
+administrador `SDN.Use` en `/sdn/zones/<zona>` (rol `PVESDNUser`) y que aplique la configuración de SDN. Ver [Redes virtuales (SDN)](#redes-virtuales-sdn).
 
 **¿Cambiar la red de la copia cambia su MAC?** No, salvo que marques **Generar una MAC nueva**: ProxLaunch reenvía la MAC que
 la copia ya tiene. Una tarjeta **añadida** recibe una MAC nueva de Proxmox (no tiene otra que conservar). Ver
@@ -4544,10 +5229,10 @@ solo ProxLaunch no puede saber su IP.
 **¿Qué pasa si cierro ProxLaunch mientras espera las IP?** Te avisa («Se está esperando la IP de las máquinas»); si cierras,
 deja de esperar y las máquinas no se tocan. Al volver a abrir no se retoma: mira las IP en Proxmox.
 
-**¿Puedo crear una plantilla de Ubuntu sin tocar Proxmox?** Sí, con **Archivo > Crear plantilla desde imagen cloud…** (necesita
-Proxmox 8.4 o superior). Ver [Crear una plantilla desde una imagen cloud](#crear-una-plantilla-desde-una-imagen-cloud).
+**¿Puedo crear una plantilla de Ubuntu sin tocar Proxmox?** Sí, con **Archivo > Crear plantilla desde imagen cloud…**. Ver
+[Crear una plantilla desde una imagen cloud](#crear-una-plantilla-desde-una-imagen-cloud).
 
-**«Crear plantilla desde imagen cloud…» está desactivado.** Tu Proxmox es anterior a la 8.4, o hay una transferencia, un lote
+**«Crear plantilla desde imagen cloud…» está desactivado.** No hay conexión, o hay una transferencia, un lote
 o un asistente en marcha. Si el asistente se abre pero no te deja crear, lee el mensaje: suele ser que ningún almacenamiento
 tiene el contenido «Importar» o que falta un privilegio.
 
@@ -4576,7 +5261,7 @@ una contraseña o una IP fija se copiarían a todas. Esos datos se eligen **al c
 **No veo las opciones ISO, disco existente o plantilla (están desactivadas).**
 Cada una dice debajo por qué. Lo más habitual es que falte un permiso (`VM.Config.Disk`, `VM.Clone`,
 `Datastore.AllocateTemplate`, `Sys.AccessNetwork`), que el servidor no tenga un almacenamiento con ese contenido (ISO o
-«Import»), que no haya plantillas o que tu Proxmox sea anterior a 8.4 (para importar). Abre **Ayuda > Qué puedo hacer en este
+«Import») o que no haya plantillas. Abre **Ayuda > Qué puedo hacer en este
 servidor…** y usa **Copiar texto para el administrador**.
 
 **¿Por qué me pregunta qué almacenamiento usar, y por qué a veces no?**
@@ -4622,10 +5307,10 @@ por la etiqueta `proxlaunch` (o `lote-<código>`) o por el rango de números. Si
 
 **¿Puedo probar un lote sin crear nada?** Sí, con **Simular**. Solo lee del servidor.
 
-**¿Qué versiones de Proxmox funcionan?** De la 8.0 a la 9.2. Una versión más nueva se admite con un aviso. Descargar un ISO
-desde una dirección web pide 8.2 o superior; importar un disco existente y el asistente **Crear plantilla desde imagen
-cloud**, 8.4 o superior. Los privilegios de cloud-init y de esperar la IP cambian entre la 8.x y la 9.x (ver
-[Privilegios opcionales](#privilegios-opcionales-no-forman-parte-del-rol)).
+**¿Qué versiones de Proxmox funcionan?** De la **8.4** a la 9.2 (desde la 0.9; las versiones 8.0 a 8.3 ya no se admiten:
+actualiza el servidor). Una versión más nueva se admite con un aviso. Con la rama 8 verás un aviso de que ya no recibe
+actualizaciones de seguridad: conviene pasar a Proxmox 9. Los privilegios de cloud-init y de esperar la IP cambian entre la
+8.x y la 9.x (ver [Privilegios opcionales](#privilegios-opcionales-no-forman-parte-del-rol)).
 
 **¿Qué diferencia hay entre un perfil de máquina y un lote guardado?** Un perfil guarda **solo el hardware** y no el nombre,
 el número ni el nodo. Un lote guardado recuerda **todo el lote**: hardware, cantidad, nombres, números y dónde crearlas. Los
@@ -4670,6 +5355,48 @@ desmarcaste. El resumen lo dice. Usa **Revisar filas…** para volver a la vista
 reemplazar una huella, y siempre con confirmación.
 
 **Me equivoqué de modo, ¿pierdo lo que escribí?** No. Cambiar entre básico y avanzado solo muestra u oculta campos.
+
+**¿Puedo traer una máquina que tengo en virt-manager o libvirt?** Sí: **Archivo > Importar desde libvirt…**. Lees su XML,
+revisas qué se traslada y qué no, eliges la imagen de cada disco y creas la máquina. ProxLaunch **no ejecuta nada** en tu
+equipo: las órdenes (`virsh`, `qemu-img`) las ejecutas tú en el servidor de libvirt. Ver
+[Migrar una máquina desde libvirt](#migrar-una-máquina-desde-libvirt).
+
+**¿Se traslada todo de la máquina de libvirt?** No. Se trasladan el nombre, la memoria, los procesadores, el arranque, el TPM
+(vacío), los discos (con tus imágenes) y las tarjetas de red. **No** se trasladan la memoria de arranque UEFI (NVRAM), el
+contenido del TPM, las fotos (snapshots) internas de los discos, la pantalla remota, el sonido ni las tarjetas PCI o USB físicas.
+La vista previa lo dice fila por fila antes de que cambies nada.
+
+**¿ProxLaunch convierte o sube los discos de libvirt por mí?** Solo **sube** los archivos que tú elijas (con **Subir desde mi
+equipo…**). **No convierte ni aplana**: si un disco depende de otro archivo (backing file), ProxLaunch lo detecta en un qcow2 de
+tu equipo y te da la orden `qemu-img convert` para que la ejecutes tú.
+
+**¿Por qué mi máquina de libvirt tiene la red «sin elegir»?** Porque el bridge que usaba no existe en el servidor de Proxmox con
+el mismo nombre (o era la red NAT `default` de libvirt, que Proxmox no tiene). Elige uno de la lista.
+
+**¿Debo conservar la MAC de origen?** Normalmente **no**: déjala desmarcada y Proxmox genera una nueva. Conserva la MAC solo si algo
+depende de ella (un DHCP con reserva, una licencia). Y **apaga la máquina original** antes de encender la nueva. Solo vale con
+una copia.
+
+**No veo tarjetas PCI ni dispositivos USB en «Hardware del clúster».** ProxLaunch solo ve los **mapeos** sobre los que tu
+usuario tiene permiso. Pídele al administrador que cree el mapeo (**Datacenter → Mapeo de recursos**) y te dé `Mapping.Use` (rol
+`PVEMappingUser`) sobre él. **Qué puedo hacer en este servidor** te da el texto con la orden. Ver
+[Hardware del clúster](#hardware-del-clúster-y-cpu-personalizadas).
+
+**Mi máquina con una tarjeta asignada no arranca.** Una tarjeta física solo la puede usar una máquina encendida a la vez, y la
+máquina no se puede migrar encendida. Comprueba que no la use otra máquina, que el mapeo exista en ese servidor y, para una
+tarjeta PCIe, que la máquina sea de tipo `q35` (ProxLaunch lo pone si marcaste **Es una tarjeta PCIe**).
+
+**No veo mi CPU personalizada.** Solo se ofrecen las que existen en **todos** los servidores donde se crearán las máquinas, y
+hace falta permiso: `Sys.Audit` en `/nodes` (Proxmox 8.4 a 9.1) o `Mapping.Use` en `/mapping/cpu/<modelo>` (9.2). En un servidor
+ARM64 de algunas versiones no se pueden listar.
+
+**¿Funciona ProxLaunch con servidores ARM64?** Es **experimental**: nunca se ha probado en un servidor ARM64 real. Detecta el tipo
+de cada servidor, adapta el hardware (arranque UEFI, CPU `host`, discos SCSI o VirtIO) y no mezcla servidores x86 y ARM64 en un
+lote. Si una máquina ARM64 no arranca, mira su consola en Proxmox. Ver [Servidores ARM64](#servidores-arm64-experimental).
+
+**ProxLaunch dice que mi Proxmox 8.2 ya no se admite.** Desde la 0.9 la versión mínima es la **8.4**. Actualiza el servidor.
+Con Proxmox 8.4 verás un aviso de que la rama 8 ya no recibe actualizaciones de seguridad: sigue funcionando, pero conviene pasar
+a la 9.
 
 **¿Hay más idiomas?** Por ahora, solo español. **¿Funciona en macOS?** No está previsto.
 
@@ -4717,6 +5444,12 @@ En Linux y otros sistemas tipo Unix, el registro y todos los archivos que escrib
 informes) se crean con permisos solo para tu usuario (0600), y sus carpetas propias, también (0700). Si compartes un
 archivo con otra persona, ella tendrá que poder leerlo: cópialo con sus permisos.
 
+**El XML de libvirt.** Al [migrar desde libvirt](#migrar-una-máquina-desde-libvirt) ProxLaunch lee **solo el archivo que
+eliges**, con límites de tamaño, y rechaza los XML con instrucciones peligrosas (DOCTYPE o ENTITY). Nunca abre una ruta que
+aparezca dentro del XML (solo la muestra como texto), nunca lee las contraseñas de la consola VNC o SPICE que el archivo
+pueda traer y no guarda el XML, su contenido ni su ruta en ningún archivo. Si el XML trae contraseñas, ProxLaunch lo avisa:
+no compartas ese archivo.
+
 **Archivos de otras personas.** Los perfiles, lotes y CSV que abres o importas se **leen y nunca se modifican**. ProxLaunch
 comprueba su tamaño y su contenido antes de usarlos y no ejecuta nada de lo que traen. Nada que parezca una credencial se
 guarda en un lote, un perfil ni un CSV; si lo encuentra, te avisa **qué campo** lo tiene, sin mostrar el valor.
@@ -4734,7 +5467,7 @@ guarda en un lote, un perfil ni un CSV; si lo encuentra, te avisa **qué campo**
 
 - **Clave SSH pública.** Es un dato que se puede compartir; **la clave privada nunca**. ProxLaunch **rechaza** una clave
   privada pegada o elegida en un archivo, la borra del campo al instante y no la conserva. Las claves públicas que escribes
-  **se guardan** en los [lotes guardados](#qué-se-guarda), junto con las IP: si compartes el archivo, las compartes.
+  **se guardan** en los [lotes guardados](#qué-se-guarda-y-dónde), junto con las IP: si compartes el archivo, las compartes.
 - **Contraseña de cloud-init.** Es **opcional y la opción menos segura**: se envía a Proxmox y queda en la configuración de la
   máquina, donde la verá quien tenga acceso a ella o a su consola. En ProxLaunch:
   - Se escribe en campos enmascarados (con una casilla **Mostrar** que tú decides marcar), y hay que repetirla.
@@ -4779,7 +5512,18 @@ administrador.
 | **SDN (red definida por software)** | La función de Proxmox con la que el administrador define **zonas** y **redes virtuales** que se reparten por los servidores. |
 | **Zona (SDN)** | Un área de red del SDN que agrupa varias VNets. La zona `localnetwork` son los bridges normales de cada servidor. |
 | **VNet (red virtual)** | Una red dentro de una zona del SDN. Se elige en la lista **Red** como un bridge. Ver [Redes virtuales (SDN)](#redes-virtuales-sdn). |
-| **MAC (dirección MAC)** | La «matrícula» de una tarjeta de red: un identificador único que usan el router y el DHCP para reconocer la máquina. ProxLaunch la conserva al cambiar la red de una copia. |
+| **MAC (dirección MAC)** | La «matrícula» de una tarjeta de red (por ejemplo `52:54:00:12:34:56`): un identificador único que usan el router y el DHCP para reconocer la máquina. ProxLaunch la conserva al cambiar la red de una copia. Al traer una máquina de libvirt, por defecto recibe una nueva; **Conservar la MAC de origen** la mantiene (con una sola copia y apagando la máquina original). |
+| **libvirt / KVM** | libvirt es el programa (virt-manager, `virsh`) que gestiona máquinas KVM en un servidor Linux que no es Proxmox. Cada máquina se describe en un archivo XML. Ver [Migrar una máquina desde libvirt](#migrar-una-máquina-desde-libvirt). |
+| **XML de libvirt** | El archivo de texto con la configuración de una máquina de libvirt; se genera con `virsh dumpxml`. ProxLaunch solo lo lee. |
+| **Backing file** | Un disco qcow2 que depende de otro archivo base («disco en capas»). Proxmox no lo admite: hay que aplanarlo con `qemu-img convert`. |
+| **Mapeo de recursos** | Un nombre que el administrador le pone a una tarjeta PCI o a un dispositivo USB de un servidor (por ejemplo `gpu-ejemplo`) para que otros usuarios puedan dárselo a una máquina sin ser administradores. Se crean en **Datacenter → Mapeo de recursos** y se usan con el permiso `Mapping.Use`. Ver [Hardware del clúster](#hardware-del-clúster-y-cpu-personalizadas). |
+| **Passthrough (paso directo)** | Entregar una pieza física del servidor (una gráfica, un USB) **entera** a una máquina virtual. Mientras esa máquina esté encendida, nadie más la puede usar, y la máquina no se puede migrar encendida. |
+| **PCI / PCIe** | La ranura de la placa donde van las tarjetas (gráficas, tarjetas de red…). PCIe es la versión moderna; necesita el tipo de máquina `q35`. |
+| **q35** | Un tipo de máquina virtual moderno que las tarjetas PCIe necesitan. ProxLaunch lo pone solo si hace falta; no existe en ARM64. |
+| **Modelo de CPU personalizado (`custom-…`)** | Un tipo de procesador «a medida» que el administrador define para todo el clúster. Se elige en la lista **Tipo de CPU**, grupo **Personalizados del clúster**. |
+| **ARM64 / aarch64** | Un tipo de procesador distinto del x86 (Intel y AMD). Un servidor ARM64 solo ejecuta máquinas ARM64. ProxLaunch lo soporta de forma **experimental**. Ver [Servidores ARM64](#servidores-arm64-experimental). |
+| **x86 / x86_64** | El tipo de procesador de casi todos los servidores y PC (Intel y AMD). |
+| **NVRAM (UEFI)** | La memoria donde el arranque UEFI guarda con qué disco arrancar. Al migrar desde libvirt no se traslada. |
 | **Firewall de la máquina / firewall general** | El filtro de Proxmox para una máquina, y el interruptor global del centro de datos sin el cual el primero no actúa. ProxLaunch nunca enciende el general. |
 | **Grupo de seguridad** | Un paquete de reglas del firewall con nombre (por ejemplo `web`: puertos 80 y 443) que crea el administrador y ProxLaunch solo elige. |
 | **Política (del firewall)** | Qué hace el firewall con el tráfico que ninguna regla menciona: **Bloquear** o **Permitir**. Hay una para la entrada y otra para la salida. |
@@ -4811,7 +5555,7 @@ administrador.
 | **Protección contra borrado** | Un ajuste de la máquina por el que Proxmox no deja eliminarla hasta que se quite. |
 | **Arranque con el servidor (`onboot`)** | Hace que la máquina se encienda sola cuando arranca el servidor Proxmox. El **orden** y la **espera** (`startup`) indican en qué orden y con qué retraso. |
 | **MTU** | El tamaño máximo de paquete de una tarjeta de red. **Igual al bridge** usa el del bridge. Solo se fija en tarjetas VirtIO. |
-| **Privilegio opcional** | Un privilegio que no forma parte del rol `ProxLaunchCreador` y que solo habilita una función concreta: `VM.PowerMgmt` (encender y apagar), `Pool.Audit` (ver pools) y, desde la 0.7, `VM.Config.Cloudinit` (cloud-init), `VM.Monitor` o `VM.GuestAgent.Audit` (esperar la IP, según la versión) y los de los scripts; desde la 0.8, `SDN.Use` en las zonas o redes virtuales que quieras usar (con la asignación acotada). |
+| **Privilegio opcional** | Un privilegio que no forma parte del rol `ProxLaunchCreador` y que solo habilita una función concreta: `VM.PowerMgmt` (encender y apagar), `Pool.Audit` (ver pools) y, desde la 0.7, `VM.Config.Cloudinit` (cloud-init), `VM.Monitor` o `VM.GuestAgent.Audit` (esperar la IP, según la versión) y los de los scripts; desde la 0.8, `SDN.Use` en las zonas o redes virtuales que quieras usar (con la asignación acotada); desde la 0.9, `Mapping.Use` en los mapeos (o, en Proxmox 9.2, en `/mapping/cpu/<modelo>`). |
 | **Perfil de máquina** | Una configuración de hardware ya preparada que rellena el formulario. No es una plantilla de Proxmox ni un perfil de conexión. |
 | **Perfil de conexión** | Los datos para llegar a un servidor (sin secretos). No se exporta. |
 | **CSV** | Un archivo de texto con una tabla, que puedes crear y editar con Excel o LibreOffice Calc. Cada fila es una máquina. |

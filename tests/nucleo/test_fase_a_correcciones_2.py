@@ -445,7 +445,7 @@ def test_qa_a_10_sin_sys_modify_conocido_el_rechazo_por_politica_es_aviso():
     ]
     sin_permiso = catalogo(
         politica=pol,
-        perm=PermisosEfectivos(rutas={"/": {"VM.Allocate": 1}}),
+        perm=PermisosEfectivos(rutas={"/": {"VM.Allocate": 1, "Sys.Audit": 1}}),
     )
     conocido = [p for p in _va(cfg, sin_permiso) if p.codigo == "V-A03"]
     assert [p.severidad for p in conocido] == [Severidad.ERROR]
@@ -464,7 +464,9 @@ def test_qa_a_10_list_y_existing_tambien_degradan_a_aviso_con_permisos_desconoci
 
 def test_s_1_la_comparacion_es_exacta_aunque_el_estilo_no_distinga_mayusculas():
     pol = PoliticaEtiquetas("list", ("Web",), distingue_mayusculas=False)
-    cat = catalogo(politica=pol, perm=PermisosEfectivos(rutas={"/": {"VM.Allocate": 1}}))
+    cat = catalogo(
+        politica=pol, perm=PermisosEfectivos(rutas={"/": {"VM.Allocate": 1, "Sys.Audit": 1}})
+    )
     va03 = [p for p in _va(cfg_vm(etiquetas_usuario=("web",)), cat) if p.codigo == "V-A03"]
     assert [p.params["etiqueta"] for p in va03] == ["web"]
 
@@ -483,7 +485,7 @@ def test_s_1_un_clon_solo_evalua_las_etiquetas_anadidas_a_las_de_la_plantilla():
     inv.catalogo = dataclasses.replace(
         inv.catalogo,
         politica_etiquetas=pol,
-        permisos=PermisosEfectivos(rutas={"/": {"VM.Allocate": 1}}),
+        permisos=PermisosEfectivos(rutas={"/": {"VM.Allocate": 1, "Sys.Audit": 1}}),
     )
     cfg, problemas = resolver_origen(
         cfg_clon("base", etiquetas=("heredada",), etiquetas_usuario=("nueva", "otra")), inv, "pve1"

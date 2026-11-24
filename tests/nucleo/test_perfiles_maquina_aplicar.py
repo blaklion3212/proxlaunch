@@ -396,29 +396,29 @@ def _preparar(config, version=(9, 2), nodo_="pve1"):
 
 
 def test_sin_funciones_requeridas_es_exactamente_validar_vm():
-    """CA-P07.1 / CA-P07.2: en el MVP 3 ningún campo exige versión superior a 8.0."""
+    """CA-P07.1 / CA-P07.2: ningún campo del perfil exige versión superior a la mínima (8.4)."""
     config = ConfigPerfil(discos=(DiscoPerfil(8),), redes=(RedPerfil(),))
     assert funciones_requeridas(config) == frozenset()
-    cfg, inv, caps = _preparar(config, (8, 0))
+    cfg, inv, caps = _preparar(config, (8, 4))
     assert evaluar_compatibilidad(cfg, config, inv, caps) == validar_vm(cfg, inv, caps)
 
 
 def test_el_mecanismo_senala_una_funcion_de_prueba_inyectada_con_la_version_requerida():
     config = ConfigPerfil(discos=(DiscoPerfil(8),), redes=(RedPerfil(),))
-    cfg, inv, caps = _preparar(config, (8, 0))
+    cfg, inv, caps = _preparar(config, (8, 4))
     problemas = evaluar_compatibilidad(
-        cfg, config, inv, caps, requeridas=lambda c: frozenset({Funcion.IMPORTAR_DISCO})
+        cfg, config, inv, caps, requeridas=lambda c: frozenset({Funcion.CLAVES_MS_2023})
     )
     (p,) = [x for x in problemas if x.codigo == "V-P07.version"]
     assert p.severidad == Severidad.ERROR
-    assert p.params == {"funcion": "importar_disco", "version": "8.4"}  # enmienda 14.6
+    assert p.params == {"funcion": "claves_ms_2023", "version": "9.1"}
 
 
 def test_con_la_version_suficiente_la_funcion_inyectada_no_da_problema():
     config = ConfigPerfil(discos=(DiscoPerfil(8),), redes=(RedPerfil(),))
     cfg, inv, caps = _preparar(config, (9, 2))
     problemas = evaluar_compatibilidad(
-        cfg, config, inv, caps, requeridas=lambda c: frozenset({Funcion.IMPORTAR_DISCO})
+        cfg, config, inv, caps, requeridas=lambda c: frozenset({Funcion.CLAVES_MS_2023})
     )
     assert not [x for x in problemas if x.codigo == "V-P07.version"]
 
@@ -427,9 +427,9 @@ def test_con_version_forzada_menor_la_compatibilidad_usa_las_capacidades_forzada
     """CA-P07.5."""
     config = ConfigPerfil(discos=(DiscoPerfil(8),), redes=(RedPerfil(),))
     cfg, inv, _ = _preparar(config, (9, 2))
-    forzada = capacidades_para(inv.version, (8, 0))
+    forzada = capacidades_para(inv.version, (8, 4))
     problemas = evaluar_compatibilidad(
-        cfg, config, inv, forzada, requeridas=lambda c: frozenset({Funcion.IMPORTAR_DISCO})
+        cfg, config, inv, forzada, requeridas=lambda c: frozenset({Funcion.CLAVES_MS_2023})
     )
     assert any(x.codigo == "V-P07.version" for x in problemas)
 

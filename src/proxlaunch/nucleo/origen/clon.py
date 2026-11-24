@@ -15,6 +15,8 @@ from proxlaunch.nucleo.cloudinit.modelos import INFO_DESCONOCIDA
 from proxlaunch.nucleo.cloudinit.peticion import construir_put_cloudinit
 from proxlaunch.nucleo.constructor_peticion import valor_startup
 from proxlaunch.nucleo.errores import CodigoError, ErrorProxLaunch
+from proxlaunch.nucleo.hardware_cluster.modelos import MAX_INDICE_USB, MAX_PCI, RE_ID_MAPEO
+from proxlaunch.nucleo.hardware_cluster.peticion import parametros_hardware
 from proxlaunch.nucleo.modelos.catalogo import DetallePlantilla, DiscoPlantilla
 from proxlaunch.nucleo.modelos.inventario import Inventario, Storage
 from proxlaunch.nucleo.modelos.origen import DetalleClon, ModoClon
@@ -41,6 +43,11 @@ _GIB = 1024**3
 _RE_CLAVE_DISCO = re.compile(r"(?:scsi|virtio|sata|ide)\d+")
 _RE_CLAVE_DISCO_PLANTILLA = re.compile(r"(?:(?:scsi|virtio|sata|ide)\d+|efidisk0|tpmstate0)")
 _RE_NET = re.compile(r"net\d+")
+_RE_HOSTPCI = re.compile(r"hostpci(\d{1,2})")
+_RE_USB = re.compile(r"usb(\d{1,2})")
+_RE_VIRTIOFS = re.compile(r"virtiofs\d+")
+_RE_ARQUITECTURA = re.compile(r"[A-Za-z0-9_]{1,16}")
+_RE_MAQUINA = re.compile(r"[A-Za-z0-9_.+=,-]{1,64}")
 _RE_ID = re.compile(r"[A-Za-z0-9._-]+")
 _RE_TAMANO = re.compile(r"(\d+)([KMGT]?)")
 _FACTOR = {"": 1, "K": 1024, "M": 1024**2, "G": _GIB, "T": 1024**4}
@@ -121,6 +128,52 @@ def _etiquetas(valor: object) -> frozenset[str]:
     return frozenset(t.strip() for t in re.split(r"[;,]", valor) if t.strip())
 
 
+def _hardware_de_config(
+    config: Mapping[str, object],
+) -> tuple[tuple[int, ...], tuple[int, ...], tuple[str, ...], bool]:
+    """``(hostpci, usb, mapeos, pasarela_directa)`` de la config de una plantilla (D3, RF-D3.5).
+
+    Índices ocupados de ``hostpciN``/``usbN``; ids de ``mapping=<id>`` (solo los que cumplen
+    ``RE_ID_MAPEO``); y si hay dispositivos sin mapeo (``hostpciN=<bdf>``, ``usbN=host=…``),
+    ``virtiofsN`` o ``rng0`` físico: solo root puede clonar eso (V-D58).
+    """
+    hostpci: set[int] = set()
+    usb: set[int] = set()
+    mapeos: list[str] = []
+    directa = False
+    for clave, valor in config.items():
+        if not isinstance(clave, str):
+            continue
+        m_pci = _RE_HOSTPCI.fullmatch(clave)
+        m_usb = _RE_USB.fullmatch(clave)
+        if m_pci is None and m_usb is None:
+            if _RE_VIRTIOFS.fullmatch(clave) or (
+                clave == "rng0" and isinstance(valor, str) and "/dev/hwrng" in valor
+            ):
+                directa = True
+            continue
+        if m_pci is not None and int(m_pci.group(1)) < MAX_PCI:
+            hostpci.add(int(m_pci.group(1)))
+        elif m_usb is not None and int(m_usb.group(1)) < MAX_INDICE_USB:
+            usb.add(int(m_usb.group(1)))
+        if not isinstance(valor, str):
+            directa = True  # un valor ilegible no se afirma mapeado
+            continue
+        partes = [p.strip() for p in valor.split(",")]
+        id_mapeo = next((p[len("mapping=") :] for p in partes if p.startswith("mapping=")), None)
+        if id_mapeo is not None:
+            if RE_ID_MAPEO.fullmatch(id_mapeo):
+                if id_mapeo not in mapeos:
+                    mapeos.append(id_mapeo)
+            else:
+                directa = True
+        elif m_usb is not None and partes[0] == "host=spice":
+            continue  # redirección SPICE: no es un dispositivo físico
+        else:
+            directa = True
+    return tuple(sorted(hostpci)), tuple(sorted(usb)), tuple(mapeos), directa
+
+
 def detalle_de_config(config: Mapping[str, object]) -> DetallePlantilla:
     """Interpreta la config de una plantilla (texto no confiable; nunca lanza).
 
@@ -152,6 +205,9 @@ def detalle_de_config(config: Mapping[str, object]) -> DetallePlantilla:
     bloqueo = config.get("lock")
     plantilla = config.get("template")
     descripcion = config.get("description")
+    arquitectura = config.get("arch")
+    maquina = config.get("machine")
+    hostpci, usb, mapeos, directa = _hardware_de_config(config)
     return DetallePlantilla(
         es_plantilla=plantilla in (1, "1", True),
         bloqueo=bloqueo if isinstance(bloqueo, str) and bloqueo else None,
@@ -171,6 +227,17 @@ def detalle_de_config(config: Mapping[str, object]) -> DetallePlantilla:
         cloudinit=info_cloudinit(config),
         # Fase C: ``net0..net31`` de la misma config, interpretadas (DT-C5; cero GET nuevos).
         tarjetas=tarjetas_de_config(config),
+        # Fase D: arquitectura, máquina y hardware asignado de la misma config (cero GET nuevos).
+        arquitectura=(
+            arquitectura
+            if isinstance(arquitectura, str) and _RE_ARQUITECTURA.fullmatch(arquitectura)
+            else None
+        ),
+        maquina=maquina if isinstance(maquina, str) and _RE_MAQUINA.fullmatch(maquina) else None,
+        hostpci=hostpci,
+        usb=usb,
+        mapeos=mapeos,
+        pasarela_directa=directa,
     )
 
 
@@ -442,6 +509,24 @@ def _ajustes_cloudinit(
     if contrasena is None or info.es_windows or es_windows(info.ostype):
         contrasena = None
     return construir_put_cloudinit(ci, info), contrasena
+
+
+def parametros_hardware_clon(cfg: ConfiguracionVM, plantilla: DetallePlantilla) -> dict[str, str]:
+    """Cuerpo del ``PUT …/config`` de hardware de un clon (DT-D11, RF-D3.2); ``{}`` sin D3.
+
+    Las claves ``hostpciN``/``usbN`` usan los primeros índices libres de la plantilla (CA-D3.2.4);
+    ``machine=q35`` solo con ``pcie`` y si la máquina de la plantilla aún no es q35; ``vga=none``
+    con ``x_vga``. ``ValueError`` si un id no es válido o no quedan índices libres.
+    """
+    libres_pci = [i for i in range(MAX_PCI) if i not in plantilla.hostpci]
+    libres_usb = [i for i in range(MAX_INDICE_USB) if i not in plantilla.usb]
+    return parametros_hardware(
+        cfg.hardware_cluster,
+        (),
+        libres_pci=libres_pci,
+        libres_usb=libres_usb,
+        maquina_actual=plantilla.maquina,
+    )
 
 
 def parametros_ampliacion(clave_disco: str, tamano_gib: int) -> dict[str, str]:

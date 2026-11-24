@@ -9,10 +9,6 @@ from proxlaunch.nucleo.capacidades import (
 
 def test_versiones_conocidas_son_exactamente_las_especificadas():
     assert VERSIONES_CONOCIDAS == (
-        (8, 0),
-        (8, 1),
-        (8, 2),
-        (8, 3),
         (8, 4),
         (9, 0),
         (9, 1),

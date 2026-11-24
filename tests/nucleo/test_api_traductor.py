@@ -180,7 +180,7 @@ FILAS = [
         id="S7-parametro-invalido-400",
     ),
     pytest.param(
-        _version_no_soportada, C.VERSION_NO_SOPORTADA, {"minima": "8.0"}, id="S7-version-7"
+        _version_no_soportada, C.VERSION_NO_SOPORTADA, {"minima": "8.4"}, id="S7-version-7"
     ),
     pytest.param(
         _recurso_inexistente,
@@ -410,3 +410,31 @@ def test_secuencia_de_apoyo_repite_el_ultimo_valor():
     s = Secuencia(1, 2)
     assert [s.siguiente() for _ in range(4)] == [1, 2, 2, 2]
     assert RUTA_ESTADO.endswith("/status")
+
+
+# --- VMID ocupado en /cluster/nextid?vmid= (PVE 9.2.32 cambió el texto) ---------------------
+
+
+def test_vmid_ocupado_texto_nuevo_guest_id_en_uso():
+    cuerpo = (
+        '{"errors":{"vmid":"guest ID 9030 is already in use"},'
+        '"message":"Parameter verification failed.\\n","data":null}'
+    )
+    e = traducir_http(400, "Parameter verification failed.", cuerpo)
+    assert e.codigo == C.VMID_OCUPADO
+    assert e.params["vmid"] == "9030"
+    assert "nodo" not in e.params
+
+
+@pytest.mark.parametrize(
+    ("motivo", "params"),
+    [
+        ("VM 9030 already exists", {"vmid": "9030"}),
+        ("CT 9030 already exists", {"vmid": "9030"}),
+        ("VM 9030 already exists on node 'x'", {"vmid": "9030", "nodo": "x"}),
+    ],
+)
+def test_vmid_ocupado_texto_antiguo_sigue_funcionando(motivo, params):
+    e = traducir_http(500, motivo, '{"data":null}')
+    assert e.codigo == C.VMID_OCUPADO
+    assert e.params == params

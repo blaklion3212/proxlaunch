@@ -12,6 +12,7 @@ import base64
 import hashlib
 import hmac
 import json
+import os
 import secrets
 import struct
 import subprocess
@@ -31,9 +32,23 @@ from proxlaunch.nucleo.servicios.conexion import ServicioConexion
 HOST = "127.0.0.1"
 PUERTO = 8006
 NODO = "pve-lab"
-DIR_LAB = Path.home() / "aprovprox-lab"
+
+
+def _home_real() -> Path:
+    """HOME real del usuario: tests/conftest.py redirige HOME a un temporal antes de importar
+    esto. ``pwd`` solo existe en POSIX (en Windows el laboratorio no se usa)."""
+    try:
+        import pwd
+    except ImportError:
+        return Path.home()
+    return Path(pwd.getpwuid(os.getuid()).pw_dir)
+
+
+DIR_LAB = _home_real() / "aprovprox-lab"
 DIR_SECRETOS = DIR_LAB / "secretos"
 VMID_MIN, VMID_MAX = 9000, 9099
+# Grupo de volúmenes LVM del laboratorio (se llamaba `lab` en el laboratorio anterior).
+VG_LAB = "labvg"
 ROL = "ProxLaunchCreador"
 USUARIO_PLC = "plc@pve"
 

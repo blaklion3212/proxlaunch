@@ -19,7 +19,7 @@ from __future__ import annotations
 import dataclasses
 import logging
 import time
-from collections.abc import Callable
+from collections.abc import Callable, Collection
 from datetime import datetime
 
 from PySide6.QtCore import QCoreApplication, QObject, QThread, QTimer, Signal
@@ -33,7 +33,9 @@ from proxlaunch.interfaz.trabajadores import (
     Lanzador,
     guardar_storage_recordado,
     leer_catalogo_para,
+    leer_cpus,
     leer_detalle_plantilla,
+    leer_hardware_cluster,
     leer_listados,
     leer_plantillas,
 )
@@ -41,6 +43,7 @@ from proxlaunch.interfaz.vistas.selector_origen import PeticionFuente, SelectorO
 from proxlaunch.nucleo.cloudinit.modelos import InfoCloudInitPlantilla
 from proxlaunch.nucleo.errores import CodigoError, ErrorProxLaunch
 from proxlaunch.nucleo.firewall.modelos import InfoFirewall
+from proxlaunch.nucleo.hardware_cluster.modelos import InfoHardwareCluster
 from proxlaunch.nucleo.lote.filas import filas_efectivas
 from proxlaunch.nucleo.lote.modelos import DefinicionLote
 from proxlaunch.nucleo.modelos.catalogo import (
@@ -111,6 +114,8 @@ class ControladorOrigen(QObject):
     - ``capacidades_cambiadas(object)``: ``CapacidadesOrigen | None``.
     - ``transferencia_terminada(object)``: ``ResultadoTransferencia``.
     - ``storage_mv_elegido(str)``: el usuario eligió el storage de discos de este servidor.
+    - ``hardware_leido(object)``: ``InfoHardwareCluster | None`` tras leer los mapeos o los modelos
+      de CPU (D3); ``None`` si la lectura falló del todo.
     - ``fallo(object)``: ``ErrorProxLaunch`` de una lectura (la ventana decide cómo mostrarlo).
     - ``mensaje(str)``: texto breve para la barra de estado.
     """
@@ -120,6 +125,7 @@ class ControladorOrigen(QObject):
     capacidades_cambiadas = Signal(object)
     transferencia_terminada = Signal(object)
     storage_mv_elegido = Signal(str)
+    hardware_leido = Signal(object)
     fallo = Signal(object)
     mensaje = Signal(str)
 
@@ -157,6 +163,8 @@ class ControladorOrigen(QObject):
         self._politica_etiquetas_fallida = False
         # Fase C: lecturas del firewall de «Comprobar» (DT-C11); se conservan al reconstruir.
         self._firewall: InfoFirewall | None = None
+        # Fase D (D3): mapeos y modelos de CPU leídos en esta conexión (RNF-D4: una sola vez).
+        self._hardware: InfoHardwareCluster | None = None
         self._en_curso: set[object] = set()  # lecturas lanzadas y aún sin respuesta
         self._fallidas: set[object] = set()  # lecturas que fallaron: no se repiten solas
         self._necesidades_hechas: set[NecesidadesCatalogo] = set()
@@ -221,6 +229,8 @@ class ControladorOrigen(QObject):
     def establecer_sesion(self, sesion: Sesion | None, inv: Inventario | None) -> None:
         """Nueva sesión (o ``None`` al cerrarla). Con otro servidor se olvida todo lo leído
         del anterior y los archivos subidos (CA-O05.7); nunca se arrastran storages recordados."""
+        if sesion is not self._sesion:
+            self._hardware = None  # lo leído (mapeos, CPU) vale para una sola conexión
         self._sesion = sesion
         if sesion is None:
             # La lista de archivos subidos se conserva al cerrar la sesión (CA-O25.3).
@@ -293,6 +303,7 @@ class ControladorOrigen(QObject):
             politica_etiquetas_fallida=self._politica_etiquetas_fallida,
             snippets=tuple(self._snippets[k] for k in sorted(self._snippets)),
             firewall=self._firewall,
+            hardware=self._hardware,
         )
         inv.catalogo = catalogo
         return catalogo
@@ -555,7 +566,69 @@ class ControladorOrigen(QObject):
         self._politica_etiquetas_fallida = catalogo.politica_etiquetas_fallida
         # Fase C: ``leer_para`` conserva lo previo si ninguna fila usa C3.
         self._firewall = catalogo.firewall
+        # Fase D: «Comprobar» pudo leer mapeos o CPU que el lote usa y aún no se habían leído.
+        if catalogo.hardware is not None:
+            self._hardware = _fusionar_hardware(self._hardware, catalogo.hardware)
         self._publicar()
+
+    # ------------------------------------------------------------------------------------
+    # Hardware del clúster (D3): mapeos y modelos de CPU, bajo demanda
+    # ------------------------------------------------------------------------------------
+
+    def cargar_mapeos(self) -> None:
+        """Lee los mapeos PCI/USB (2 GET, una vez por conexión) al abrir la sección (RNF-D4)."""
+        sesion, inv = self._sesion, self._inv
+        clave = "mapeos"
+        if sesion is None or inv is None or clave in self._en_curso:
+            return
+        previo = self._hardware
+        if previo is not None and (previo.mapeos is not None or previo.error_mapeos is not None):
+            self.hardware_leido.emit(previo)  # ya se leyeron: nada que pedir
+            return
+        self._en_curso.add(clave)
+        gen = self._gen
+        self._lanzador.lanzar(
+            leer_hardware_cluster,
+            sesion,
+            self._reloj,
+            inv,
+            (),
+            al_terminar=lambda r: self._tras_hardware(gen, clave, r),
+            al_fallar=lambda e: self._fallo_hardware(gen, clave, e),
+        )
+
+    def cargar_cpus(self, nodos: Collection[str]) -> None:
+        """Lee los modelos de CPU de los nodos que falten (≤ 1 GET por nodo y conexión) sin leer
+        los mapeos (RNF-D4)."""
+        sesion, inv = self._sesion, self._inv
+        pendientes = tuple(sorted(set(nodos)))
+        clave = ("cpus", pendientes)
+        if sesion is None or inv is None or not pendientes or clave in self._en_curso:
+            return
+        self._en_curso.add(clave)
+        gen = self._gen
+        self._lanzador.lanzar(
+            leer_cpus,
+            sesion,
+            inv,
+            pendientes,
+            al_terminar=lambda r: self._tras_hardware(gen, clave, r),
+            al_fallar=lambda e: self._fallo_hardware(gen, clave, e),
+        )
+
+    def _tras_hardware(self, gen: int, clave: object, info: InfoHardwareCluster) -> None:
+        if gen != self._gen:
+            return
+        self._en_curso.discard(clave)
+        self._hardware = _fusionar_hardware(self._hardware, info)
+        self._publicar()
+        self.hardware_leido.emit(self._hardware)
+
+    def _fallo_hardware(self, gen: int, clave: object, error: ErrorProxLaunch) -> None:
+        if gen != self._gen:
+            return
+        self._fallo_lectura(gen, clave, error)
+        self.hardware_leido.emit(self._hardware)  # la sección deja de esperar
 
     def _fallo_lectura(self, gen: int, clave: object, error: ErrorProxLaunch) -> None:
         if gen != self._gen:
@@ -979,3 +1052,38 @@ class ControladorOrigen(QObject):
             QCoreApplication.processEvents()
             QThread.msleep(20)
         return not self.transferencia_activa
+
+
+def _fusionar_hardware(
+    previo: InfoHardwareCluster | None, nuevo: InfoHardwareCluster
+) -> InfoHardwareCluster:
+    """Une dos lecturas del hardware del clúster que pudieron hacerse a la vez (mapeos y CPU):
+    lo que una no leyó lo conserva de la otra, para no perder lo ya leído (RNF-D4)."""
+    if previo is None:
+        return nuevo
+    leyo_mapeos = nuevo.mapeos is not None or nuevo.error_mapeos is not None
+    cpus = {**previo.cpus, **nuevo.cpus}
+    errores_cpu = {n: e for n, e in {**previo.errores_cpu, **nuevo.errores_cpu}.items()}
+    for nodo in cpus:
+        errores_cpu.pop(nodo, None)
+    # Un mismo id puede existir como PCI y como USB: el tipo forma parte de la clave.
+    vistas = {(c.tipo, c.mapeo, c.nodo) for c in nuevo.comprobaciones}
+    comprobaciones = nuevo.comprobaciones + tuple(
+        c for c in previo.comprobaciones if (c.tipo, c.mapeo, c.nodo) not in vistas
+    )
+    # Un par ya comprobado con éxito deja de figurar como fallido (QA-10).
+    comprobados = {(c.tipo.value, c.mapeo, c.nodo) for c in comprobaciones}
+    errores_comprobacion = tuple(
+        e
+        for e in dict.fromkeys(previo.errores_comprobacion + nuevo.errores_comprobacion)
+        if e not in comprobados
+    )
+    return dataclasses.replace(
+        nuevo,
+        mapeos=nuevo.mapeos if leyo_mapeos else previo.mapeos,
+        error_mapeos=nuevo.error_mapeos if leyo_mapeos else previo.error_mapeos,
+        comprobaciones=comprobaciones,
+        errores_comprobacion=errores_comprobacion,
+        cpus=cpus,
+        errores_cpu=errores_cpu,
+    )

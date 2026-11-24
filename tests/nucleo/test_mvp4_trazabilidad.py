@@ -91,17 +91,19 @@ def test_inv_o9_nada_del_origen_llega_a_proxmox_sin_validacion_completa():
     assert cl.posts == {} and cl.metodos.get("POST", 0) == 0
 
 
-def test_rf_o15_importar_no_se_intenta_en_8_x_ni_sin_storage_import_ni_sin_permiso():
-    """RF-O15 (E-O01/E-O02/E-O12): la importación solo se ofrece cuando se cumplen las tres."""
+def test_rf_o15_importar_no_se_intenta_sin_storage_import_ni_sin_permiso():
+    """RF-O15 (E-O02/E-O12): la importación solo se ofrece cuando se cumplen ambas.
+
+    E-O01 (versión) quedó sin productor con la mínima 8.4 de 0.9.0 (DT-D3)."""
     sin_import = inv_origen()
     sin_import.storages_todos = {
         n: tuple(s for s in sts if "import" not in s.contenido) or (storage("x", "dir", 1),)
         for n, sts in sin_import.storages_todos.items()
     }
-    antiguo = calcular_capacidades(
-        capacidades_para(Version("8.2", 8, 2, 0), None), inv_origen(), None
+    minima = calcular_capacidades(
+        capacidades_para(Version("8.4", 8, 4, 0), None), inv_origen(), None
     )
-    assert antiguo.estado(Via.IMPORTAR).codigo == CodigoError.IMPORTAR_VERSION_NO_SOPORTADA
+    assert minima.estado(Via.IMPORTAR).disponibilidad == Disponibilidad.SI
     nuevo = calcular_capacidades(CAPS, sin_import, None)
     assert nuevo.estado(Via.IMPORTAR).codigo == CodigoError.IMPORTAR_SIN_STORAGE_IMPORT
     sin_permiso = inv_origen(permisos_efectivos=permisos(privilegios=("VM.Audit",)))

@@ -3,6 +3,7 @@
 import math
 from dataclasses import dataclass, field
 
+from proxlaunch.nucleo.arquitectura.modelos import ArquitecturaNodo
 from proxlaunch.nucleo.errores import ErrorProxLaunch
 from proxlaunch.nucleo.modelos.catalogo import CatalogoServidor
 
@@ -126,3 +127,8 @@ class Inventario:
     # Fase C (0.8): VNets de SDN por nodo y el error de su lectura (no rompe nada, CA-C2.1.3)
     redes_sdn: dict[str, tuple[RedVirtual, ...]] = field(default_factory=dict)
     errores_sdn: dict[str, ErrorProxLaunch] = field(default_factory=dict)
+    # Fase D (0.9): arquitectura por nodo; un nodo ausente = ``DESCONOCIDA`` (DT-D6)
+    arquitecturas: dict[str, ArquitecturaNodo] = field(default_factory=dict)
+    # ``/cluster/resources`` de la conexión ({nodo: host-arch | None}); ``None`` si no se leyó.
+    # Sirve para volver a detectar un nodo con el mismo criterio que el descubrimiento.
+    recursos_arquitectura: dict[str, str | None] | None = None

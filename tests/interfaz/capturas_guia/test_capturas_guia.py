@@ -14,7 +14,7 @@ from dataclasses import replace
 import pytest
 from PySide6.QtCore import QPoint, Qt
 from PySide6.QtGui import QPainter, QPixmap, QTextCursor
-from PySide6.QtWidgets import QGroupBox, QMessageBox, QScrollArea
+from PySide6.QtWidgets import QCheckBox, QGroupBox, QMessageBox, QPushButton, QScrollArea
 
 from proxlaunch.interfaz import controlador_origen
 from proxlaunch.interfaz import ventana_principal as ventana_principal_modulo
@@ -60,6 +60,11 @@ from proxlaunch.nucleo.firewall.modelos import (
     LecturaGrupos,
     Politica,
     ReglaFirewall,
+)
+from proxlaunch.nucleo.hardware_cluster.modelos import (
+    AsignacionPCI,
+    AsignacionUSB,
+    HardwareCluster,
 )
 from proxlaunch.nucleo.lote.modelos import (
     CandidatoRollback,
@@ -134,6 +139,7 @@ from ..apoyo_mvp4 import (
     comprobacion,
     detalle_plantilla,
     plantilla_pve,
+    volumen,
 )
 from ..apoyo_ventana_lote import (
     crear_lote,
@@ -160,13 +166,17 @@ from .escenario import (
     USUARIO,
     VOLID_DEBIAN_QCOW2,
     VOLID_UBUNTU,
+    VOLID_UBUNTU_QCOW2,
     VOLID_VIRTIO,
     VOLID_WINDOWS,
+    XML_LIBVIRT_EJEMPLO,
     CreacionConSecuenciaCompleta,
     configuracion_guia,
     escribir_csv_guia,
     imagenes_import,
+    info_hardware_guia,
     inventario_guia_cluster,
+    inventario_guia_fase_d,
     inventario_guia_individual,
     plantillas_del_escenario,
     volumenes_iso,
@@ -2018,3 +2028,204 @@ def test_84_resumen_red_firewall(qtbot, monkeypatch, entorno, plantillas_con_red
     v.resumen_lote.setMinimumWidth(760)
     qtbot.wait(100)
     guardar(v.resumen_lote, "84-resumen-red-firewall")
+
+
+# --- 9. Fase D (0.9): libvirt, hardware del clúster, ARM64 y CPU personalizadas -------------------
+
+
+@pytest.fixture
+def lecturas_fase_d(monkeypatch):
+    """Los mapeos y los modelos de CPU que «lee» la aplicación son los del escenario."""
+    monkeypatch.setattr(
+        controlador_origen,
+        "leer_hardware_cluster",
+        lambda sesion, reloj, inv, nodos: info_hardware_guia(),
+    )
+    monkeypatch.setattr(
+        controlador_origen, "leer_cpus", lambda sesion, inv, nodos: info_hardware_guia()
+    )
+
+
+def _fase_d(qtbot, entorno, alto=ALTO_VENTANA, ancho=ANCHO_VENTANA):
+    v = conectado(qtbot, entorno, inventario_guia_fase_d(), alto, ancho)
+    v.establecer_modo(Modo.AVANZADO)
+    return v
+
+
+def _xml_libvirt(tmp_path, texto=XML_LIBVIRT_EJEMPLO):
+    ruta = tmp_path / "app-linux-ejemplo.xml"
+    ruta.write_text(texto, encoding="utf-8")
+    return ruta
+
+
+def _abrir_libvirt(qtbot, v, tmp_path, *, leer=True, texto=XML_LIBVIRT_EJEMPLO):
+    """Abre el asistente de libvirt de la ventana y, con ``leer``, le entrega el XML de ejemplo."""
+    v._abrir_importar_libvirt()
+    d = v._dialogo_libvirt
+    assert d is not None
+    if leer:
+        d.leer(_xml_libvirt(tmp_path, texto))
+        qtbot.waitUntil(lambda: d.propuesta is not None, timeout=4000)
+    qtbot.wait(150)
+    return d
+
+
+def test_86_libvirt_vista_previa(qtbot, entorno, lecturas_fase_d, tmp_path, guardar):  # noqa: F811
+    v = _fase_d(qtbot, entorno)
+    d = _abrir_libvirt(qtbot, v, tmp_path)
+    d.resize(980, 830)
+    qtbot.wait(150)
+    guardar(d, "86-libvirt-vista-previa")
+
+
+def test_87_libvirt_como_obtener_xml(qtbot, entorno, lecturas_fase_d, tmp_path, guardar):  # noqa: F811
+    v = _fase_d(qtbot, entorno)
+    d = _abrir_libvirt(qtbot, v, tmp_path)
+    d.boton_como_obtener.setChecked(True)
+    d.resize(980, 1090)
+    qtbot.wait(200)
+    guardar(d, "87-libvirt-como-obtener-xml")
+
+
+def _rellenar_libvirt(qtbot, v, tmp_path, *, conservar_mac=False, texto=XML_LIBVIRT_EJEMPLO):
+    d = _abrir_libvirt(qtbot, v, tmp_path, leer=False, texto=texto)
+    d.casilla_mac.setChecked(conservar_mac)
+    d.leer(_xml_libvirt(tmp_path, texto))
+    qtbot.waitUntil(lambda: d.propuesta is not None, timeout=4000)
+    d.boton_rellenar.click()
+    qtbot.waitUntil(lambda: v._dialogo_libvirt is None, timeout=4000)
+    esperar_validacion(qtbot, v)
+    return v.formulario.selector_origen
+
+
+def _xml_tres_discos():
+    """El XML de ejemplo con un tercer disco, para que el selector enseñe dos filas de imagen."""
+    extra = (
+        "<disk type='file' device='disk'><driver name='qemu' type='raw'/>"
+        "<source file='/imagenes/app-copias.img'/><target dev='vdc' bus='virtio'/></disk>\n"
+        "    <interface"
+    )
+    return XML_LIBVIRT_EJEMPLO.replace("<interface", extra, 1)
+
+
+def test_88_libvirt_imagenes_por_disco(qtbot, entorno, lecturas_fase_d, tmp_path, guardar):  # noqa: F811
+    v = _fase_d(qtbot, entorno, 1500)
+    sel = _rellenar_libvirt(qtbot, v, tmp_path, texto=_xml_tres_discos())
+    # El disco del sistema ya tiene su imagen; los otros dos se resuelven a continuación.
+    sel.establecer_seleccion(FuenteCatalogo.IMAGEN, volumen(VOLID_DEBIAN_QCOW2, Contenido.IMPORT))
+    botones = [b for b in sel.panel_otras.findChildren(QPushButton) if b.text() == "Elegir imagen…"]
+    # El segundo disco usa una imagen ya importada; el tercero se crea vacío.
+    botones[0].click()
+    sel.establecer_seleccion(FuenteCatalogo.IMAGEN, volumen(VOLID_UBUNTU_QCOW2, Contenido.IMPORT))
+    if sel.dialogo_catalogo is not None:
+        sel.dialogo_catalogo.reject()
+    vacio = [c for c in sel.panel_otras.findChildren(QCheckBox) if c.text() == "Crear vacío"]
+    vacio[1].setChecked(True)
+    qtbot.wait(200)
+    guardar(_grupo(sel), "88-libvirt-imagenes-por-disco")
+
+
+def _hardware_guia() -> HardwareCluster:
+    """Una tarjeta PCIe (gráfica principal) y una llave USB, con los mapeos del escenario."""
+    return HardwareCluster(
+        pci=(AsignacionPCI("gpu-ejemplo", pcie=True, x_vga=True),),
+        usb=(AsignacionUSB("llave-ejemplo"),),
+    )
+
+
+def test_89_seccion_hardware_cluster(qtbot, entorno, lecturas_fase_d, guardar):  # noqa: F811
+    v = _fase_d(qtbot, entorno, 2000)
+    poner_nombre(qtbot, v, "srv-grafico-01")
+    s = v.formulario.seccion_hardware
+    s.establecer_valor(_hardware_guia())
+    qtbot.waitUntil(lambda: s.valor() is not None, timeout=4000)
+    qtbot.wait(300)
+    guardar(s, "89-seccion-hardware-cluster")
+
+
+def test_90_cpu_personalizada(qtbot, qapp, entorno, lecturas_fase_d, guardar):  # noqa: F811
+    v = _fase_d(qtbot, entorno, 1000)
+    poner_nombre(qtbot, v, "srv-calculo-01")
+    f = v.formulario
+    # Al elegir un nodo se piden los modelos de CPU; el grupo «Personalizados» sale al llegar.
+    f.establecer_cpus(info_hardware_guia().cpus, {})
+    qtbot.wait(200)
+    combo = f.combo_cpu
+    assert combo.findData("custom-ejemplo") >= 0
+    combo.setCurrentIndex(combo.findData("custom-ejemplo"))
+    v.move(0, 0)
+    zona = combo.parentWidget()
+    while zona is not None and not isinstance(zona, QScrollArea):
+        zona = zona.parentWidget()
+    if zona is not None:
+        zona.ensureWidgetVisible(combo, 0, 300)
+    qtbot.wait(150)
+    combo.showPopup()
+    popup = combo.view().window()
+    qtbot.waitExposed(popup)
+    qapp.processEvents()
+    # Se compone la ventana con el desplegable abierto (el popup es una ventana propia).
+    origen = v.mapToGlobal(QPoint(0, 0))
+    esq = popup.geometry().topLeft() - origen
+    base = v.grab()
+    lienzo = QPixmap(
+        max(base.width(), esq.x() + popup.width()), max(base.height(), esq.y() + popup.height())
+    )
+    lienzo.fill(Qt.GlobalColor.white)
+    pintor = QPainter(lienzo)
+    pintor.drawPixmap(0, 0, base)
+    pintor.drawPixmap(esq, popup.grab())
+    pintor.end()
+    guardar_imagen(lienzo, "90-cpu-personalizada")
+    popup.hide()
+
+
+def test_91_nodo_arm64_experimental(qtbot, monkeypatch, entorno, lecturas_fase_d, guardar):  # noqa: F811
+    inv = inventario_guia_fase_d()
+
+    def recargar(sesion, nodo, detectar=True):
+        # Al elegir el nodo la ventana lo relee: el servidor del escenario devuelve lo ya conocido.
+        return (
+            nodo, list(inv.storages[nodo]), list(inv.bridges[nodo]),
+            list(inv.storages_todos[nodo]), RedesNodo(vnets=()), None,
+        )  # fmt: skip
+
+    monkeypatch.setattr(ventana_principal_modulo, "recargar_nodo", recargar)
+    v = _fase_d(qtbot, entorno, 2550)
+    poner_nombre(qtbot, v, "srv-arm-01")
+    f = v.formulario
+    f._radio_manual.setChecked(True)  # el nodo se elige a mano: pve-arm
+    qtbot.waitUntil(lambda: f.combo_nodo.isEnabled(), timeout=2000)
+    f.combo_nodo.setCurrentIndex(f.combo_nodo.findData("pve-arm"))
+    qtbot.waitUntil(lambda: f.arquitectura_actual.value != "x86_64", timeout=2000)
+    qtbot.wait(400)
+    guardar(v, "91-nodo-arm64-experimental")
+
+
+def test_92_capacidades_fase_d(qtbot, guardar):
+    caps = caps_origen(inventario_guia_fase_d(), nodo="pve1")
+    d = mostrar(qtbot, DialogoCapacidades(caps, tema="claro"))
+    d.resize(1000, 900)
+    qtbot.wait(150)
+    guardar(d, "92-capacidades-fase-d")
+
+
+def test_93_resumen_fase_d(qtbot, entorno, lecturas_fase_d, tmp_path, guardar):  # noqa: F811
+    v = _fase_d(qtbot, entorno, 1900)
+    sel = _rellenar_libvirt(qtbot, v, tmp_path, conservar_mac=True, texto=_xml_tres_discos())
+    sel.establecer_seleccion(FuenteCatalogo.IMAGEN, volumen(VOLID_DEBIAN_QCOW2, Contenido.IMPORT))
+    botones = [b for b in sel.panel_otras.findChildren(QPushButton) if b.text() == "Elegir imagen…"]
+    botones[0].click()
+    sel.establecer_seleccion(FuenteCatalogo.IMAGEN, volumen(VOLID_UBUNTU_QCOW2, Contenido.IMPORT))
+    if sel.dialogo_catalogo is not None:
+        sel.dialogo_catalogo.reject()
+    vacio = [c for c in sel.panel_otras.findChildren(QCheckBox) if c.text() == "Crear vacío"]
+    vacio[1].setChecked(True)
+    s = v.formulario.seccion_hardware
+    s.establecer_valor(_hardware_guia())
+    qtbot.waitUntil(lambda: s.valor() is not None, timeout=4000)
+    esperar_validacion(qtbot, v)
+    qtbot.wait(300)
+    v.resumen.setMinimumWidth(460)
+    qtbot.wait(150)
+    guardar(v.resumen, "93-resumen-fase-d")

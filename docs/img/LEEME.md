@@ -110,6 +110,23 @@ sale del escenario ficticio de `tests/interfaz/capturas_guia/escenario.py`.
 | `74-asistente-plantilla-fallo.png` | Asistente detenido tras fallar el paso 4 (permiso de cloud-init): los cinco pasos con su estado y las acciones **Reintentar este paso**, **Continuar sin cloud-init** y **Borrar la máquina a medio crear…** |
 | `75-importar-csv-cloudinit.png` | **Importar desde CSV** con columnas de cloud-init: aviso de contraseñas en texto claro y, en el detalle de una fila, `ci_contrasena` enmascarada (`••••••`) |
 | `76-menu-archivo-plantilla.png` | Menú **Archivo** con **Crear plantilla desde imagen cloud…** |
+| `77-inventario-lotes.png` | **Lotes en el servidor** con tres lotes encontrados (sin leer aún), el cuadro de búsqueda, **Comprobar** y los botones **Obtener IP**, **Exportar CSV…**, **Deshacer…** y **Cerrar** |
+| `78-inventario-detalle.png` | Detalle del lote `ab12cd34`: tres máquinas encendidas (`web-101` a `web-103`) con su IP tras **Obtener IP**, marcadas como deshacibles |
+| `79-inventario-deshacer-codigo.png` | Lote `e5f60718` con **Deshacer…**: panel de confirmación con el aviso, el código del lote que hay que escribir y **Borrar definitivamente** desactivado |
+| `80-redes-con-vnets.png` | Tabla **Red** en modo avanzado con el bridge `vmbr0`, la VNet `prod — Producción` con VLAN 30 y `lab — Pruebas` con la VLAN desactivada y su aviso (no es «vlanaware») |
+| `81-seccion-firewall.png` | Grupo **Firewall de la máquina** con **Activar el firewall** marcada, el grupo `web — Servidores web`, entrada en **Bloquear** y salida en **Permitir** |
+| `82-firewall-aviso-aislada.png` | Firewall activo con entrada en **Bloquear** y **Sin grupo**: aviso en rojo y la casilla **Entiendo que la máquina no aceptará conexiones por la red** sin marcar |
+| `83-seccion-red-clon.png` | Grupo **Red de las copias** con **Personalizar la red de las copias**: `net1` en `prod — Producción` con VLAN 20 y MTU 1400, las tres tarjetas con **Quitar** y el botón **Añadir tarjeta** |
+| `84-resumen-red-firewall.png` | Resumen de un lote de 3 clones con «Red de la copia: net1: cambiar (prod)» y la línea de Firewall activado (grupo `web`) |
+| `85-menu-lotes-servidor.png` | Menú **Archivo** con **Lotes en el servidor…**, **Crear plantilla desde imagen cloud…** e **Importar desde libvirt…** |
+| `86-libvirt-vista-previa.png` | Asistente **Importar desde libvirt**: XML de una máquina Linux con UEFI, 2 discos y 1 tarjeta leído; tabla de vista previa con filas **Migrado**, **Aproximado** y **No se migra**, y el detalle de avisos |
+| `87-libvirt-como-obtener-xml.png` | El mismo asistente con **Cómo obtener el XML** desplegado: las cuatro órdenes (`virsh dumpxml`, `virsh domblklist`, `qemu-img info`, `qemu-img convert`), cada una con su botón **Copiar** |
+| `88-libvirt-imagenes-por-disco.png` | Origen **Usar un disco existente** tras **Rellenar el formulario**: imagen del disco del sistema y, para los otros discos, **Elegir imagen…** o **Crear vacío** |
+| `89-seccion-hardware-cluster.png` | Sección **Hardware del clúster**: una tarjeta PCI (`gpu-ejemplo`, PCIe y gráfica principal) y un USB (`llave-ejemplo`), con los avisos de q35 y de migración |
+| `90-cpu-personalizada.png` | Desplegable **Tipo de CPU** abierto: tipos fijos y el grupo **Personalizados del clúster** (`custom-ejemplo`, `custom-laboratorio`) |
+| `91-nodo-arm64-experimental.png` | Formulario con el nodo `pve-arm` elegido a mano: etiqueta **ARM64, experimental**, selector **Arquitectura de este servidor**, UEFI y CPU `host` adaptados y aviso de valores cambiados |
+| `92-capacidades-fase-d.png` | **Qué puedo hacer en este servidor** con las filas nuevas: saber si un servidor es ARM, tarjetas PCI y USB del clúster y modelos de CPU personalizados |
+| `93-resumen-fase-d.png` | **Resumen** de una máquina importada de libvirt: hardware del clúster, tipo de máquina q35, MAC conservada y discos importados |
 
 ## Detalles de contenido
 
@@ -136,3 +153,10 @@ sale del escenario ficticio de `tests/interfaz/capturas_guia/escenario.py`.
   hay clave privada detrás (`CLAVE_SSH_FALSA` en `escenario.py`).
 - `74` muestra «Reintentar» y «Omitir» (paso fallido); «Comprobar ahora» solo aparece cuando un paso queda
   dudoso (no se sabe cómo terminó), por eso no coincide con un fallo claro.
+- `86` a `88` y `93` salen del XML ficticio `XML_LIBVIRT_EJEMPLO` de `escenario.py` (máquina `app-linux-ejemplo`,
+  MAC `52:54:00:12:34:56`); `93` marca **Conservar la MAC de origen** y `88` usa un XML con un tercer disco.
+- `87` es el asistente con el XML ya leído y el panel desplegado (1090 px de alto para ver el detalle entero).
+- `89` a `92` usan el clúster ficticio `demo` con `pve1`, `pve2` y `pve-arm` (arm64), los mapeos `gpu-ejemplo` y
+  `llave-ejemplo` y las CPU `custom-ejemplo` y `custom-laboratorio` (`inventario_guia_fase_d` e `info_hardware_guia`).
+- `90` compone la ventana con el desplegable abierto (el desplegable es una ventana propia); `91` es la ventana
+  completa (2550 px de alto) con el nodo elegido a mano.

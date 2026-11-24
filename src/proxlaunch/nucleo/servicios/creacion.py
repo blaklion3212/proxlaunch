@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import contextlib
 import logging
+import re
 import threading
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass, field, replace
@@ -21,9 +22,10 @@ from proxlaunch.nucleo.constructor_peticion import construir_parametros
 from proxlaunch.nucleo.errores import CodigoError, ErrorProxLaunch
 from proxlaunch.nucleo.firewall.modelos import FirewallPlantilla, usa_firewall
 from proxlaunch.nucleo.firewall.reglas import parametros_opciones, parametros_regla, regla_ya_existe
+from proxlaunch.nucleo.hardware_cluster.errores import traducir_error_hardware
 from proxlaunch.nucleo.modelos.catalogo import DetallePlantilla
 from proxlaunch.nucleo.modelos.inventario import Inventario
-from proxlaunch.nucleo.modelos.origen import DetalleImportacion
+from proxlaunch.nucleo.modelos.origen import DetalleClon, DetalleImportacion
 from proxlaunch.nucleo.modelos.tarea import Desenlace, EstadoTarea, Etapa, ResultadoCreacion
 from proxlaunch.nucleo.modelos.vm import ConfiguracionVM, Firmware, OrigenSO
 from proxlaunch.nucleo.opciones.etiquetas import etiquetas_finales
@@ -33,6 +35,7 @@ from proxlaunch.nucleo.origen.clon import (
     construir_ajustes_clon,
     construir_peticion_clon,
     detalle_de_config,
+    parametros_hardware_clon,
 )
 from proxlaunch.nucleo.origen.permisos import estado_privilegio, privilegios_cloudinit
 from proxlaunch.nucleo.origen.resolucion import espera_maxima_s, nodo_de_upid
@@ -77,6 +80,10 @@ AJUSTE_CONTRASENA = "contrasena"  # fase B: PUT propio con solo cipassword
 AJUSTE_RED: Final = "red"
 AJUSTE_FIREWALL_OPCIONES: Final = "firewall_opciones"
 AJUSTE_FIREWALL_REGLA: Final = "firewall_regla"
+# Fase D (0.9): mapeos PCI/USB del clúster de un clon, en un ``PUT config`` propio (DT-D11).
+AJUSTE_HARDWARE: Final = "hardware"
+# Claves de ``parametros_extra`` que sustituyen a la construida en vez de ser un error (DT-D9).
+CLAVES_EXTRA_SUSTITUIBLES: Final = frozenset({"vga"})
 # Orden en que se aplican los ajustes de una MV (DT-C7); un fallo deja pendiente su paso y los
 # siguientes de C y B.
 ORDEN_AJUSTES: Final = (
@@ -84,6 +91,7 @@ ORDEN_AJUSTES: Final = (
     AJUSTE_ARRANQUE,
     AJUSTE_PROTECCION,
     AJUSTE_CPU_MEMORIA,
+    AJUSTE_HARDWARE,
     AJUSTE_RED,
     AJUSTE_CLOUDINIT,
     AJUSTE_CONTRASENA,
@@ -117,10 +125,16 @@ _AJUSTES_SIN_PAUSA = (
     AJUSTE_RED,
     AJUSTE_FIREWALL_OPCIONES,
     AJUSTE_FIREWALL_REGLA,
+    AJUSTE_HARDWARE,
 )
 _CLAVES_CPU = ("sockets", "cores", "cpu", "vcpus")
 _CLAVES_MEMORIA = ("memory", "balloon")
 _CLAVES_OPCIONES = ("tags", "onboot", "startup", "protection")  # exigen VM.Config.Options
+# Fase D: ``hostpciN``/``usbN`` exigen ``Mapping.Use`` (inferido); ``machine``/``vga``, el tipo HW.
+_RE_CLAVE_MAPEO = re.compile(r"(?:hostpci|usb)\d+")
+_CLAVES_TIPO_HW = ("machine", "vga")
+PRIVILEGIO_MAPEO = "Mapping.Use"
+PRIVILEGIO_TIPO_HW = "VM.Config.HWType"
 
 
 class _Cancelado(Exception):
@@ -188,6 +202,22 @@ class _PasosC:
 
 
 _SIN_PASOS_C = _PasosC()
+
+
+@dataclass(frozen=True)
+class _PasoHardware:
+    """Paso ``hardware`` de un clon (D3): el cuerpo del ``PUT config`` que falta o, si no se pudo
+    calcular (sin índices libres, id inválido), el error que deja el paso pendiente sin enviar."""
+
+    cuerpo: Mapping[str, str] = field(default_factory=dict)
+    error: ErrorProxLaunch | None = None
+
+    @property
+    def toca(self) -> bool:
+        return bool(self.cuerpo) or self.error is not None
+
+
+_SIN_HARDWARE = _PasoHardware()
 
 
 def _error_inesperado(exc: BaseException) -> ErrorProxLaunch:
@@ -262,6 +292,9 @@ def ajustes_planeados(cfg: ConfiguracionVM) -> tuple[str, ...]:
     """
     planeados: set[str] = set()
     if cfg.origen == OrigenSO.CLONAR_PLANTILLA:
+        hw = cfg.hardware_cluster
+        if hw is not None and not hw.vacio:
+            planeados.add(AJUSTE_HARDWARE)
         if requiere_paso_red(cfg):
             planeados.add(AJUSTE_RED)
         ci = cfg.cloudinit
@@ -276,6 +309,85 @@ def ajustes_planeados(cfg: ConfiguracionVM) -> tuple[str, ...]:
         if fw.grupo:
             planeados.add(AJUSTE_FIREWALL_REGLA)
     return tuple(n for n in ORDEN_AJUSTES if n in planeados)
+
+
+def hardware_de_clon(cfg: ConfiguracionVM, plantilla: DetallePlantilla) -> dict[str, str]:
+    """Cuerpo del ``PUT config`` de hardware de un clon (DT-D11); ``{}`` sin hardware.
+
+    Comparte código con la simulación. Lanza ``ErrorProxLaunch`` (``AJUSTE_POST_CLON_FALLIDO``,
+    ``ajuste=hardware``) si no quedan índices libres en la plantilla o un id no es válido.
+    """
+    try:
+        return parametros_hardware_clon(cfg, plantilla)
+    except ValueError as e:
+        causa = "sin_indices_libres" if "libres" in str(e) else "mapeo_invalido"
+        raise ErrorProxLaunch(
+            CodigoError.AJUSTE_POST_CLON_FALLIDO,
+            {"nombre": cfg.nombre, "ajuste": AJUSTE_HARDWARE, "causa": causa},
+        ) from None
+
+
+def _mismo_valor_dispositivo(actual: Any, planificado: str) -> bool:
+    """``True`` si la config trae el valor planificado (sin importar el orden de las opciones)."""
+    if actual is None:
+        return False
+    return set(str(actual).split(",")) == set(planificado.split(","))
+
+
+def _plantilla_del_catalogo(
+    cfg: ConfiguracionVM, inv: Inventario | None
+) -> DetallePlantilla | None:
+    """Detalle de la plantilla de un clon en el catálogo ya leído (sin lecturas nuevas)."""
+    det = cfg.detalle_origen
+    if inv is None or inv.catalogo is None or not isinstance(det, DetalleClon):
+        return None
+    ref = det.plantilla
+    for p in inv.catalogo.plantillas or ():
+        if (ref.vmid is not None and p.vmid == ref.vmid) or (
+            ref.vmid is None and p.nombre == ref.nombre
+        ):
+            return p.detalle
+    return None
+
+
+def _hardware_sin_aplicar(
+    cuerpo: Mapping[str, str], config: Mapping[str, Any] | None, *, por_valor: bool = False
+) -> dict[str, str]:
+    """Quita del cuerpo lo que la config ya tiene (el ``PUT`` es idempotente, CA-D0.7.2).
+
+    El cuerpo se calcula con los índices libres de la plantilla, así que en un reintento los
+    índices planificados son los mismos: se omite solo la clave ``hostpciN``/``usbN`` cuyo índice
+    ya tiene exactamente el valor planificado (repetir un mapeo que ya trae la plantilla es
+    legítimo y va en otro índice). ``machine`` y ``vga`` se omiten solo si ya valen lo pedido.
+    Sin config leída se envía todo. Con ``por_valor`` (índices no fiables: se calcularon sobre la
+    config del clon) se omite la clave cuyo valor planificado ya consta en cualquier índice.
+    """
+    if config is None:
+        return dict(cuerpo)
+    pendiente: dict[str, str] = {}
+    for clave, valor in cuerpo.items():
+        if _RE_CLAVE_MAPEO.fullmatch(clave):
+            prefijo = "hostpci" if clave.startswith("hostpci") else "usb"
+            candidatos = (
+                [
+                    v
+                    for k, v in config.items()
+                    if k.startswith(prefijo) and k[len(prefijo) :].isdigit()
+                ]
+                if por_valor
+                else [config.get(clave)]
+            )
+            if any(_mismo_valor_dispositivo(v, valor) for v in candidatos):
+                continue
+        elif (clave == "machine" and "q35" in str(config.get("machine", ""))) or (
+            clave == "vga" and str(config.get("vga", "")) == valor
+        ):
+            continue
+        pendiente[clave] = valor
+    # Sin dispositivos que añadir, ``machine``/``vga`` solos no tienen sentido: ya van con ellos.
+    if not any(_RE_CLAVE_MAPEO.fullmatch(k) for k in pendiente):
+        return {}
+    return pendiente
 
 
 def ipconfigs_de_plantilla(detalle: DetallePlantilla | None) -> frozenset[int]:
@@ -376,6 +488,8 @@ def _nombres_ajuste(config: dict[str, str]) -> list[str]:
         nombres.append(AJUSTE_PROTECCION)
     if any(k in config for k in (*_CLAVES_CPU, *_CLAVES_MEMORIA)):
         nombres.append(AJUSTE_CPU_MEMORIA)
+    if any(_RE_CLAVE_MAPEO.fullmatch(k) or k in _CLAVES_TIPO_HW for k in config):
+        nombres.append(AJUSTE_HARDWARE)
     return nombres
 
 
@@ -388,6 +502,10 @@ def _privilegio_de_config(config: dict[str, str]) -> str:
         privilegios.add("VM.Config.CPU")
     if any(k in config for k in _CLAVES_MEMORIA):
         privilegios.add("VM.Config.Memory")
+    if any(_RE_CLAVE_MAPEO.fullmatch(k) for k in config):
+        privilegios.add(PRIVILEGIO_MAPEO)  # inferido: el servidor suele nombrar la ruta del mapeo
+    if any(k in config for k in _CLAVES_TIPO_HW):
+        privilegios.add(PRIVILEGIO_TIPO_HW)
     return next(iter(privilegios)) if len(privilegios) == 1 else ""
 
 
@@ -437,6 +555,8 @@ def _nombre_de_clave(clave: str) -> str | None:
         return AJUSTE_PROTECCION
     if clave in (*_CLAVES_CPU, *_CLAVES_MEMORIA):
         return AJUSTE_CPU_MEMORIA
+    if _RE_CLAVE_MAPEO.fullmatch(clave) or clave in _CLAVES_TIPO_HW:
+        return AJUSTE_HARDWARE
     return None
 
 
@@ -689,10 +809,19 @@ class ServicioCreacion:
         except ErrorProxLaunch as e:
             return self._resultado(Desenlace.ERROR, cfg, error=e)
         if parametros_extra:
-            repetidas = sorted(k for k in parametros_extra if k in parametros)
+            # DT-D9: ``vga`` de ``parametros_extra`` sustituye a la construida (consola serie del
+            # asistente de imagen en ARM); con ``x-vga`` en el hardware gana su ``vga=none``.
+            hw = cfg.hardware_cluster
+            vga_de_hardware = hw is not None and any(a.x_vga for a in hw.pci)
+            extra = {
+                k: v for k, v in parametros_extra.items() if not (k == "vga" and vga_de_hardware)
+            }
+            repetidas = sorted(
+                k for k in extra if k in parametros and k not in CLAVES_EXTRA_SUSTITUIBLES
+            )
             if repetidas:
                 raise ValueError(f"parametros_extra repite claves ya construidas: {repetidas}")
-            parametros = {**parametros, **parametros_extra}
+            parametros = {**parametros, **extra}
         if cancelado.is_set():
             return self._cancelado(cfg, None)
         if puede_enviar is not None and not puede_enviar():
@@ -704,6 +833,7 @@ class ServicioCreacion:
             upid = cliente.crear_vm(cfg.nodo, parametros)
         except ErrorProxLaunch as e:
             nuevas = {i: r.bridge for i, r in enumerate(cfg.redes)}
+            e = traducir_error_hardware(e, cfg)  # mapeos y CPU personalizada (RF-D3.8)
             e = anotar_error_red(e, paso="crear", antiguas={}, nuevas=nuevas)  # 403 de SDN.Use
             return self._fallo_de_envio(cfg, e)
         except Exception as e:  # el POST pudo salir: resultado incierto
@@ -1085,6 +1215,7 @@ class ServicioCreacion:
                 config = None
         omitido = False
         sin_unidad = olvidada = False
+        hardware = _SIN_HARDWARE
         if cfg.origen == OrigenSO.CLONAR_PLANTILLA:
             base = ctx.plantilla
             if base is None and config is not None:
@@ -1108,6 +1239,11 @@ class ServicioCreacion:
                     resultado, tuple(resultado.avisos), ["desconocido"], invalido, False
                 )
             ajustes = _filtrar_ajustes(ajustes, config)
+            if pendientes is None or AJUSTE_HARDWARE in pendientes:
+                # Los índices se planifican sobre la plantilla; en un reintento sin ella (``base``
+                # sale de la config del clon) se busca en el catálogo ya leído.
+                plan_hw = ctx.plantilla or _plantilla_del_catalogo(cfg, ctx.inv)
+                hardware = self._decidir_hardware(cfg, plan_hw or base, config, plan_hw is None)
             ajustes, sin_unidad, olvidada = self._decidir_fase_b(
                 cfg, base, ajustes, config, pendientes, comparar=reintento or solo_lectura
             )
@@ -1137,6 +1273,8 @@ class ServicioCreacion:
         if solo_lectura:
             if ajustes.config:
                 pendientes_lectura += _nombres_ajuste(ajustes.config)
+            if hardware.toca:
+                pendientes_lectura.append(AJUSTE_HARDWARE)
             if pasos.red and self._red_pendiente(ctx, cfg, config):
                 pendientes_lectura.append(AJUSTE_RED)
             if ajustes.cloudinit or sin_unidad:
@@ -1157,9 +1295,10 @@ class ServicioCreacion:
             or ajustes.contrasena is not None
             or sin_unidad
             or pasos.alguno
+            or hardware.toca
         ):
             lista, error = self._enviar_ajustes(
-                ctx, cfg, ajustes, sin_unidad=sin_unidad, pasos=pasos
+                ctx, cfg, ajustes, sin_unidad=sin_unidad, pasos=pasos, hardware=hardware
             )
         else:
             lista = []
@@ -1170,6 +1309,27 @@ class ServicioCreacion:
             )
         avisos = self._avisos_con_c(ctx, cfg, avisos)
         return self._con_c(ctx, self._con_ajustes(resultado, avisos, lista, error, omitido))
+
+    @staticmethod
+    def _decidir_hardware(
+        cfg: ConfiguracionVM,
+        base: DetallePlantilla,
+        config: Mapping[str, Any] | None,
+        por_valor: bool = False,
+    ) -> _PasoHardware:
+        """Qué del hardware del clúster falta por escribir en el clon (DT-D11, idempotente).
+
+        ``por_valor``: ``base`` no es la plantilla sino la config del clon (sin plantilla a mano);
+        los índices pueden haberse desplazado y se omite lo que ya consta con el mismo valor.
+
+        Sin hardware pedido no hay paso (el clon hace lo mismo que en 0.8.0). Si el cuerpo no se
+        puede calcular, el paso queda pendiente con su error y no se envía nada.
+        """
+        try:
+            cuerpo = hardware_de_clon(cfg, base)
+        except ErrorProxLaunch as e:
+            return _PasoHardware(error=e)
+        return _PasoHardware(cuerpo=_hardware_sin_aplicar(cuerpo, config, por_valor=por_valor))
 
     # --- Fase C: pasos, avisos y estado ------------------------------------------------
 
@@ -1358,7 +1518,10 @@ class ServicioCreacion:
         except _ConexionPerdida as p:
             error = p.error
         except ErrorProxLaunch as e:
-            error = self._completar_permiso(e, cfg, PRIVILEGIO_ENERGIA)
+            # RF-D3.8: un mapeo sin dispositivo, sin q35, en uso… se explica con su código propio.
+            error = self._completar_permiso(
+                traducir_error_hardware(e, cfg), cfg, PRIVILEGIO_ENERGIA
+            )
         except Exception as e:
             _log.exception("Fallo inesperado al encender la máquina")
             error = _error_inesperado(e)
@@ -1452,10 +1615,12 @@ class ServicioCreacion:
         *,
         sin_unidad: bool = False,
         pasos: _PasosC = _SIN_PASOS_C,
+        hardware: _PasoHardware = _SIN_HARDWARE,
     ) -> tuple[list[str], ErrorProxLaunch | None]:
-        """Envía, en este orden, el ``PUT config`` (etiquetas, CPU, memoria…), [C: el ``PUT`` de
-        red], el de cloud-init, el de la contraseña, [C: opciones y regla del firewall] y el
-        ``PUT resize`` (la marca de propiedad primero, DT-B7; el orden de C es el de DT-C7).
+        """Envía, en este orden, el ``PUT config`` (etiquetas, CPU, memoria…), [D: el ``PUT`` de
+        hardware del clúster], [C: el ``PUT`` de red], el de cloud-init, el de la contraseña,
+        [C: opciones y regla del firewall] y el ``PUT resize`` (la marca de propiedad primero,
+        DT-B7; el orden de C es el de DT-C7).
 
         Devuelve los ajustes que no se aplicaron y el primer error. Cada ``PUT`` es idempotente
         (valores absolutos) y se envía una sola vez. Si falla el ``PUT config``, cloud-init y
@@ -1479,7 +1644,11 @@ class ServicioCreacion:
                 sin_red = err.codigo in CODIGOS_DE_RED
                 pendientes += nombres
                 primero = self._error_ajuste(
-                    cfg, err, ",".join(nombres), "config", _privilegio_de_config(ajustes.config)
+                    cfg,
+                    traducir_error_hardware(err, cfg),  # 403 de una CPU personalizada (RF-D3.8)
+                    ",".join(nombres),
+                    "config",
+                    _privilegio_de_config(ajustes.config),
                 )
             except _Cancelado:
                 raise
@@ -1489,6 +1658,37 @@ class ServicioCreacion:
                 primero = self._error_ajuste(
                     cfg, _error_inesperado(e), ",".join(nombres), "config", ""
                 )
+        # Fase D: el hardware del clúster va en su propio ``PUT``, tras el de ajustes y antes de la
+        # red. Un fallo previo lo deja pendiente sin intentarlo; el suyo bloquea los siguientes.
+        if hardware.toca:
+            if pendientes:
+                pendientes.append(AJUSTE_HARDWARE)
+            elif hardware.error is not None:
+                pendientes.append(AJUSTE_HARDWARE)
+                primero = primero or hardware.error
+            else:
+                cuerpo = dict(hardware.cuerpo)
+                try:
+                    self._tolerante(ctx, lambda: cliente.configurar_vm(cfg.nodo, cfg.vmid, cuerpo))
+                except (ErrorProxLaunch, _ConexionPerdida) as e:
+                    err = e.error if isinstance(e, _ConexionPerdida) else e
+                    sin_red = err.codigo in CODIGOS_DE_RED
+                    pendientes.append(AJUSTE_HARDWARE)
+                    primero = self._error_ajuste(
+                        cfg,
+                        traducir_error_hardware(err, cfg),
+                        AJUSTE_HARDWARE,
+                        "config",
+                        _privilegio_de_config(cuerpo),
+                    )
+                except _Cancelado:
+                    raise
+                except Exception as e:
+                    _log.exception("Fallo inesperado al asignar el hardware del clúster")
+                    pendientes.append(AJUSTE_HARDWARE)
+                    primero = self._error_ajuste(
+                        cfg, _error_inesperado(e), AJUSTE_HARDWARE, "config", ""
+                    )
         # Fase B: tras un fallo previo los pasos de cloud-init no se intentan (quedan pendientes).
         fallo_config = bool(pendientes)
         fallo_b = False
@@ -1921,6 +2121,13 @@ class ServicioCreacion:
             if ajuste in _AJUSTES_SIN_PAUSA:  # el motor no pausa el lote por estos 403 (§0)
                 err.params["ajuste"] = ajuste
             return err
+        if err.codigo in (CodigoError.MAPEO_NO_DISPONIBLE, CodigoError.CPU_PERSONALIZADA_RECHAZADA):
+            # Fase D (RF-D3.8): el código ya explica la causa; se conservan sus parámetros.
+            return ErrorProxLaunch(
+                err.codigo,
+                {**err.params, "nombre": cfg.nombre, "ajuste": ajuste},
+                err.detalle_tecnico,
+            )
         if err.codigo == CodigoError.RED_SIN_DIRECCIONES:  # IPAM agotado (RF-C4.9): código propio
             return ErrorProxLaunch(
                 err.codigo,

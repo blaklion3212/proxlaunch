@@ -53,7 +53,7 @@ def test_rf_09_version_se_interpreta(texto, mayor, menor, parche):
 @pytest.mark.parametrize("data", [{"version": "texto raro"}, {}, None, {"version": ""}])
 def test_ca_09_5_formato_inesperado_usa_la_version_minima_y_avisa(data, registros):
     v = _cliente(TransporteFalso().en("GET", "/version", data)).version()
-    assert (v.mayor, v.menor) == (8, 0)
+    assert (v.mayor, v.menor) == (8, 4)
     avisos = [r for r in registros if r.levelno == logging.WARNING]
     assert avisos, "debe registrarse una advertencia"
 

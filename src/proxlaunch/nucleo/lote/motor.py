@@ -121,6 +121,7 @@ PRIVILEGIOS_DE_ESCRITURA = frozenset(
         "Datastore.Audit",
         "Datastore.AllocateTemplate",
         "SDN.Use",
+        "Mapping.Use",  # fase D: un mapeo PCI/USB prohibido en el POST se repetiría en cada MV
     }
 )
 

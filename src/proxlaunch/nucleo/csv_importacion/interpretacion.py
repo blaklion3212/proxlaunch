@@ -35,6 +35,7 @@ from proxlaunch.nucleo.archivos.texto import (
     contiene_token,
     texto_seguro,
 )
+from proxlaunch.nucleo.arquitectura.modelos import Arquitectura, arquitectura_efectiva
 from proxlaunch.nucleo.capacidades import capacidades_para
 from proxlaunch.nucleo.cloudinit.claves import MotivoClave, analizar_claves, contiene_clave_privada
 from proxlaunch.nucleo.cloudinit.modelos import (
@@ -66,9 +67,18 @@ from proxlaunch.nucleo.csv_importacion.modelos import (
 from proxlaunch.nucleo.csv_importacion.saneado import sin_control, texto_visible
 from proxlaunch.nucleo.errores import CodigoError, ErrorProxLaunch
 from proxlaunch.nucleo.firewall.modelos import RE_GRUPO, FirewallParcial, Politica
+from proxlaunch.nucleo.hardware_cluster.modelos import (
+    MAX_PCI,
+    MAX_USB,
+    RE_ID_MAPEO,
+    AsignacionPCI,
+    AsignacionUSB,
+    HardwareCluster,
+)
 from proxlaunch.nucleo.lote.modelos import Destino, FilaLote
 from proxlaunch.nucleo.lote.reparto import nodos_elegibles
 from proxlaunch.nucleo.modelos.catalogo import Contenido
+from proxlaunch.nucleo.modelos.cpu import es_cpu_solo_x86
 from proxlaunch.nucleo.modelos.inventario import Inventario
 from proxlaunch.nucleo.modelos.origen import (
     AjustesClon,
@@ -81,6 +91,7 @@ from proxlaunch.nucleo.modelos.origen import (
 from proxlaunch.nucleo.modelos.vm import (
     ConfiguracionVM,
     Disco,
+    Firmware,
     InterfazRed,
     ModeloRed,
     OrigenSO,
@@ -142,10 +153,13 @@ TEXTOS_SIN_TOKEN = frozenset(
         "ci_puerta",
         "ci_dns",
         "grupo_seguridad",
+        "mapeo_pci",
+        "mapeo_usb",
         *(columna for columna, _tipo in _COLUMNAS_SNIPPET),
     }
 )
 _SEPARADORES_DNS = re.compile(r"[\s,;]+")
+_SEPARADOR_MAPEOS = ";"  # fase D: separador de los ids de ``mapeo_pci`` y ``mapeo_usb``
 
 
 @dataclass
@@ -215,6 +229,11 @@ def _columna_de_campo(campo: str) -> str | None:
         }.get(campo.partition(".")[2], "cortafuegos")
     if campo.startswith("red_clon"):
         return "reescribir_red"
+    # Fase D: mapeos PCI/USB (V-D5x de ``hardware_cluster.validacion``).
+    if campo.startswith("hardware_cluster.pci"):
+        return "mapeo_pci"
+    if campo.startswith("hardware_cluster.usb"):
+        return "mapeo_usb"
     # MVP 4: campos del origen del SO.
     if campo == "detalle_origen":
         return "origen"
@@ -291,9 +310,11 @@ class _Contexto:
         inv: Inventario | None,
         nodo_referencia: str | None,
         encender_base: bool | None = None,
+        hardware_base: HardwareCluster | None = None,
     ) -> None:
         self.mapa = mapa
         self.encender_base = encender_base
+        self.hardware_base = hardware_base
         self.base = perfil_base
         self.inv = inv
         self.nodo_referencia = nodo_referencia
@@ -314,6 +335,14 @@ class _Contexto:
             )
             if inv is not None
             else None
+        )
+
+    def es_arm(self, nodo: str) -> bool:
+        """¿El nodo es ARM64 según el inventario? (sin inventario o sin detectar: no)."""
+        return (
+            self.inv is not None
+            and bool(nodo)
+            and arquitectura_efectiva(self.inv, nodo) == Arquitectura.AARCH64
         )
 
     def nodo_efectivo(self, nodo: str | None) -> str:
@@ -389,6 +418,7 @@ class _Fila:
         self._ajustes: AjustesClon | None = None  # clon: ajustes leídos de las columnas
         self._ampliar: int | None = None  # importación: columna ``disco`` = ampliar a
         self._red_clon: RedClon | None = None  # fase C: ``reescribir_red`` de la fila
+        self._arm = False  # fase D: ¿el nodo efectivo de la fila es ARM64? (RF-D2.7)
 
     # -- lectura de celdas (solo columnas conocidas y no credenciales) --
 
@@ -491,6 +521,7 @@ class _Fila:
         b.nodo = self.texto("nodo")
         b.vmid = self.entero("vmid")
         nodo_ef = ctx.nodo_efectivo(b.nodo)
+        self._arm = ctx.es_arm(nodo_ef)
         actual = ConfiguracionVM(
             vmid=b.vmid if b.vmid is not None else VMID_MIN, nombre=nombre_crudo, nodo=nodo_ef
         )
@@ -518,6 +549,7 @@ class _Fila:
             self._discos(cfg, nodo_ef)
             self._red(cfg, nodo_ef)
         self._reescribir_red(reescribir, clon)
+        self._hardware(cfg)
         self._detalle_origen(cfg)
         b.opciones = self._opciones(cfg, perfil)
         self._pistas(resultado.avisos, perfil)
@@ -587,15 +619,94 @@ class _Fila:
         self.ctx.registrar_avisos("memoria", avisos)
 
     def _firmware_y_cpu(self, cfg: ConfiguracionVM, *, aplicar_tipo_cpu: bool = True) -> None:
+        arm = self._arm
         crudo = self.celda("firmware")
         if crudo:
             try:
                 cfg.firmware = unidades.firmware(crudo)
             except unidades.ValorInvalido as e:
                 self.error_valor("firmware", e)
+            else:
+                if arm and cfg.firmware == Firmware.SEABIOS:
+                    self._incompatible_arm("firmware", "firmware", "ovmf")
         tipo = self.texto("tipo_cpu")
+        if tipo is not None and arm and es_cpu_solo_x86(tipo):
+            # Aplica también al clonar: el tipo de CPU va en los ajustes de la copia.
+            self._incompatible_arm("tipo_cpu", "cpu", "host")
         if tipo is not None and aplicar_tipo_cpu:
             cfg.tipo_cpu = tipo
+
+    def _modelo_red_arm(self, modelo: ModeloRed | None) -> None:
+        """V-D09 si la celda ``modelo_red`` pide ``e1000`` en un nodo ARM64 (solo ``virtio``)."""
+        if self._arm and modelo == ModeloRed.E1000:
+            self._incompatible_arm("modelo_red", "red", "virtio")
+
+    def _incompatible_arm(
+        self, canonica: str, motivo: str, alternativa: str, opcion: str | None = None
+    ) -> None:
+        """V-D09: una celda EXPLÍCITA de la fila no existe en el nodo ARM64 (RF-D2.7, CA-D6.3.9).
+
+        ``opcion`` es lo que se muestra como «opción» (por defecto, el texto de la celda). Lo
+        heredado del formulario o del perfil no pasa por aquí: se adapta (V-D08)."""
+        self.problema(
+            canonica,
+            "V-D09",
+            Severidad.ERROR,
+            {
+                "opcion": opcion if opcion is not None else texto_visible(self.celda(canonica)),
+                "motivo": motivo,
+                "alternativa": alternativa,
+            },
+        )
+
+    # -- hardware del clúster de la fase D (RF-D6.3) --
+
+    def _ids_mapeo(self, canonica: str, maximo: int, tipo: str) -> tuple[str, ...] | None:
+        """Ids de una celda ``mapeo_pci``/``mapeo_usb`` separados por «;».
+
+        ``None`` = celda vacía (hereda del formulario) o con un error ya anotado: V-D70 por un id
+        no válido y V-D59 por pasar del máximo de dispositivos. Ambos marcan la fila (``sin_cfg``)
+        sin impedir que se lean las demás celdas."""
+        crudo = self.celda(canonica)
+        ids = tuple(t.strip() for t in crudo.split(_SEPARADOR_MAPEOS) if t.strip())
+        if not ids:
+            return None
+        if any(RE_ID_MAPEO.fullmatch(i) is None for i in ids):
+            self.b.sin_cfg = True
+            self.problema(canonica, "V-D70", Severidad.ERROR, {"motivo": "id_invalido"})
+            return None
+        if len(ids) > maximo:
+            self.b.sin_cfg = True
+            self.problema(
+                canonica,
+                "V-D59",
+                Severidad.ERROR,
+                {"tipo": tipo, "maximo": str(maximo), "cantidad": str(len(ids))},
+            )
+            return None
+        return ids
+
+    def _hardware(self, cfg: ConfiguracionVM) -> None:
+        """Mapeos PCI/USB de la fila: manda la celda con ids y, vacía, hereda los del formulario.
+
+        Cada id lleva las opciones (``pcie``, ``x_vga``…) que el formulario ya le dio (``base``);
+        un id nuevo, las de por defecto. ``cfg.hardware_cluster`` queda con el valor efectivo
+        (``None`` si no hay ninguno): las filas no tienen otro sitio donde heredarlo."""
+        base = self.ctx.hardware_base or HardwareCluster()
+        ids_pci = self._ids_mapeo("mapeo_pci", MAX_PCI, "pci")
+        ids_usb = self._ids_mapeo("mapeo_usb", MAX_USB, "usb")
+        pci = base.pci
+        usb = base.usb
+        if ids_pci is not None:
+            previas = {a.mapeo: a for a in reversed(base.pci)}
+            pci = tuple(previas.get(i) or AsignacionPCI(mapeo=i) for i in ids_pci)
+            if self._arm and any(a.pcie for a in pci):
+                self._incompatible_arm("mapeo_pci", "pcie", "", opcion="pcie")
+        if ids_usb is not None:
+            previas_usb = {a.mapeo: a for a in reversed(base.usb)}
+            usb = tuple(previas_usb.get(i) or AsignacionUSB(mapeo=i) for i in ids_usb)
+        hw = HardwareCluster(pci=pci, usb=usb)
+        cfg.hardware_cluster = None if hw.vacio else hw
 
     # -- origen del SO (MVP 4, RF-O28) --
 
@@ -857,6 +968,7 @@ class _Fila:
 
     def _red(self, cfg: ConfiguracionVM, nodo_ef: str) -> None:
         c = self._celdas_red()
+        self._modelo_red_arm(c.modelo)
         bridge, vlan, modelo, mtu_fijado, mtu, limite = (
             c.bridge,
             c.vlan,
@@ -902,6 +1014,7 @@ class _Fila:
             self.problema("reescribir_red", "V-C51", Severidad.ERROR)
             return
         c = self._celdas_red()
+        self._modelo_red_arm(c.modelo)
         fijados = {
             campo
             for campo, fijado in (
@@ -1327,6 +1440,7 @@ def interpretar(
     nodo_referencia: str | None,
     alias_extra: Mapping[str, str] | None = None,
     encender_base: bool | None = None,
+    hardware_base: HardwareCluster | None = None,
 ) -> ResultadoImportacion:
     """Interpreta y valida todas las filas (capa 1 y, con ``inv``, la capa 2 de vista previa).
 
@@ -1335,11 +1449,13 @@ def interpretar(
     ``encender_base`` es el «Encender al terminar» del formulario (``None`` = se desconoce): sirve
     para V-B60 (``esperar_ip`` en una fila sin encendido efectivo). Si se desconoce, esa regla la
     evalúa el planificador con la configuración completa.
+    ``hardware_base`` son los mapeos PCI/USB del formulario (fase D): una celda ``mapeo_pci`` o
+    ``mapeo_usb`` vacía los hereda y los ids de una celda con valor toman de ahí sus opciones.
     Lanza ``ErrorProxLaunch`` ``CSV_COLUMNAS`` (E-M10) si el encabezado no sirve.
     """
     mapa, avisos_columnas = resolver_columnas(tabla.encabezado, alias_extra=alias_extra)
     _verificar_columnas_sin_encabezado(tabla, list(mapa.posiciones))
-    ctx = _Contexto(mapa, perfil_base, perfiles, inv, nodo_referencia, encender_base)
+    ctx = _Contexto(mapa, perfil_base, perfiles, inv, nodo_referencia, encender_base, hardware_base)
     borradores = [_Fila(ctx, f).interpretar() for f in tabla.filas]
     _marcar_duplicados(borradores, mapa)
     avisos_secretos: tuple[AvisoArchivo, ...] = ()

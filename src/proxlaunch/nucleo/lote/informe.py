@@ -17,9 +17,11 @@ from urllib.parse import quote
 from proxlaunch.nucleo.agente.modelos import EstadoIp, ResultadoIp
 from proxlaunch.nucleo.errores import ErrorProxLaunch
 from proxlaunch.nucleo.firewall.modelos import usa_firewall
+from proxlaunch.nucleo.libvirt.validacion import conserva_mac
 from proxlaunch.nucleo.lote.constantes import LINEAS_LOG_TAREA
 from proxlaunch.nucleo.lote.libro import Libro
 from proxlaunch.nucleo.lote.modelos import (
+    ElementoPlan,
     EntradaLibro,
     EstadoMV,
     InformeLote,
@@ -28,6 +30,7 @@ from proxlaunch.nucleo.lote.modelos import (
     Problema,
     ResultadoRollback,
 )
+from proxlaunch.nucleo.modelos.origen import DetalleImportacion
 from proxlaunch.nucleo.modelos.vm import ConfiguracionVM
 from proxlaunch.nucleo.reloj import Reloj
 from proxlaunch.nucleo.servicios.creacion import (
@@ -334,3 +337,72 @@ def riesgo_firewall_parcial(entrada: EntradaLibro) -> bool:
         ajustes_pendientes_de(entrada)
         & {AJUSTE_RED, AJUSTE_FIREWALL_OPCIONES, AJUSTE_FIREWALL_REGLA}
     )
+
+
+@dataclass(frozen=True)
+class AnunciosFaseD:
+    """Lo que la fase D añade al informe y a la simulación, solo cuando vale algo (RF-D0.1).
+
+    Son datos y códigos (sin texto): la interfaz los escribe. Con un lote x86 sin hardware, MAC
+    ni imágenes adicionales todo queda vacío y el informe no gana ninguna línea (CA-D0.1.2).
+    ``adaptaciones`` son los V-D08 del plan (``params["lista"]`` y ``params["cambios"]``);
+    ``hardware`` da, por ``vmid``, ``("pci:<mapeo>", "usb:<mapeo>"…)``; ``mac_conservada`` los
+    ``vmid`` con alguna MAC fija; ``imagenes_adicionales`` el número de discos 1.. con imagen.
+    """
+
+    nodos_arm: tuple[str, ...] = ()
+    adaptaciones: tuple[Problema, ...] = ()
+    hardware: tuple[tuple[int, tuple[str, ...]], ...] = ()
+    mac_conservada: tuple[int, ...] = ()
+    imagenes_adicionales: tuple[tuple[int, int], ...] = ()
+
+    @property
+    def experimental(self) -> bool:
+        """``True`` si algún nodo es ARM64: sale la etiqueta «experimental» (RF-D2.12)."""
+        return bool(self.nodos_arm)
+
+    @property
+    def hay(self) -> bool:
+        return bool(
+            self.nodos_arm
+            or self.adaptaciones
+            or self.hardware
+            or self.mac_conservada
+            or self.imagenes_adicionales
+        )
+
+
+def anuncios_fase_d(
+    problemas: Sequence[Problema], elementos: Sequence[ElementoPlan]
+) -> AnunciosFaseD:
+    """Anuncios de la fase D de un plan: nodos ARM64 (los V-D05 del plan, uno por nodo), valores
+    adaptados (V-D08), hardware del clúster, MAC conservada e imágenes de discos adicionales."""
+    nodos_arm = tuple(
+        sorted({p.params["nodo"] for p in problemas if p.regla == "V-D05" and p.params.get("nodo")})
+    )
+    adaptaciones = tuple(p for p in problemas if p.regla == "V-D08")
+    hardware: list[tuple[int, tuple[str, ...]]] = []
+    macs: list[int] = []
+    imagenes: list[tuple[int, int]] = []
+    for e in elementos:
+        hw = e.cfg.hardware_cluster
+        if hw is not None and not hw.vacio:
+            hardware.append(
+                (
+                    e.vmid,
+                    (*(f"pci:{a.mapeo}" for a in hw.pci), *(f"usb:{u.mapeo}" for u in hw.usb)),
+                )
+            )
+        if conserva_mac(e.cfg) and any(r.mac_conservada is not None for r in e.cfg.redes):
+            macs.append(e.vmid)
+        detalle = e.cfg.detalle_origen
+        if isinstance(detalle, DetalleImportacion):
+            n = sum(1 for otra in detalle.otras if otra.imagen is not None)
+            if n:
+                imagenes.append((e.vmid, n))
+    return AnunciosFaseD(nodos_arm, adaptaciones, tuple(hardware), tuple(macs), tuple(imagenes))
+
+
+def anuncios_de_informe(informe: InformeLote) -> AnunciosFaseD:
+    """``anuncios_fase_d`` de un informe: sus problemas del plan y los elementos del libro."""
+    return anuncios_fase_d(informe.problemas_plan, [e.elemento for e in informe.entradas])

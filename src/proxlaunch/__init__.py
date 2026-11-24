@@ -1,3 +1,3 @@
 """Paquete ProxLaunch: asistente para crear máquinas virtuales en Proxmox VE."""
 
-__version__ = "0.8.0"
+__version__ = "0.9.0"

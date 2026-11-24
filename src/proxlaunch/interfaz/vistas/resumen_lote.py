@@ -42,6 +42,12 @@ from proxlaunch.interfaz.textos_c import (
     texto_aviso_simulacion,
     texto_firewall_resumen,
 )
+from proxlaunch.interfaz.textos_d import (
+    texto_cpu_personalizada_resumen,
+    texto_discos_importados_resumen,
+    texto_hardware_cluster,
+    texto_linea_experimental_arm,
+)
 from proxlaunch.interfaz.vistas.campos import etiqueta, mensaje, poner_mensaje
 from proxlaunch.interfaz.vistas.detalles_tecnicos import DetallesTecnicos
 from proxlaunch.nucleo.cloudinit.modelos import TIPOS_SNIPPET, ConfigCloudInit, ModoTarjeta
@@ -125,6 +131,8 @@ def _ruta_de_peticion(accion: AccionPeticion, nodo: str, vmid: int, e: ElementoP
     if accion == AccionPeticion.LEER_CONFIG:  # fase C: lectura de la config del clon (simulada)
         return f"GET /nodes/{nodo}/qemu/{vmid}/config"
     if accion == AccionPeticion.RED:  # fase C: PUT de config con netN/delete
+        return f"PUT /nodes/{nodo}/qemu/{vmid}/config"
+    if str(accion) == "hardware":  # fase D: PUT de config con hostpciN/usbN de un clon
         return f"PUT /nodes/{nodo}/qemu/{vmid}/config"
     if accion == AccionPeticion.FIREWALL_OPCIONES:
         return f"PUT /nodes/{nodo}/qemu/{vmid}/firewall/options"
@@ -276,6 +284,7 @@ def texto_opciones_del_plan(plan: Plan) -> str:
             )
     lineas.extend(_lineas_fase_b_del_plan(cfgs))
     lineas.extend(_lineas_fase_c_del_plan(cfgs))
+    lineas.extend(_lineas_fase_d_del_plan(cfgs, plan))
     return "\n".join(x for x in lineas if x)
 
 
@@ -292,6 +301,37 @@ def _lineas_fase_c_del_plan(cfgs: list[ConfiguracionVM]) -> list[str | None]:
         _valores_o_varia(
             QCoreApplication.translate("ResumenLote", "Red de la copia"),
             [("; ".join(v for _n, v in lineas_red_clon(c.red_clon))) or None for c in cfgs],
+        )
+    )
+    return lineas
+
+
+def _lineas_fase_d_del_plan(cfgs: list[ConfiguracionVM], plan: Plan) -> list[str | None]:
+    """Fase D del lote (RF-D0.1): ARM64 experimental, hardware del clúster, CPU personalizada,
+    MAC conservada y discos importados; solo si alguna máquina los usa."""
+    lineas: list[str | None] = []
+    if any(p.regla == "V-D05" for p in plan.problemas):
+        lineas.append(texto_linea_experimental_arm())
+    lineas.append(
+        _valores_o_varia(
+            QCoreApplication.translate("ResumenLote", "Hardware del clúster"),
+            [texto_hardware_cluster(c.hardware_cluster) or None for c in cfgs],
+        )
+    )
+    lineas.append(
+        _valores_o_varia(
+            QCoreApplication.translate("ResumenLote", "CPU"),
+            [texto_cpu_personalizada_resumen(c.tipo_cpu) or None for c in cfgs],
+        )
+    )
+    con_mac = sum(1 for c in cfgs if any(r.mac_conservada for r in c.redes))
+    lineas.append(
+        _cuantas(QCoreApplication.translate("ResumenLote", "MAC conservada"), con_mac, len(cfgs))
+    )
+    lineas.append(
+        _valores_o_varia(
+            QCoreApplication.translate("ResumenLote", "Discos importados"),
+            [texto_discos_importados_resumen(c) or None for c in cfgs],
         )
     )
     return lineas

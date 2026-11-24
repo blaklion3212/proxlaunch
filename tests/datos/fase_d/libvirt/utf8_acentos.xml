@@ -1,0 +1,3 @@
+<?xml version='1.0' encoding='UTF-8'?>
+<domain type='qemu'><name>máquina ñandú</name><memory unit='MiB'>512</memory><vcpu>1</vcpu><os><type arch='x86_64'>hvm</type></os>
+<devices><disk type='file' device='disk'><driver name='qemu' type='qcow2'/><source file='/x.qcow2'/><target dev='vda' bus='virtio'/></disk></devices></domain>

@@ -248,9 +248,9 @@ def test_a2_5_1_normalizar_saltos_no_es_un_cambio_que_merezca_aviso():
     assert limpiar_texto_libre("a\x07b") == ("ab", True)
 
 
-@pytest.mark.parametrize("version", [None, (7, 4), (8, 0), (8, 2)])
-def test_ca_a2_5_2_porcentaje_xx_se_neutraliza_antes_de_8_3(version):
-    """CA-A2.5.2: ``%41`` literal no llega intacto en ≤ 8.2 (ni con versión desconocida)."""
+@pytest.mark.parametrize("version", [None])
+def test_ca_a2_5_2_porcentaje_xx_se_neutraliza_con_version_desconocida(version):
+    """CA-A2.5.2: ``%41`` se neutraliza por prudencia con versión desconocida (mínima 8.4)."""
     d = componer_descripcion(cfg_vm(notas="100%41 y %ZZ"), ctx_notas(), None, version)
     assert d is not None
     assert "%41" not in d

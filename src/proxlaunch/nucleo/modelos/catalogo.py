@@ -11,6 +11,7 @@ from enum import StrEnum
 from proxlaunch.nucleo.cloudinit.modelos import InfoCloudInitPlantilla
 from proxlaunch.nucleo.errores import ErrorProxLaunch
 from proxlaunch.nucleo.firewall.modelos import InfoFirewall
+from proxlaunch.nucleo.hardware_cluster.modelos import InfoHardwareCluster
 from proxlaunch.nucleo.opciones.modelos import EstadoPools, PoliticaEtiquetas, PoolsServidor
 from proxlaunch.nucleo.red.modelos import TarjetaPlantilla
 
@@ -103,6 +104,14 @@ class DetallePlantilla:
     cloudinit: InfoCloudInitPlantilla | None = None
     # Fase C: ``net0..net31`` de la misma config, interpretadas (DT-C5); () = no leídas.
     tarjetas: tuple[TarjetaPlantilla, ...] = ()
+    # Fase D: lo que la config dice de arquitectura y hardware (valores por defecto = 0.8.0).
+    arquitectura: str | None = None  # clave "arch" (no confiable; normalizar al usar)
+    maquina: str | None = None  # clave "machine"
+    hostpci: tuple[int, ...] = ()  # índices ocupados
+    usb: tuple[int, ...] = ()
+    mapeos: tuple[str, ...] = ()  # ids de mapeo usados (V-D58b)
+    # hostpciN=<bdf> / usbN=host=… / virtiofs / rng físico, sin mapeo (V-D58)
+    pasarela_directa: bool = False
 
 
 @dataclass(frozen=True)
@@ -161,6 +170,8 @@ class CatalogoServidor:
     snippets: tuple[ListadoSnippets, ...] = ()
     # Fase C: lecturas del firewall de «Comprobar» (None = sin lecturas, DT-C11).
     firewall: InfoFirewall | None = None
+    # Fase D: mapeos PCI/USB y modelos de CPU (None = no leído; sin D no se pide nada).
+    hardware: InfoHardwareCluster | None = None
 
     def snippets_en(self, nodo: str, storage: str) -> ListadoSnippets | None:
         """Listado de snippets del storage en ese nodo. Un storage compartido leído en otro nodo

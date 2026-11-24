@@ -15,6 +15,7 @@ from proxlaunch.nucleo.archivos.constantes import (
     MAX_BYTES_CSV,
     MAX_COLUMNAS_CSV,
     MAX_LONG_CELDA,
+    MAX_LONG_CELDA_MAPEOS,
     MAX_LONG_CLAVES,
     MAX_LONG_NOTAS,
 )
@@ -81,10 +82,10 @@ def leer_tabla(
     datos). El encabezado es la primera fila no vacía.
 
     El límite de celda es por columna y se aplica tras mapear el encabezado (DT-A11, DT-B13):
-    ``notas`` admite hasta ``MAX_LONG_NOTAS`` caracteres, ``ci_claves`` hasta ``MAX_LONG_CLAVES``
-    y las demás ``MAX_LONG_CELDA``. ``alias_extra`` (alias -> canónica, como en
-    ``resolver_columnas``) permite reconocerlas con el nombre del idioma activo; el encabezado
-    mismo se comprueba con ``MAX_LONG_CELDA``.
+    ``notas`` admite hasta ``MAX_LONG_NOTAS`` caracteres, ``ci_claves`` hasta ``MAX_LONG_CLAVES``,
+    ``mapeo_pci``/``mapeo_usb`` hasta ``MAX_LONG_CELDA_MAPEOS`` y las demás ``MAX_LONG_CELDA``.
+    ``alias_extra`` (alias -> canónica, como en ``resolver_columnas``) permite reconocerlas con el
+    nombre del idioma activo; el encabezado mismo se comprueba con ``MAX_LONG_CELDA``.
     """
     if len(datos) > MAX_BYTES_CSV:
         raise ErrorProxLaunch(
@@ -138,7 +139,12 @@ def leer_tabla(
                 raise _demasiado("celda", len(c), tope, numero)
         if encabezado is None:
             encabezado = tuple(c.strip().lstrip("﻿").strip() for c in celdas)
-            for canonica, maximo in (("notas", MAX_LONG_NOTAS), ("ci_claves", MAX_LONG_CLAVES)):
+            for canonica, maximo in (
+                ("notas", MAX_LONG_NOTAS),
+                ("ci_claves", MAX_LONG_CLAVES),
+                ("mapeo_pci", MAX_LONG_CELDA_MAPEOS),
+                ("mapeo_usb", MAX_LONG_CELDA_MAPEOS),
+            ):
                 for pos in posiciones_de_columna(encabezado, canonica, alias_extra):
                     topes[pos] = maximo
             continue

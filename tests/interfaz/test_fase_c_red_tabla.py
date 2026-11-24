@@ -364,10 +364,10 @@ def _tabla_sin_vnets(qtbot, *, incluido: bool) -> TablaRedes:
     return t
 
 
-def test_ca_c2_4_1_en_8_0_sin_vnets_el_texto_menciona_libpve_network_perl(qtbot):
+def test_ca_c2_4_1_en_8_4_sin_vnets_el_texto_menciona_libpve_network_perl(qtbot):
     t = _tabla_sin_vnets(qtbot, incluido=False)
     visible = textos(t)
-    assert "libpve-network-perl" in visible and "8.0" in visible
+    assert "libpve-network-perl" in visible and "8.4" in visible
     assert "SDN.Use" not in visible
 
 
@@ -415,13 +415,11 @@ def test_ca_c2_4_la_cabecera_pasa_a_red_cuando_hay_vnets(qtbot):
     assert t._cabeceras[1].text() == "Red"
 
 
-@pytest.mark.parametrize(
-    ("version", "incluido"),
-    [((8, 0), False), ((8, 1), True), ((8, 4), True), ((9, 0), True), ((9, 2), True)],
-)
-def test_ca_c2_4_la_version_decide_el_texto_8_0_frente_a_8_1_o_posterior(version, incluido):
+@pytest.mark.parametrize("version", [(8, 4), (9, 0), (9, 2)])
+def test_ca_c2_4_con_la_minima_8_4_el_sdn_viene_incluido_y_hay_vnets(version):
+    """DT-D3: la bandera ``SDN_INCLUIDO`` se retiró; desde 8.4 el SDN es siempre de serie."""
     caps = capacidades_para(Version(f"{version[0]}.{version[1]}", *version, 0), None)
-    assert caps.tiene(Funcion.SDN_INCLUIDO) is incluido
+    assert not hasattr(Funcion, "SDN_INCLUIDO")
     assert caps.tiene(Funcion.VNETS_SDN)  # desde 8.0 hay VNets (si el servidor tiene SDN)
 
 
@@ -431,12 +429,12 @@ def _estados_c(caps) -> dict[OpcionC, EstadoOpcion]:
 
 @pytest.mark.parametrize(
     ("version", "esperado"),
-    [((8, 0), "libpve-network-perl"), ((9, 2), "/sdn/zones/<zona>")],
+    [((8, 4), "/sdn/zones/<zona>"), ((9, 2), "/sdn/zones/<zona>")],
 )
 def test_ca_c2_4_el_formulario_elige_el_texto_por_la_version_de_las_capacidades(
     qtbot, version, esperado
 ):
-    """Integración: ``FormularioVM`` pasa ``sdn_incluido`` según ``Funcion.SDN_INCLUIDO``."""
+    """Integración: ``FormularioVM`` pasa siempre ``sdn_incluido`` (mínima 8.4, DT-D3)."""
     inv = inv_origen(version=version)
     inv.redes_sdn = {"pve": ()}
     f = FormularioVM()

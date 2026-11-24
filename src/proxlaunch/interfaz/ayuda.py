@@ -580,6 +580,103 @@ _TEXTOS: dict[str, Callable[[], str]] = {
         "puedes cambiar su red, VLAN, tarjeta, MTU y límite, y añadir o quitar tarjetas; la "
         "MAC se conserva.",
     ),
+    # --- Fase D (0.9): ARM64, libvirt y hardware del clúster (RF-D7.1) ---
+    "arm64": lambda: QCoreApplication.translate(
+        "Ayuda",
+        "ARM64 (aarch64) es un tipo de procesador distinto del de la mayoría de servidores "
+        "(x86). Una máquina ARM64 solo funciona en un servidor ARM64; por eso ProxLaunch adapta "
+        "el hardware (disco SCSI, arranque UEFI, procesador «host»). Es experimental: no se "
+        "garantiza que arranque. Si no arranca, mira la consola de la máquina en Proxmox.",
+    ),
+    "arquitectura_servidor": lambda: QCoreApplication.translate(
+        "Ayuda",
+        "Es el tipo de procesador del servidor Proxmox, por ejemplo x86_64 o ARM64. ProxLaunch "
+        "intenta detectarlo; si no puede, lo trata como x86 y aquí puedes indicarle otra cosa.",
+    ),
+    "experimental": lambda: QCoreApplication.translate(
+        "Ayuda",
+        "Funciona en teoría, pero ProxLaunch aún no se ha probado en un servidor ARM64 real. "
+        "Úsalo con cuidado y revisa el resultado en Proxmox.",
+    ),
+    "libvirt_xml": lambda: QCoreApplication.translate(
+        "Ayuda",
+        "libvirt es el programa con que virt-manager y «virsh» manejan máquinas KVM; cada "
+        "máquina es un archivo XML con su configuración. Ejemplo: maquina.xml, que se genera "
+        "con «virsh dumpxml --inactive nombre > maquina.xml».",
+    ),
+    "backing_file": lambda: QCoreApplication.translate(
+        "Ayuda",
+        "Un disco con «backing file» no está completo: depende de otro archivo (como una copia "
+        "de seguridad «en capas»). Proxmox no lo admite; hay que aplanarlo a un solo archivo, "
+        "por ejemplo con «qemu-img convert -O qcow2 origen.qcow2 plano.qcow2».",
+    ),
+    "snapshot_interno": lambda: QCoreApplication.translate(
+        "Ayuda",
+        "Un snapshot interno es una foto del disco guardada dentro del mismo archivo. Al "
+        "importar solo se copia el estado actual; las fotos se pierden.",
+    ),
+    "nvram": lambda: QCoreApplication.translate(
+        "Ayuda",
+        "La NVRAM es la memoria de arranque UEFI: donde el firmware guarda con qué disco "
+        "arrancar. No se traslada; Proxmox crea una nueva. Si la máquina no arranca, añade la "
+        "entrada de arranque desde el menú UEFI.",
+    ),
+    "tpm": lambda: QCoreApplication.translate(
+        "Ayuda",
+        "El TPM es un chip virtual de seguridad (Windows 11 lo pide). Su contenido no se puede "
+        "trasladar: la máquina nueva recibe uno vacío y se pierden, por ejemplo, las claves de "
+        "BitLocker.",
+    ),
+    "mac_origen": lambda: QCoreApplication.translate(
+        "Ayuda",
+        "La dirección MAC es la «matrícula» de una tarjeta de red. Por defecto la máquina nueva "
+        "recibe una nueva; conserva la de origen solo si apagas la máquina original antes de "
+        "encender la nueva, porque dos con la misma MAC en la misma red se estorban.",
+    ),
+    "mapeo": lambda: QCoreApplication.translate(
+        "Ayuda",
+        "Un mapeo es un nombre que el administrador le pone a una tarjeta PCI (por ejemplo, una "
+        "gráfica) o a un dispositivo USB (por ejemplo, una llave de licencias) del servidor, "
+        "para que puedas dárselo a una máquina sin ser administrador. Ejemplo: «gpu-a2».",
+    ),
+    "cpu_personalizada": lambda: QCoreApplication.translate(
+        "Ayuda",
+        "Un modelo de CPU personalizado es un tipo de procesador «a medida» que el "
+        "administrador definió para todo el clúster. Ejemplo: «custom-gamer». Solo aparecen los "
+        "que existen en todos los servidores donde se crearán las máquinas.",
+    ),
+    "migracion_en_vivo": lambda: QCoreApplication.translate(
+        "Ayuda",
+        "Migrar en vivo es mover una máquina encendida de un servidor a otro sin apagarla. No "
+        "es posible con hardware asignado (tarjetas PCI o USB), salvo que el mapeo lo admita.",
+    ),
+    "pcie": lambda: QCoreApplication.translate(
+        "Ayuda",
+        "Marca esta casilla si la tarjeta es PCIe (la mayoría de gráficas modernas). Obliga a "
+        "usar el tipo de máquina «q35», que ProxLaunch pone por ti. No existe en servidores "
+        "ARM64.",
+    ),
+    "gpu_principal": lambda: QCoreApplication.translate(
+        "Ayuda",
+        "Úsala si la gráfica física debe ser la pantalla principal de la máquina. Entonces la "
+        "consola de Proxmox deja de mostrar pantalla y necesitas conectar un monitor a la "
+        "tarjeta. Requiere «Es una tarjeta PCIe».",
+    ),
+    "rombar": lambda: QCoreApplication.translate(
+        "Ayuda",
+        "Muestra la ROM de la tarjeta a la máquina. Desmárcala solo si el sistema no arranca o "
+        "la tarjeta falla al iniciarse (algunas gráficas lo necesitan).",
+    ),
+    "driver_keep": lambda: QCoreApplication.translate(
+        "Ayuda",
+        "Deja que el servidor conserve el controlador de la tarjeta mientras la máquina está "
+        "apagada. Necesita Proxmox 9.1 o posterior.",
+    ),
+    "usb3": lambda: QCoreApplication.translate(
+        "Ayuda",
+        "Presenta el dispositivo a la máquina como USB 3 (más rápido). Ejemplo: un disco "
+        "externo; una llave de licencias suele funcionar igual en USB 2.",
+    ),
 }
 
 # Ayudas de la fase B (0.7) que deben tener texto (CA-B0.6.1, CA-B8.1.1).
@@ -619,6 +716,27 @@ CAMPOS_AYUDA_FASE_C: tuple[str, ...] = (
     "mac",
     "dhcp_firewall",
     "red_clon",
+)
+
+# Ayudas de la fase D (0.9) que deben tener texto (CA-D7.1.1).
+CAMPOS_AYUDA_FASE_D: tuple[str, ...] = (
+    "arm64",
+    "arquitectura_servidor",
+    "experimental",
+    "libvirt_xml",
+    "backing_file",
+    "snapshot_interno",
+    "nvram",
+    "tpm",
+    "mac_origen",
+    "mapeo",
+    "cpu_personalizada",
+    "migracion_en_vivo",
+    "pcie",
+    "gpu_principal",
+    "rombar",
+    "driver_keep",
+    "usb3",
 )
 
 # Ayudas del lote que deben tener texto (CA-L22.4).
@@ -973,6 +1091,14 @@ def efecto_privilegio_opcional(privilegio: str) -> str:
             "permite ver el alias y el estado de las redes virtuales. Es opcional: sin él las "
             "redes se usan igual, solo sin esa información.",
         )
+    if privilegio == "Mapping.Use":
+        return QCoreApplication.translate(
+            "Ayuda",
+            "permite dar a una máquina una tarjeta PCI o un dispositivo USB que el administrador "
+            "mapeó (y, en Proxmox 9.2, usar una CPU personalizada). Se concede por mapeo; por "
+            "ejemplo: pveum acl modify /mapping/pci/gpu-a2 --roles PVEMappingUser --users "
+            "<usuario>. Sin él la sección «Hardware del clúster» se desactiva.",
+        )
     if privilegio == "Datastore.AllocateSpace":
         return QCoreApplication.translate(
             "Ayuda",
@@ -1155,6 +1281,15 @@ def texto_pedir_al_administrador(
         ),
         *[f"   - {linea}" for linea in privilegios_opcionales_guia(caps, almacen_snippets)],
         "   - " + nota_etiquetas_administrador(),
+        QCoreApplication.translate(
+            "Ayuda",
+            "7. Opcional, para usar tarjetas PCI o USB del clúster y CPUs personalizadas: crear "
+            "los mapeos (Datacenter → Mapeo de recursos) y dar a mi usuario el rol "
+            "PVEMappingUser sobre ellos, por ejemplo: pveum acl modify /mapping/pci/<mapeo> "
+            "--roles PVEMappingUser --users <usuario> (o /mapping/usb/<mapeo>; /mapping para "
+            "todos). Para CPUs personalizadas en Proxmox 8.4 a 9.1 basta «Sys.Audit» en /nodes; "
+            "en 9.2, /mapping/cpu/<modelo>.",
+        ),
     ]
     comando = nota_comando_privilegios(caps)
     if comando:

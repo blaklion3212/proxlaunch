@@ -1,0 +1,83 @@
+{
+  "app_version": "0.9.0",
+  "formato": "proxlaunch.lote",
+  "homogeneo": {
+    "cantidad": 1,
+    "config": {
+      "agente_qemu": true,
+      "ballooning": null,
+      "con_disco": true,
+      "controlador_scsi": "virtio-scsi-single",
+      "cores": 4,
+      "detalle_origen": {
+        "ampliar_a_gib": null,
+        "imagen": {
+          "nombre": "app-sistema.qcow2",
+          "volid": "local:import/app-sistema.qcow2"
+        },
+        "imagenes": [
+          {
+            "disco": 1,
+            "imagen": {
+              "nombre": "app-datos.qcow2",
+              "volid": "local:import/app-datos.qcow2"
+            }
+          }
+        ]
+      },
+      "discos": [
+        {
+          "bus": "virtio",
+          "discard": true,
+          "formato": "auto",
+          "iothread": true,
+          "ssd": true,
+          "storage": "local-lvm",
+          "tamano_gib": 40
+        },
+        {
+          "bus": "virtio",
+          "discard": true,
+          "formato": "auto",
+          "iothread": true,
+          "ssd": true,
+          "storage": "local-lvm",
+          "tamano_gib": 100
+        }
+      ],
+      "firmware": "ovmf",
+      "memoria_mib": 4096,
+      "origen": "importar_disco",
+      "redes": [
+        {
+          "bridge": "vmbr0",
+          "mac_conservada": "52:54:00:12:34:56",
+          "modelo": "virtio",
+          "vlan": null
+        }
+      ],
+      "sockets": 1,
+      "storage_efi": "local-lvm",
+      "tipo_cpu": "x86-64-v2-AES",
+      "tipo_so": "linux"
+    },
+    "destino": {
+      "algoritmo": "equilibrado",
+      "modo": "automatico",
+      "nodos": []
+    },
+    "etiquetar": true,
+    "nombre_maquina": "app-linux-ejemplo",
+    "patron": {
+      "inicio": 1,
+      "prefijo": "",
+      "relleno": 2,
+      "separador": "-"
+    },
+    "vmid_inicial": null
+  },
+  "nombre": "Máquina traída de libvirt",
+  "tipo": "homogeneo",
+  "version_formato": 6,
+  "version_proxmox": "9.2"
+}

@@ -152,12 +152,25 @@ def test_version_mayor_que_la_ultima_conocida_añade_el_aviso(servicio, texto):
     assert avisos[0].params["version"] == texto
 
 
-@pytest.mark.parametrize(
-    "texto", ["8.0.4", "8.1", "8.2.4", "8.3.0", "8.4.1", "9.0", "9.1.5", "9.2", "9.2.1"]
-)
-def test_versiones_8_0_a_9_2_no_llevan_el_aviso(servicio, texto):
+@pytest.mark.parametrize("texto", ["8.4", "8.4.1", "9.0", "9.1.5", "9.2", "9.2.1"])
+def test_versiones_8_4_a_9_2_no_llevan_el_aviso(servicio, texto):
     sesion = _conectar(servicio, texto)
     assert all(a.codigo != CodigoAviso.VERSION_NO_PROBADA for a in sesion.avisos)
+
+
+@pytest.mark.parametrize("texto", ["8.4", "8.4.1"])
+def test_ca_d2_2_la_rama_8_lleva_el_aviso_de_sin_soporte_una_sola_vez(servicio, texto):
+    """V-D02: solo la versión detectada 8.x; con ``params["version"]``."""
+    sesion = _conectar(servicio, texto)
+    avisos = [a for a in sesion.avisos if a.codigo == CodigoAviso.RAMA_8_SIN_SOPORTE]
+    assert len(avisos) == 1
+    assert avisos[0].params == {"version": texto}
+
+
+@pytest.mark.parametrize("texto", ["9.0", "9.2.1", "10.0"])
+def test_ca_d2_2_la_rama_9_y_posteriores_no_llevan_el_aviso_de_rama_8(servicio, texto):
+    sesion = _conectar(servicio, texto)
+    assert all(a.codigo != CodigoAviso.RAMA_8_SIN_SOPORTE for a in sesion.avisos)
 
 
 def test_el_aviso_de_version_no_bloquea_la_conexion(servicio):

@@ -10,15 +10,11 @@ from enum import StrEnum
 
 from proxlaunch.nucleo.modelos.inventario import Version
 
-VERSION_MINIMA: tuple[int, int] = (8, 0)
+VERSION_MINIMA: tuple[int, int] = (8, 4)
 # Última versión probada; una mayor se permite con aviso informativo (CA-09.3, S-4).
 ULTIMA_VERSION_CONOCIDA: tuple[int, int] = (9, 2)
 # Versiones conocidas, de la mínima a la última (selector de versión forzada, RF-26).
 VERSIONES_CONOCIDAS: tuple[tuple[int, int], ...] = (
-    (8, 0),
-    (8, 1),
-    (8, 2),
-    (8, 3),
     (8, 4),
     (9, 0),
     (9, 1),
@@ -31,16 +27,9 @@ _PATRON_VERSION = re.compile(r"^\s*(\d+)\.(\d+)(?:[.-](\d+))?")
 class Funcion(StrEnum):
     """Funciones cuya disponibilidad depende de la versión."""
 
-    DESCARGAR_URL = "descargar_url"  # download-url con Sys.AccessNetwork (8.2)
-    IMPORTAR_DISCO = "importar_disco"  # import-from y contenido «import» (8.4)
-    SUBIR_IMAGEN_DISCO = "subir_imagen_disco"  # upload de imágenes de disco (8.4)
-    TPM_CLON_COMPLETO = "tpm_clon_completo"  # clonar completo con tpmstate0 (8.4)
     CLAVES_MS_2023 = "claves_ms_2023"  # claves Microsoft 2023 en efidisk0 (9.1)
     ETIQUETAS = "etiquetas"  # parámetro ``tags`` al crear (RF-L24)
     # Fase B (0.7)
-    ASISTENTE_PLANTILLA_IMAGEN = (
-        "asistente_plantilla_imagen"  # B2: exige además import + subir/descargar
-    )
     CLOUDINIT = "cloudinit"  # B1: parámetros ``ci*`` e ``ipconfigN``
     SNIPPETS_CICUSTOM = "snippets_cicustom"  # B4: ``cicustom`` con snippets
     AGENTE_IP = "agente_ip"  # B3: ``agent/network-get-interfaces``
@@ -54,18 +43,20 @@ class Funcion(StrEnum):
     VNETS_SDN = "vnets_sdn"  # C2: VNets de SDN con ``type=any_bridge``
     FIREWALL_GRUPO = "firewall_grupo"  # C3: grupos de seguridad del firewall
     REESCRIBIR_RED_CLON = "reescribir_red_clon"  # C4: reescribir ``netN`` del clon
-    SDN_INCLUIDO = "sdn_incluido"  # SDN instalado por defecto (8.1): solo elige el texto de RF-C2.4
+    # Fase D (0.9)
+    MAPEO_DRIVER_KEEP = "mapeo_driver_keep"  # D3: ``driver=keep`` en ``hostpciN`` (9.1)
+    CPU_PERSONALIZADA_POR_MAPPING = "cpu_personalizada_por_mapping"  # D3: ``/mapping/cpu`` (9.2)
+    CAPACIDADES_POR_ARCH = "capacidades_por_arch"  # D3: ``capabilities/qemu/cpu?arch=`` (9.2)
+    HOST_ARCH_EN_RESOURCES = (
+        "host_arch_en_resources"  # D2: ``host-arch`` en ``/cluster/resources`` (9.2)
+    )
+    NODO_ARM64 = "nodo_arm64"  # D2: nodos arm64 (9.2); solo elige la variante del texto V-D05
 
 
 # Única tabla: función -> (mayor, menor) desde la que está disponible.
 TABLA: dict[Funcion, tuple[int, int]] = {
-    Funcion.DESCARGAR_URL: (8, 2),
-    Funcion.IMPORTAR_DISCO: (8, 4),
-    Funcion.SUBIR_IMAGEN_DISCO: (8, 4),
-    Funcion.TPM_CLON_COMPLETO: (8, 4),
     Funcion.CLAVES_MS_2023: (9, 1),
     Funcion.ETIQUETAS: (7, 3),  # todas las versiones soportadas (>= 8.0) la admiten
-    Funcion.ASISTENTE_PLANTILLA_IMAGEN: (8, 4),
     Funcion.CLOUDINIT: (8, 0),
     Funcion.SNIPPETS_CICUSTOM: (8, 0),
     Funcion.AGENTE_IP: (8, 0),
@@ -77,7 +68,11 @@ TABLA: dict[Funcion, tuple[int, int]] = {
     Funcion.VNETS_SDN: (8, 0),
     Funcion.FIREWALL_GRUPO: (8, 0),
     Funcion.REESCRIBIR_RED_CLON: (8, 0),
-    Funcion.SDN_INCLUIDO: (8, 1),
+    Funcion.MAPEO_DRIVER_KEEP: (9, 1),
+    Funcion.CPU_PERSONALIZADA_POR_MAPPING: (9, 2),
+    Funcion.CAPACIDADES_POR_ARCH: (9, 2),
+    Funcion.HOST_ARCH_EN_RESOURCES: (9, 2),
+    Funcion.NODO_ARM64: (9, 2),
 }
 
 
@@ -106,13 +101,14 @@ def admite_etiquetas(version: tuple[int, int]) -> bool:
     return version >= TABLA[Funcion.ETIQUETAS]
 
 
-def asistente_plantilla_disponible(caps: Capacidades) -> bool:
-    """B2 (RF-B0.4): el asistente exige a la vez importar disco y (subir imagen o descargar URL)."""
-    return (
-        caps.tiene(Funcion.ASISTENTE_PLANTILLA_IMAGEN)
-        and caps.tiene(Funcion.IMPORTAR_DISCO)
-        and (caps.tiene(Funcion.SUBIR_IMAGEN_DISCO) or caps.tiene(Funcion.DESCARGAR_URL))
-    )
+def asistente_plantilla_disponible(caps: Capacidades | None) -> bool:
+    """B2 (RF-B0.4): con la mínima 8.4 el asistente está disponible con cualquier sesión (DT-D3)."""
+    return caps is not None
+
+
+def es_rama_8(version: tuple[int, int]) -> bool:
+    """Indica si la versión pertenece a la rama 8.x (aviso V-D02, sin soporte tras 9.x)."""
+    return version[0] == 8
 
 
 def interpretar_version(texto: str) -> tuple[Version, bool]:

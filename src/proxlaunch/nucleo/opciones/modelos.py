@@ -45,12 +45,20 @@ class OpcionC(StrEnum):
     IP_INVENTARIO = "ip_inventario"
 
 
+class OpcionD(StrEnum):
+    """Opciones de la fase D cuya disponibilidad depende de permisos o versión."""
+
+    MAPEOS = "mapeos"
+    CPU_PERSONALIZADA = "cpu_personalizada"
+    CONSERVAR_MAC = "conservar_mac"
+
+
 @dataclass(frozen=True)
 class EstadoOpcion:
     """Estado de una opción. ``codigo``: ``OPCION_SIN_PRIVILEGIO``, ``OPCION_SIN_VERSION`` o
     ``POOLS_*``. ``params``: privilegio, ruta, version, opcion, motivo."""
 
-    opcion: OpcionA | OpcionB | OpcionC
+    opcion: OpcionA | OpcionB | OpcionC | OpcionD
     disponibilidad: Disponibilidad
     codigo: CodigoError | None = None
     params: dict[str, str] = field(default_factory=dict)
@@ -124,6 +132,10 @@ class PoliticaEtiquetas:
     registradas: tuple[str, ...] = ()  # registered-tags
     existentes: tuple[str, ...] = ()  # allowed-tags
     distingue_mayusculas: bool = False  # tag-style.case-sensitive
+    # True si la respuesta NO trajo ``user-tag-access`` (respuesta parcial, p. ej. sin Sys.Audit):
+    # la política ``free`` es entonces un supuesto, no un dato del servidor (LAB-C-1). No cuenta
+    # en la igualdad: la política efectiva es la misma con o sin la clave.
+    acceso_ausente: bool = field(default=False, compare=False)
 
     @classmethod
     def desde_opciones(cls, opciones: Mapping[str, Any]) -> PoliticaEtiquetas:
@@ -152,6 +164,7 @@ class PoliticaEtiquetas:
             registradas=_lista_de(opciones.get("registered-tags"), "registered-tags"),
             existentes=_lista_de(opciones.get("allowed-tags"), "allowed-tags"),
             distingue_mayusculas=bool(sensible),
+            acceso_ausente=opciones.get("user-tag-access") is None,
         )
 
 

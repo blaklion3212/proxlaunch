@@ -25,6 +25,21 @@ from proxlaunch.interfaz.textos_c import (  # noqa: E402  (agrupado con la fase 
     texto_problema_c,
     texto_via_c,
 )
+from proxlaunch.interfaz.textos_d import (
+    texto_accion_via_d,
+    texto_ajuste_sustantivo_d,
+    texto_ajuste_verbo_d,
+    texto_aviso_conexion_d,
+    texto_aviso_snapshots,
+    texto_causa_ajuste_hardware,
+    texto_error_d,
+    texto_motivo_backing,
+    texto_motivo_v_d70,
+    texto_nombre_opcion_d,
+    texto_problema_d,
+    texto_v_d07,
+    texto_via_d,
+)
 from proxlaunch.nucleo.archivos.constantes import (
     LONG_DESCRIPCION,
     LONG_NOMBRE_PERFIL,
@@ -105,7 +120,7 @@ def _valor_neutro(clave: str) -> str:
     if clave == "version":
         return QCoreApplication.translate("Textos", "una versión desconocida")
     if clave == "minima":
-        return "8.0"
+        return "8.4"
     if clave == "nombre":
         return QCoreApplication.translate("Textos", "esa máquina")
     if clave in ("n", "max"):
@@ -219,6 +234,11 @@ def texto_error(error: ErrorProxLaunch) -> str:
             )
         return QCoreApplication.translate("Textos", "El nodo no está disponible.")
     if c == CodigoError.PERMISO_INSUFICIENTE:
+        if p.get("mapeo") or p.get("ajuste") == "hardware":
+            # 403 al usar un mapeo PCI/USB o al ajustar el hardware del clúster (fase D).
+            texto_d = texto_error_d(error)
+            if texto_d is not None:
+                return texto_d
         if p.get("zona") or p.get("ajuste") in ("red", "firewall_opciones", "firewall_regla"):
             # 403 de SDN (red o zona nombradas) o de un paso de la fase C: texto propio.
             texto_c = texto_error_c(error)
@@ -324,13 +344,8 @@ def texto_error(error: ErrorProxLaunch) -> str:
             )
         return _fmt(QCoreApplication.translate("Textos", "Proxmox rechazó el valor de {campo}."), p)
     if c == CodigoError.VERSION_NO_SOPORTADA:
-        return _fmt(
-            QCoreApplication.translate(
-                "Textos",
-                "ProxLaunch requiere Proxmox VE {minima} o superior (el servidor tiene {version})",
-            ),
-            p,
-        )
+        # V-D01 (fase D): la mínima es la 8.4; el texto vive en ``textos_d``.
+        return texto_error_d(error) or texto_generico()
     if c == CodigoError.RECURSO_INEXISTENTE:
         recurso = p.get("recurso", "")
         if recurso.startswith("vm "):
@@ -449,6 +464,7 @@ def texto_campo(campo: str) -> str:
         "plazo_ip_s": t("Textos", "Plazo de espera de la IP"),
         "firewall": t("Textos", "Firewall"),
         "red_clon": t("Textos", "Red de la copia"),
+        "hardware_cluster": QCoreApplication.translate("Textos", "Hardware del clúster"),
     }
     return nombres.get(base, "")
 
@@ -582,6 +598,9 @@ def texto_problema(p: Problema) -> str:
     texto_fase_c = texto_problema_c(p)
     if texto_fase_c is not None:
         return texto_fase_c
+    texto_fase_d = texto_problema_d(p)
+    if texto_fase_d is not None:
+        return texto_fase_d
     return texto_generico()
 
 
@@ -656,6 +675,9 @@ def texto_aviso(aviso: Aviso) -> str:
             ),
             p,
         )
+    texto_d = texto_aviso_conexion_d(aviso)
+    if texto_d is not None:
+        return texto_d
     return texto_generico()
 
 
@@ -966,7 +988,12 @@ def _texto_error_lote(error: ErrorProxLaunch) -> str | None:
         return QCoreApplication.translate(
             "Textos", "Error interno: se intentó escribir en modo simulación. No se creó nada."
         )
-    return _texto_error_fase_a(error) or _texto_error_fase_b(error) or texto_error_c(error)
+    return (
+        _texto_error_fase_a(error)
+        or _texto_error_fase_b(error)
+        or texto_error_c(error)
+        or texto_error_d(error)
+    )
 
 
 def texto_existe_sin_confirmar() -> str:
@@ -1251,6 +1278,8 @@ def _texto_v_l11(prm: Mapping[str, str]) -> str:
         return _texto_v_l11_fuente(prm)
     if motivo == "plantilla":
         return _texto_v_l11_plantilla(prm)
+    if motivo == "arquitectura_plantilla":
+        return texto_v_d07(prm)  # V-D07: la plantilla es de otra arquitectura
     return _fmt(
         QCoreApplication.translate("Textos", "«{nodo}» no puede alojar esta configuración."), prm
     )
@@ -1970,6 +1999,9 @@ def alias_columnas_csv() -> dict[str, str]:
         QCoreApplication.translate("ColumnasCsv", "ci_snippet_red"): "ci_snippet_red",
         QCoreApplication.translate("ColumnasCsv", "ci_snippet_meta"): "ci_snippet_meta",
         QCoreApplication.translate("ColumnasCsv", "esperar_ip"): "esperar_ip",
+        # Fase D (RF-D6.3): mapeos PCI y USB del clúster.
+        QCoreApplication.translate("ColumnasCsv", "mapeo_pci"): "mapeo_pci",
+        QCoreApplication.translate("ColumnasCsv", "mapeo_usb"): "mapeo_usb",
     }
 
 
@@ -2284,6 +2316,9 @@ def texto_problema_celda(p: ProblemaCelda, columnas: MapaColumnas | None = None)
             return QCoreApplication.translate("Textos", "El nodo no existe en este servidor.")
         if prm.get("motivo") == "sin_conexion":
             return QCoreApplication.translate("Textos", "El nodo está sin conexión.")
+    if regla == "V-D70":
+        # El número de fila y la columna los pone ``texto_linea_problema``: aquí solo el motivo.
+        return texto_motivo_v_d70(prm.get("motivo", ""))
     campo = ""
     if columnas is not None and p.columna is not None:
         if p.columna == columnas.encabezados.get("sockets"):
@@ -2511,7 +2546,11 @@ def texto_accion_via(via: Via | str) -> str:
     fabrica = _ACCIONES_VIA.get(str(via))
     if fabrica is not None:
         return fabrica()
-    return texto_accion_via_c(str(via)) or QCoreApplication.translate("Textos", "hacer esta acción")
+    return (
+        texto_accion_via_c(str(via))
+        or texto_accion_via_d(str(via))
+        or QCoreApplication.translate("Textos", "hacer esta acción")
+    )
 
 
 def texto_via(via: Via) -> str:
@@ -2537,7 +2576,7 @@ def texto_via(via: Via) -> str:
     }
     fabrica = nombres.get(str(via))
     if fabrica is None:
-        return texto_via_c(str(via)) or str(via)
+        return texto_via_c(str(via)) or texto_via_d(str(via)) or str(via)
     return fabrica()
 
 
@@ -2727,7 +2766,7 @@ def texto_registro_transferencia(r: RegistroTransferencia) -> str:
     return " · ".join(p for p in partes if p)
 
 
-def texto_aviso_archivo_local(codigo: str) -> str:
+def texto_aviso_archivo_local(codigo: str, archivo: str = "") -> str:
     """Aviso (no bloqueante) al elegir un archivo de tu equipo para subir."""
     if codigo == "no_iso9660":
         return QCoreApplication.translate(
@@ -2741,6 +2780,10 @@ def texto_aviso_archivo_local(codigo: str) -> str:
             "ProxLaunch no puede comprobar el contenido de un disco raw. Asegúrate de que es "
             "el archivo que quieres importar.",
         )
+    if codigo == "snapshots":
+        return texto_aviso_snapshots()  # V-D26 (fase D)
+    if codigo == "backing_sin_comprobar":  # V-D25c (fase D)
+        return texto_problema_d(Problema("", "V-D25c", Severidad.AVISO, {"archivo": archivo})) or ""
     return ""
 
 
@@ -2877,7 +2920,7 @@ def _ajuste_verbo(ajuste: str) -> str:
         return QCoreApplication.translate("Textos", "aplicar la configuración inicial (cloud-init)")
     if ajuste == "contrasena":
         return QCoreApplication.translate("Textos", "poner la contraseña de cloud-init")
-    texto_c = texto_ajuste_verbo_c(ajuste)
+    texto_c = texto_ajuste_verbo_c(ajuste) or texto_ajuste_verbo_d(ajuste)
     if texto_c:
         return texto_c
     return QCoreApplication.translate("Textos", "aplicar los ajustes")
@@ -2899,7 +2942,7 @@ def _ajuste_sustantivo(ajuste: str) -> str:
         return QCoreApplication.translate("Textos", "la configuración inicial (cloud-init)")
     if ajuste == "contrasena":
         return QCoreApplication.translate("Textos", "la contraseña de cloud-init")
-    texto_c = texto_ajuste_sustantivo_c(ajuste)
+    texto_c = texto_ajuste_sustantivo_c(ajuste) or texto_ajuste_sustantivo_d(ajuste)
     if texto_c:
         return texto_c
     return QCoreApplication.translate("Textos", "los ajustes")
@@ -3188,11 +3231,7 @@ def _texto_motivo_clon(motivo: str, nombre: str) -> str:
 
 def _texto_motivo_imagen(motivo: str) -> str:
     if motivo == "backing":
-        return QCoreApplication.translate(
-            "Textos",
-            "Este disco depende de otro archivo (un disco base). Conviértelo a un qcow2 "
-            "independiente antes de subirlo.",
-        )
+        return texto_motivo_backing()  # V-D25: con la orden qemu-img convert (fase D)
     if motivo == "cifrado":
         return QCoreApplication.translate(
             "Textos",
@@ -3233,6 +3272,8 @@ def _texto_error_origen(error: ErrorProxLaunch) -> str | None:
     p = error.params
     c = error.codigo
     if c == CodigoError.IMPORTAR_VERSION_NO_SOPORTADA:
+        # Sin productor desde 0.9 (la mínima es 8.4 y todo servidor admite importar); el código
+        # y su texto se conservan por compatibilidad.
         return _fmt(
             QCoreApplication.translate(
                 "Textos",
@@ -3423,7 +3464,7 @@ def _texto_error_origen(error: ErrorProxLaunch) -> str | None:
                 )
             )
         ajustes = [a for a in p.get("ajuste", "").split(",") if a]
-        return _fmt(
+        texto = _fmt(
             QCoreApplication.translate(
                 "Textos",
                 "La máquina «{nombre}» se clonó, pero no se pudo {ajuste}. Puedes reintentar los "
@@ -3432,6 +3473,9 @@ def _texto_error_origen(error: ErrorProxLaunch) -> str | None:
             p,
             ajuste=_unir_y([_ajuste_verbo(a) for a in ajustes]) or _ajuste_verbo(""),
         )
+        # Fase D: el ajuste «hardware» dice además por qué falló (sin ranuras o mapeo inválido).
+        causa_d = texto_causa_ajuste_hardware(p.get("causa", ""))
+        return f"{texto} {causa_d}" if causa_d else texto
     if c == CodigoError.TRANSFERENCIA_CANCELADA:
         quedo = {"si": True, "no": False}.get(p.get("quedo_archivo", ""))
         return (
@@ -3506,6 +3550,7 @@ def _texto_v_o_fuente(p: Problema) -> str:
             prm,
         )
     if motivo == "version":
+        # Sin productor desde 0.9 (mínima 8.4); se conserva el texto por compatibilidad.
         return texto_error(
             ErrorProxLaunch(
                 CodigoError.IMPORTAR_VERSION_NO_SOPORTADA, {"version": prm.get("version", "")}
@@ -3868,7 +3913,7 @@ def texto_nombre_opcion_fase_a(opcion: str) -> str:
     }
     fabrica = nombres.get(opcion)
     if fabrica is None:
-        return texto_nombre_opcion_c(opcion) or opcion
+        return texto_nombre_opcion_c(opcion) or texto_nombre_opcion_d(opcion) or opcion
     return fabrica()
 
 
@@ -4168,6 +4213,16 @@ def _texto_aviso_fase_a(codigo: str) -> str:
 def _texto_v_a03(prm: Mapping[str, str]) -> str:
     """Mensaje de V-A03 (etiqueta rechazada por la política del centro de datos)."""
     motivo = prm.get("motivo", "")
+    if motivo == "sin_sys_audit":
+        return _fmt(
+            QCoreApplication.translate(
+                "Textos",
+                "No se pudo leer la política de etiquetas porque tu usuario no tiene Sys.Audit "
+                "en «/». Quizá Proxmox rechace la etiqueta «{etiqueta}»; si lo hace, las "
+                "máquinas se crearán sin ella y el lote no aparecerá en «Lotes en el servidor».",
+            ),
+            prm,
+        )
     if motivo == "registrada":
         return _fmt(
             QCoreApplication.translate(

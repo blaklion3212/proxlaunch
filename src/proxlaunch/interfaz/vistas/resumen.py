@@ -23,9 +23,13 @@ from proxlaunch.interfaz.textos import (
     texto_tipo_so,
 )
 from proxlaunch.interfaz.textos_c import lineas_opciones_fase_c
+from proxlaunch.interfaz.textos_d import lineas_opciones_fase_d, texto_nodo_arm
 from proxlaunch.interfaz.vistas.campos import mensaje, poner_mensaje
 from proxlaunch.interfaz.vistas.formulario_vm import mib_a_texto_gib
+from proxlaunch.nucleo.arquitectura.modelos import Arquitectura
+from proxlaunch.nucleo.arquitectura.perfil import CambioArquitectura
 from proxlaunch.nucleo.modelos.catalogo import PermisosEfectivos
+from proxlaunch.nucleo.modelos.cpu import es_cpu_personalizada, tipo_cpu_por_defecto
 from proxlaunch.nucleo.modelos.inventario import Nodo
 from proxlaunch.nucleo.modelos.origen import DetalleClon, DetalleImportacion, DetalleIso, ModoClon
 from proxlaunch.nucleo.modelos.vm import (
@@ -41,7 +45,6 @@ from proxlaunch.nucleo.origen.asistente import CambioAsistente
 from proxlaunch.nucleo.origen.constantes import ORDEN_ARRANQUE
 from proxlaunch.nucleo.origen.permisos import estado_privilegio
 from proxlaunch.nucleo.validacion import Problema, Severidad, opciones_permitidas
-from proxlaunch.nucleo.valores_defecto import TIPO_CPU
 
 
 def nombre_campo(campo: str) -> str:
@@ -50,10 +53,17 @@ def nombre_campo(campo: str) -> str:
     return texto_campo(campo)
 
 
-def opciones_avanzadas_no_predeterminadas(cfg: ConfiguracionVM) -> list[str]:
-    """Valores ocultos en modo básico que no son los predeterminados (CA-24.5)."""
+def opciones_avanzadas_no_predeterminadas(
+    cfg: ConfiguracionVM, arquitectura: Arquitectura | None = None
+) -> list[str]:
+    """Valores ocultos en modo básico que no son los predeterminados (CA-24.5).
+
+    El tipo de CPU por defecto depende de la arquitectura del nodo (en ARM64, «host»). Una CPU
+    personalizada sale en su propia línea de la fase D, no aquí.
+    """
     lineas: list[str] = []
-    if cfg.tipo_cpu != TIPO_CPU:
+    defecto = tipo_cpu_por_defecto((arquitectura or Arquitectura.X86_64).value)
+    if cfg.tipo_cpu != defecto and not es_cpu_personalizada(cfg.tipo_cpu):
         lineas.append(
             QCoreApplication.translate("ResumenVM", "Tipo de CPU: {valor}").format(
                 valor=cfg.tipo_cpu
@@ -191,8 +201,15 @@ class ResumenVM(QGroupBox):
         nodo: Nodo | None = None,
         cambios_asistente: Sequence[CambioAsistente] = (),
         permisos: PermisosEfectivos | None = None,
+        arquitectura: Arquitectura | None = None,
+        cambios_arquitectura: Sequence[CambioArquitectura] = (),
     ) -> None:
-        """Redibuja el resumen y decide si se puede crear."""
+        """Redibuja el resumen y decide si se puede crear.
+
+        ``arquitectura`` es la del nodo efectivo (fase D): con ARM64 el nodo y una línea del resumen
+        llevan la marca «experimental» (RF-D2.12) y ``cambios_arquitectura`` lista los valores x86
+        que se adaptaron (V-D08). Con nodo x86 o sin dato no sale nada de esto.
+        """
         e = escape
         et_nombre = QCoreApplication.translate("ResumenVM", "Nombre")
         et_vmid = QCoreApplication.translate("ResumenVM", "Número de máquina")
@@ -208,6 +225,8 @@ class ResumenVM(QGroupBox):
         lineas.append(f"<b>{e(et_nombre)}:</b> {e(cfg.nombre) or '—'}")
         lineas.append(f"<b>{e(et_vmid)}:</b> {cfg.vmid or '—'}")
         nodo_txt = e(cfg.nodo) if cfg.nodo else "—"
+        if cfg.nodo and arquitectura == Arquitectura.AARCH64:
+            nodo_txt = e(texto_nodo_arm(cfg.nodo))
         if motivo_nodo and cfg.nodo:
             nodo_txt += f" <i>({e(motivo_nodo)})</i>"
         lineas.append(f"<b>{e(et_nodo)}:</b> {nodo_txt}")
@@ -266,11 +285,15 @@ class ResumenVM(QGroupBox):
         # tarjeta ilegible sin firewall sale matizada: nunca «activado» a secas (§9).
         for nombre, valor in lineas_opciones_fase_c(cfg, problemas):
             lineas.append(f"<b>{e(nombre)}:</b> {e(valor)}")
+        # Fase D: ARM64 (experimental), hardware del clúster, CPU personalizada, MAC conservada y
+        # discos importados (solo si valen algo distinto del predeterminado, RF-D0.1).
+        for nombre, valor in lineas_opciones_fase_d(cfg, arquitectura, cambios_arquitectura):
+            lineas.append(f"<b>{e(nombre)}:</b> {e(valor)}")
         if not avanzado:
             ocultas = (
                 [*opciones_avanzadas_fase_a(cfg, con_red=False), *opciones_avanzadas_fase_b(cfg)]
                 if clon
-                else opciones_avanzadas_no_predeterminadas(cfg)
+                else opciones_avanzadas_no_predeterminadas(cfg, arquitectura)
             )
             if ocultas:
                 titulo = QCoreApplication.translate(

@@ -15,7 +15,7 @@ from __future__ import annotations
 
 import copy
 from collections.abc import Callable, Sequence
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 
 from PySide6.QtCore import QCoreApplication, Qt, Signal
 from PySide6.QtWidgets import (
@@ -33,6 +33,7 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
+from proxlaunch.interfaz.ayuda import ayuda
 from proxlaunch.interfaz.dialogos.capacidades import DialogoCapacidades
 from proxlaunch.interfaz.dialogos.catalogo import DialogoCatalogo, FuenteCatalogo
 from proxlaunch.interfaz.dialogos.confirmar import confirmar
@@ -56,6 +57,7 @@ from proxlaunch.nucleo.modelos.origen import (
     DetalleClon,
     DetalleImportacion,
     DetalleIso,
+    ImagenDisco,
     ModoClon,
     RefPlantilla,
     RefVolumen,
@@ -139,6 +141,8 @@ class SelectorOrigen(QWidget):
     # El asistente de SO debe aplicarse UNA vez al formulario: (tipo_so, solo_bus). ``solo_bus``
     # = solo cambió «Disco compatible (SATA)» y basta con reescribir el bus del primer disco.
     asistente_solicitado = Signal(object, bool)
+    # Fase D (D1): el usuario pidió «Rellenar desde un XML de libvirt…» (abre el asistente).
+    pedir_libvirt = Signal()
 
     def __init__(self, parent: QWidget | None = None) -> None:
         super().__init__(parent)
@@ -167,6 +171,13 @@ class SelectorOrigen(QWidget):
         # tenga la lista del servidor o esté oculto (modo básico) y se reaplica al rellenarlo.
         self._storage_destino: str | None = None
         self._imagen = RefVolumen()
+        # Fase D (D1): imágenes de los discos 1.. cuando el formulario viene de un XML de libvirt
+        # (``_multi``). Sin ese modo, un disco más es un disco vacío como en 0.8.0.
+        self._otras: dict[int, ImagenDisco] = {}
+        self._multi = False
+        self._etiquetas_discos: tuple[str, ...] = ()
+        self._destino_imagen = 0  # disco para el que se abrió el catálogo (0 = el del sistema)
+        self._firma_otras: object = None
         self._plantilla = RefPlantilla()
         self._modo_efectivo: ModoClon | None = None
         self.dialogo_catalogo: DialogoCatalogo | None = None
@@ -283,9 +294,7 @@ class SelectorOrigen(QWidget):
         fila, self.valor_imagen, self.boton_elegir_imagen = self._fila_fuente(
             self.tr("Elegir disco…"), self.tr("Disco elegido")
         )
-        self.boton_elegir_imagen.clicked.connect(
-            lambda: self._abrir_catalogo(FuenteCatalogo.IMAGEN)
-        )
+        self.boton_elegir_imagen.clicked.connect(lambda: self._elegir_imagen_de(0))
         capa.addWidget(fila)
         ampliar = QWidget()
         capa_ampliar = QHBoxLayout(ampliar)
@@ -300,6 +309,23 @@ class SelectorOrigen(QWidget):
         capa_ampliar.addWidget(self.spin_ampliar)
         capa_ampliar.addStretch(1)
         capa.addWidget(ampliar)
+        # Fase D (D1, RF-D1.1): traer la configuración de una máquina de libvirt.
+        fila_libvirt = QWidget()
+        capa_libvirt = QHBoxLayout(fila_libvirt)
+        capa_libvirt.setContentsMargins(24, 4, 0, 4)
+        self.boton_libvirt = QPushButton(self.tr("Rellenar desde un XML de libvirt…"))
+        self.boton_libvirt.setAutoDefault(False)
+        self.boton_libvirt.setToolTip(ayuda("libvirt_xml"))
+        self.boton_libvirt.clicked.connect(self.pedir_libvirt)
+        capa_libvirt.addWidget(self.boton_libvirt)
+        capa_libvirt.addStretch(1)
+        capa.addWidget(fila_libvirt)
+        # Una imagen por cada disco que no es el del sistema (solo tras rellenar desde libvirt).
+        self.panel_otras = QWidget()
+        self._capa_otras = QVBoxLayout(self.panel_otras)
+        self._capa_otras.setContentsMargins(24, 4, 0, 4)
+        self.panel_otras.hide()
+        capa.addWidget(self.panel_otras)
         return pagina
 
     def _pagina_clonar(self) -> QWidget:
@@ -535,6 +561,7 @@ class SelectorOrigen(QWidget):
             radio.setAccessibleDescription(texto)
         if not self.opciones[self._origen].isEnabled():
             self.opciones[OrigenSO.DISCO_VACIO].setChecked(True)
+        self.boton_libvirt.setEnabled(caps is not None)
         self._actualizar_vias_dialogo()
         self._actualizar_drivers()
 
@@ -634,7 +661,16 @@ class SelectorOrigen(QWidget):
             self._actualizar_valores()
         else:
             ref = RefVolumen(elegido.nombre, elegido.volid)
-            if fuente == FuenteCatalogo.IMAGEN:
+            if fuente == FuenteCatalogo.IMAGEN and self._destino_imagen > 0 and self._multi:
+                k = self._destino_imagen
+                previa = self._otras.get(k)
+                self._otras[k] = ImagenDisco(
+                    indice=k,
+                    imagen=ref,
+                    crear_vacio=False,
+                    tamano_virtual_bytes=None if previa is None else previa.tamano_virtual_bytes,
+                )
+            elif fuente == FuenteCatalogo.IMAGEN:
                 self._imagen = ref
             elif fuente == FuenteCatalogo.DRIVERS:
                 self._drivers = ref
@@ -688,6 +724,9 @@ class SelectorOrigen(QWidget):
         self._drivers = None
         self._sin_drivers = False
         self._imagen = RefVolumen()
+        self._otras = {}
+        self._multi = False
+        self._destino_imagen = 0
         self._plantilla = RefPlantilla()
         self.spin_ampliar.setValue(0)
         for spin in (self.spin_sockets, self.spin_cores, self.spin_memoria, self.spin_disco):
@@ -701,6 +740,8 @@ class SelectorOrigen(QWidget):
             self._iso, self._drivers, self._sin_drivers = det.iso, det.drivers, det.sin_drivers
         elif isinstance(det, DetalleImportacion):
             self._imagen = det.imagen
+            self._otras = {o.indice: o for o in det.otras}
+            self._multi = bool(det.otras)
             self.spin_ampliar.setValue(det.ampliar_a_gib or 0)
         elif isinstance(det, DetalleClon):
             self._plantilla = det.plantilla
@@ -754,8 +795,11 @@ class SelectorOrigen(QWidget):
             )
         elif self._origen == OrigenSO.IMPORTAR_DISCO:
             ampliar = self.spin_ampliar.value()
+            n_discos = len(nueva.discos) if nueva.con_disco else 1
             nueva.detalle_origen = DetalleImportacion(
-                imagen=self._imagen, ampliar_a_gib=ampliar or None
+                imagen=self._imagen,
+                ampliar_a_gib=ampliar or None,
+                otras=self._otras_para(n_discos),
             )
         else:
             nueva.detalle_origen = self._detalle_clon()
@@ -763,6 +807,150 @@ class SelectorOrigen(QWidget):
             return nueva
         nueva.tipo_so = self.tipo_so
         return nueva
+
+    def establecer_discos(self, etiquetas: Sequence[str]) -> None:
+        """Etiquetas («scsi0», «virtio1»…) de los discos del formulario, en orden.
+
+        Con el formulario rellenado desde libvirt (modo de varias imágenes) cada disco que no es
+        el del sistema muestra su fila «Elegir imagen / Crear vacío». Es idempotente: solo
+        redibuja si cambió algo, y olvida las imágenes de discos que ya no existen.
+        """
+        self._etiquetas_discos = tuple(etiquetas)
+        for k in [k for k in self._otras if k >= len(self._etiquetas_discos)]:
+            del self._otras[k]
+        self._pintar_otras()
+
+    def al_quitar_disco(self, posicion: int) -> None:
+        """El usuario quitó el disco de esa posición: se olvida su imagen y las de los discos
+        siguientes suben un puesto, de modo que cada imagen sigue con su propio disco.
+
+        Si se quita el disco 0 (el del sistema), la imagen del siguiente pasa a ser la principal
+        (``imagen``) y las demás se desplazan en ``otras``. Si ese siguiente disco estaba marcado
+        «Crear vacío» no hay imagen que heredar: el disco 0 queda pendiente de elegir su imagen."""
+        if posicion < 0:
+            return
+        if posicion == 0:
+            if not self._multi:
+                return  # sin varias imágenes el disco 0 usa la única imagen elegida
+            siguiente = self._otras.get(1)
+            self._imagen = (
+                siguiente.imagen if siguiente and siguiente.imagen is not None else RefVolumen()
+            )
+        nuevas: dict[int, ImagenDisco] = {}
+        for k, o in self._otras.items():
+            if k < posicion:
+                nuevas[k] = o
+            elif k > posicion:
+                nuevas[k - 1] = replace(o, indice=k - 1)
+        # El disco 0 no vive en ``otras``: lo que ocupaba su puesto ya pasó a ``imagen``.
+        nuevas.pop(0, None)
+        self._otras = nuevas
+        if posicion == 0:
+            self._actualizar_valores()
+
+    @property
+    def varias_imagenes(self) -> bool:
+        """El formulario viene de libvirt: cada disco adicional lleva su imagen (D1)."""
+        return self._multi
+
+    def _otras_para(self, n_discos: int) -> tuple[ImagenDisco, ...]:
+        """``DetalleImportacion.otras`` para ``n_discos`` discos: una entrada por cada disco
+        1..N-1 (pendiente si el usuario aún no eligió). Sin modo de varias imágenes, ninguna."""
+        if not self._multi:
+            return ()
+        return tuple(self._otras.get(i, ImagenDisco(indice=i)) for i in range(1, n_discos))
+
+    def _elegir_imagen_de(self, indice: int) -> None:
+        """Abre el catálogo de imágenes para el disco ``indice`` (0 = el del sistema)."""
+        self._destino_imagen = indice
+        self._abrir_catalogo(FuenteCatalogo.IMAGEN)
+
+    def _al_marcar_vacio(self, indice: int, marcado: bool) -> None:
+        previa = self._otras.get(indice)
+        tamano = None if previa is None else previa.tamano_virtual_bytes
+        # «Crear vacío» y una imagen se excluyen: la última elección manda.
+        self._otras[indice] = ImagenDisco(
+            indice=indice,
+            imagen=None if marcado else (None if previa is None else previa.imagen),
+            crear_vacio=marcado,
+            tamano_virtual_bytes=None if marcado else tamano,
+        )
+        self._pintar_otras()
+        self.seleccion_cambiada.emit()
+
+    def _texto_imagen_de(self, indice: int) -> str:
+        o = self._otras.get(indice)
+        if o is not None and o.imagen is not None:
+            return o.imagen.nombre or o.imagen.volid or ""
+        if o is not None and o.crear_vacio:
+            return self.tr("Se creará vacío")
+        return self.tr("Sin imagen elegida")
+
+    def _pintar_otras(self) -> None:
+        """Una fila por disco adicional: etiqueta, imagen elegida, «Elegir imagen…» y «Crear
+        vacío». Solo existe en el origen «Usar un disco existente» tras rellenar desde libvirt."""
+        visible = self._multi and self._origen == OrigenSO.IMPORTAR_DISCO
+        indices = range(1, len(self._etiquetas_discos)) if visible else range(0)
+        firma = (
+            tuple(
+                (
+                    i,
+                    self._etiquetas_discos[i],
+                    self._texto_imagen_de(i),
+                    self._otras.get(i, ImagenDisco(indice=i)).crear_vacio,
+                )
+                for i in indices
+            ),
+        )
+        if firma == self._firma_otras:
+            return
+        self._firma_otras = firma
+        while self._capa_otras.count():
+            item = self._capa_otras.takeAt(0)
+            widget = item.widget() if item is not None else None
+            if widget is not None:
+                widget.setParent(None)
+                widget.deleteLater()
+        if not firma[0]:
+            self.panel_otras.hide()
+            return
+        titulo = QLabel(self.tr("Imagen de cada disco que no es el del sistema"))
+        fuente = titulo.font()
+        fuente.setBold(True)
+        titulo.setFont(fuente)
+        self._capa_otras.addWidget(titulo)
+        for i, etiqueta_disco, texto, vacio in firma[0]:
+            fila = QWidget()
+            capa = QHBoxLayout(fila)
+            capa.setContentsMargins(0, 0, 0, 0)
+            nombre = QLabel(
+                self.tr("Disco {n} ({etiqueta})").format(n=i + 1, etiqueta=etiqueta_disco)
+            )
+            valor = QLabel(texto)
+            valor.setTextFormat(Qt.TextFormat.PlainText)  # el nombre viene del servidor
+            valor.setWordWrap(True)
+            valor.setAccessibleName(
+                self.tr("Imagen del disco {etiqueta}").format(etiqueta=etiqueta_disco)
+            )
+            boton = QPushButton(self.tr("Elegir imagen…"))
+            boton.setAutoDefault(False)
+            boton.setAccessibleName(
+                self.tr("Elegir la imagen del disco {etiqueta}").format(etiqueta=etiqueta_disco)
+            )
+            boton.clicked.connect(lambda _c=False, k=i: self._elegir_imagen_de(k))
+            casilla = QCheckBox(self.tr("Crear vacío"))
+            casilla.setAccessibleName(
+                self.tr("Crear vacío el disco {etiqueta}").format(etiqueta=etiqueta_disco)
+            )
+            casilla.setChecked(vacio)
+            casilla.toggled.connect(lambda marcado, k=i: self._al_marcar_vacio(k, marcado))
+            capa.addWidget(nombre)
+            capa.addWidget(valor, 1)
+            capa.addWidget(boton)
+            capa.addWidget(casilla)
+            capa.addSpacing(8)  # que el texto de la casilla no toque el borde del grupo
+            self._capa_otras.addWidget(fila)
+        self.panel_otras.show()
 
     # ------------------------------------------------------------------------------------
     # Internos
@@ -879,6 +1067,7 @@ class SelectorOrigen(QWidget):
         """Refresca las etiquetas con lo elegido."""
         self.valor_iso.setText(self._iso.nombre or self.tr("Ningún archivo ISO elegido"))
         self.valor_imagen.setText(self._imagen.nombre or self.tr("Ningún disco elegido"))
+        self._pintar_otras()
         if self._plantilla.nombre:
             texto = self._plantilla.nombre
             if self._plantilla.vmid is not None:

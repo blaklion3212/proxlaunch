@@ -11,7 +11,6 @@ from __future__ import annotations
 import pytest
 
 from proxlaunch.interfaz.textos import texto_error, texto_estado_opcion
-from proxlaunch.interfaz.textos_b import texto_estado_control_b2
 from proxlaunch.nucleo.capacidades import (
     Funcion,
     asistente_plantilla_disponible,
@@ -201,47 +200,35 @@ def test_ca_b0_3_3_con_todos_los_privilegios_el_mismo_lote_no_se_bloquea():
 # --- RF-B0.4: versión -----------------------------------------------------------------------------
 
 
-def test_ca_b0_4_1_el_asistente_de_plantilla_exige_8_4_y_explica_por_que_en_8_3():
-    assert not asistente_plantilla_disponible(caps(8, 3))
+def test_ca_b0_4_1_el_asistente_de_plantilla_esta_disponible_con_la_minima_8_4():
+    """Con la mínima 8.4 (DT-D3) el asistente solo depende de que haya sesión y un import."""
     assert asistente_plantilla_disponible(caps(8, 4))
-    inv = inv_origen(version=Version("8.3.0", 8, 3, 0), nodos=("pve1",))
-    est = disponibilidad_plantilla_imagen(inv.catalogo.permisos, caps(8, 3), inv, "pve1")
-    asistente = est[ControlB2.ASISTENTE]
-    assert asistente.disponibilidad == NO
-    assert (
-        asistente.codigo == CodigoError.OPCION_SIN_VERSION and asistente.params["version"] == "8.4"
-    )
-    assert "8.4" in texto_estado_control_b2(asistente)
-    assert "Crear plantilla desde imagen cloud" in texto_estado_control_b2(asistente)
-
-
-def test_ca_b0_4_1_el_motivo_explica_que_en_8_3_no_se_puede_subir_al_contenido_importar():
-    inv = inv_origen(version=Version("8.3.0", 8, 3, 0), nodos=("pve1",))
-    est = disponibilidad_plantilla_imagen(inv.catalogo.permisos, caps(8, 3), inv, "pve1")
-    assert "Importar" in texto_estado_control_b2(est[ControlB2.ASISTENTE])
+    assert asistente_plantilla_disponible(caps(9, 2))
+    assert not asistente_plantilla_disponible(None)
+    inv = inv_origen(version=Version("8.4.0", 8, 4, 0), nodos=("pve1",))
+    est = disponibilidad_plantilla_imagen(inv.catalogo.permisos, caps(8, 4), inv, "pve1")
+    assert est[ControlB2.ASISTENTE].disponibilidad == SI
 
 
 def test_ca_b0_4_2_la_version_forzada_manda_sobre_la_detectada():
-    """Servidor real 9.2 con la versión forzada 8.3: el mismo resultado que en un 8.3."""
-    forzada = capacidades_para(Version("9.2.1", 9, 2, 1), (8, 3))
-    assert forzada.forzada and forzada.version == (8, 3)
-    assert not asistente_plantilla_disponible(forzada)
+    """Servidor real 9.2 con la versión forzada 8.4: el mismo resultado que en un 8.4."""
+    forzada = capacidades_para(Version("9.2.1", 9, 2, 1), (8, 4))
+    assert forzada.forzada and forzada.version == (8, 4)
+    assert asistente_plantilla_disponible(forzada)
     inv = inv_origen(version=Version("9.2.1", 9, 2, 1), nodos=("pve1",))
     est = disponibilidad_plantilla_imagen(inv.catalogo.permisos, forzada, inv, "pve1")
-    assert est[ControlB2.ASISTENTE].disponibilidad == NO
+    assert est[ControlB2.ASISTENTE].disponibilidad == SI
 
 
 def test_ca_b0_4_3_con_8_0_estan_disponibles_cloudinit_agente_y_snippets_con_sus_privilegios():
     est = disp(PRIVS_B_8X, (8, 0), CON_UNIDAD)
     for opcion in (OpcionB.CLOUDINIT, OpcionB.CONTRASENA, OpcionB.ESPERAR_IP, OpcionB.SNIPPETS):
         assert est[opcion].disponibilidad == SI, opcion
-    assert not asistente_plantilla_disponible(caps(8, 0))
 
 
 @pytest.mark.parametrize(
     ("funcion", "minima"),
     [
-        (Funcion.ASISTENTE_PLANTILLA_IMAGEN, (8, 4)),
         (Funcion.CLOUDINIT, (8, 0)),
         (Funcion.SNIPPETS_CICUSTOM, (8, 0)),
         (Funcion.AGENTE_IP, (8, 0)),

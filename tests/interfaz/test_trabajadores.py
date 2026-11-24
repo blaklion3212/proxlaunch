@@ -173,24 +173,35 @@ def test_descubrir_y_comprobar_permisos_combina_ambos(monkeypatch, inv_cluster):
 
 
 def test_recargar_nodo_devuelve_nodo_storages_y_bridges(monkeypatch):
-    # Fase C (RF-C2.1): usa descubrir_nodo_c -> (con_images, todos, bridges, redes) y devuelve
-    # (nodo, con_images, bridges, todos, redes) para mantener storages_todos y las VNets.
+    # Fase C (RF-C2.1): devuelve (nodo, con_images, bridges, todos, redes) para mantener
+    # storages_todos y las VNets. Fase D: con ``detectar`` usa descubrir_nodo_d y añade la
+    # arquitectura del nodo como sexto elemento; sin él, descubrir_nodo_c y ``None``.
     redes = RedesNodo(vnets=())
+    monkeypatch.setattr(tr, "descubrir_nodo_d", lambda s, n: (["s"], ["t"], ["b"], redes, "arq"))
+    assert tr.recargar_nodo(sesion_falsa(), "pve1") == ("pve1", ["s"], ["b"], ["t"], redes, "arq")
     monkeypatch.setattr(tr, "descubrir_nodo_c", lambda s, n: (["s"], ["t"], ["b"], redes))
-    assert tr.recargar_nodo(sesion_falsa(), "pve1") == ("pve1", ["s"], ["b"], ["t"], redes)
+    assert tr.recargar_nodo(sesion_falsa(), "pve1", False) == (
+        "pve1",
+        ["s"],
+        ["b"],
+        ["t"],
+        redes,
+        None,
+    )
 
 
 def test_reintentar_nodos_separa_recuperados_y_fallidos(monkeypatch):
     def descubrir_nodo(sesion, nodo):
         if nodo == "pve2":
             raise ErrorProxLaunch(CodigoError.NODO_NO_DISPONIBLE, {"nodo": nodo})
-        return (["s"], ["t"], ["b"], redes)
+        return (["s"], ["t"], ["b"], redes, None)
 
-    # Fase C: cada nodo recuperado trae (con_images, bridges, todos, redes).
+    # Fase C: cada nodo recuperado trae (con_images, bridges, todos, redes); la fase D añade la
+    # arquitectura recién detectada (un nodo caído no tenía).
     redes = RedesNodo(vnets=())
-    monkeypatch.setattr(tr, "descubrir_nodo_c", descubrir_nodo)
+    monkeypatch.setattr(tr, "descubrir_nodo_d", descubrir_nodo)
     recuperados, fallidos = tr.reintentar_nodos(sesion_falsa(), ["pve1", "pve2"])
-    assert recuperados == {"pve1": (["s"], ["b"], ["t"], redes)}
+    assert recuperados == {"pve1": (["s"], ["b"], ["t"], redes, None)}
     assert list(fallidos) == ["pve2"]
 
 

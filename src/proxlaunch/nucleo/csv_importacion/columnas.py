@@ -90,6 +90,10 @@ COLUMNAS: tuple[DefColumna, ...] = (
     DefColumna("grupo_seguridad", ("security_group", "firewall_group")),
     DefColumna("politica_entrada", ("policy_in",), avanzada=True),
     DefColumna("politica_salida", ("policy_out",), avanzada=True),
+    # Fase D (RF-D6.3): mapeos PCI/USB del clúster, ids separados por «;». Celda vacía = los del
+    # formulario. La CPU personalizada va en ``tipo_cpu`` (``custom-<nombre>``).
+    DefColumna("mapeo_pci", ("pci_mapping",), avanzada=True),
+    DefColumna("mapeo_usb", ("usb_mapping",), avanzada=True),
 )
 
 _SEPARADORES = re.compile(r"[\s\-_]+")
